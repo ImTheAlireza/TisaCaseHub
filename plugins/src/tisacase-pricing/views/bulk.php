@@ -45,12 +45,37 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 		</div>
 
 		<div id="tcp-product-box" class="tcp-field" style="display:none">
+			<div id="tcp-bulk-name-search" class="tcp-bulk-name-search">
+				<label class="tcp-label" for="tcp-name-search-term">جستجوی چند محصول با بخشی از نام</label>
+				<div class="tcp-name-search-row">
+					<input type="search" id="tcp-name-search-term" class="regular-text" autocomplete="off" placeholder="مثلاً قاب اسپیس">
+					<button type="button" class="button button-secondary" id="tcp-name-search-button">جستجو</button>
+				</div>
+				<p class="tcp-muted">همهٔ محصول‌هایی که نامشان این عبارت را دارد پیدا می‌شوند و ابتدا انتخاب هستند؛ برای کنار گذاشتن بعضی محصول‌ها تیکشان را بردار. اگر نتیجه‌ها از ۱۰۰ مورد بیشتر باشند، «نمایش موارد بعدی» را هم بزن.</p>
+				<div id="tcp-name-search-status" class="tcp-name-search-status" role="status" aria-live="polite"></div>
+				<div id="tcp-name-search-results" style="display:none">
+					<div class="tcp-table-scroll tcp-name-search-scroll">
+						<table class="widefat striped tcp-name-search-table">
+							<thead><tr><th>انتخاب</th><th>نام محصول</th><th>شناسه</th></tr></thead>
+							<tbody></tbody>
+						</table>
+					</div>
+					<div class="tcp-name-search-actions">
+						<button type="button" class="button" id="tcp-name-select-page">انتخاب همهٔ موارد نمایش‌داده‌شده</button>
+						<button type="button" class="button" id="tcp-name-deselect-page">لغو انتخاب موارد نمایش‌داده‌شده</button>
+						<button type="button" class="button button-secondary" id="tcp-name-load-more" style="display:none">نمایش موارد بعدی</button>
+						<span id="tcp-name-page-count" class="tcp-muted"></span>
+					</div>
+				</div>
+				<p id="tcp-selected-product-count" class="tcp-muted">انتخاب نهایی: ۰ محصول</p>
+			</div>
+
 			<div id="tcp-retail-product-search">
-				<label class="tcp-label" for="tcp-products">محصولات</label>
+				<label class="tcp-label" for="tcp-products">یا انتخاب دستی محصول‌ها (با نام، شناسه یا SKU)</label>
 				<select id="tcp-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
 			</div>
 			<div id="tcp-wholesale-product-search" style="display:none">
-				<label class="tcp-label" for="tcp-wholesale-products">محصولات دارای قیمت عمده</label>
+				<label class="tcp-label" for="tcp-wholesale-products">یا انتخاب دستی محصول‌های دارای قیمت عمده</label>
 				<select id="tcp-wholesale-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="فقط بین محصولات دارای قیمت عمده جستجو کن…" data-action="<?php echo esc_attr( TCP_Settings::AJAX_SEARCH ); ?>"></select>
 				<p class="tcp-muted">فقط محصولاتی که خود یا یکی از واریشن‌هایشان قیمت عمده دارد.</p>
 			</div>

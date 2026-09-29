@@ -485,6 +485,124 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 		}
 
 		/* -----------------------------------------------------------------
+		 * جستجوی عبارتی محصول‌ها برای تغییر گروهی
+		 * --------------------------------------------------------------- */
+
+		/** جستجوی زیررشته در نام محصولات؛ نتایج صفحه‌بندی می‌شوند تا فهرست‌های بزرگ سبک بمانند. */
+		public static function ajax_search_products_by_name() {
+			self::guard();
+			if ( ! TCP_Settings::wc_active() ) {
+				wp_send_json_error( array( 'message' => 'ووکامرس فعال نیست.' ), 400 );
+			}
+
+			$raw_term = isset( $_POST['term'] ) && is_scalar( $_POST['term'] ) ? wp_unslash( $_POST['term'] ) : '';
+			$term     = trim( sanitize_text_field( (string) $raw_term ) );
+			$length   = function_exists( 'mb_strlen' ) ? mb_strlen( $term, 'UTF-8' ) : strlen( $term );
+			$page_raw = isset( $_POST['page'] ) && is_scalar( $_POST['page'] ) ? wp_unslash( $_POST['page'] ) : 1;
+			$page     = max( 1, min( 100000, absint( $page_raw ) ) );
+			$per_page = 100;
+
+			if ( $length < 2 ) {
+				wp_send_json_success( array( 'items' => array(), 'total' => 0, 'page' => $page, 'pages' => 0, 'per_page' => $per_page ) );
+			}
+
+			global $wpdb;
+			$filters  = TCP_Ops::parse_filters( isset( $_POST['filters'] ) ? wp_unslash( $_POST['filters'] ) : '' );
+			$statuses = array_values( array_intersect( array( 'publish', 'private', 'draft', 'pending', 'future' ), (array) $filters['statuses'] ) );
+			if ( empty( $statuses ) ) {
+				wp_send_json_success( array( 'items' => array(), 'total' => 0, 'page' => $page, 'pages' => 0, 'per_page' => $per_page ) );
+			}
+
+			$where  = array( 'p.post_type = %s' );
+			$params = array( 'product' );
+			$status_placeholders = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
+			$where[] = "p.post_status IN ({$status_placeholders})";
+			$params  = array_merge( $params, $statuses );
+			$where[] = 'p.post_title LIKE %s';
+			$params[] = '%' . $wpdb->esc_like( $term ) . '%';
+
+			// فیلتر نوع محصول را هم روی همان فهرست اعمال می‌کنیم؛ نوع سادهٔ بدون term هم حفظ می‌شود.
+			$types = array_values( array_intersect( array( 'simple', 'variable', 'grouped', 'external' ), (array) $filters['types'] ) );
+			if ( ! empty( $types ) ) {
+				$type_placeholders = implode( ', ', array_fill( 0, count( $types ), '%s' ) );
+				$type_clause = "EXISTS (
+					SELECT 1
+					FROM {$wpdb->term_relationships} tr
+					INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id
+					INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+					WHERE tr.object_id = p.ID AND tt.taxonomy = 'product_type' AND t.slug IN ({$type_placeholders})
+				)";
+				$params = array_merge( $params, $types );
+				if ( in_array( 'simple', $types, true ) ) {
+					$type_clause = "({$type_clause} OR NOT EXISTS (
+						SELECT 1
+						FROM {$wpdb->term_relationships} tr_simple
+						INNER JOIN {$wpdb->term_taxonomy} tt_simple ON tt_simple.term_taxonomy_id = tr_simple.term_taxonomy_id
+						WHERE tr_simple.object_id = p.ID AND tt_simple.taxonomy = 'product_type'
+					))";
+				}
+				$where[] = $type_clause;
+			}
+
+			$wholesale_only = ! empty( $filters['only_wholesale'] ) || ( isset( $_POST['wholesale_only'] ) && '1' === (string) wp_unslash( $_POST['wholesale_only'] ) );
+			if ( $wholesale_only ) {
+				$where[] = "(
+					EXISTS (
+						SELECT 1 FROM {$wpdb->postmeta} wm
+						WHERE wm.post_id = p.ID AND wm.meta_key = %s AND wm.meta_value <> ''
+						  AND CAST(wm.meta_value AS DECIMAL(20,4)) > 0
+					)
+					OR EXISTS (
+						SELECT 1 FROM {$wpdb->posts} v
+						INNER JOIN {$wpdb->postmeta} vwm ON vwm.post_id = v.ID AND vwm.meta_key = %s
+						WHERE v.post_type = 'product_variation' AND v.post_status NOT IN ('trash','auto-draft')
+						  AND v.post_parent = p.ID AND vwm.meta_value <> ''
+						  AND CAST(vwm.meta_value AS DECIMAL(20,4)) > 0
+					)
+				)";
+				$params[] = TCP_WHOLESALE_META;
+				$params[] = TCP_WHOLESALE_META;
+			}
+
+			$where_sql = implode( ' AND ', $where );
+			$count_sql = $wpdb->prepare(
+				"SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p WHERE {$where_sql}",
+				$params
+			);
+			$total = absint( $wpdb->get_var( $count_sql ) );
+			$pages = $total ? (int) ceil( $total / $per_page ) : 0;
+			$offset = ( $page - 1 ) * $per_page;
+
+			$items = array();
+			if ( $total && $offset < $total ) {
+				$query_params = array_merge( $params, array( $per_page, $offset ) );
+				$sql = $wpdb->prepare(
+					"SELECT p.ID, p.post_title
+					FROM {$wpdb->posts} p
+					WHERE {$where_sql}
+					ORDER BY p.post_title ASC, p.ID ASC
+					LIMIT %d OFFSET %d",
+					$query_params
+				);
+				$rows = $wpdb->get_results( $sql, ARRAY_A );
+				foreach ( (array) $rows as $row ) {
+					$items[] = array(
+						'id'   => absint( $row['ID'] ),
+						'name' => wp_specialchars_decode( $row['post_title'], ENT_QUOTES ),
+					);
+				}
+			}
+
+			wp_send_json_success( array(
+				'items'    => $items,
+				'total'    => $total,
+				'page'     => $page,
+				'pages'    => $pages,
+				'per_page' => $per_page,
+			) );
+		}
+
+		/* -----------------------------------------------------------------
 		 * جستجوی محصولات دارای قیمت عمده (مشابه نسخهٔ ۱)
 		 * --------------------------------------------------------------- */
 

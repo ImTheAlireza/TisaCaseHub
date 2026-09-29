@@ -22,8 +22,9 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		const AJAX_ROLLBACK_START = 'tcp_rollback_start';
 		const AJAX_ROLLBACK_PAGE  = 'tcp_rollback_page';
 		const AJAX_EXPORT         = 'tcp_export_csv';
-		const AJAX_CANCEL         = 'tcp_cancel_scheduled';
-		const AJAX_SEARCH         = 'tcp_search_wholesale_products';
+		const AJAX_CANCEL             = 'tcp_cancel_scheduled';
+		const AJAX_SEARCH             = 'tcp_search_wholesale_products';
+		const AJAX_PRODUCT_NAME_SEARCH = 'tcp_search_products_by_name';
 
 		const CRON_TICK  = 'tcp_process_scheduled_tick';
 		const CRON_CLEAN = 'tcp_daily_cleanup';
@@ -63,6 +64,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 			add_action( 'wp_ajax_' . self::AJAX_EXPORT, array( 'TCP_Ajax', 'ajax_export_csv' ) );
 			add_action( 'wp_ajax_' . self::AJAX_CANCEL, array( 'TCP_Ajax', 'ajax_cancel_scheduled' ) );
 			add_action( 'wp_ajax_' . self::AJAX_SEARCH, array( 'TCP_Ajax', 'ajax_search_wholesale_products' ) );
+			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_NAME_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_name' ) );
 			add_action( 'admin_init', array( 'TCP_DB', 'maybe_install' ) );
 			add_action( 'admin_init', array( 'TCP_Admin', 'handle_settings_post' ) );
 			add_action( 'admin_init', array( __CLASS__, 'maybe_migrate' ) );
@@ -98,6 +100,22 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 				$legacy = get_option( 'tisacase_pricing_manager_rules_v1', null );
 				add_option( TCP_Rules::OPTION, is_array( $legacy ) ? $legacy : TCP_Rules::defaults(), '', false );
 			}
+			self::upgrade_preview_sample_size();
+		}
+
+		/** یک‌بار مقدار پیش‌فرض قدیمیِ پیش‌نمایش را به نمونهٔ بزرگ‌تر ارتقا می‌دهد. */
+		private static function upgrade_preview_sample_size() {
+			$marker = 'tcp_preview_sample_size_v2_migrated';
+			if ( get_option( $marker, false ) ) {
+				return;
+			}
+
+			$settings = get_option( self::OPTION, array() );
+			if ( is_array( $settings ) && isset( $settings['sample_size'] ) && 8 === absint( $settings['sample_size'] ) ) {
+				$settings['sample_size'] = 30;
+				update_option( self::OPTION, $settings );
+			}
+			add_option( $marker, 1, '', false );
 		}
 
 		/** آیا یکی از افزونه‌های قدیمی هنوز فعال است؟ (برای هشدار تداخل) */
@@ -130,7 +148,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 				'rollback'          => 1,
 				'scheduled'         => 1,
 				'max_amount'        => 1000000000,
-				'sample_size'       => 8,
+				'sample_size'       => 30,
 				'cron_pages'        => 20,
 				'round_digit'       => 8,   // رقم پایانی قیمت‌های رند (…۸٬۰۰۰)
 				'round_step'        => 0,   // ۰ = خودکار بر اساس واحد پول (ریال ۱۰۰٬۰۰۰ / تومان ۱۰٬۰۰۰)
@@ -166,6 +184,8 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 				}
 				if ( in_array( $k, array( 'round_digit', 'round_step' ), true ) ) {
 					$clean[ $k ] = absint( $raw[ $k ] );
+				} elseif ( 'sample_size' === $k ) {
+					$clean[ $k ] = max( 1, min( 100, absint( $raw[ $k ] ) ) );
 				} elseif ( is_int( $v ) ) {
 					$clean[ $k ] = max( 1, absint( $raw[ $k ] ) );
 				} elseif ( is_float( $v ) ) {
@@ -210,7 +230,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		}
 
 		public static function sample_size() {
-			return max( 1, min( 50, absint( self::setting( 'sample_size' ) ) ) );
+			return max( 1, min( 100, absint( self::setting( 'sample_size' ) ) ) );
 		}
 
 		public static function translation( $key ) {

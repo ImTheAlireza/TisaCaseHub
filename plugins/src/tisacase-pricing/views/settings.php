@@ -67,7 +67,7 @@ $tcp_bool = static function ( $name, $label, $value ) {
 			</div>
 			<?php $tcp_num( 'confirm_threshold', 'آستانهٔ تأیید دستی (تعداد محصول مادر)', $s['confirm_threshold'], 0 ); ?>
 			<?php $tcp_num( 'max_amount', 'سقف مبلغ ورودی (تعیین/ثابت)', (float) $s['max_amount'], 1 ); ?>
-			<?php $tcp_num( 'sample_size', 'تعداد نمونهٔ پیش‌نمایش', $s['sample_size'], 1, 50 ); ?>
+			<?php $tcp_num( 'sample_size', 'تعداد نمونهٔ پیش‌نمایش', $s['sample_size'], 1, 100, 'پیش‌فرض ۳۰ نمونه؛ می‌توانی تا ۱۰۰ محصول/متغیر را در پیش‌نمایش ببینی.' ); ?>
 		</div>
 	</section>
 

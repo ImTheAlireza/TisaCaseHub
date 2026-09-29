@@ -160,6 +160,20 @@ body.woocommerce_page_tisacase-pricing #wpcontent { background: var(--tisa-bg, #
 .tcp-search-item small, .tcp-rule-name small { color: var(--tisa-muted, #77828A); font-weight: 400; }
 .tcp-search-empty, .tcp-search-loading { padding: var(--tisa-sp-3, 12px); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
 .tcp-table-scroll { overflow: auto; }
+.tcp-bulk-name-search { margin: 0 0 var(--tisa-sp-4, 16px); padding: var(--tisa-sp-3, 12px); border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface-2, #FAFAF8); }
+.tcp-name-search-row { display: flex; flex-wrap: wrap; gap: var(--tisa-sp-2, 8px); max-width: 860px; }
+.tcp-name-search-row input { flex: 1 1 280px; min-width: 180px; }
+.tcp-name-search-status { margin-top: var(--tisa-sp-2, 8px); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
+.tcp-name-search-scroll { max-height: 420px; margin-top: var(--tisa-sp-2, 8px); border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface, #fff); }
+.tcp-name-search-table { margin: 0; }
+.tcp-name-search-table th, .tcp-name-search-table td { vertical-align: middle; }
+.tcp-name-search-table th:first-child, .tcp-name-search-table td:first-child { width: 64px; text-align: center; }
+.tcp-name-search-table th:last-child, .tcp-name-search-table td:last-child { width: 90px; direction: ltr; text-align: center; }
+.tcp-name-search-table input[type="checkbox"] { margin: 0; }
+.tcp-name-search-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tisa-sp-2, 8px); margin-top: var(--tisa-sp-2, 8px); }
+.tcp-name-search-actions .button { margin: 0; }
+.tcp-name-search-actions .tcp-muted { margin: 0; }
+#tcp-selected-product-count { margin-bottom: 0; font-weight: 600; }
 .tcp-rules-table th, .tcp-rules-table td { vertical-align: middle; }
 .tcp-rules-table .tisa-input--number { width: 110px; font-variant-numeric: tabular-nums; }
 .tcp-rule-name strong, .tcp-rule-name small { display: block; }
