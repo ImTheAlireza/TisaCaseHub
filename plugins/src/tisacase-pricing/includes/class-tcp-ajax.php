@@ -585,10 +585,31 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 					$query_params
 				);
 				$rows = $wpdb->get_results( $sql, ARRAY_A );
+				$product_ids = array_map( 'absint', wp_list_pluck( (array) $rows, 'ID' ) );
+				$categories_by_product = array();
+				if ( ! empty( $product_ids ) ) {
+					update_meta_cache( 'post', $product_ids );
+					$product_categories = wp_get_object_terms( $product_ids, 'product_cat', array( 'fields' => 'all_with_object_id' ) );
+					if ( ! is_wp_error( $product_categories ) ) {
+						foreach ( $product_categories as $category ) {
+							$object_id = isset( $category->object_id ) ? absint( $category->object_id ) : 0;
+							if ( $object_id ) {
+								$categories_by_product[ $object_id ][] = $category->name;
+							}
+						}
+					}
+				}
 				foreach ( (array) $rows as $row ) {
+					$product = wc_get_product( absint( $row['ID'] ) );
+					$image_id = $product ? absint( $product->get_image_id() ) : absint( get_post_meta( $row['ID'], '_thumbnail_id', true ) );
+					$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'thumbnail' ) : '';
 					$items[] = array(
-						'id'   => absint( $row['ID'] ),
-						'name' => wp_specialchars_decode( $row['post_title'], ENT_QUOTES ),
+						'id'        => absint( $row['ID'] ),
+						'name'      => wp_specialchars_decode( $row['post_title'], ENT_QUOTES ),
+						'sku'       => $product ? (string) $product->get_sku() : (string) get_post_meta( $row['ID'], '_sku', true ),
+						'type'      => $product ? (string) $product->get_type() : '',
+						'categories' => isset( $categories_by_product[ absint( $row['ID'] ) ] ) ? implode( ', ', $categories_by_product[ absint( $row['ID'] ) ] ) : '',
+						'image_url'  => $image_url ? esc_url_raw( $image_url ) : '',
 					);
 				}
 			}

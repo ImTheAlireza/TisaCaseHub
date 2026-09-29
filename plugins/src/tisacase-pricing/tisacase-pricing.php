@@ -2,8 +2,8 @@
 /**
  * Plugin Name: TisaCase Pricing
  * Plugin URI:  https://tisacase.com/
- * Description: قیمت‌گذاری یکپارچهٔ ووکامرس برای TisaCase — قوانین داینامیک محصول/دسته/سراسری با حفظ قیمت همکاری و فروش ویژهٔ واقعی؛ تغییر گروهی امن قیمت عادی، فروش ویژه و عمده با جستجوی عبارتی نام محصول و حذف موردی از فهرست، پیش‌نمایش، گزارش، بازگردانی و CSV؛ مدیریت کدهای تخفیف.
- * Version:     1.2.3
+ * Description: قیمت‌گذاری یکپارچهٔ ووکامرس برای TisaCase — قوانین داینامیک محصول/دسته/سراسری با حفظ قیمت همکاری و فروش ویژهٔ واقعی؛ تغییر گروهی امن قیمت عادی، فروش ویژه و عمده با انتخاب مرحله‌ای محصولات، جستجوی نام و فهرست قابل بررسی؛ پیش‌نمایش، گزارش، بازگردانی و CSV؛ مدیریت کدهای تخفیف.
+ * Version:     1.2.4
  * Author:      TisaCase
  * License:     GPL-2.0-or-later
  * Text Domain: tisacase-pricing
@@ -16,7 +16,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCP_VERSION', '1.2.3' );
+define( 'TCP_VERSION', '1.2.4' );
 define( 'TCP_FILE', __FILE__ );
 define( 'TCP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TCP_URL', plugin_dir_url( __FILE__ ) );
