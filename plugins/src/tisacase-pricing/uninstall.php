@@ -13,6 +13,7 @@ wp_clear_scheduled_hook( 'tcp_process_scheduled_tick' );
 wp_clear_scheduled_hook( 'tcp_daily_cleanup' );
 
 delete_option( 'tcp_settings' );
+delete_option( 'tcp_preview_sample_size_v2_migrated' );
 delete_option( 'tcp_db_version' );
 delete_option( 'tcp_rules' );
 delete_option( 'tcp_rules_cache_version' );

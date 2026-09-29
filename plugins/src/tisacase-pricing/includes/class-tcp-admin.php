@@ -209,6 +209,7 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 					'export'         => TCP_Settings::AJAX_EXPORT,
 					'cancel'         => TCP_Settings::AJAX_CANCEL,
 					'search'         => TCP_Settings::AJAX_SEARCH,
+					'nameSearch'     => TCP_Settings::AJAX_PRODUCT_NAME_SEARCH,
 				),
 				'ops'      => $ops,
 				'filters'  => array(

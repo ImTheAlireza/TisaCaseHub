@@ -200,9 +200,15 @@ t( 'round_digit به ۹ محدود می‌شود', 9 === $s['round_digit'] );
 t( 'jitter_percent به ۵۰ محدود می‌شود', 50.0 === (float) $s['jitter_percent'] );
 t( 'batch_size ذخیره‌شده خوانده می‌شود', TCP_Settings::batch_size() === 12 );
 t( 'capability نامعتبر → پیش‌فرض manage_woocommerce', 'manage_woocommerce' === TCP_Settings::update_settings( array( 'min_capability' => 'hax0r' ) )['min_capability'] );
-t( 'get_settings با defaults ادغام می‌شود', TCP_Settings::get_settings()['confirm_threshold'] === 500 );
+t( 'get_settings با defaults ادغام می‌شود و پیش‌نمایش پیش‌فرض ۳۰ ردیف دارد', TCP_Settings::get_settings()['confirm_threshold'] === 500 && TCP_Settings::get_settings()['sample_size'] === 30 );
 TCP_Settings::update_settings( array( 'batch_size' => '500', 'lock_minutes' => '1', 'sample_size' => '999' ) );
-t( 'clamp: batch→۱۰۰، lock→۲، sample→۵۰', TCP_Settings::batch_size() === 100 && TCP_Settings::lock_minutes() === 2 && TCP_Settings::sample_size() === 50 );
+t( 'clamp: batch→۱۰۰، lock→۲، sample→۱۰۰', TCP_Settings::batch_size() === 100 && TCP_Settings::lock_minutes() === 2 && TCP_Settings::sample_size() === 100 );
+$GLOBALS['tcp_options'] = array( TCP_Settings::OPTION => array( 'sample_size' => 8, 'batch_size' => 12 ) );
+TCP_Settings::maybe_migrate();
+t( 'مهاجرت: پیش‌فرض قدیمی ۸ به ۳۰ می‌رسد و بقیهٔ تنظیم‌ها می‌مانند', TCP_Settings::sample_size() === 30 && TCP_Settings::batch_size() === 12 );
+TCP_Settings::update_settings( array( 'sample_size' => '8' ) );
+TCP_Settings::maybe_migrate();
+t( 'بعد از مهاجرت، مقدار سفارشی ۸ قابل نگهداری است', TCP_Settings::sample_size() === 8 );
 t( 'translation: کلید شناخته/ناشناخته', TCP_Settings::translation( 'done' ) === 'کامل شد' && TCP_Settings::translation( 'zzz' ) === 'zzz' );
 
 echo "--- 10) محافظ CSV Injection (csv_cell) ---\n";

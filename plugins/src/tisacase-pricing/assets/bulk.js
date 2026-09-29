@@ -95,9 +95,20 @@
 		var previewToken = '';
 		var previewInfo = null;
 		var totals = { parents: 0, updated: 0, skipped: 0, errors: 0 };
+		var nameSearchState = { term: '', page: 0, pages: 0, total: 0, loaded: 0, bucket: '' };
+		var nameSearchGeneration = 0;
+		var nameSearchXhr = null;
+		var nameSearchCurrentBucket = '';
+		var selectedProducts = {
+			retail: { items: Object.create(null), selected: Object.create(null), order: [] },
+			wholesale: { items: Object.create(null), selected: Object.create(null), order: [] }
+		};
 
+		function targetMode() {
+			return $('input[name="tcp_target"]:checked').val() || 'category';
+		}
 		function targetType() {
-			return $('input[name="tcp_target"]:checked').val();
+			return targetMode() === 'category' ? 'category' : 'products';
 		}
 		function currentOp() {
 			return $('#tcp-op').val();
@@ -111,11 +122,243 @@
 		function isSaleOp() {
 			return opMeta(currentOp()).group === 'sale';
 		}
-		function activeSelect() {
-			return isWholesaleOp() ? $('#tcp-wholesale-products') : $('#tcp-products');
+		function selectionBucket() {
+			return isWholesaleOp() ? 'wholesale' : 'retail';
 		}
 		function valueKind() {
 			return opMeta(currentOp()).kind; // percent | amount | set | none
+		}
+
+
+		function productTypeLabel(type) {
+			var labels = { simple: 'ساده', variable: 'متغیر', grouped: 'گروهی', external: 'خارجی' };
+			return labels[String(type || '')] || '—';
+		}
+
+		function productSelection(bucket) {
+			return selectedProducts[bucket || selectionBucket()];
+		}
+
+		function selectedProductIds(bucket) {
+			var state = productSelection(bucket);
+			return state.order.filter(function (id) {
+				return !!state.items[id] && state.selected[id] !== false;
+			}).map(function (id) {
+				return String(id);
+			});
+		}
+
+		function updateSelectedProductCount() {
+			var state = productSelection();
+			var total = state.order.length;
+			var selected = selectedProductIds().length;
+			var $selectAll = $('#tcp-product-select-all');
+
+			$('#tcp-selected-product-count').text(selected + ' انتخاب‌شده از ' + total + ' محصول');
+			$('#tcp-selected-product-badge').text(selected + ' انتخاب‌شده');
+			$('#tcp-product-selection-empty').toggle(total === 0);
+			$('#tcp-product-selection-table-wrap').toggle(total > 0);
+			$('#tcp-clear-products').prop('disabled', total === 0 || running);
+			$selectAll
+				.prop('checked', total > 0 && selected === total)
+				.prop('indeterminate', selected > 0 && selected < total)
+				.prop('disabled', total === 0 || running);
+		}
+
+		function renderSelectedProducts() {
+			var state = productSelection();
+			var $body = $('#tcp-selected-products tbody').empty();
+
+			state.order.forEach(function (id) {
+				var item = state.items[id];
+				if (!item) { return; }
+
+				var name = String(item.name || ('محصول #' + id));
+				var sku = String(item.sku || '').trim();
+				var categories = String(item.categories || '').trim();
+				var $check = $('<input type="checkbox" class="tcp-selected-product-checkbox">')
+					.attr('data-product-id', id)
+					.attr('aria-label', 'انتخاب ' + name)
+					.prop('checked', state.selected[id] !== false)
+					.prop('disabled', running);
+				var $image;
+				if (item.image_url) {
+					$image = $('<img class="tcp-product-thumb" alt="">').attr('src', item.image_url).attr('loading', 'lazy');
+				} else {
+					$image = $('<span class="tcp-product-thumb tcp-product-thumb--empty" aria-hidden="true">□</span>');
+				}
+				var $product = $('<div class="tcp-product-cell"></div>')
+					.append($image)
+					.append($('<strong class="tcp-product-name"></strong>').text(name));
+				var $sku = sku ? $('<code class="tcp-product-sku"></code>').text(sku) : $('<span class="tcp-product-meta"></span>').text('بدون SKU');
+				var $identity = $('<div class="tcp-product-identity"></div>')
+					.append($sku)
+					.append($('<small></small>').attr('dir', 'ltr').text('#' + id));
+				var $remove = $('<button type="button" class="button-link tcp-product-remove">حذف</button>')
+					.attr('aria-label', 'حذف ' + name + ' از فهرست');
+				var $row = $('<tr></tr>')
+					.attr('data-product-id', id)
+					.append($('<td class="tcp-product-check"></td>').append($check))
+					.append($('<td></td>').append($product))
+					.append($('<td></td>').append($identity))
+					.append($('<td class="tcp-product-category"></td>').text(categories || '—'))
+					.append($('<td class="tcp-product-type"></td>').text(productTypeLabel(item.type)))
+					.append($('<td class="tcp-product-actions"></td>').append($remove));
+				$body.append($row);
+			});
+
+			updateSelectedProductCount();
+		}
+
+		/** افزودن نتایج جستجو یا انتخاب دستی به فهرست مشترک محصولات. */
+		function addProductItems(items, bucket, forceSelect) {
+			var state = productSelection(bucket);
+			var changed = false;
+
+			(items || []).forEach(function (item) {
+				var numericId = parseInt(item && item.id, 10);
+				if (!numericId || numericId < 1) { return; }
+				var id = String(numericId);
+				if (!Object.prototype.hasOwnProperty.call(state.items, id)) {
+					state.order.push(id);
+					state.selected[id] = true;
+				} else if (forceSelect) {
+					state.selected[id] = true;
+				}
+				var previous = state.items[id] || {};
+				var merged = $.extend({}, previous, item, { id: numericId });
+				['sku', 'categories', 'type', 'image_url'].forEach(function (key) {
+					if (!item[key] && previous[key]) { merged[key] = previous[key]; }
+				});
+				if (forceSelect && previous.name) { merged.name = previous.name; }
+				state.items[id] = merged;
+				changed = true;
+			});
+
+			if (bucket === selectionBucket()) {
+				renderSelectedProducts();
+			}
+			if (changed) { invalidatePreview(); }
+		}
+
+		function addManualProductsFromSelect(event) {
+			if (running) { return; }
+			var $select = $(event.currentTarget);
+			var ids = ($select.val() || []).map(String);
+			if (!ids.length) { return; }
+
+			var items = ids.map(function (id) {
+				var $option = $select.find('option').filter(function () { return String(this.value) === id; }).first();
+				return {
+					id: parseInt(id, 10),
+					name: $.trim($option.text()).replace(/\s+\(#\d+.*\)$/, '') || ('محصول #' + id),
+					sku: '',
+					categories: '',
+					type: '',
+					image_url: ''
+				};
+			});
+
+			addProductItems(items, $select.attr('id') === 'tcp-wholesale-products' ? 'wholesale' : 'retail', true);
+			// سلکت۲ در این بخش فقط نقش جستجوی افزودن را دارد؛ فهرست نهایی را جدول مدیریت می‌کند.
+			$select.val(null).trigger('change.select2');
+		}
+
+		function resetNameSearchDisplay(message) {
+			nameSearchGeneration++;
+			if (nameSearchXhr) {
+				nameSearchXhr.abort();
+				nameSearchXhr = null;
+			}
+			nameSearchState = { term: '', page: 0, pages: 0, total: 0, loaded: 0, bucket: '' };
+			$('#tcp-name-search-status').text(message || '');
+			$('#tcp-name-load-more').hide().prop('disabled', false);
+			$('#tcp-name-search-button').prop('disabled', false);
+		}
+
+		function renderNameSearchItems(items, bucket, page) {
+			if (1 === page) { nameSearchState.loaded = 0; }
+			nameSearchState.loaded += (items || []).length;
+			addProductItems(items, bucket, false);
+
+			var shown = Math.min(nameSearchState.loaded, nameSearchState.total);
+			var status = 'پیدا شد: ' + nameSearchState.total + ' محصول؛ ' + shown + ' مورد به فهرست زیر اضافه شده است.';
+			if (shown < nameSearchState.total) {
+				status += ' برای افزودن صفحهٔ بعدی، دکمهٔ «نمایش موارد بعدی» را بزن.';
+			}
+			$('#tcp-name-search-status').text(status);
+			$('#tcp-name-load-more')
+				.toggle(shown < nameSearchState.total)
+				.text('نمایش ' + Math.min(100, nameSearchState.total - shown) + ' مورد بعدی');
+		}
+
+		function searchProductsByName(page) {
+			if (running) { return; }
+			var bucket = selectionBucket();
+			var term = page > 1 ? nameSearchState.term : String($('#tcp-name-search-term').val() || '').trim();
+			var requestId = ++nameSearchGeneration;
+			if (nameSearchXhr) {
+				nameSearchXhr.abort();
+				nameSearchXhr = null;
+			}
+			if (term.length < 2) {
+				nameSearchState = { term: '', page: 0, pages: 0, total: 0, loaded: 0, bucket: bucket };
+				$('#tcp-name-search-status').text('برای جستجو حداقل دو حرف بنویس.');
+				$('#tcp-name-load-more').hide().prop('disabled', false);
+				$('#tcp-name-search-button').prop('disabled', false);
+				return;
+			}
+
+			var filters = filtersPayload();
+			if (page === 1) {
+				nameSearchState = { term: term, page: 0, pages: 0, total: 0, loaded: 0, bucket: bucket };
+			}
+
+			$('#tcp-name-search-status').text('در حال جستجو در نام محصولات...');
+			$('#tcp-name-search-button').prop('disabled', true);
+			$('#tcp-name-load-more').prop('disabled', true);
+			nameSearchXhr = $.post(D.ajax, {
+				action: A.nameSearch,
+				nonce: D.nonce,
+				term: term,
+				page: page,
+				filters: JSON.stringify(filters),
+				wholesale_only: (isWholesaleOp() || filters.only_wholesale) ? '1' : '0'
+			}, null, 'json');
+
+			nameSearchXhr.done(function (r) {
+				if (requestId !== nameSearchGeneration || bucket !== selectionBucket()) { return; }
+				if (!r || !r.success) {
+					$('#tcp-name-search-status').text((r && r.data && r.data.message) || 'جستجو انجام نشد.');
+					return;
+				}
+				var data = r.data || {};
+				nameSearchState.term = term;
+				nameSearchState.page = Number(data.page || page);
+				nameSearchState.pages = Number(data.pages || 0);
+				nameSearchState.total = Number(data.total || 0);
+				nameSearchState.bucket = bucket;
+				if (!nameSearchState.total) {
+					nameSearchState.loaded = 0;
+					$('#tcp-name-search-status').text('محصولی با این عبارت پیدا نشد.');
+					$('#tcp-name-load-more').hide();
+					return;
+				}
+				renderNameSearchItems(data.items || [], bucket, page);
+			});
+
+			nameSearchXhr.fail(function (xhr, status) {
+				if (status === 'abort' || requestId !== nameSearchGeneration) { return; }
+				var message = (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور برای جستجو برقرار نشد.';
+				$('#tcp-name-search-status').text(message);
+			});
+
+			nameSearchXhr.always(function () {
+				if (requestId !== nameSearchGeneration) { return; }
+				nameSearchXhr = null;
+				$('#tcp-name-search-button').prop('disabled', false);
+				$('#tcp-name-load-more').prop('disabled', false);
+			});
 		}
 
 		function filtersPayload() {
@@ -138,7 +381,7 @@
 				nonce: D.nonce,
 				target_type: targetType(),
 				category_ids: ($('#tcp-cats').val() || []).join(','),
-				product_ids: (activeSelect().val() || []).join(','),
+				product_ids: selectedProductIds().join(','),
 				include_children: $('#tcp-children').is(':checked') ? '1' : '0',
 				operation: currentOp(),
 				value: $('#tcp-value').val() || '',
@@ -166,6 +409,11 @@
 		}
 
 		function updateProductSearch() {
+			var bucket = selectionBucket();
+			if (nameSearchCurrentBucket && nameSearchCurrentBucket !== bucket) {
+				resetNameSearchDisplay('نوع قیمت عوض شد؛ برای جستجوی محصولاتِ این نوع دوباره جستجو کن.');
+			}
+			nameSearchCurrentBucket = bucket;
 			if (isWholesaleOp()) {
 				$('#tcp-retail-product-search').hide();
 				$('#tcp-wholesale-product-search').show();
@@ -173,18 +421,24 @@
 				$('#tcp-wholesale-product-search').hide();
 				$('#tcp-retail-product-search').show();
 			}
+			renderSelectedProducts();
 			$(document.body).trigger('wc-enhanced-select-init');
 		}
 
 		function updateTarget() {
-			if (targetType() === 'products') {
-				$('#tcp-cat-box').hide();
-				$('#tcp-product-box').show();
-				updateProductSearch();
-			} else {
+			var mode = targetMode();
+			if (mode === 'category') {
 				$('#tcp-product-box').hide();
 				$('#tcp-cat-box').show();
+			} else {
+				$('#tcp-cat-box').hide();
+				$('#tcp-product-box').show();
+				$('#tcp-name-search-panel').toggle(mode === 'name');
+				$('#tcp-direct-search-panel').toggle(mode === 'direct');
+				updateProductSearch();
 			}
+			$('.tcp-target-mode').removeClass('is-active');
+			$('input[name="tcp_target"]:checked').closest('.tcp-target-mode').addClass('is-active');
 			invalidatePreview();
 		}
 
@@ -221,8 +475,11 @@
 			$('input[name="tcp_target"],#tcp-children,#tcp-op,#tcp-value,#tcp-round,#tcp-round-jitter').prop('disabled', v);
 			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale')
 				.prop('disabled', v);
+			$('#tcp-name-search-term,#tcp-name-search-button,#tcp-name-load-more,#tcp-clear-products,#tcp-product-select-all').prop('disabled', v);
+			$('#tcp-selected-products .tcp-selected-product-checkbox,#tcp-selected-products .tcp-product-remove').prop('disabled', v);
 			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses').trigger('change.select2');
 			$('#tcp-stop').toggle(v);
+			updateSelectedProductCount();
 		}
 
 		function resetProgress() {
@@ -253,7 +510,7 @@
 			if (targetType() === 'category' && !($('#tcp-cats').val() || []).length) {
 				return 'حداقل یک دسته‌بندی انتخاب کن.';
 			}
-			if (targetType() === 'products' && !(activeSelect().val() || []).length) {
+			if (targetType() === 'products' && !selectedProductIds().length) {
 				return isWholesaleOp() ? 'حداقل یک محصول دارای قیمت عمده انتخاب کن.' : 'حداقل یک محصول انتخاب کن.';
 			}
 			var kind = valueKind();
@@ -516,6 +773,56 @@
 		});
 		$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale')
 			.on('change', invalidatePreview);
+		$('#tcp-products,#tcp-wholesale-products').on('change', addManualProductsFromSelect);
+		$('#tcp-filter-types,#tcp-filter-statuses,#tcp-filter-only-wholesale').on('change', function () {
+			if (!running && targetMode() === 'name' && nameSearchState.term) {
+				searchProductsByName(1);
+			}
+		});
+		$('#tcp-name-search-button').on('click', function () { searchProductsByName(1); });
+		$('#tcp-name-search-term').on('keydown', function (event) {
+			if (event.key === 'Enter' || event.which === 13) {
+				event.preventDefault();
+				searchProductsByName(1);
+			}
+		});
+		$('#tcp-name-load-more').on('click', function () {
+			if (nameSearchState.page < nameSearchState.pages) { searchProductsByName(nameSearchState.page + 1); }
+		});
+		$('#tcp-selected-products').on('change', '.tcp-selected-product-checkbox', function () {
+			if (running) { return; }
+			var id = String($(this).data('product-id'));
+			productSelection().selected[id] = this.checked;
+			renderSelectedProducts();
+			invalidatePreview();
+		});
+		$('#tcp-product-select-all').on('change', function () {
+			if (running) { return; }
+			var selected = this.checked;
+			var state = productSelection();
+			state.order.forEach(function (id) { state.selected[id] = selected; });
+			renderSelectedProducts();
+			invalidatePreview();
+		});
+		$('#tcp-selected-products').on('click', '.tcp-product-remove', function () {
+			if (running) { return; }
+			var id = String($(this).closest('tr').data('product-id'));
+			var state = productSelection();
+			delete state.items[id];
+			delete state.selected[id];
+			state.order = state.order.filter(function (productId) { return productId !== id; });
+			renderSelectedProducts();
+			invalidatePreview();
+		});
+		$('#tcp-clear-products').on('click', function () {
+			if (running || !confirm('تمام محصولات این فهرست پاک شوند؟')) { return; }
+			var state = productSelection();
+			state.items = Object.create(null);
+			state.selected = Object.create(null);
+			state.order = [];
+			renderSelectedProducts();
+			invalidatePreview();
+		});
 		$('#tcp-value').on('input', invalidatePreview);
 		$('#tcp-price-min,#tcp-price-max').on('input', invalidatePreview);
 

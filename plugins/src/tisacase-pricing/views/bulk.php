@@ -23,36 +23,91 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 <div id="tcp-busy-note" class="tcp-alert tcp-alert--warn" style="display:none"></div>
 
 <section class="tcp-card">
-	<div class="tcp-card-head"><span class="tcp-step">۱</span><div><h2>محصولات هدف</h2></div></div>
+	<div class="tcp-card-head"><span class="tcp-step">۱</span><div><h2>انتخاب محصولات هدف</h2><p>روش انتخاب را مشخص کن؛ قبل از اجرا می‌توانی فهرست را بررسی و ویرایش کنی.</p></div></div>
 	<div class="tcp-card-body">
-		<div class="tcp-seg">
-			<label class="tcp-radio"><input type="radio" name="tcp_target" value="category" checked> دسته‌بندی</label>
-			<label class="tcp-radio"><input type="radio" name="tcp_target" value="products"> انتخاب مستقیم محصول</label>
+		<div class="tcp-target-modes" role="radiogroup" aria-label="روش انتخاب محصولات">
+			<label class="tcp-target-mode">
+				<input type="radio" name="tcp_target" value="category" checked>
+				<span>انتخاب بر اساس دسته‌بندی</span>
+			</label>
+			<label class="tcp-target-mode">
+				<input type="radio" name="tcp_target" value="name">
+				<span>جستجو در نام محصول</span>
+			</label>
+			<label class="tcp-target-mode">
+				<input type="radio" name="tcp_target" value="direct">
+				<span>جستجوی تکی (نام، SKU یا شناسه)</span>
+			</label>
 		</div>
 
 		<div id="tcp-cat-box" class="tcp-field">
-			<label class="tcp-label" for="tcp-cats">یک یا چند دسته‌بندی</label>
+			<label class="tcp-label" for="tcp-cats">انتخاب یک یا چند دسته‌بندی</label>
 			<select id="tcp-cats" class="wc-enhanced-select" multiple="multiple" data-tcp-w="wide" data-placeholder="دسته‌بندی را انتخاب کن…">
 				<?php foreach ( $tcp_cats as $cat ) : ?>
 					<option value="<?php echo esc_attr( $cat->term_id ); ?>"><?php echo esc_html( TCP_Admin::cat_label( $cat ) ); ?></option>
 				<?php endforeach; ?>
 			</select>
 			<?php if ( empty( $tcp_cats ) ) : ?>
-				<div class="tcp-alert tcp-alert--warn">هیچ دستهٔ محصولی در فروشگاه ساخته نشده است؛ این لیست خالی است چون دسته‌ای وجود ندارد. اول از «محصولات ← دسته‌ها» دسته بساز یا از گزینهٔ «انتخاب مستقیم محصول» استفاده کن.</div>
+				<div class="tcp-alert tcp-alert--warn">هیچ دستهٔ محصولی در فروشگاه ساخته نشده است؛ این لیست خالی است چون دسته‌ای وجود ندارد. از روش جستجوی نام محصول یا جستجوی تکی استفاده کن.</div>
 			<?php endif; ?>
 			<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-children"><span class="tisa-switch__track" aria-hidden="true"></span><span>زیردسته‌ها هم شامل شوند <span class="tcp-muted">— پیش‌فرض خاموش</span></span></label>
 			<div id="tcp-children-warning" class="tcp-alert tcp-alert--danger" style="display:none"><strong>هشدار:</strong> محصولات تمام زیردسته‌های دسته‌های انتخاب‌شده هم وارد عملیات می‌شوند.</div>
 		</div>
 
 		<div id="tcp-product-box" class="tcp-field" style="display:none">
-			<div id="tcp-retail-product-search">
-				<label class="tcp-label" for="tcp-products">محصولات</label>
-				<select id="tcp-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
+			<div id="tcp-name-search-panel" class="tcp-product-source" style="display:none">
+				<div class="tcp-source-heading"><h3>جستجو و استخراج بر اساس نام</h3><p>عبارتی از نام محصول را بنویس؛ نتیجه‌ها به فهرست زیر اضافه می‌شوند.</p></div>
+				<label class="tcp-label" for="tcp-name-search-term">فیلتر کلمهٔ کلیدی عنوان</label>
+				<div class="tcp-name-search-row">
+					<input type="search" id="tcp-name-search-term" class="tisa-input" autocomplete="off" placeholder="مثلاً قاب اسپیس">
+					<button type="button" class="button button-primary" id="tcp-name-search-button">استخراج محصولات</button>
+				</div>
+				<div class="tcp-search-feedback">
+					<p class="tcp-muted">حداقل ۲ حرف وارد کن. هر بار حداکثر ۱۰۰ نتیجه می‌آید؛ اگر نتیجه‌ها بیشتر باشند، صفحه‌های بعدی را هم اضافه کن.</p>
+					<div class="tcp-name-search-actions">
+						<span id="tcp-name-search-status" role="status" aria-live="polite"></span>
+						<button type="button" class="button" id="tcp-name-load-more" style="display:none">نمایش موارد بعدی</button>
+					</div>
+				</div>
 			</div>
-			<div id="tcp-wholesale-product-search" style="display:none">
-				<label class="tcp-label" for="tcp-wholesale-products">محصولات دارای قیمت عمده</label>
-				<select id="tcp-wholesale-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="فقط بین محصولات دارای قیمت عمده جستجو کن…" data-action="<?php echo esc_attr( TCP_Settings::AJAX_SEARCH ); ?>"></select>
-				<p class="tcp-muted">فقط محصولاتی که خود یا یکی از واریشن‌هایشان قیمت عمده دارد.</p>
+
+			<div id="tcp-direct-search-panel" class="tcp-product-source" style="display:none">
+				<div class="tcp-source-heading"><h3>افزودن محصول به‌صورت تکی</h3><p>با انتخاب هر نتیجه، محصول به فهرست انتخاب‌شده‌ها افزوده می‌شود.</p></div>
+				<div id="tcp-retail-product-search">
+					<label class="tcp-label" for="tcp-products">جستجوی محصول (نام، شناسه یا SKU)</label>
+					<select id="tcp-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
+				</div>
+				<div id="tcp-wholesale-product-search" style="display:none">
+					<label class="tcp-label" for="tcp-wholesale-products">جستجوی محصول‌های دارای قیمت عمده</label>
+					<select id="tcp-wholesale-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="فقط بین محصولات دارای قیمت عمده جستجو کن…" data-action="<?php echo esc_attr( TCP_Settings::AJAX_SEARCH ); ?>"></select>
+					<p class="tcp-muted">فقط محصولاتی که خود یا یکی از واریشن‌هایشان قیمت عمده دارد.</p>
+				</div>
+			</div>
+
+			<div class="tcp-product-selection">
+				<div class="tcp-product-selection-header">
+					<div>
+						<div class="tcp-product-selection-title"><h3>فهرست محصولات انتخاب‌شده</h3><span id="tcp-selected-product-badge" class="tcp-selection-badge">۰ انتخاب‌شده</span></div>
+						<p id="tcp-selected-product-count" class="tcp-muted" aria-live="polite">۰ انتخاب‌شده از ۰ محصول</p>
+					</div>
+					<button type="button" class="button" id="tcp-clear-products" disabled>پاک‌کردن فهرست</button>
+				</div>
+				<div id="tcp-product-selection-empty" class="tcp-product-empty">هنوز محصولی به فهرست اضافه نشده است؛ از یکی از روش‌های بالا استفاده کن.</div>
+				<div id="tcp-product-selection-table-wrap" class="tcp-product-table-scroll" style="display:none">
+					<table id="tcp-selected-products" class="tcp-product-table">
+						<thead>
+							<tr>
+								<th class="tcp-product-check"><input type="checkbox" id="tcp-product-select-all" aria-label="انتخاب همهٔ محصولات"></th>
+								<th>محصول</th>
+								<th>SKU / شناسه</th>
+								<th>دسته‌بندی</th>
+								<th>نوع محصول</th>
+								<th>حذف</th>
+							</tr>
+						</thead>
+						<tbody></tbody>
+					</table>
+				</div>
 			</div>
 		</div>
 	</div>
