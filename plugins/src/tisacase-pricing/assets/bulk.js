@@ -47,11 +47,17 @@
 	/**
 	 * بازکردن دیالوگ؛ در صورت تأیید resolve با خروجی readValue (پیش‌فرض true) و در صورت انصراف null.
 	 */
-	function openDialog(opts) {
-		var $d = getDialog();
-		var $ok = $d.find('#tcp-dialog-ok');
-		var $cancel = $d.find('#tcp-dialog-cancel');
-		$d.find('#tcp-dialog-title').html(opts.title || '');
+		function openDialog(opts) {
+			var $d = getDialog();
+			var $ok = $d.find('#tcp-dialog-ok');
+			var $cancel = $d.find('#tcp-dialog-cancel');
+			// پاک‌سازی هندلرهای باقی‌مانده از دیالوگ قبلی (مثلاً «توقف» پنجرهٔ پیشرفت)
+			// و بازگرداندن دکمه‌ها به حالت فعال؛ وگرنه دکمهٔ تأیید بعد از توقف می‌ماند.
+			$ok.off('click');
+			$cancel.off('click');
+			$ok.prop('disabled', false);
+			$cancel.prop('disabled', false);
+			$d.find('#tcp-dialog-title').html(opts.title || '');
 		$d.find('#tcp-dialog-body').html(opts.body || '');
 		$ok.text(opts.okText || 'تأیید');
 		$ok.attr('class', 'button button-large ' + (opts.okClass || 'button-primary'));
@@ -78,9 +84,115 @@
 		});
 	}
 
-	function inform(title, msg) {
-		return openDialog({ title: title, body: '<p>' + msg + '</p>', okText: 'باشه', noCancel: true });
-	}
+		function inform(title, msg) {
+			return openDialog({ title: title, body: '<p>' + msg + '</p>', okText: 'باشه', noCancel: true });
+		}
+
+		/* =====================================================================
+		 * تلاش مجدد خودکار — جلوگیری از مرگ حلقهٔ اجرا با اولین قطعی ارتباط
+		 * ===================================================================== */
+
+		/** وقفهٔ تلاش‌های متوالی (میلی‌ثانیه)؛ جمع ~۳.۵ دقیقه تلاش خودکار. */
+		var RETRY_DELAYS = [1500, 3000, 6000, 10000, 15000, 20000, 30000, 30000, 30000, 30000, 30000, 30000];
+		/** سقف زمان AJAX اجرا؛ سرور هر درخواست را زیر ~۲۰ ثانیه پاسخ می‌دهد. */
+		var RUN_AJAX_TIMEOUT = 60000;
+
+		/**
+		 * POST با تلاش مجدد خودکار.
+		 * - خطای شبکه/تایم‌اوت/پاسخ HTML سرور → تکرار با وقفهٔ روبه‌رشد (onRetry).
+		 * - پاسخ خطای منطقی سرور (JSON با success=false) → بی‌درنگ onServerError.
+		 * - پایان همهٔ تلاش‌ها → onGiveUp با قابلیت تلاش دستی.
+		 *
+		 * opts: { data, timeout, shouldAbort, onRetry, onDone, onServerError, onGiveUp }
+		 * @return {{cancel: Function, retryNow: Function, flush: Function}}
+		 */
+		function postWithRetry(opts) {
+			var state = { attempt: 0, timer: null, dead: false };
+			var payload = typeof opts.data === 'function' ? opts.data : function () { return opts.data; };
+
+			function cancel() {
+				state.dead = true;
+				if (state.timer) { clearTimeout(state.timer); state.timer = null; }
+			}
+			function retryNow() {
+				state.attempt = 0;
+				send();
+			}
+			/** اگر تایمر تلاش مجدد در انتظار است، همین حالا اجرا کن (برای توقف فوری). */
+			function flush() {
+				if (state.dead) { return; }
+				if (state.timer) {
+					clearTimeout(state.timer);
+					state.timer = null;
+					send();
+				}
+			}
+			function send() {
+				if (state.dead) { return; }
+				if (opts.shouldAbort && opts.shouldAbort()) { cancel(); return; }
+				$.ajax({
+					url: D.ajax,
+					type: 'POST',
+					dataType: 'json',
+					timeout: opts.timeout || RUN_AJAX_TIMEOUT,
+					data: payload()
+				})
+					.done(function (r) {
+						state.attempt = 0;
+						if (!r || r.success === false) {
+							if (opts.onServerError) {
+								opts.onServerError((r && r.data && r.data.message) || 'خطای نامشخص.', r);
+							}
+							return;
+						}
+						if (opts.onDone) { opts.onDone(r); }
+					})
+					.fail(function (xhr, status) {
+						if (state.dead || status === 'abort') { return; }
+						var rj = xhr && xhr.responseJSON;
+						if (rj && rj.success === false) {
+							if (opts.onServerError) {
+								opts.onServerError((rj.data && rj.data.message) || 'خطای سرور.', xhr);
+							}
+							return;
+						}
+						if (state.attempt >= RETRY_DELAYS.length) {
+							if (opts.onGiveUp) {
+								opts.onGiveUp('ارتباط با سرور برقرار نشد و تلاش خودکار متوقف شد.', xhr, retryNow);
+							}
+							return;
+						}
+						var delay = RETRY_DELAYS[state.attempt++];
+						if (opts.onRetry) { opts.onRetry(state.attempt, delay); }
+						state.timer = setTimeout(send, delay);
+					});
+			}
+
+			send();
+			return { cancel: cancel, retryNow: retryNow, flush: flush };
+		}
+
+		/**
+		 * دیالوگ پایان تلاش‌های خودکار: «تلاش مجدد» یا ترک (با راهنمای ادامه از گزارش).
+		 */
+		function offerRetryDialog(msg, onRetry, onCancel) {
+			openDialog({
+				title: 'قطع ارتباط با سرور',
+				body: '<p>' + esc(msg) + '</p>' +
+					'<p class="tcp-muted">اجرا روی سرور از بین نرفته است؛ اتصال را بررسی کن و دوباره تلاش کن، یا بعداً از تب «گزارش و بازگردانی» ادامه بده.</p>',
+				okText: 'تلاش مجدد',
+				okClass: 'button-primary'
+			}).then(function (ok) {
+				if (ok) {
+					// اگر هندلر «توقف»ِ پنجرهٔ پیشرفت هم روی همین دکمه نشسته باشد، پرچم را پاک کن
+					// تا «تلاش مجدد» واقعاً ادامه دهد، نه توقف.
+					window.stopFlagResume = false;
+					window.stopFlagRollback = false;
+					onRetry();
+				}
+				else if (onCancel) { onCancel(); }
+			});
+		}
 
 	/* =====================================================================
 	 * صفحهٔ اصلی — مدیریت گروهی قیمت
@@ -99,6 +211,8 @@
 		var nameSearchGeneration = 0;
 		var nameSearchXhr = null;
 		var nameSearchCurrentBucket = '';
+		var runLoop = null;   // حلقهٔ پردازش اجرا (برای توقف/تلاش مجدد)
+		var startLoop = null; // درخواست شروع اجرا
 		var selectedProducts = {
 			retail: { items: Object.create(null), selected: Object.create(null), order: [] },
 			wholesale: { items: Object.create(null), selected: Object.create(null), order: [] }
@@ -576,12 +690,25 @@
 
 			var payload = commonPayload({ action: A.preview });
 
-			$.post(D.ajax, payload, null, 'json')
-				.done(function (r) {
-					if (!r || !r.success) {
-						inform('خطا در بررسی', esc((r && r.data && r.data.message) || 'خطای نامشخص.'));
-						return;
-					}
+			function restoreBtn() {
+				$btn.prop('disabled', false).text('بررسی قبل از اجرا');
+			}
+
+			postWithRetry({
+				data: payload,
+				onRetry: function (attempt) {
+					$btn.text('تلاش مجدد ارتباط (' + attempt + ')...');
+				},
+				onServerError: function (msg) {
+					restoreBtn();
+					inform('خطا در بررسی', esc(msg));
+				},
+				onGiveUp: function (msg) {
+					restoreBtn();
+					inform('خطا در بررسی', esc('ارتباط با سرور برای بررسی برقرار نشد.'));
+				},
+				onDone: function (r) {
+					restoreBtn();
 					var d = r.data || {};
 					previewValid = true;
 					previewToken = String(d.preview_token || '');
@@ -610,13 +737,8 @@
 					renderSamples(d.samples);
 					$('#tcp-start').prop('disabled', running);
 					$('#tcp-schedule').prop('disabled', running || !(D.limits && D.limits.scheduledEnabled));
-				})
-				.fail(function (xhr) {
-					inform('خطا در بررسی', esc((xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور برای بررسی قطع شد.'));
-				})
-				.always(function () {
-					$btn.prop('disabled', false).text('بررسی قبل از اجرا');
-				});
+				}
+			});
 		}
 
 		/* ---- اجرا ---- */
@@ -675,29 +797,75 @@
 				schedule: scheduled ? '1' : '0'
 			});
 
-			$.post(D.ajax, payload, null, 'json')
-				.done(function (r) {
-					if (!r || !r.success) {
-						inform('شروع اجرا ممکن نشد', esc((r && r.data && r.data.message) || 'خطای نامشخص.'));
+			// درخواست شروع سبک است (پردازش صفحهٔ اول جداگانه با run_id انجام می‌شود)
+			// و تا دریافت پاسخ تکرار می‌شود؛ اگر پاسخ گم شده باشد، سرور با خطای 409
+			// همان اجرای فعال را برمی‌گرداند و «ادامه» می‌دهیم.
+			if (startLoop) { startLoop.cancel(); }
+			startLoop = postWithRetry({
+				data: payload,
+				onServerError: function (msg, r) {
+					var data = r && r.data;
+					if (data && data.run_id && data.mine && data.type === 'rollback') {
+						inform('بازگردانی در جریان است', 'بازگردانی #' + Number(data.run_id) + ' هم‌اکنون در حال اجراست؛ اول آن را از تب «گزارش و بازگردانی» تمام کن، بعد این اجرا را شروع کن.');
 						return;
 					}
+					if (data && data.run_id && data.mine && !scheduled) {
+						resumeConflictedRun(Number(data.run_id), scheduled);
+						return;
+					}
+					if (data && data.run_id && data.mine && scheduled) {
+						inform('یک اجرا فعال است', 'هم‌اکنون اجرای #' + Number(data.run_id) + ' در جریان است؛ اول آن را تمام کن، بعد اجرا را در صف زمان‌بندی بگذار.');
+						return;
+					}
+					inform('شروع اجرا ممکن نشد', esc(msg));
+				},
+				onGiveUp: function (msg, xhr, retry) {
+					offerRetryDialog('شروع اجرا تأیید نشد: ' + msg, function () { retry(); });
+				},
+				onDone: function (r) {
 					if (scheduled) {
 						inform('ثبت در صف', esc((r.data && r.data.message) || 'در صف قرار گرفت.'));
 						$('#tcp-schedule').prop('disabled', true);
 						return;
 					}
+					var d = r.data || {};
+					runId = Number(d.run_id || 0);
+					if (!runId) {
+						inform('شروع اجرا ممکن نشد', 'شناسهٔ اجرا دریافت نشد؛ دوباره تلاش کن.');
+						return;
+					}
 					running = true;
 					resetProgress();
 					lockUI(true);
-					$('#tcp-status').text('در حال پردازش مرحله ۱ ...');
-					handleRunResponse(r, 'next');
-				})
-				.fail(function (xhr) {
-					inform('شروع اجرا ممکن نشد', esc((xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور قطع شد.'));
-				});
+					$('#tcp-status').text('در حال پردازش... 0٪');
+					runNextLoop();
+				}
+			});
 		}
 
-		function handleRunResponse(r, mode) {
+		/** اجرای فعالِ خودِ ما (شروعی که پاسخش گم شده بود) را از همان‌جا ادامه بده. */
+		function resumeConflictedRun(id, scheduled) {
+			openDialog({
+				title: 'اجرای فعال',
+				body: '<p>اجرای <b>#' + id + '</b> هم‌اکنون فعال است (احتمالاً همان شروعی است که پاسخش به دست نرسید). ادامهٔ همان اجرا؟</p>',
+				okText: 'ادامهٔ اجرا',
+				okClass: 'button-primary'
+			}).then(function (ok) {
+				if (!ok) { return; }
+				if (scheduled) {
+					inform('یک اجرا فعال است', 'هم‌اکنون اجرای دیگری در جریان است؛ اول آن را تمام کن، بعد اجرا را در صف زمان‌بندی بگذار.');
+					return;
+				}
+				runId = id;
+				running = true;
+				resetProgress();
+				lockUI(true);
+				$('#tcp-status').text('ادامهٔ اجرای #' + id + ' ...');
+				runNextLoop();
+			});
+		}
+
+		function handleRunResponse(r) {
 			if (!r || !r.success) {
 				showFinal((r && r.data && r.data.message) || 'خطای نامشخص.', false);
 				return;
@@ -713,7 +881,8 @@
 			$('#tcp-updated-count').text(totals.updated);
 			$('#tcp-skipped-count').text(totals.skipped);
 			$('#tcp-error-count').text(totals.errors);
-			$('#tcp-bar').css('width', Math.min(100, Number(d.progress || 0)) + '%');
+			var pct = Math.min(100, Number(d.progress || 0));
+			$('#tcp-bar').css('width', pct + '%');
 
 			if (stopNow) {
 				stopNow = false;
@@ -728,6 +897,10 @@
 					$('#tcp-skipped-count').text(d.totals.skipped);
 					$('#tcp-error-count').text(d.totals.errors);
 				}
+				if (d.status === 'stopped') {
+					showFinal('اجرا متوقف شد.', true);
+					return;
+				}
 				var hadErrors = (d.totals && d.totals.errors > 0) || totals.errors > 0;
 				if (hadErrors) {
 					showFinal('عملیات تمام شد اما ' + ((d.totals && d.totals.errors) || totals.errors) + ' خطا ثبت شد — جزئیات در «گزارش و بازگردانی» موجود است.', false);
@@ -736,19 +909,53 @@
 				}
 				return;
 			}
-			$('#tcp-status').text('در حال پردازش مرحله ' + Number(d.page || 0) + ' ...');
-			runNext(runId);
+			var statusText = 'در حال پردازش... ' + pct + '٪';
+			if (d.pages) {
+				statusText += ' (' + Number(d.page || 0) + ' از ' + Number(d.pages) + ' محصول)';
+			}
+			$('#tcp-status').text(statusText);
+			runNextLoop();
 		}
 
-		function runNext(id) {
+		/**
+		 * حلقهٔ ادامهٔ اجرا: هر پاسخ، درخواست بعدی را می‌زند؛ خطاهای شبکه به‌صورت
+		 * خودکار با وقفهٔ روبه‌رشد تکرار می‌شوند و فقط خطای منطقی سرور حلقه را می‌بندد.
+		 */
+		function runNextLoop() {
 			if (!running) { return; }
-			$.post(D.ajax, { action: A.run, nonce: D.nonce, run_id: id }, null, 'json')
-				.done(function (r) { handleRunResponse(r, 'next'); })
-				.fail(function (xhr) {
-					var msg = (xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور قطع شد.';
-					// اگر نهایی‌شده باشد (race) فقط اطلاع بده.
+			if (runLoop) { runLoop.cancel(); }
+			runLoop = postWithRetry({
+				data: function () { return { action: A.run, nonce: D.nonce, run_id: runId }; },
+				shouldAbort: function () {
+					if (stopNow) {
+						stopNow = false;
+						finishRun(runId);
+						return true;
+					}
+					return !running;
+				},
+				onRetry: function (attempt) {
+					$('#tcp-status').text('ارتباط با سرور قطع شد؛ تلاش مجدد ' + attempt + ' از ' + RETRY_DELAYS.length + ' ...');
+				},
+				onServerError: function (msg) {
 					showFinal(msg, false);
-				});
+				},
+				onGiveUp: function (msg, xhr, retry) {
+					offerRetryDialog(msg, function () { retry(); }, function () {
+						// ترک موقت: اجرا «ناتمام» ثبت می‌شود تا از تب گزارش «ادامه» فعال شود.
+						if (stopNow) {
+							stopNow = false;
+							finishRun(runId);
+							return;
+						}
+						$.post(D.ajax, { action: A.finish, nonce: D.nonce, run_id: runId, leave: '1' }, null, 'json')
+							.always(function () {
+								showFinal('ارتباط برقرار نشد؛ اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» دکمهٔ «ادامه» آن را ادامه می‌دهد.', false);
+							});
+					});
+				},
+				onDone: function (r) { handleRunResponse(r); }
+			});
 		}
 
 		function finishRun(outcome) {
@@ -832,6 +1039,8 @@
 		$('#tcp-stop').on('click', function () {
 			stopNow = true;
 			$(this).prop('disabled', true).text('در حال توقف...');
+			// اگر حلقهٔ اجرا بین دو تلاش مجدد در انتظار است، همین حالا توقف را بفرست.
+			if (runLoop) { runLoop.flush(); }
 		});
 
 		updateTarget();
@@ -856,6 +1065,9 @@
 
 		/** دیالوگ پیشرفت عمومی برای ادامه/بازگردانی. */
 		function openProgress(title, onStop) {
+			// هر بار بازشدن پنجرهٔ پیشرفت، نیتِ توقف قبلی پاک می‌شود.
+			window.stopFlagResume = false;
+			window.stopFlagRollback = false;
 			var $d = getDialog();
 			$d.find('#tcp-dialog-title').html(esc(title));
 			$d.find('#tcp-dialog-body').html(
@@ -864,8 +1076,8 @@
 				'<p id="tcp-pg-status" class="tcp-status" style="margin-top:8px">شروع...</p>' +
 				'<div id="tcp-pg-errors" class="tcp-errors" style="display:none"></div>'
 			);
-			var $ok = $d.find('#tcp-dialog-ok').text('توقف').attr('class', 'button button-large').show();
-			$d.find('#tcp-dialog-cancel').text('بستن').hide();
+			var $ok = $d.find('#tcp-dialog-ok').off('click').prop('disabled', false).text('توقف').attr('class', 'button button-large').show();
+			$d.find('#tcp-dialog-cancel').off('click').prop('disabled', false).text('بستن').hide();
 			$d.show();
 			$ok.one('click', function () {
 				onStop();
@@ -874,8 +1086,11 @@
 		}
 
 		function setPg(pct, status) {
-			$('#tcp-pg-bar').css('width', Math.min(100, Number(pct || 0)) + '%');
-			$('#tcp-pg-pct').text(Math.min(100, Number(pct || 0)) + '٪');
+			if (pct !== null && pct !== undefined) {
+				var v = Math.min(100, Number(pct || 0));
+				$('#tcp-pg-bar').css('width', v + '%');
+				$('#tcp-pg-pct').text(v + '٪');
+			}
 			if (status) { $('#tcp-pg-status').text(status); }
 		}
 
@@ -899,10 +1114,19 @@
 		/* ---- ادامهٔ اجرای ناتمام ---- */
 		$(document).on('click', '.tcp-act-resume', function () {
 			var rid = rowRunId(this);
-			inform('ادامهٔ اجرا #' + rid, 'اجرا از همان جایی که قطع شده ادامه می‌یابد و پیشرفت آن در این پنجره نمایش داده می‌شود.').then(function (ok) {
+			var isRollback = String($(this).closest('tr').data('type') || '') === 'rollback';
+			inform(isRollback ? 'ادامهٔ بازگردانی #' + rid : 'ادامهٔ اجرا #' + rid, 'عملیات از همان جایی که قطع شده ادامه می‌یابد و پیشرفت آن در این پنجره نمایش داده می‌شود.').then(function (ok) {
 				if (!ok) { return; }
+				if (isRollback) {
+					openProgress('ادامهٔ بازگردانی #' + rid, function () {
+						window.stopFlagRollback = true;
+						$('#tcp-dialog-ok').prop('disabled', true);
+					});
+					pollRollback(rid);
+					return;
+				}
 				openProgress('ادامهٔ اجرای #' + rid, function () {
-					// توقف بعد از صفحهٔ فعلی
+					// توقف بعد از مرحلهٔ فعلی
 					window.stopFlagResume = true;
 					$('#tcp-dialog-ok').prop('disabled', true);
 				});
@@ -911,14 +1135,40 @@
 		});
 
 		function pollRun(rid, resumeFirst) {
-			var payload = { action: A.run, nonce: D.nonce, run_id: rid };
-			if (resumeFirst) { payload.resume = '1'; }
-			$.post(D.ajax, payload, null, 'json')
-				.done(function (r) {
-					if (!r || !r.success) {
-						closeProgressAndReload((r && r.data && r.data.message) || 'خطا در ادامه‌ی اجرا.');
-						return;
+			var first = !!resumeFirst;
+			postWithRetry({
+				data: function () {
+					var payload = { action: A.run, nonce: D.nonce, run_id: rid };
+					if (first) { first = false; payload.resume = '1'; }
+					return payload;
+				},
+				shouldAbort: function () {
+					if (window.stopFlagResume) {
+						window.stopFlagResume = false;
+						finishAndReload(rid);
+						return true;
 					}
+					return false;
+				},
+				onRetry: function (attempt) {
+					setPg(null, 'ارتباط با سرور قطع شد؛ تلاش مجدد ' + attempt + ' از ' + RETRY_DELAYS.length + ' ...');
+				},
+				onServerError: function (msg) {
+					closeProgressAndReload(msg);
+				},
+				onGiveUp: function (msg, xhr, retry) {
+					offerRetryDialog(msg, function () {
+						// دیالوگ پیشرفت با متن «قطع ارتباط» جایگزین شده؛ دوباره بسازش.
+						openProgress('ادامهٔ اجرای #' + rid, function () {
+							window.stopFlagResume = true;
+							$('#tcp-dialog-ok').prop('disabled', true);
+						});
+						retry();
+					}, function () {
+						closeProgressAndReload('ارتباط برقرار نشد؛ صفحه را تازه کن و از همین‌جا دوباره ادامه بده.');
+					});
+				},
+				onDone: function (r) {
 					var d = r.data || {};
 					if (window.stopFlagResume) {
 						window.stopFlagResume = false;
@@ -926,16 +1176,19 @@
 						return;
 					}
 					if (d.done) {
-						closeProgressAndReload('اجرا #' + rid + ' کامل شد.');
+						var finalMsg = 'اجرا #' + rid + ' کامل شد.';
+						if (d.totals && d.totals.errors > 0) {
+							finalMsg = 'اجرا #' + rid + ' کامل شد اما ' + Number(d.totals.errors) + ' خطا ثبت شد.';
+						}
+						closeProgressAndReload(finalMsg);
 						return;
 					}
-					setPg(d.progress, 'مرحلهٔ ' + (d.page || 0) + ' — تاکنون ' + ((d.totals && d.totals.updated) || 0) + ' تغییر.');
+					var pct = Math.min(100, Number(d.progress || 0));
+					setPg(pct, 'پیشرفت ' + pct + '٪ — تاکنون ' + ((d.totals && d.totals.updated) || 0) + ' تغییر ثبت شده است.');
 					addPgErrors(d.errors || []);
 					pollRun(rid, false);
-				})
-				.fail(function (xhr) {
-					closeProgressAndReload((xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور قطع شد.');
-				});
+				}
+			});
 		}
 
 		function finishAndReload(rid) {
@@ -970,51 +1223,89 @@
 				okClass: 'button-primary'
 			}).then(function (ok) {
 				if (!ok) { return; }
-				$.post(D.ajax, { action: A.rollback_start, nonce: D.nonce, run_id: rid }, null, 'json')
-					.done(function (r) {
-						if (!r || !r.success) {
-							inform('بازگردانی شروع نشد', esc((r && r.data && r.data.message) || 'خطای نامشخص.'));
+				postWithRetry({
+					data: { action: A.rollback_start, nonce: D.nonce, run_id: rid },
+					onServerError: function (msg, r) {
+						var data = r && r.data;
+						if (data && data.run_id && data.mine && data.type === 'rollback') {
+							// بازگردانی قبلیِ خودِ ما هنوز فعال است (پاسخ شروع گم شده بود) → ادامه.
+							rollbackRunId = Number(data.run_id);
+							openProgress('ادامهٔ بازگردانی #' + rollbackRunId, function () {
+								window.stopFlagRollback = true;
+								$('#tcp-dialog-ok').prop('disabled', true);
+							});
+							pollRollback(rollbackRunId);
 							return;
 						}
+						inform('بازگردانی شروع نشد', esc(msg));
+					},
+					onGiveUp: function (msg, xhr, retry) {
+						offerRetryDialog('بازگردانی شروع نشد: ' + msg, function () { retry(); });
+					},
+					onDone: function (r) {
 						rollbackRunId = Number(r.data.run_id || 0);
 						openProgress('بازگردانی اجرای #' + rid + ' (' + r.data.rows + ' رکورد)', function () {
 							window.stopFlagRollback = true;
 							$('#tcp-dialog-ok').prop('disabled', true);
 						});
 						pollRollback(rollbackRunId);
-					})
-					.fail(function (xhr) {
-						inform('بازگردانی شروع نشد', esc((xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور قطع شد.'));
-					});
+					}
+				});
 			});
 		});
 
 		function pollRollback(rbid) {
-			$.post(D.ajax, { action: A.rollback_page, nonce: D.nonce, run_id: rbid }, null, 'json')
-				.done(function (r) {
-					if (!r || !r.success) {
-						closeProgressAndReload((r && r.data && r.data.message) || 'خطا در بازگردانی.');
-						return;
+			postWithRetry({
+				data: { action: A.rollback_page, nonce: D.nonce, run_id: rbid },
+				shouldAbort: function () {
+					if (window.stopFlagRollback) {
+						window.stopFlagRollback = false;
+						stopRollback(rbid);
+						return true;
 					}
+					return false;
+				},
+				onRetry: function (attempt) {
+					setPg(null, 'ارتباط با سرور قطع شد؛ تلاش مجدد ' + attempt + ' از ' + RETRY_DELAYS.length + ' ...');
+				},
+				onServerError: function (msg) {
+					closeProgressAndReload(msg);
+				},
+				onGiveUp: function (msg, xhr, retry) {
+					offerRetryDialog(msg, function () {
+						openProgress('ادامهٔ بازگردانی #' + rbid, function () {
+							window.stopFlagRollback = true;
+							$('#tcp-dialog-ok').prop('disabled', true);
+						});
+						retry();
+					}, function () {
+						closeProgressAndReload('ارتباط برقرار نشد؛ صفحه را تازه کن و از همین‌جا دوباره ادامه بده.');
+					});
+				},
+				onDone: function (r) {
 					var d = r.data || {};
 					if (window.stopFlagRollback) {
 						window.stopFlagRollback = false;
-						$.post(D.ajax, { action: A.finish, nonce: D.nonce, run_id: rbid }, null, 'json')
-							.done(function () { closeProgressAndReload('بازگردانی متوقف شد.'); })
-							.fail(function () { closeProgressAndReload('بازگردانی متوقف شد (گزارش را چک کن).'); });
+						stopRollback(rbid);
 						return;
 					}
 					if (d.done) {
 						closeProgressAndReload('بازگردانی اجرا کامل شد و اجرای مبدأ «بازگردانی شده» شد.');
 						return;
 					}
-					setPg(d.progress, 'در حال بازگردانی... ' + (d.updated || 0) + ' رکورد در این مرحله.');
+					var pct = Math.min(100, Number(d.progress || 0));
+					setPg(pct, 'در حال بازگردانی... ' + pct + '٪ — ' + (d.updated || 0) + ' رکورد در این مرحله.');
 					addPgErrors(d.errors || []);
 					pollRollback(rbid);
-				})
-				.fail(function (xhr) {
-					closeProgressAndReload((xhr.responseJSON && xhr.responseJSON.data && xhr.responseJSON.data.message) || 'ارتباط با سرور قطع شد.');
-				});
+				}
+			});
+		}
+
+		function stopRollback(rbid) {
+			// outcome=interrupted تا بازگردانی متوقف‌شده هم قابل «ادامه» بماند، نه بن‌بست.
+			$.post(D.ajax, { action: A.finish, nonce: D.nonce, run_id: rbid, outcome: 'interrupted' }, null, 'json')
+				.done(function () { closeProgressAndReload('بازگردانی متوقف شد و از همین صفحه قابل ادامه است.'); })
+				.fail(function () { closeProgressAndReload('بازگردانی متوقف شد (گزارش را چک کن).'); });
 		}
 
 		/* ---- انصراف از صف ---- */

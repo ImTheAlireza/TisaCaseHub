@@ -31,6 +31,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		public static function ajax_preview() {
 			self::guard(); // nonce + capability — پیش‌نمایش هم مثل بقیهٔ اندپوینت‌ها محافظت می‌شود
+			TCP_Ops::runtime_boost(); // کاتالوگ بزرگ: حافظه/زمان کافی برای تحلیل کل محدوده
 			$args = TCP_Ops::args_from_post( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			if ( is_wp_error( $args ) ) {
 				self::send_wp_error( $args );
@@ -94,6 +95,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		public static function ajax_run() {
 			self::guard();
+			TCP_Ops::runtime_boost();
 
 			$run_id = isset( $_POST['run_id'] ) ? absint( $_POST['run_id'] ) : 0;
 
@@ -109,9 +111,12 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				if ( 'rollback' === $run['type'] ) {
 					wp_send_json_error( array( 'message' => 'اجرای بازگردانی با این مسیر ادامه نمی‌یابد.' ), 409 );
 				}
-				if ( 'running' === $run['status'] && ! empty( $_POST['resume'] ) ) {
-					// بی‌اثر؛ اجرا از همان page ادامه می‌یابد.
-				} elseif ( 'interrupted' === $run['status'] ) {
+				// اجرای نهایی‌شده (مثلاً پاسخ «تمام شد» در تلاش قبلی گم شده بود):
+				// همان پاسخ تکمیل را بده تا کلاینت پیام درست ببیند، نه خطای 409.
+				if ( in_array( $run['status'], array( 'done', 'stopped', 'rolled_back' ), true ) ) {
+					wp_send_json_success( self::final_run_response( $run ) );
+				}
+				if ( 'interrupted' === $run['status'] ) {
 					TCP_DB::update_run( $run_id, array( 'status' => 'running', 'updated_at' => TCP_DB::now() ) );
 					$run['status'] = 'running';
 				} elseif ( 'running' !== $run['status'] ) {
@@ -141,7 +146,13 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 			$busy = TCP_DB::busy_slot( 0 );
 			if ( ! empty( $busy['active'] ) ) {
-				wp_send_json_error( array( 'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ' — توسط ' . (int) $busy['active']['user_id'] . ').' ), 409 );
+				// run_id برمی‌گردد تا کلاینت بتواند همان اجرای فعال (مثلاً شروعی که پاسخش گم شده) را ادامه دهد.
+				wp_send_json_error( array(
+					'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ' — توسط ' . (int) $busy['active']['user_id'] . ').',
+					'run_id'  => (int) $busy['active']['id'],
+					'mine'    => (int) $busy['active']['user_id'] === get_current_user_id(),
+					'type'    => sanitize_key( $busy['active']['type'] ),
+				), 409 );
 			}
 
 			$parents = TCP_DB::selection_parent_ids( $args );
@@ -150,9 +161,14 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			}
 
 			$batch = max( 1, absint( TCP_Settings::batch_size() ) );
-			$pages = max( 1, (int) ceil( count( $parents ) / $batch ) );
 			$args_store = $args;
 			$args_store['batch'] = $batch; // ثابت‌ماندن مرز صفحه‌ها در طول اجرا.
+			// فهرست اهداف در شروع یک‌بار یخ می‌زند: وسط اجرا فیلترهای قیمت/فروش (که خودِ
+			// عملیات عوض‌شان می‌کند) باعث کوچک‌شدن مجموعه و «تکمیل با نصف محصولات» نشود.
+			$args_store['parent_ids'] = TCP_Ops::encode_parent_ids( $parents );
+			$total_parents = count( $parents );
+			// در حالت فهرست ثابت، page = cursor تعداد والد پردازش‌شده و total_pages = کل والدها.
+			$pages = $total_parents;
 			$schedule = ! empty( $_POST['schedule'] ) && ! empty( TCP_Settings::setting( 'scheduled' ) );
 
 			if ( $schedule ) {
@@ -201,9 +217,46 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			$busy2 = TCP_DB::busy_slot( $run_id );
 			if ( ! empty( $busy2['active'] ) ) {
 				TCP_DB::delete_run( $run_id );
-				wp_send_json_error( array( 'message' => 'اجرای دیگری هم‌زمان شروع شده است (#' . (int) $busy2['active']['id'] . '); این اجرا لغو شد.' ), 409 );
+				wp_send_json_error( array(
+					'message' => 'اجرای دیگری هم‌زمان شروع شده است (#' . (int) $busy2['active']['id'] . '); این اجرا لغو شد.',
+					'run_id'  => (int) $busy2['active']['id'],
+					'mine'    => (int) $busy2['active']['user_id'] === get_current_user_id(),
+				), 409 );
 			}
-			self::process_and_respond( $run_id );
+			// پردازش صفحهٔ اول عمداً در همین درخواست انجام نمی‌شود تا «شروع» سریع و
+			// قابل‌تکرار بماند؛ کلاینت شناسه را می‌گیرد و پردازش را با run_id ادامه می‌دهد.
+			// (اگر همین پاسخ گم شود، تلاش مجددِ شروع به همان اجرا می‌رسد و «ادامه» می‌دهد.)
+			wp_send_json_success( array(
+				'run_id'        => (int) $run_id,
+				'status'        => 'running',
+				'total_parents' => $total_parents,
+				'progress'      => 0,
+				'done'          => false,
+				'message'       => 'اجرا شروع شد.',
+			) );
+		}
+
+		/** پاسخ استاندارد «تمام شد» برای اجرای نهایی‌شده (بازیابی تلاش مجدد کلاینت). */
+		private static function final_run_response( $run ) {
+			return array(
+				'run_id'       => (int) $run['id'],
+				'status'       => $run['status'],
+				'done'         => true,
+				'progress'     => 100,
+				'page'         => (int) $run['page'],
+				'pages'        => (int) $run['total_pages'],
+				'parents'      => 0,
+				'updated'      => 0,
+				'skipped'      => 0,
+				'errors'       => array(),
+				'errors_count' => 0,
+				'totals'       => array(
+					'parents' => (int) $run['count_updated'] + (int) $run['count_skipped'] + (int) $run['count_errors'],
+					'updated' => (int) $run['count_updated'],
+					'skipped' => (int) $run['count_skipped'],
+					'errors'  => (int) $run['count_errors'],
+				),
+			);
 		}
 
 		/** پردازش یک صفحه و پاسخ استاندارد؛ در صورت اتمام، اجرا نهایی می‌شود. */
@@ -225,6 +278,8 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				'status'     => $run['status'],
 				'done'       => ! empty( $data['done'] ),
 				'progress'   => $data['progress'],
+				'page'       => isset( $data['page'] ) ? (int) $data['page'] : 0,
+				'pages'      => isset( $data['pages'] ) ? (int) $data['pages'] : 0,
 				'parents'    => $data['parents'],
 				'updated'    => $data['updated'],
 				'skipped'    => $data['skipped'],
@@ -252,7 +307,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			wp_send_json_success( $response );
 		}
 
-		/** نهایی‌کردن اجرا به درخواست مشتری (توقف). */
+		/** نهایی‌کردن اجرا به درخواست مشتری (توقف) یا ثبت «ناتمام» هنگام ترک موقت. */
 		public static function ajax_finish() {
 			self::guard();
 			$run_id  = isset( $_POST['run_id'] ) ? absint( $_POST['run_id'] ) : 0;
@@ -266,11 +321,32 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( in_array( $run['status'], array( 'done', 'rolled_back' ), true ) ) {
 				wp_send_json_success( array( 'message' => 'اجرا از قبل نهایی شده بود.', 'status' => $run['status'] ) );
 			}
+			// leave=1 یعنی کلاینت ارتباطش را از دست داده و اجرا را رها می‌کند:
+			// «ناتمام» ثبت می‌شود تا از تب گزارش بلافاصله قابل «ادامه» باشد.
+			if ( ! empty( $_POST['leave'] ) ) {
+				if ( 'interrupted' === $run['status'] ) {
+					wp_send_json_success( array( 'message' => 'اجرا از قبل ناتمام ثبت شده و قابل ادامه است.', 'status' => 'interrupted' ) );
+				}
+				if ( 'running' === $run['status'] ) {
+					TCP_DB::update_run( $run_id, array( 'status' => 'interrupted', 'updated_at' => TCP_DB::now() ) );
+					wp_send_json_success( array( 'message' => 'اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» قابل ادامه است.', 'status' => 'interrupted' ) );
+				}
+				wp_send_json_error( array( 'message' => 'اجرا در وضعیت قابل توقف نیست.' ), 409 );
+			}
 			if ( 'running' !== $run['status'] ) {
 				wp_send_json_error( array( 'message' => 'اجرا در وضعیت قابل توقف نیست.' ), 409 );
 			}
-			TCP_Ops::finalize_run( $run_id, 'stopped' );
-			wp_send_json_success( array( 'message' => 'اجرا متوقف شد.', 'status' => 'stopped' ) );
+			// outcome=interrupted برای «توقفِ قابل ادامه» (مثلاً توقف بازگردانی)؛ پیش‌فرض stopped.
+			$outcome = 'stopped';
+			if ( ! empty( $_POST['outcome'] ) && 'interrupted' === sanitize_key( wp_unslash( $_POST['outcome'] ) ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+				$outcome = 'interrupted';
+			}
+			TCP_Ops::finalize_run( $run_id, $outcome );
+			wp_send_json_success(
+				'interrupted' === $outcome
+					? array( 'message' => 'اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» قابل ادامه است.', 'status' => 'interrupted' )
+					: array( 'message' => 'اجرا متوقف شد.', 'status' => 'stopped' )
+			);
 		}
 
 		/* -----------------------------------------------------------------
@@ -297,11 +373,16 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 			$busy = TCP_DB::busy_slot( 0 );
 			if ( ! empty( $busy['active'] ) ) {
-				wp_send_json_error( array( 'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ').' ), 409 );
+				wp_send_json_error( array(
+					'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ').',
+					'run_id'  => (int) $busy['active']['id'],
+					'mine'    => (int) $busy['active']['user_id'] === get_current_user_id(),
+					'type'    => sanitize_key( $busy['active']['type'] ),
+				), 409 );
 			}
 
-			$batch = max( 1, absint( TCP_Settings::batch_size() ) );
-			$pages = max( 1, (int) ceil( $total_log / $batch ) );
+			$batch  = max( 1, absint( TCP_Settings::batch_size() ) );
+			$pages  = max( 1, (int) ceil( $total_log / $batch ) );
 
 			$new_id = TCP_DB::create_run( array(
 				'type' => 'rollback',
@@ -312,7 +393,8 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				'args_hash' => '',
 				'args' => wp_json_encode( array( 'batch' => $batch ) ),
 				'page' => 0,
-				'total_pages' => $pages,
+				// page = cursor ردیف‌های برگشت‌داده‌شده؛ مخرج پیشرفت = کل ردیف‌ها.
+				'total_pages' => max( 1, (int) $total_log ),
 				'total_parents' => 0,
 				'parent_run_id' => $source_id,
 			) );
@@ -322,7 +404,11 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			$busy2 = TCP_DB::busy_slot( $new_id );
 			if ( ! empty( $busy2['active'] ) ) {
 				TCP_DB::delete_run( $new_id );
-				wp_send_json_error( array( 'message' => 'اجرای دیگری هم‌زمان شروع شده است; بازگردانی لغو شد.' ), 409 );
+				wp_send_json_error( array(
+					'message' => 'اجرای دیگری هم‌زمان شروع شده است; بازگردانی لغو شد.',
+					'run_id'  => (int) $busy2['active']['id'],
+					'mine'    => (int) $busy2['active']['user_id'] === get_current_user_id(),
+				), 409 );
 			}
 			wp_send_json_success( array(
 				'run_id'   => (int) $new_id,
@@ -346,12 +432,17 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( (int) $run['user_id'] !== get_current_user_id() && ! current_user_can( 'manage_options' ) ) {
 				wp_send_json_error( array( 'message' => 'این بازگردانی متعلق به شما نیست.' ), 403 );
 			}
+			if ( 'interrupted' === $run['status'] ) {
+				// بازگردانی ناتمام (مثلاً بعد از قطع ارتباط) از همان cursor ادامه می‌یابد.
+				TCP_DB::update_run( $run_id, array( 'status' => 'running', 'updated_at' => TCP_DB::now() ) );
+				$run['status'] = 'running';
+			}
 			if ( 'running' !== $run['status'] ) {
 				wp_send_json_error( array( 'message' => 'بازگردانی در وضعیت قابل ادامه نیست.' ), 409 );
 			}
 			$busy = TCP_DB::busy_slot( $run_id );
 			if ( ! empty( $busy['active'] ) ) {
-				wp_send_json_error( array( 'message' => 'اجرای دیگری در حال اجراست.' ), 409 );
+				wp_send_json_error( array( 'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ').' ), 409 );
 			}
 
 			$res = TCP_Ops::rollback_next_page( $run );

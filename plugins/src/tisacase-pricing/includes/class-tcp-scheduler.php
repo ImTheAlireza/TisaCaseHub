@@ -20,6 +20,10 @@ if ( ! class_exists( 'TCP_Scheduler' ) ) {
 			if ( TCP_DB::count_queued() > 0 && ! wp_next_scheduled( TCP_Settings::CRON_TICK ) ) {
 				wp_schedule_single_event( time() + 30, TCP_Settings::CRON_TICK );
 			}
+			// به‌روزرسانی جدول lookup هنوز انجام نشده (مثلاً کرون قبلی اجرا نشده) → دوباره زمان بده.
+			if ( get_option( TCP_Settings::OPT_LOOKUP_PENDING, false ) && ! wp_next_scheduled( TCP_Settings::CRON_LOOKUP ) ) {
+				wp_schedule_single_event( time() + 30, TCP_Settings::CRON_LOOKUP );
+			}
 		}
 
 		/** اطمینان از وجود یک تیک آینده (بعد از افزودن به صف). */
@@ -51,9 +55,11 @@ if ( ! class_exists( 'TCP_Scheduler' ) ) {
 			$max_pages = max( 1, min( 500, absint( TCP_Settings::setting( 'cron_pages' ) ) ) );
 			$done     = false;
 
+			// سهمیهٔ زمانی تیک: هر صفحه خودش بودجهٔ زمانی دارد؛ اینجا فقط کل تیک
+			// را کوتاه نگه می‌داریم تا درخواست کرون (loopback) قطع نشود.
 			for ( $i = 0; $i < $max_pages; $i++ ) {
-				if ( ( time() - $start ) > 20 ) {
-					break; // سهمیهٔ زمانی هر تیک؛ ادامه در تیک بعد.
+				if ( ( time() - $start ) > 12 ) {
+					break; // ادامه در تیک بعد.
 				}
 				$fresh = TCP_DB::get_run( (int) $run['id'] );
 				if ( ! $fresh || 'running' !== $fresh['status'] ) {
