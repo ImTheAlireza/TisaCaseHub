@@ -159,7 +159,7 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 			$set = array();
 			$fmt = array();
 			$allowed = array(
-				'status', 'operation', 'page', 'total_pages', 'total_parents', 'count_updated',
+				'status', 'operation', 'args', 'page', 'total_pages', 'total_parents', 'count_updated',
 				'count_skipped', 'count_errors', 'parent_run_id', 'last_error', 'updated_at', 'finished_at',
 			);
 			foreach ( $allowed as $key ) {

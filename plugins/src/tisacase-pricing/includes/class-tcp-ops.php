@@ -26,6 +26,67 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			self::$round_mode = in_array( $mode, array( 'none', 'round', 'jitter' ), true ) ? $mode : 'none';
 		}
 
+		/* -----------------------------------------------------------------
+		 * فهرست ثابتِ اهداف + بودجهٔ زمانی درخواست‌ها (مقاومت در برابر قطعی)
+		 * --------------------------------------------------------------- */
+
+		/**
+		 * کدگذاری فهرست شناسه‌های محصول مادر به رشتهٔ کوچک «1,2,3» برای ذخیره در args.
+		 * فهرست در شروع اجرا یک‌بار محاسبه و یخ می‌خورد تا وسط اجرا (که فیلترهای
+		 * قیمت/فروش ویژه بر اساس همان متاها تغییر کرده‌اند) جابه‌جا نشود و محصولی جا نماند.
+		 */
+		public static function encode_parent_ids( $ids ) {
+			$out = array();
+			foreach ( (array) $ids as $id ) {
+				$id = absint( $id );
+				if ( $id ) {
+					$out[] = $id;
+				}
+			}
+			return implode( ',', array_unique( $out ) );
+		}
+
+		/** کدگذاری معکوسِ encode_parent_ids؛ ترتیب ورودی حفظ می‌شود. */
+		public static function decode_parent_ids( $raw ) {
+			if ( is_array( $raw ) ) {
+				return array_values( array_filter( array_map( 'absint', $raw ) ) );
+			}
+			if ( ! is_string( $raw ) || '' === trim( $raw ) ) {
+				return array();
+			}
+			return array_values( array_filter( array_map( 'absint', explode( ',', $raw ) ) ) );
+		}
+
+		/**
+		 * بودجهٔ زمانی (ثانیه) هر درخواست پردازش؛ عمداً زیر مرز max_execution_time
+		 * می‌ماند تا پاسخ همیشه به کلاینت برسد و حلقهٔ اجرا با «قطع ارتباط با سرور» نشکند.
+		 * اگر محدودیتی تعریف نشده باشد (0) پیش‌فرض ۲۰ ثانیه است.
+		 */
+		public static function time_budget() {
+			$t = (int) ini_get( 'max_execution_time' );
+			if ( $t <= 0 ) {
+				return 20;
+			}
+			return max( 5, min( 20, $t - 5 ) );
+		}
+
+		/**
+		 * آماده‌سازی حافظه/زمان اجرای درخواست‌های سنگین (مشابه prepare_runtime
+		 * در افزونهٔ تغییر متغیرها): حافظهٔ ادمین، حذف سقف زمان و نادیده‌گرفتن
+		 * قطع اتصال کلاینت تا پایانِ همین محصول مادر تعهدات ثبت شوند.
+		 */
+		public static function runtime_boost() {
+			if ( function_exists( 'wp_raise_memory_limit' ) ) {
+				wp_raise_memory_limit( 'admin' );
+			}
+			if ( function_exists( 'set_time_limit' ) ) {
+				@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- بودجهٔ زمانی داخلی مانع از اجرای بی‌پایان می‌شود.
+			}
+			if ( function_exists( 'ignore_user_abort' ) ) {
+				ignore_user_abort( true );
+			}
+		}
+
 		/**
 		 * اعمال حالت رند روی نتیجهٔ محاسبه.
 		 * - round: به پایین روی رقم ۸.
@@ -689,6 +750,16 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			$batch_size = isset( $args['batch'] ) ? absint( $args['batch'] ) : absint( $settings['batch_size'] );
 			$batch_size = max( 1, min( 100, $batch_size ) );
 
+			// اجرای قدیمیِ بدون فهرست ثابت (شروع‌شده قبل از این نسخه): از همین‌جا یک‌بار یخ می‌خورد.
+			if ( ! isset( $args['parent_ids'] ) && isset( $args['operation'] ) ) {
+				$run  = self::freeze_run_args( $run, $args, $batch_size );
+				$args = json_decode( (string) $run['args'], true );
+			}
+			if ( is_array( $args ) && isset( $args['parent_ids'] ) ) {
+				return self::run_frozen_page( $run, $args, self::decode_parent_ids( $args['parent_ids'] ), $batch_size );
+			}
+
+			// فالبک قدیمی (فقط اجرای خراب/نیمه‌کاره بدون operation): محاسبهٔ پویای انتخاب.
 			$parents = TCP_DB::selection_parent_ids( $args );
 			$total   = count( $parents );
 			$pages   = max( 1, (int) ceil( $total / $batch_size ) );
@@ -749,6 +820,121 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		}
 
 		/**
+		 * اجرای قدیمی را از نقطهٔ فعلی به حالت «فهرست ثابت» منتقل می‌کند (مهاجرت یک‌باره).
+		 * cursor جدید = تعداد والدهایی که صفحه‌بندی قدیمی عملاً پردازش کرده است.
+		 */
+		private static function freeze_run_args( $run, $args, $batch_size ) {
+			$parents = TCP_DB::selection_parent_ids( $args );
+			$total   = count( $parents );
+			$cursor  = min( (int) $run['page'] * $batch_size, $total );
+
+			$args['batch']      = $batch_size;
+			$args['parent_ids'] = self::encode_parent_ids( $parents );
+			$new_args           = wp_json_encode( $args );
+
+			TCP_DB::update_run(
+				(int) $run['id'],
+				array(
+					'args'          => $new_args,
+					'page'          => $cursor,
+					'total_pages'   => $total,
+					'total_parents' => $total,
+					'updated_at'    => TCP_DB::now(),
+				)
+			);
+
+			$run['args']         = $new_args;
+			$run['page']         = $cursor;
+			$run['total_pages']  = $total;
+			$run['total_parents'] = $total;
+			return $run;
+		}
+
+		/**
+		 * پردازش یک بازهٔ کوتاه از فهرست ثابتِ اجرا با بودجهٔ زمانی.
+		 *
+		 * در این حالت `page` سطر اجرا «تعداد والد پردازش‌شده» (cursor) است و بعد از
+		 * هر محصول مادر، cursor + آمار + لاگ در دیتابیس ثبت می‌شود؛ بنابراین بعد از
+		 * هر قطع ارتباط یا تایم‌اوت، ادامه دقیقاً از همان‌جا انجام می‌شود — نه هیچ
+		 * محصولی جا می‌ماند، نه درصد دوباره روی محصول قبلی اعمال می‌شود.
+		 * فهرست هم ثابت است: فیلترهای قیمت/فروش که خودِ اجرا عوض‌شان می‌کند،
+		 * دیگر باعث کوچک‌شدن مجموعه و «تکمیل زودهنگام با نصف محصولات» نمی‌شوند.
+		 */
+		private static function run_frozen_page( $run, $args, $parents, $batch_size ) {
+			$run_id = (int) $run['id'];
+			$total  = count( $parents );
+			$cursor = min( max( 0, (int) $run['page'] ), $total );
+
+			if ( ! $total ) {
+				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => 0, 'pages' => 0, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
+			}
+			if ( $cursor >= $total ) {
+				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => $cursor, 'pages' => $total, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
+			}
+
+			self::runtime_boost();
+			$budget  = self::time_budget();
+			$started = microtime( true );
+
+			$count_updated = (int) $run['count_updated'];
+			$count_skipped = (int) $run['count_skipped'];
+			$count_errors  = (int) $run['count_errors'];
+			$updated = $skipped = $processed = 0;
+			$errors  = array();
+
+			while ( $cursor < $total && $processed < $batch_size ) {
+				$x = self::process_parent( absint( $parents[ $cursor ] ), $args['operation'], isset( $args['value'] ) ? $args['value'] : null );
+
+				$updated       += $x['updated'];
+				$skipped       += $x['skipped'];
+				$count_updated += $x['updated'];
+				$count_skipped += $x['skipped'];
+				foreach ( $x['errors'] as $m ) {
+					$errors[] = wp_strip_all_tags( $m );
+				}
+				$count_errors += count( $x['errors'] );
+				$cursor++;
+				$processed++;
+
+				// ثبت لحظه‌ای بعد از هر محصول مادر: لاگ تغییرات + cursor + آمار.
+				TCP_DB::insert_log( $run_id, $x['entries'] );
+				TCP_DB::update_run(
+					$run_id,
+					array(
+						'page'          => $cursor,
+						'count_updated' => $count_updated,
+						'count_skipped' => $count_skipped,
+						'count_errors'  => $count_errors,
+						'updated_at'    => TCP_DB::now(),
+					)
+				);
+
+				// بودجه تمام شد؟ درخواست بعدی از همین‌جا ادامه می‌دهد.
+				if ( ( microtime( true ) - $started ) >= $budget && $cursor < $total ) {
+					break;
+				}
+			}
+
+			$done     = $cursor >= $total;
+			$progress = $done ? 100 : min( 99, round( ( $cursor / $total ) * 100, 1 ) );
+
+			return array(
+				'ok'   => true,
+				'msg'  => '',
+				'data' => array(
+					'done'     => $done,
+					'progress' => $progress,
+					'page'     => $cursor,
+					'pages'    => $total,
+					'parents'  => $processed,
+					'updated'  => $updated,
+					'skipped'  => $skipped,
+					'errors'   => array_slice( $errors, 0, 100 ),
+				),
+			);
+		}
+
+		/**
 		 * صفحهٔ بازگردانی: ردیف‌های لاگ منبع را به ترتیب برمی‌گرداند.
 		 */
 		public static function rollback_next_page( $run ) {
@@ -767,17 +953,29 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			if ( ! $batch_size ) {
 				$batch_size = absint( $settings['batch_size'] );
 			}
-			$batch_size = max( 1, min( 100, $batch_size ) );
-			$total_rows = TCP_DB::count_log( $source_id );
-			$pages      = max( 1, (int) ceil( $total_rows / $batch_size ) );
+			$batch_size  = max( 1, min( 100, $batch_size ) );
+			$total_rows  = TCP_DB::count_log( $source_id );
+			// page = تعداد ردیف‌های برگشت‌داده‌شده (cursor)؛ اجرای قدیمی‌تر «شماره صفحه» بود
+			// که با همان فرمول جدید هم فقط چند ردیف دوباره انجام می‌شود (بازگردانی idempotent است).
+			$offset = (int) $run['page'];
 
-			if ( $total_rows < 1 || (int) $run['page'] >= $pages ) {
+			if ( $total_rows < 1 || $offset >= $total_rows ) {
 				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
 			}
 
-			$offset = (int) $run['page'] * $batch_size;
-			$rows   = TCP_DB::get_log_page( $source_id, $offset, $batch_size );
-			$updated = $skipped = 0;
+			$rows = TCP_DB::get_log_page( $source_id, $offset, $batch_size );
+			if ( empty( $rows ) ) {
+				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
+			}
+
+			self::runtime_boost();
+			$budget  = self::time_budget();
+			$started = microtime( true );
+
+			$count_updated = (int) $run['count_updated'];
+			$count_skipped = (int) $run['count_skipped'];
+			$count_errors  = (int) $run['count_errors'];
+			$updated = $skipped = $processed = 0;
 			$errors  = array();
 			$entries = array();
 			$touched_parents = array();
@@ -788,11 +986,14 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				$restore = (string) $row['before_value'];
 				if ( ! in_array( $field, array( 'regular', 'sale', 'wholesale' ), true ) || ! $oid ) {
 					$skipped++;
+					$count_skipped++;
+					$processed++;
 					continue;
 				}
 				$current = self::read_field_value( $oid, $field );
 				if ( self::apply_field_value( $oid, $field, $restore ) ) {
 					$updated++;
+					$count_updated++;
 					$entries[] = array(
 						'object_type' => $field,
 						'parent_id'   => absint( $row['parent_id'] ),
@@ -802,15 +1003,20 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 					);
 				} else {
 					$skipped++;
+					$count_skipped++;
 				}
+				$processed++;
 				if ( absint( $row['parent_id'] ) ) {
 					$touched_parents[] = absint( $row['parent_id'] );
+				}
+				if ( ( microtime( true ) - $started ) >= $budget && $processed < count( $rows ) ) {
+					break; // بودجه تمام شد؛ ادامه در درخواست بعدی از همین cursor.
 				}
 			}
 
 			TCP_DB::insert_log( (int) $run['id'], $entries );
 
-			// همگام‌سازی والدهای متغیر در این صفحه.
+			// همگام‌سازی والدهای متغیر در همین بازه.
 			foreach ( array_unique( $touched_parents ) as $parent_id ) {
 				$p = wc_get_product( $parent_id );
 				if ( $p && $p->is_type( 'variable' ) && class_exists( 'WC_Product_Variable' ) ) {
@@ -822,15 +1028,15 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				clean_post_cache( $parent_id );
 			}
 
-			$next_page = (int) $run['page'] + 1;
-			$done      = $next_page >= $pages;
+			$next_cursor = $offset + $processed;
+			$done        = $next_cursor >= $total_rows;
 
 			TCP_DB::update_run( (int) $run['id'], array(
-				'page'          => $next_page,
-				'total_pages'   => $pages,
-				'count_updated' => (int) $run['count_updated'] + $updated,
-				'count_skipped' => (int) $run['count_skipped'] + $skipped,
-				'count_errors'  => (int) $run['count_errors'] + count( $errors ),
+				'page'          => $next_cursor,
+				'total_pages'   => max( $total_rows, (int) $run['total_pages'] ),
+				'count_updated' => $count_updated,
+				'count_skipped' => $count_skipped,
+				'count_errors'  => $count_errors,
 				'updated_at'    => TCP_DB::now(),
 			) );
 
@@ -839,7 +1045,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				'msg'  => '',
 				'data' => array(
 					'done'     => $done,
-					'progress' => $done ? 100 : min( 99, round( ( $next_page / max( 1, $pages ) ) * 100, 1 ) ),
+					'progress' => $done ? 100 : min( 99, round( ( $next_cursor / max( 1, $total_rows ) ) * 100, 1 ) ),
 					'updated'  => $updated,
 					'skipped'  => $skipped,
 					'errors'   => array_slice( $errors, 0, 100 ),
@@ -848,7 +1054,12 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		}
 
 		/**
-		 * نهایی‌کردن یک اجرا: تغییر وضعیت + همگام‌سازی جدول lookup ووکامرس (یک بار در پایان).
+		 * نهایی‌کردن یک اجرا: تغییر وضعیت + زمان‌بندی به‌روزرسانی جدول lookup ووکامرس.
+		 *
+		 * به‌روزرسانی جدول lookup روی کاتالوگ بزرگ ممکن است دقیقه‌ها طول بکشد؛
+		 * اگر همین‌جا اجرا می‌شد، پاسخ «تمام شد»ِ آخرین مرحله هرگز به کلاینت نمی‌رسید
+		 * و کاربر خطای «قطع ارتباط» روی ۹۹٪ می‌دید. حالا در رویداد تک‌بارهٔ WP-Cron
+		 * در پس‌زمینه انجام می‌شود (پرچم pending ضامن تکرار اگر کرون اجرا نشده باشد).
 		 */
 		public static function finalize_run( $run_id, $status ) {
 			$run = TCP_DB::get_run( $run_id );
@@ -859,9 +1070,17 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 					'updated_at'  => TCP_DB::now(),
 				) );
 			}
-			// قیمت‌ها تغییر کرده‌اند؛ جدول lookup را برای نمایش صحیح فیلترها/بلوک‌های قیمتی به‌روز کن.
-			if ( TCP_Settings::wc_active() && function_exists( 'wc_update_product_lookup_tables' ) ) {
-				wc_update_product_lookup_tables();
+			self::schedule_lookup_refresh();
+		}
+
+		/** علامت‌گذاری و زمان‌بندی به‌روزرسانی جدول lookup در پس‌زمینه. */
+		public static function schedule_lookup_refresh() {
+			if ( ! TCP_Settings::wc_active() || ! function_exists( 'wc_update_product_lookup_tables' ) ) {
+				return;
+			}
+			update_option( TCP_Settings::OPT_LOOKUP_PENDING, 1, false );
+			if ( function_exists( 'wp_next_scheduled' ) && ! wp_next_scheduled( TCP_Settings::CRON_LOOKUP ) ) {
+				wp_schedule_single_event( time() + 5, TCP_Settings::CRON_LOOKUP );
 			}
 		}
 

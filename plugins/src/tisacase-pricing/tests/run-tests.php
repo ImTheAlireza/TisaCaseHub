@@ -287,5 +287,25 @@ t( 'rule_live: بازهٔ زمانی رعایت می‌شود',
 	&& TCP_Rules::rule_live( TCP_Rules::normalize_rule( array( 'enabled' => 1, 'from' => '2027-01-01' ) ) ) === false
 	&& TCP_Rules::rule_live( TCP_Rules::normalize_rule( array( 'enabled' => 1, 'to' => '2020-01-01' ) ) ) === false );
 
+echo "--- 12) فهرست ثابت اهداف + بودجهٔ زمانی (مقاومت در برابر قطعی) ---\n";
+t( 'encode: ورودی خالی → رشتهٔ خالی', TCP_Ops::encode_parent_ids( array() ) === '' );
+$enc = TCP_Ops::encode_parent_ids( array( 5, 0, '9', 5, 3 ) );
+t( 'encode: صفر حذف و تکراری یکی می‌شود', $enc === '5,9,3', $enc );
+t( 'encode/decode رفت‌وبرگشت', TCP_Ops::decode_parent_ids( $enc ) === array( 5, 9, 3 ) );
+t( 'decode رشتهٔ خراب/خالی/غیرعدد → آرایهٔ خالی',
+	TCP_Ops::decode_parent_ids( '' ) === array()
+	&& TCP_Ops::decode_parent_ids( null ) === array()
+	&& TCP_Ops::decode_parent_ids( 'abc' ) === array() );
+t( 'decode ترتیب فهرست را حفظ می‌کند (cursor همان ترتیب شروع اجراست)', TCP_Ops::decode_parent_ids( '10,7,300' ) === array( 10, 7, 300 ) );
+$budget = TCP_Ops::time_budget();
+t( 'time_budget همیشه زیر سقف PHP و بین ۵ تا ۲۰ ثانیه است', is_int( $budget ) && $budget >= 5 && $budget <= 20, 'budget=' . var_export( $budget, true ) );
+$boost_ok = true;
+try {
+	TCP_Ops::runtime_boost();
+} catch ( Throwable $e ) {
+	$boost_ok = false;
+}
+t( 'runtime_boost بدون استثنا اجرا می‌شود', $boost_ok );
+
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

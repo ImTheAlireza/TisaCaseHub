@@ -29,6 +29,9 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		const CRON_TICK  = 'tcp_process_scheduled_tick';
 		const CRON_CLEAN = 'tcp_daily_cleanup';
 		const CRON_META  = 'tcp_cron_event_pending';
+		/** به‌روزرسانی جدول lookup ووکامرس در پس‌زمینه (بعد از پایان هر اجرا). */
+		const CRON_LOOKUP = 'tcp_refresh_product_lookup';
+		const OPT_LOOKUP_PENDING = 'tcp_lookup_refresh_pending';
 
 		/** بیشترین درصد مجاز برای عملیات درصدی (جلوگیری از overflow). */
 		const PERCENT_CEIL = 100000.0;
@@ -71,6 +74,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 			add_action( 'init', array( 'TCP_Scheduler', 'register_cron' ) );
 			add_action( self::CRON_TICK, array( 'TCP_Scheduler', 'cron_tick' ) );
 			add_action( self::CRON_CLEAN, array( 'TCP_DB', 'cron_cleanup' ) );
+			add_action( self::CRON_LOOKUP, array( __CLASS__, 'refresh_lookup_tables' ) );
 
 			// قوانین داینامیک (فیلترهای قیمت + ذخیره + جستجو).
 			TCP_Rules::hooks();
@@ -142,7 +146,9 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 				'min_capability'    => 'manage_woocommerce',
 				'batch_size'        => 5,
 				'confirm_threshold' => 500,
-				'lock_minutes'      => 20,
+				// با ثبت cursor بعد از هر محصول، اجرای زنده همیشه تازه می‌شود؛
+				// ۵ دقیقه سکوت یعنی اجرا یتیم شده و باید «ناتمام» شود تا «ادامه» فعال شود.
+				'lock_minutes'      => 5,
 				'retention_days'    => 90,
 				'logging'           => 1,
 				'rollback'          => 1,
@@ -202,6 +208,21 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 
 		public static function can() {
 			return is_user_logged_in() && current_user_can( self::setting( 'min_capability' ) );
+		}
+
+		/**
+		 * اجرای به‌روزرسانی جدول lookup ووکامرس در پس‌زمینه. پرچم pending با رسیدن
+		 * رویداد پاک می‌شود؛ اگر رویداد اصلاً اجرا نشده باشد (کرون غیرفعال)،
+		 * register_cron هنگام بارگذاری بعدی آن را دوباره زمان‌بندی می‌کند.
+		 */
+		public static function refresh_lookup_tables() {
+			if ( ! get_option( self::OPT_LOOKUP_PENDING, false ) ) {
+				return;
+			}
+			delete_option( self::OPT_LOOKUP_PENDING );
+			if ( self::wc_active() && function_exists( 'wc_update_product_lookup_tables' ) ) {
+				wc_update_product_lookup_tables();
+			}
 		}
 
 		public static function logging_enabled() {
