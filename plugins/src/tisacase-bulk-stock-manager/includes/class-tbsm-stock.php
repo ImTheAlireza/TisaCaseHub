@@ -49,56 +49,98 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
-			$report         = array();
-			$errors         = array();
-			$enabled_manage = 0;
+		$report         = array();
+		$errors         = array();
+		$enabled_manage = 0;
 
-			foreach ( $items as $raw_id => $raw_qty ) {
-				$var_id = absint( $raw_id );
+		foreach ( $items as $raw_id => $raw_spec ) {
+			$var_id = absint( $raw_id );
 
-				if ( ! in_array( $var_id, $allowed_ids, true ) ) {
-					$errors[] = sprintf( 'متغیر #%d متعلق به این محصول نیست؛ رد شد.', $var_id );
-					continue;
-				}
-
-				if ( ! is_numeric( $raw_qty ) ) {
-					$errors[] = sprintf( 'موجودی متغیر #%d عدد معتبر نبود؛ رد شد.', $var_id );
-					continue;
-				}
-
-				$qty = max( 0, min( 99999999, (int) $raw_qty ) );
-
-				$variation = wc_get_product( $var_id );
-				if ( ! $variation || ! $variation->exists() ) {
-					$errors[] = sprintf( 'متغیر #%d پیدا نشد؛ رد شد.', $var_id );
-					continue;
-				}
-
-				try {
-					$from        = (int) $variation->get_stock_quantity();
-					$was_managed = (bool) $variation->get_manage_stock();
-
-					if ( ! $was_managed ) {
-						$variation->set_manage_stock( true );
-						$enabled_manage++;
-					}
-
-					$variation->set_stock( $qty );
-					$variation->set_stock_status( $qty > 0 ? 'instock' : 'outofstock' );
-					$variation->save();
-
-					$report[] = array(
-						'id'      => $var_id,
-						'name'    => self::variation_label( $variation ),
-						'sku'     => (string) $variation->get_sku(),
-						'from'    => $from,
-						'to'      => $qty,
-						'enabled' => ! $was_managed,
-					);
-				} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
-					$errors[] = sprintf( 'خطا در ذخیرهٔ متغیر #%d: %s', $var_id, $e->getMessage() );
-				}
+			if ( ! in_array( $var_id, $allowed_ids, true ) ) {
+				$errors[] = sprintf( 'متغیر #%d متعلق به این محصول نیست؛ رد شد.', $var_id );
+				continue;
 			}
+
+			// مقدار: عدد (نسخهٔ قدیمی) یا آرایهٔ { mode, qty }.
+			// mode: qty = عددی، in_stock = موجود بدون تعداد، out_of_stock = ناموجود.
+			$mode = 'qty';
+			$qty  = null;
+			if ( is_array( $raw_spec ) ) {
+				$m = isset( $raw_spec['mode'] ) ? (string) $raw_spec['mode'] : 'qty';
+				if ( in_array( $m, array( 'qty', 'in_stock', 'out_of_stock' ), true ) ) {
+					$mode = $m;
+				}
+				if ( 'qty' === $mode ) {
+					$q = isset( $raw_spec['qty'] ) ? $raw_spec['qty'] : null;
+					if ( ! is_numeric( $q ) ) {
+						$errors[] = sprintf( 'موجودی متغیر #%d عدد معتبر نبود؛ رد شد.', $var_id );
+						continue;
+					}
+					$qty = max( 0, min( 99999999, (int) $q ) );
+				}
+			} elseif ( is_numeric( $raw_spec ) ) {
+				$qty = max( 0, min( 99999999, (int) $raw_spec ) );
+			} else {
+				$errors[] = sprintf( 'مقدار متغیر #%d نامعتبر است؛ رد شد.', $var_id );
+				continue;
+			}
+
+			$variation = wc_get_product( $var_id );
+			if ( ! $variation || ! $variation->exists() ) {
+				$errors[] = sprintf( 'متغیر #%d پیدا نشد؛ رد شد.', $var_id );
+				continue;
+			}
+
+			try {
+				$from        = (int) $variation->get_stock_quantity();
+				$from_status = (string) $variation->get_stock_status();
+				$was_managed = (bool) $variation->get_manage_stock();
+
+				$to_qty    = null;
+				$to_status = $from_status;
+
+				switch ( $mode ) {
+					case 'in_stock':
+						// موجود بدون تعداد: بدون ردیابی، وضعیت دستی «موجود».
+						$variation->set_manage_stock( false );
+						$variation->set_stock_status( 'instock' );
+						$to_status = 'instock';
+						break;
+					case 'out_of_stock':
+						// ناموجود: بدون ردیابی، وضعیت دستی «ناموجود».
+						$variation->set_manage_stock( false );
+						$variation->set_stock_status( 'outofstock' );
+						$to_status = 'outofstock';
+						break;
+					default:
+						// qty: ردیابی عددی (خاموش‌ها خودکار روشن می‌شوند).
+						if ( ! $was_managed ) {
+							$variation->set_manage_stock( true );
+							$enabled_manage++;
+						}
+						$variation->set_stock( $qty );
+						$variation->set_stock_status( $qty > 0 ? 'instock' : 'outofstock' );
+						$to_status = $qty > 0 ? 'instock' : 'outofstock';
+						$to_qty    = $qty;
+				}
+
+				$variation->save();
+
+				$report[] = array(
+					'id'          => $var_id,
+					'name'        => self::variation_label( $variation ),
+					'sku'         => (string) $variation->get_sku(),
+					'mode'        => $mode,
+					'from'        => $from,
+					'to'          => $to_qty,
+					'from_status' => $from_status,
+					'to_status'   => $to_status,
+					'enabled'     => ! $was_managed,
+				);
+			} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				$errors[] = sprintf( 'خطا در ذخیرهٔ متغیر #%d: %s', $var_id, $e->getMessage() );
+			}
+		}
 
 			$parent_status = null;
 			if ( ! empty( $report ) ) {
@@ -174,7 +216,10 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					continue;
 				}
 				$label = $product->get_attribute( $tax );
-				$parts[] = ( '' !== (string) $label ) ? (string) $label : (string) $value;
+				$clean = self::clean_label( ( '' !== (string) $label ) ? (string) $label : (string) $value );
+				if ( '' !== $clean && ! in_array( $clean, $parts, true ) ) {
+					$parts[] = $clean;
+				}
 			}
 
 			if ( empty( $parts ) ) {
@@ -182,6 +227,26 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			}
 
 			return implode( ' · ', $parts );
+		}
+
+		/**
+		 * پاک‌سازی برچسب ویژگی: حذف کاراکترهای صفرعرض، فاصله‌های اضافی
+		 * و جداکننده‌هایی که ممکن است از ابتدا/انتها آویزان باشند.
+		 *
+		 * @param string $label برچسب خام.
+		 * @return string
+		 */
+		public static function clean_label( $label ) {
+			$label = (string) $label;
+
+			// کاراکترهای صفرعرض (RTL marks، ZWNJ و BOM).
+			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}]/u', '', $label );
+
+			// جداکننده‌ها و فاصله‌های آویزان از ابتدا و انتها.
+			$label = (string) preg_replace( '/^[\s\p{P}\p{S}]+/u', '', $label );
+			$label = (string) preg_replace( '/[\s\p{P}\p{S}]+$/u', '', $label );
+
+			return trim( $label );
 		}
 	}
 }

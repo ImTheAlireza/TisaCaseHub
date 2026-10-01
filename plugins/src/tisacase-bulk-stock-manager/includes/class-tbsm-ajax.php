@@ -114,6 +114,10 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				if ( ! $product || ! $product->exists() ) {
 					continue;
 				}
+				// خودِ متغیرها را نشان نده؛ فقط محصول والد.
+				if ( 'variation' === $product->get_type() ) {
+					continue;
+				}
 				$results[] = self::product_brief( $product );
 			}
 
@@ -184,20 +188,25 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					$counts[ $tax ][ $slug ]++;
 
 					$label = $variation->get_attribute( $tax );
-					$labels[] = ( '' !== (string) $label ) ? (string) $label : $slug;
+					$clean = TBSM_Stock::clean_label( ( '' !== (string) $label ) ? (string) $label : $slug );
+					if ( '' !== $clean && ! in_array( $clean, $labels, true ) ) {
+						$labels[] = $clean;
+					}
 				}
 
-				$image_id = $variation->get_image_id();
+					$image_id = $variation->get_image_id();
+					$managed  = (bool) $variation->get_manage_stock();
 
-				$variations[] = array(
-					'id'           => (int) $variation->get_id(),
-					'name'         => empty( $labels ) ? ( 'متغیر #' . (int) $variation->get_id() ) : implode( ' · ', $labels ),
-					'sku'          => (string) $variation->get_sku(),
-					'stock'        => (int) $variation->get_stock_quantity(),
-					'status'       => (string) $variation->get_stock_status(),
-					'manage_stock' => (bool) $variation->get_manage_stock(),
-					'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
-					'cat'          => implode( '|', array_map(
+					$variations[] = array(
+						'id'           => (int) $variation->get_id(),
+						'name'         => empty( $labels ) ? ( 'متغیر #' . (int) $variation->get_id() ) : implode( ' · ', $labels ),
+						'sku'          => (string) $variation->get_sku(),
+						'stock'        => (int) $variation->get_stock_quantity(),
+						'status'       => (string) $variation->get_stock_status(),
+						'manage_stock' => $managed,
+						'mode'         => $managed ? 'qty' : ( 'instock' === (string) $variation->get_stock_status() ? 'in_stock' : 'out_of_stock' ),
+						'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
+						'cat'          => implode( '|', array_map(
 						static function( $tax ) use ( $attr_map ) {
 							return $tax . ':' . $attr_map[ $tax ];
 						},
@@ -225,22 +234,24 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				);
 			}
 
-			// محصول ساده: خودش یک «کارت» است تا موجودی‌اش هم از همین صفحه قابل ویرایش باشد.
-			if ( ! $is_variable ) {
-				$image_id = $product->get_image_id();
-				$variations = array(
-					array(
-						'id'           => (int) $product->get_id(),
-						'name'         => get_the_title( $product->get_id() ),
-						'sku'          => (string) $product->get_sku(),
-						'stock'        => (int) $product->get_stock_quantity(),
-						'status'       => (string) $product->get_stock_status(),
-						'manage_stock' => (bool) $product->get_manage_stock(),
-						'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
-						'cat'          => '',
-					),
-				);
-			}
+		// محصول ساده: خودش یک «کارت» است تا موجودی‌اش هم از همین صفحه قابل ویرایش باشد.
+		if ( ! $is_variable ) {
+			$image_id = $product->get_image_id();
+			$managed  = (bool) $product->get_manage_stock();
+			$variations = array(
+				array(
+					'id'           => (int) $product->get_id(),
+					'name'         => get_the_title( $product->get_id() ),
+					'sku'          => (string) $product->get_sku(),
+					'stock'        => (int) $product->get_stock_quantity(),
+					'status'       => (string) $product->get_stock_status(),
+					'manage_stock' => $managed,
+					'mode'         => $managed ? 'qty' : ( 'instock' === (string) $product->get_stock_status() ? 'in_stock' : 'out_of_stock' ),
+					'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
+					'cat'          => '',
+				),
+			);
+		}
 
 			wp_send_json_success(
 				array(

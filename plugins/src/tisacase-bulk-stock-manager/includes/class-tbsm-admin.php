@@ -112,12 +112,21 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'selectedCount'      => 'انتخاب‌شده: %d',
 						'selectAtLeastOne'   => 'حداقل یک کارت را تیک بزنید تا موجودی‌اش اعمال شود.',
 						'invalidInputs'      => 'موجودی %d کارت عدد معتبر نیست؛ آن‌ها را بررسی کنید.',
+						'unifiedInvalid'     => 'موجودی همگانی را با عدد صحیح و غیرمنفی بنویسید.',
+						'unifiedBtn'         => 'اعمال همگانی',
+						'unifiedConfirm'     => 'تأیید: درج %1$s روی %2$d متغیر؟',
+						'fillDone'           => 'درج شد روی %d کارت انتخابی',
+						'bottomHint'         => 'اعمال با مقادیر داخل هر کارت، روی انتخابی‌ها',
 						'applyBtn'           => 'اعمال موجودی روی %d متغیر',
 						'applyConfirm'       => 'تأیید: اعمال روی %d متغیر؟',
 						'applying'           => 'در حال اعمال…',
 						'loadError'          => 'بارگذاری محصول ناموفق بود.',
 						'changeProduct'      => 'تغییر محصول',
 						'stockLabel'         => 'موجودی',
+						'modeLabel'          => 'نوع موجودی',
+						'modeQty'            => 'عددی',
+						'modeInStock'        => 'موجود (بدون تعداد)',
+						'modeOutOfStock'     => 'ناموجود',
 						'manageOffNote'      => 'موجودی‌گیری خاموش است — با اعمال روشن می‌شود',
 						'reportTitle'        => 'موجودی %d متغیر اعمال شد',
 						'parentSynced'       => 'وضعیت موجودی والد به «%s» همگام شد.',
@@ -197,7 +206,6 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 					<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
 						<option value="all">—</option>
 					</select>
-					<div class="tbsm-counts" id="tbsm-counts"></div>
 				</div>
 
 				<!-- گام ۳: کارت‌های متغیرها -->
@@ -206,18 +214,23 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<span class="tbsm-step-num">۳</span>
 						<div class="tbsm-step-titles">
 							<h2 class="tbsm-step-title">کارت‌های متغیرها</h2>
-							<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را تغییر دهید و با یک کلیک اعمال کنید</p>
+							<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را روی کارت‌ها تغییر دهید و از پایین اعمال کنید</p>
 						</div>
 					</div>
 					<div class="tbsm-toolbar">
-						<div class="tbsm-quickset">
-							<label for="tbsm-quickset">درج روی همهٔ انتخابی:</label>
-							<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-num" min="0" inputmode="numeric" placeholder="مثلاً ۰">
-							<button type="button" class="tisa-btn tbsm-btn-quick" id="tbsm-quickset-btn" disabled>درج</button>
+						<div class="tbsm-counts" id="tbsm-counts"></div>
+						<div class="tbsm-unified">
+							<label for="tbsm-quickset">موجودی همگانی:</label>
+							<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-num tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+							<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
+							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 						</div>
-						<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
 					</div>
 					<div class="tbsm-grid" id="tbsm-grid" hidden></div>
+					<div class="tbsm-bottombar">
+						<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
+						<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
+					</div>
 					<div class="tbsm-report" id="tbsm-report" hidden></div>
 				</div>
 			</div>

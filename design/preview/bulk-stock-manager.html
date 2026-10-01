@@ -30,7 +30,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">محصول را با جست‌وجو انتخاب کنید، دستهٔ متغیرها را با سلکت فیلتر کنید، موجودی را روی کارت‌ها تغییر دهید و یک‌جا اعمال کنید.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.0.0</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.1.0</span>
 			</div>
 		</div>
 
@@ -65,7 +65,6 @@
 			<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
 				<option value="all">—</option>
 			</select>
-			<div class="tbsm-counts" id="tbsm-counts"></div>
 		</div>
 
 		<!-- گام ۳: کارت‌های متغیرها -->
@@ -74,18 +73,23 @@
 				<span class="tbsm-step-num">۳</span>
 				<div class="tbsm-step-titles">
 					<h2 class="tbsm-step-title">کارت‌های متغیرها</h2>
-					<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را تغییر دهید و با یک کلیک اعمال کنید</p>
+					<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را روی کارت‌ها تغییر دهید و از پایین اعمال کنید</p>
 				</div>
 			</div>
 			<div class="tbsm-toolbar">
-				<div class="tbsm-quickset">
-					<label for="tbsm-quickset">درج روی همهٔ انتخابی:</label>
-					<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-num" min="0" inputmode="numeric" placeholder="مثلاً ۰">
-					<button type="button" class="tisa-btn tbsm-btn-quick" id="tbsm-quickset-btn" disabled>درج</button>
+				<div class="tbsm-counts" id="tbsm-counts"></div>
+				<div class="tbsm-unified">
+					<label for="tbsm-quickset">موجودی همگانی:</label>
+					<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-num tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+					<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
+					<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 				</div>
-				<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
 			</div>
 			<div class="tbsm-grid" id="tbsm-grid" hidden></div>
+			<div class="tbsm-bottombar">
+				<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
+				<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
+			</div>
 			<div class="tbsm-report" id="tbsm-report" hidden></div>
 		</div>
 	</div>
@@ -108,23 +112,27 @@
 
 		function buildVars(pid, models, colors) {
 			var out = [], id = pid * 100;
-			models.forEach(function (m, mi) {
-				colors.forEach(function (c, ci) {
-					id++;
-					out.push({
-						id: id,
-						name: m + ' · ' + c.label,
-						sku: 'TS' + (8400 + id),
-						stock: (mi + ci) % 3 === 0 ? 0 : ((mi * 7 + ci * 3 + pid) % 23),
-						status: ((mi + ci) % 3 === 0) ? 'outofstock' : 'instock',
-						manage_stock: (mi % 2 === 0),
-						image: '',
-						cat: 'pa_model:m' + mi + '|' + 'pa_color:' + c.slug
-					});
+		models.forEach(function (m, mi) {
+			colors.forEach(function (c, ci) {
+				id++;
+				var stock = (mi + ci) % 3 === 0 ? 0 : ((mi * 7 + ci * 3 + pid) % 23);
+				var status = ((mi + ci) % 3 === 0) ? 'outofstock' : 'instock';
+				var managed = (mi % 2 === 0);
+				out.push({
+					id: id,
+					name: m + ' · ' + c.label,
+					sku: 'TS' + (8400 + id),
+					stock: stock,
+					status: status,
+					manage_stock: managed,
+					mode: managed ? 'qty' : (status === 'instock' ? 'in_stock' : 'out_of_stock'),
+					image: '',
+					cat: 'pa_model:m' + mi + '|' + 'pa_color:' + c.slug
 				});
 			});
-			return out;
-		}
+		});
+		return out;
+	}
 
 		var PRODUCTS = [
 			{
@@ -155,7 +163,7 @@
 			{
 				id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', type: 'simple',
 				status: 'publish', image: '',
-				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', stock: 12, status: 'instock', manage_stock: true, image: '', cat: '' }],
+				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', stock: 12, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: '' }],
 				cats: {}
 			}
 		];
@@ -196,12 +204,21 @@
 				selectedCount: 'انتخاب‌شده: %d',
 				selectAtLeastOne: 'حداقل یک کارت را تیک بزنید تا موجودی‌اش اعمال شود.',
 				invalidInputs: 'موجودی %d کارت عدد معتبر نیست؛ آن‌ها را بررسی کنید.',
+				unifiedInvalid: 'موجودی همگانی را با عدد صحیح و غیرمنفی بنویسید.',
+				unifiedBtn: 'اعمال همگانی',
+				unifiedConfirm: 'تأیید: درج %1$s روی %2$d متغیر؟',
+				fillDone: 'درج شد روی %d کارت انتخابی',
+				bottomHint: 'اعمال با مقادیر داخل هر کارت، روی انتخابی‌ها',
 				applyBtn: 'اعمال موجودی روی %d متغیر',
 				applyConfirm: 'تأیید: اعمال روی %d متغیر؟',
 				applying: 'در حال اعمال…',
 				loadError: 'بارگذاری محصول ناموفق بود.',
 				changeProduct: 'تغییر محصول',
 				stockLabel: 'موجودی',
+				modeLabel: 'نوع موجودی',
+				modeQty: 'عددی',
+				modeInStock: 'موجود (بدون تعداد)',
+				modeOutOfStock: 'ناموجود',
 				manageOffNote: 'موجودی‌گیری خاموش است — با اعمال روشن می‌شود',
 				reportTitle: 'موجودی %d متغیر اعمال شد',
 				parentSynced: 'وضعیت موجودی والد به «%s» همگام شد.',
@@ -248,22 +265,50 @@
 						for (var j = 0; j < PRODUCTS.length; j++) {
 							if (PRODUCTS[j].id === data.product_id) { p2 = PRODUCTS[j]; break; }
 						}
-						var report = [], errors = [], enabled = 0, anyStock = false;
-						Object.keys(data.items || {}).forEach(function (vid) {
-							var v = null;
-							for (var k = 0; k < p2.vars.length; k++) {
-								if (p2.vars[k].id === Number(vid)) { v = p2.vars[k]; break; }
-							}
-							if (!v) { errors.push('متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.'); return; }
-							var to = Number(data.items[vid]);
-							if (!isFinite(to) || to < 0) { errors.push('موجودی متغیر #' + vid + ' عدد معتبر نبود؛ رد شد.'); return; }
-							var from = v.stock;
-							if (!v.manage_stock) { v.manage_stock = true; enabled++; }
+					var report = [], errors = [], enabled = 0, anyStock = false;
+					Object.keys(data.items || {}).forEach(function (vid) {
+						var v = null;
+						for (var k = 0; k < p2.vars.length; k++) {
+							if (p2.vars[k].id === Number(vid)) { v = p2.vars[k]; break; }
+						}
+						if (!v) { errors.push('متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.'); return; }
+						// مقدار: عدد (قدیمی) یا { mode, qty }
+						var spec = data.items[vid];
+						var mode = 'qty', to = null;
+						if (spec && typeof spec === 'object') {
+							mode = (spec.mode === 'in_stock' || spec.mode === 'out_of_stock') ? spec.mode : 'qty';
+							if (mode === 'qty') { to = Number(spec.qty); }
+						} else if (spec !== '' && spec !== null && spec !== undefined) {
+							to = Number(spec);
+						}
+						if (mode === 'qty' && (!isFinite(to) || to < 0)) { errors.push('موجودی متغیر #' + vid + ' عدد معتبر نبود؛ رد شد.'); return; }
+						var from = v.stock;
+						var from_status = v.status;
+						var wasManaged = !!v.manage_stock;
+						if (mode === 'in_stock') {
+							v.manage_stock = false;
+							v.status = 'instock';
+							v.mode = 'in_stock';
+							if (v.stock > 0) { anyStock = true; }
+						} else if (mode === 'out_of_stock') {
+							v.manage_stock = false;
+							v.status = 'outofstock';
+							v.mode = 'out_of_stock';
+						} else {
+							if (!wasManaged) { enabled++; }
+							v.manage_stock = true;
 							v.stock = to;
 							v.status = to > 0 ? 'instock' : 'outofstock';
+							v.mode = 'qty';
 							if (to > 0) { anyStock = true; }
-							report.push({ id: v.id, name: v.name, sku: v.sku, from: from, to: to, enabled: true });
+						}
+						report.push({
+							id: v.id, name: v.name, sku: v.sku, mode: mode,
+							from: from, to: (mode === 'qty' ? to : null),
+							from_status: from_status, to_status: v.status,
+							enabled: !wasManaged
 						});
+					});
 						p2.vars.forEach(function (v) { if (v.stock > 0) { anyStock = true; } });
 						d.resolve({
 							success: true,
