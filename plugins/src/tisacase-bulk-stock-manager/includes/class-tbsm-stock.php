@@ -242,11 +242,52 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			// کاراکترهای صفرعرض (RTL marks، ZWNJ و BOM).
 			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}]/u', '', $label );
 
-			// جداکننده‌ها و فاصله‌های آویزان از ابتدا و انتها.
-			$label = (string) preg_replace( '/^[\s\p{P}\p{S}]+/u', '', $label );
-			$label = (string) preg_replace( '/[\s\p{P}\p{S}]+$/u', '', $label );
+		// جداکننده‌ها و فاصله‌های آویزان از ابتدا و انتها.
+		$label = (string) preg_replace( '/^[\s\p{P}\p{S}]+/u', '', $label );
+		$label = (string) preg_replace( '/[\s\p{P}\p{S}]+$/u', '', $label );
 
-			return trim( $label );
+		return trim( $label );
+	}
+
+		/**
+		 * بازیابی برچسبِ percent-encoded: برخی افزونه‌ها taxonomy ویژگی‌های
+		 * فارسی را با نام URL-encoded می‌سازند (مثلاً d9%85d8%af%d9%84 به‌جای «مدل»).
+		 * این encoding گاه ناقص است (نه هر بایت % دارد) و rawurldecode از آن UTF-8
+		 * معتبر نمی‌سازد؛ پس اگر کلِ برچسب فقط از hex و % باشد، %ها را حذف، hex
+		 * می‌کنیم و به‌صورت UTF-8 decode می‌کنیم. برچسب‌های عادی دست‌نخورده می‌مانند.
+		 *
+		 * @param string $label برچسب (ممکن است percent-encoded باشد).
+		 * @return string
+		 */
+		public static function maybe_decode_label( $label ) {
+			$label = (string) $label;
+			if ( '' === $label || false === strpos( $label, '%' ) ) {
+				return $label;
+			}
+			if ( 1 !== preg_match( '/^[0-9a-fA-F%]+$/', $label ) ) {
+				return $label;
+			}
+			$hex = str_replace( '%', '', $label );
+			if ( '' === $hex || ( strlen( $hex ) % 2 ) !== 0 ) {
+				return $label;
+			}
+			$bytes = '';
+			for ( $i = 0, $n = strlen( $hex ); $i < $n; $i += 2 ) {
+				$bytes .= chr( (int) hexdec( substr( $hex, $i, 2 ) ) );
+			}
+			if ( '' !== $bytes && $bytes !== $label && self::is_valid_utf8( $bytes ) ) {
+				return $bytes;
+			}
+			return $label;
+		}
+
+		/** آیا رشتهٔ ورودی UTF-8 معتبر است؟ */
+		private static function is_valid_utf8( $s ) {
+			$s = (string) $s;
+			if ( function_exists( 'mb_check_encoding' ) ) {
+				return (bool) mb_check_encoding( $s, 'UTF-8' );
+			}
+			return preg_match( '//u', $s ) === 1;
 		}
 	}
 }

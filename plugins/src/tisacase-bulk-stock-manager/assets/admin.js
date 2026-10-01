@@ -359,7 +359,7 @@
 					continue;
 				}
 				var cat = this.categories[tax];
-				html += '<optgroup label="' + this.esc(cat.label) + '">';
+				html += '<optgroup label="' + this.esc(this.catLabel(cat.label)) + '">';
 				for (var i = 0; i < cat.values.length; i++) {
 					var v = cat.values[i];
 					html += '<option value="' + this.esc(tax) + ':' + this.esc(v.slug) + '">'
@@ -549,6 +549,34 @@
 		/** برچسب فارسی وضعیت موجودی. */
 		statusLabel: function (status) {
 			return status === 'instock' ? this.i18n('inStockLabel') : this.i18n('outOfStockLabel');
+		},
+
+		/**
+		 * بازیابی عنوان ویژگیِ percent-encoded: برخی افزونه‌ها taxonomy ویژگی‌های
+		 * فارسی را با نام URL-encoded می‌سازند (مثل «d9%85d8%af%d9%84» به‌جای «مدل»).
+		 * این encoding گاه ناقص است (نه هر بایت % دارد) و decodeURIComponent از
+		 * آن خطا می‌دهد؛ پس %ها را حذف، hex می‌کنیم و به‌صورت UTF-8 decode می‌کنیم.
+		 */
+		catLabel: function (label) {
+			var s = String(label || '');
+			if (s.indexOf('%') !== -1 && /^[0-9a-fA-F%]+$/.test(s)) {
+				var hex = s.replace(/%/g, '');
+				if (hex.length >= 2 && hex.length % 2 === 0) {
+					try {
+						var bin = '';
+						for (var i = 0; i < hex.length; i += 2) {
+							bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
+						}
+						var d = decodeURIComponent(escape(bin));
+						if (d && d !== s) {
+							s = d;
+						}
+					} catch (e) {
+						// بایت‌ها UTF-8 معتبر نبودند — همان چیزی که بود می‌ماند
+					}
+				}
+			}
+			return s;
 		},
 
 		/** رنگ باکس عددی بر اساس مقدار: سبز (بیش از صفر) / قرمز (صفر). */

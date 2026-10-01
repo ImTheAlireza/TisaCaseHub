@@ -228,8 +228,12 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 						'count' => (int) $count,
 					);
 				}
+				// برخی افزونه‌ها taxonomy ویژگی‌های فارسی را با نام percent-encoded می‌سازند
+				// (مثلاً pa_d9%85d8%af%d9%84 به‌جای «مدل») — برچسب را بازیابی می‌کنیم.
+				$label = TBSM_Stock::maybe_decode_label( (string) wc_attribute_label( $tax ) );
+				$label = TBSM_Stock::clean_label( $label );
 				$categories[ $tax ] = array(
-					'label'  => (string) wc_attribute_label( $tax ),
+					'label'  => (string) $label,
 					'values' => $values,
 				);
 			}

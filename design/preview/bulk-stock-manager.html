@@ -30,7 +30,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">محصول را با جست‌وجو انتخاب کنید، دستهٔ متغیرها را با سلکت فیلتر کنید، موجودی را روی کارت‌ها تغییر دهید و یک‌جا اعمال کنید.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.1.4</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.1.5</span>
 			</div>
 		</div>
 
@@ -151,11 +151,13 @@
 				id: 202, name: 'قاب چرمی سامسونگ گلکسی', sku: 'SB210', type: 'variable',
 				status: 'draft', image: '', vars: buildVars(202, ['Galaxy S24 Ultra', 'Galaxy S24'], COLORS),
 				cats: {
-					pa_model: { label: 'مدل', values: [
+					// این محصول عمداً عنوان دسته‌ها را percent-encoded دارد (بازتولید باگ واقعی:
+					// برخی افزونه‌ها taxonomy ویژگی‌های فارسی را با نام URL-encoded می‌سازند).
+					pa_model: { label: 'd9%85d8%af%d9%84', values: [
 						{ label: 'Galaxy S24 Ultra', slug: 'm0', count: COLORS.length },
 						{ label: 'Galaxy S24', slug: 'm1', count: COLORS.length }
 					] },
-					pa_color: { label: 'رنگ', values: COLORS.map(function (c) {
+					pa_color: { label: 'd8%b1d9%86da%af', values: COLORS.map(function (c) {
 						return { label: c.label, slug: c.slug, count: 2 };
 					}) }
 				}

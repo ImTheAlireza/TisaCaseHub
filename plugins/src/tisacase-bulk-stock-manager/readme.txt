@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.1.4
+Stable tag: 1.1.5
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.1.5 =
+* اصلاح نمایش عنوان دسته‌های ویژگی در سلکت فیلتر: برخی افزونه‌ها taxonomy ویژگی‌های فارسی را با نام percent-encoded می‌سازند (مثل «d9%85d8%af%d9%84» به‌جای «مدل») که عنوان دسته‌ها به‌جای نام فارسی، رشتهٔ کد‌شده را نشان می‌داد. حالا برچسب هر دسته پیش از رندر، هم server-side (PHP) و هم client-side (JS) بازیابی می‌شود و همیشه نام فارسی درست نمایش می‌گیرد.
 
 = 1.1.4 =
 * رفع «جعبهٔ تودرتو» فیلد جست‌وجو: border و گوشه‌های گرد فقط روی خودِ ورودی است (مثل همیشه)؛ ظرف flex دیگر border ندارد. آیکون ذره‌بین بیرون جعبه، سمت راست و در راستای ورودی — تمیز، استاندارد و بدون هیچ امکان برهم‌نهشتی متن/آیکون.
