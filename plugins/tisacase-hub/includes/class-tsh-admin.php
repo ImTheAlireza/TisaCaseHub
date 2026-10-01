@@ -567,32 +567,10 @@ if ( ! class_exists( 'TSH_Admin' ) ) {
 		 *
 		 * امنیت: nonce مخصوص همان کارت + دسترسی `install_plugins`. زیپ قبل از نصب
 		 * باز می‌شود و باید پوشهٔ اولش دقیقاً همان پوشهٔ مورد انتظار باشد؛ بعد
-		 * Plugin_Upgrader نصب می‌کند و در پایان — اگر دسترسی بود — فعال هم می‌شود.
-		 *
-		 * @return void
-		 */
-		/**
-		 * همگام‌سازی فهرست افزونه‌ها از شاخهٔ تنظیم‌شده.
-		 *
-		 * @return void
-		 */
-		public static function handle_sync() {
-			check_admin_referer( 'tsh_sync_catalog', '_tshnonce' );
-			$back = admin_url( 'admin.php?page=' . TSH_SLUG . '-settings' );
-			if ( ! current_user_can( 'install_plugins' ) && ! current_user_can( 'manage_woocommerce' ) ) {
-				wp_die( esc_html__( 'اجازهٔ همگام‌سازی ندارید.', 'tisacase-hub' ) );
-			}
-			$pack = TSH_Remote::sync_catalog();
-			if ( is_wp_error( $pack ) ) {
-				wp_safe_redirect( add_query_arg( array( 'tsh_msg' => 'sync_fail', 'tsh_err' => rawurlencode( $pack->get_error_message() ) ), $back ) );
-				exit;
-			}
-			TSH_Registry::items( true );
-			$count = isset( $pack['items'] ) ? count( $pack['items'] ) : 0;
-			wp_safe_redirect( add_query_arg( array( 'tsh_msg' => 'sync_ok', 'tsh_err' => (string) $count ), $back ) );
-			exit;
-		}
-
+		* Plugin_Upgrader نصب می‌کند و در پایان — اگر دسترسی بود — فعال هم می‌شود.
+		*
+		* @return void
+		*/
 		public static function handle_install() {
 			$key = isset( $_POST['item'] ) ? sanitize_key( wp_unslash( $_POST['item'] ) ) : '';
 			check_admin_referer( 'tsh_install_' . $key, '_tshnonce' );
@@ -1010,7 +988,13 @@ if ( ! class_exists( 'TSH_Admin' ) ) {
 				wp_send_json_error( array( 'msg' => $pack->get_error_message() ) );
 			}
 			TSH_Registry::items( true );
-			wp_send_json_success( array( 'count' => isset( $pack['items'] ) ? count( $pack['items'] ) : 0 ) );
+			wp_send_json_success(
+				array(
+					'count'   => isset( $pack['items'] ) ? count( $pack['items'] ) : 0,
+					'branch'  => isset( $pack['branch'] ) ? (string) $pack['branch'] : '',
+					'offline' => empty( isset( $pack['at'] ) ? $pack['at'] : 0 ),
+				)
+			);
 		}
 
 		public static function ajax_pin() {

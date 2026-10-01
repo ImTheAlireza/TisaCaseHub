@@ -1,6 +1,6 @@
 {
   "repo": "ImTheAlireza/TisaCaseHub",
-  "branch": "arena/01a0d016-tisacasehub",
+  "branch": "arena/01a0f7c7-tisacasehub",
   "at": 0,
   "items": {
     "bulk-product-cleaner": {
@@ -57,6 +57,24 @@
           "screen": "",
           "parent": "",
           "slug": ""
+        }
+      ],
+      "source": "bundle"
+    },
+    "tisacase-bulk-stock-manager": {
+      "title": "مدیریت انبوه موجودی",
+      "desc": "جست‌وجوی محصول، کارت‌های کوچک متغیرها، فیلتر دسته با سلکت و اعمال یکجا موجودی روی انتخاب‌ها.",
+      "group": "products",
+      "icon": "box",
+      "dir": "tisacase-bulk-stock-manager",
+      "cap": "manage_woocommerce",
+      "pages": [
+        {
+          "label": "باز کردن",
+          "path": "admin.php?page=tisacase-bulk-stock-manager",
+          "screen": "woocommerce_page_tisacase-bulk-stock-manager",
+          "parent": "woocommerce",
+          "slug": "tisacase-bulk-stock-manager"
         }
       ],
       "source": "bundle"

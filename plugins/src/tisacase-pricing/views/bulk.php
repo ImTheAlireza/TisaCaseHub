@@ -38,6 +38,10 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				<input type="radio" name="tcp_target" value="direct">
 				<span>جستجوی تکی (نام، SKU یا شناسه)</span>
 			</label>
+			<label class="tcp-target-mode">
+				<input type="radio" name="tcp_target" value="sku">
+				<span>جستجو بر اساس SKU</span>
+			</label>
 		</div>
 
 		<div id="tcp-cat-box" class="tcp-field">
@@ -65,13 +69,29 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				<div class="tcp-search-feedback">
 					<p class="tcp-muted">حداقل ۲ حرف وارد کن. هر بار حداکثر ۱۰۰ نتیجه می‌آید؛ اگر نتیجه‌ها بیشتر باشند، صفحه‌های بعدی را هم اضافه کن.</p>
 					<div class="tcp-name-search-actions">
-						<span id="tcp-name-search-status" role="status" aria-live="polite"></span>
-						<button type="button" class="button" id="tcp-name-load-more" style="display:none">نمایش موارد بعدی</button>
+					<span id="tcp-name-search-status" role="status" aria-live="polite"></span>
+							<button type="button" class="button" id="tcp-name-load-more" style="display:none">نمایش موارد بعدی</button>
+						</div>
 					</div>
 				</div>
-			</div>
 
-			<div id="tcp-direct-search-panel" class="tcp-product-source" style="display:none">
+				<div id="tcp-sku-search-panel" class="tcp-product-source" style="display:none">
+					<div class="tcp-source-heading"><h3>جستجو و استخراج بر اساس SKU</h3><p>عبارتی از SKU را بنویس (مثلاً پیشوند یا بخشی از شناسه)؛ همهٔ محصولاتی که SKUشان این عبارت را **دارند** به فهرست زیر اضافه می‌شوند.</p></div>
+					<label class="tcp-label" for="tcp-sku-search-term">فیلتر متن SKU</label>
+					<div class="tcp-name-search-row">
+						<input type="search" id="tcp-sku-search-term" class="tisa-input" autocomplete="off" spellcheck="false" dir="ltr" placeholder="مثلاً CH-100">
+						<button type="button" class="button button-primary" id="tcp-sku-search-button">استخراج محصولات</button>
+					</div>
+					<div class="tcp-search-feedback">
+						<p class="tcp-muted">جستجوی «شامل‌شونده» است (روی SKU خودِ محصول یا واریشن‌هایش)؛ حداقل ۲ حرف وارد کن. هر بار حداکثر ۱۰۰ نتیجه می‌آید؛ اگر بیشتر باشند، صفحه‌های بعدی را هم اضافه کن.</p>
+						<div class="tcp-name-search-actions">
+							<span id="tcp-sku-search-status" role="status" aria-live="polite"></span>
+							<button type="button" class="button" id="tcp-sku-load-more" style="display:none">نمایش موارد بعدی</button>
+						</div>
+					</div>
+				</div>
+
+				<div id="tcp-direct-search-panel" class="tcp-product-source" style="display:none">
 				<div class="tcp-source-heading"><h3>افزودن محصول به‌صورت تکی</h3><p>با انتخاب هر نتیجه، محصول به فهرست انتخاب‌شده‌ها افزوده می‌شود.</p></div>
 				<div id="tcp-retail-product-search">
 					<label class="tcp-label" for="tcp-products">جستجوی محصول (نام، شناسه یا SKU)</label>

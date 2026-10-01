@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش — مدیریت انبوه موجودی | TisaCase</title>
+<link rel="stylesheet" href="../../plugins/src/tisacase-bulk-stock-manager/assets/admin.css">
+<style>
+	* { box-sizing: border-box; }
+	body { margin: 0; padding: 22px; background: #F4F2EC; color: #1F2A2E;
+		font: 14px/1.9 Tahoma, "Vazirmatn", "IRANSans", system-ui, sans-serif; }
+	.preview-note { max-width: 1280px; margin: 0 auto 16px; background: #FFF8E6; border: 1px solid #E8D5A0;
+		border-radius: 12px; padding: 10px 14px; font-size: 12.5px; line-height: 2; color: #6B5B1E; }
+	.preview-note code { font-family: ui-monospace, Menlo, Consolas, monospace; direction: ltr; display: inline-block; }
+</style>
+</head>
+<body>
+	<div class="preview-note">
+		<strong>پیش‌نمایش زنده (بدون وردپرس)</strong> — همین <code>admin.css</code> و <code>admin.js</code> افزونهٔ
+		<code>tisacase-bulk-stock-manager</code> بار شده‌اند؛ فقط داده‌ها و AJAX ماک هستند.
+		جست‌وجو (مثل «اسپیس» یا «TS184» یا «201») را امتحان کنید؛ «اعمال موجودی» فقط گزارش نمایش می‌دهد و چیزی نمی‌نویسد.
+	</div>
+
+	<!-- همین مارکاپی است که render_page() می‌سازد -->
+	<div class="wrap tbsm-wrap" dir="rtl">
+		<div class="tbsm-hero" role="banner">
+			<div class="tbsm-hero-row">
+				<span class="tbsm-hero-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg></span>
+				<div class="tbsm-hero-text">
+					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
+					<p class="tbsm-hero-sub">محصول را با جست‌وجو انتخاب کنید، دستهٔ متغیرها را با سلکت فیلتر کنید، موجودی را روی کارت‌ها تغییر دهید و یک‌جا اعمال کنید.</p>
+				</div>
+				<span class="tbsm-hero-ver" dir="ltr">v1.1.5</span>
+			</div>
+		</div>
+
+		<div class="tbsm-notice" id="tbsm-notice" hidden role="alert"></div>
+
+		<!-- گام ۱: انتخاب محصول -->
+		<div class="tbsm-card">
+			<div class="tbsm-step-head">
+				<span class="tbsm-step-num">۱</span>
+				<div class="tbsm-step-titles">
+					<h2 class="tbsm-step-title">انتخاب محصول</h2>
+					<p class="tbsm-step-sub">جست‌وجو بر اساس نام، SKU یا شناسه</p>
+				</div>
+			</div>
+			<div class="tbsm-search">
+				<span class="tbsm-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.5-4.5"/></svg></span>
+				<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
+			</div>
+			<div id="tbsm-results" class="tbsm-results" hidden></div>
+			<div id="tbsm-selected" class="tbsm-selected" hidden></div>
+		</div>
+
+		<!-- گام ۲: دستهٔ متغیرها -->
+		<div class="tbsm-card tbsm-step-locked" id="tbsm-step-category">
+			<div class="tbsm-step-head">
+				<span class="tbsm-step-num">۲</span>
+				<div class="tbsm-step-titles">
+					<h2 class="tbsm-step-title">دستهٔ متغیرها</h2>
+					<p class="tbsm-step-sub">با انتخاب دسته، فقط همان متغیرها نشان داده و تیک می‌خورند؛ می‌توانید تیک‌ها را دستی جابه‌جا کنید.</p>
+				</div>
+			</div>
+			<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
+				<option value="all">—</option>
+			</select>
+		</div>
+
+		<!-- گام ۳: کارت‌های متغیرها -->
+		<div class="tbsm-card tbsm-step-locked" id="tbsm-step-cards">
+			<div class="tbsm-step-head">
+				<span class="tbsm-step-num">۳</span>
+				<div class="tbsm-step-titles">
+					<h2 class="tbsm-step-title">کارت‌های متغیرها</h2>
+					<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را روی کارت‌ها تغییر دهید و از پایین اعمال کنید</p>
+				</div>
+			</div>
+			<div class="tbsm-toolbar">
+				<div class="tbsm-counts" id="tbsm-counts"></div>
+				<div class="tbsm-unified">
+					<label for="tbsm-quickset">موجودی همگانی:</label>
+					<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+					<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
+					<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
+				</div>
+			</div>
+			<div class="tbsm-grid" id="tbsm-grid" hidden></div>
+			<div class="tbsm-bottombar">
+				<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
+				<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
+			</div>
+			<div class="tbsm-report" id="tbsm-report" hidden></div>
+		</div>
+	</div>
+
+	<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+	<script>
+	/* ---------------------------------------------------------
+	 * ماک داده + ماک AJAX (همان قرارداد server→client افزونه)
+	 * --------------------------------------------------------- */
+	(function () {
+		'use strict';
+
+		// دادهٔ نمونه: ۳ محصول
+		var MODELS = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 15 Pro Max', 'iPhone 16 Pro Max'];
+		var COLORS = [
+			{ label: 'مشکی', slug: 'sorkh-meshki' },
+			{ label: 'سبز', slug: 'sabz' },
+			{ label: 'نقره‌ای', slug: 'negare-i' }
+		];
+
+		function buildVars(pid, models, colors) {
+			var out = [], id = pid * 100;
+		models.forEach(function (m, mi) {
+			colors.forEach(function (c, ci) {
+				id++;
+				var stock = (mi + ci) % 3 === 0 ? 0 : ((mi * 7 + ci * 3 + pid) % 23);
+				var status = ((mi + ci) % 3 === 0) ? 'outofstock' : 'instock';
+				var managed = (mi % 2 === 0);
+				out.push({
+					id: id,
+					name: m + ' · ' + c.label,
+					sku: 'TS' + (8400 + id),
+					stock: stock,
+					status: status,
+					manage_stock: managed,
+					mode: managed ? 'qty' : (status === 'instock' ? 'in_stock' : 'out_of_stock'),
+					image: '',
+					cat: 'pa_model:m' + mi + '|' + 'pa_color:' + c.slug
+				});
+			});
+		});
+		return out;
+	}
+
+		var PRODUCTS = [
+			{
+				id: 201, name: 'قاب اسپیس آیفون (سری کامل)', sku: 'TS184', type: 'variable',
+				status: 'publish', image: '', vars: buildVars(201, MODELS, COLORS),
+				cats: {
+					pa_model: { label: 'مدل', values: MODELS.map(function (m, i) {
+						return { label: m, slug: 'm' + i, count: COLORS.length };
+					}) },
+					pa_color: { label: 'رنگ', values: COLORS.map(function (c) {
+						return { label: c.label, slug: c.slug, count: MODELS.length };
+					}) }
+				}
+			},
+			{
+				id: 202, name: 'قاب چرمی سامسونگ گلکسی', sku: 'SB210', type: 'variable',
+				status: 'draft', image: '', vars: buildVars(202, ['Galaxy S24 Ultra', 'Galaxy S24'], COLORS),
+				cats: {
+					// این محصول عمداً عنوان دسته‌ها را percent-encoded دارد (بازتولید باگ واقعی:
+					// برخی افزونه‌ها taxonomy ویژگی‌های فارسی را با نام URL-encoded می‌سازند).
+					pa_model: { label: 'd9%85d8%af%d9%84', values: [
+						{ label: 'Galaxy S24 Ultra', slug: 'm0', count: COLORS.length },
+						{ label: 'Galaxy S24', slug: 'm1', count: COLORS.length }
+					] },
+					pa_color: { label: 'd8%b1d9%86da%af', values: COLORS.map(function (c) {
+						return { label: c.label, slug: c.slug, count: 2 };
+					}) }
+				}
+			},
+			{
+				id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', type: 'simple',
+				status: 'publish', image: '',
+				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', stock: 12, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: '' }],
+				cats: {}
+			}
+		];
+
+		function brief(p) {
+			return {
+				id: p.id, name: p.name, sku: p.sku, type: p.type, status: p.status,
+				variations: p.type === 'variable' ? p.vars.length : 0, image: p.image
+			};
+		}
+
+		function search(term) {
+			var t = String(term || '').toLowerCase();
+			return PRODUCTS.filter(function (p) {
+				return String(p.id) === term ||
+					p.name.toLowerCase().indexOf(t) !== -1 ||
+					p.sku.toLowerCase().indexOf(t) !== -1;
+			}).map(brief);
+		}
+
+		// قرارداد tbsmData (مثل wp_localize_script)
+		window.tbsmData = {
+			ajaxUrl: 'mock-admin-ajax.php',
+			nonce: 'preview',
+			i18n: {
+				searching: 'در حال جست‌وجو…',
+				noResults: 'محصولی با این مشخصات پیدا نشد.',
+				searchError: 'جست‌وجو ناموفق بود.',
+				variable: 'متغیر',
+				simple: 'ساده',
+				draft: 'پیش‌نویس',
+				pending: 'در انتظار',
+				private: 'خصوصی',
+				variationsUnit: 'متغیر',
+				simpleNote: 'محصول ساده — موجودی خودِ محصول قابل ویرایش است.',
+				allVariations: 'همهٔ متغیرها',
+				shownOf: 'نمایش: %1$d از %2$d متغیر',
+				selectedCount: 'انتخاب‌شده: %d',
+				selectAtLeastOne: 'حداقل یک کارت را تیک بزنید تا موجودی‌اش اعمال شود.',
+				invalidInputs: 'موجودی %d کارت عدد معتبر نیست؛ آن‌ها را بررسی کنید.',
+				unifiedInvalid: 'موجودی همگانی را با عدد صحیح و غیرمنفی بنویسید.',
+				unifiedBtn: 'اعمال همگانی',
+				unifiedConfirm: 'تأیید: درج %1$s روی %2$d متغیر؟',
+				fillDone: 'درج شد روی %d کارت انتخابی',
+				bottomHint: 'اعمال با مقادیر داخل هر کارت، روی انتخابی‌ها',
+				applyBtn: 'اعمال موجودی روی %d متغیر',
+				applyConfirm: 'تأیید: اعمال روی %d متغیر؟',
+				applying: 'در حال اعمال…',
+				loadError: 'بارگذاری محصول ناموفق بود.',
+				changeProduct: 'تغییر محصول',
+				stockLabel: 'موجودی',
+				modeLabel: 'نوع موجودی',
+				modeQty: 'عددی',
+				modeInStock: 'موجود (بدون تعداد)',
+				modeOutOfStock: 'ناموجود',
+				manageOffNote: 'موجودی‌گیری خاموش است — با اعمال روشن می‌شود',
+				reportTitle: 'موجودی %d متغیر اعمال شد',
+				parentSynced: 'وضعیت موجودی والد به «%s» همگام شد.',
+				inStockLabel: 'موجود',
+				outOfStockLabel: 'ناموجود',
+				enabledManage: 'موجودی‌گیری برای %d متغیر خاموش بود و هنگام اعمال روشن شد.',
+				errorCount: '%d مورد خطا داشت:',
+				applyError: 'اعمال ناموفق بود: %s',
+				errorApplyEmpty: 'مقداری برای اعمال پیدا نشد.'
+			}
+		};
+
+		// ماک $.get / $.post با همان شیوایی (Deferred)
+		$(document).ready(function () {
+			$.get = function (url, data) {
+				var d = $.Deferred();
+				setTimeout(function () {
+					d.resolve({ success: true, data: { results: search(data && data.term) } });
+				}, 180);
+				return d;
+			};
+
+			$.post = function (url, data) {
+				var d = $.Deferred();
+				setTimeout(function () {
+					if (!data || !data.action) {
+						d.resolve({ success: false, data: { error: 'بدون اکشن' } });
+						return;
+					}
+					if (data.action === 'tbsm_load_product') {
+						var p = null;
+						for (var i = 0; i < PRODUCTS.length; i++) {
+							if (PRODUCTS[i].id === data.product_id) { p = PRODUCTS[i]; break; }
+						}
+						if (!p) {
+							d.resolve({ success: false, data: { message: 'محصول انتخابی پیدا نشد.' } });
+							return;
+						}
+						d.resolve({ success: true, data: { product: brief(p), variations: p.vars, categories: p.cats } });
+						return;
+					}
+					if (data.action === 'tbsm_apply_stock') {
+						var p2 = null;
+						for (var j = 0; j < PRODUCTS.length; j++) {
+							if (PRODUCTS[j].id === data.product_id) { p2 = PRODUCTS[j]; break; }
+						}
+					var report = [], errors = [], enabled = 0, anyStock = false;
+					Object.keys(data.items || {}).forEach(function (vid) {
+						var v = null;
+						for (var k = 0; k < p2.vars.length; k++) {
+							if (p2.vars[k].id === Number(vid)) { v = p2.vars[k]; break; }
+						}
+						if (!v) { errors.push('متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.'); return; }
+						// مقدار: عدد (قدیمی) یا { mode, qty }
+						var spec = data.items[vid];
+						var mode = 'qty', to = null;
+						if (spec && typeof spec === 'object') {
+							mode = (spec.mode === 'in_stock' || spec.mode === 'out_of_stock') ? spec.mode : 'qty';
+							if (mode === 'qty') { to = Number(spec.qty); }
+						} else if (spec !== '' && spec !== null && spec !== undefined) {
+							to = Number(spec);
+						}
+						if (mode === 'qty' && (!isFinite(to) || to < 0)) { errors.push('موجودی متغیر #' + vid + ' عدد معتبر نبود؛ رد شد.'); return; }
+						var from = v.stock;
+						var from_status = v.status;
+						var wasManaged = !!v.manage_stock;
+						if (mode === 'in_stock') {
+							v.manage_stock = false;
+							v.status = 'instock';
+							v.mode = 'in_stock';
+							if (v.stock > 0) { anyStock = true; }
+						} else if (mode === 'out_of_stock') {
+							v.manage_stock = false;
+							v.status = 'outofstock';
+							v.mode = 'out_of_stock';
+						} else {
+							if (!wasManaged) { enabled++; }
+							v.manage_stock = true;
+							v.stock = to;
+							v.status = to > 0 ? 'instock' : 'outofstock';
+							v.mode = 'qty';
+							if (to > 0) { anyStock = true; }
+						}
+						report.push({
+							id: v.id, name: v.name, sku: v.sku, mode: mode,
+							from: from, to: (mode === 'qty' ? to : null),
+							from_status: from_status, to_status: v.status,
+							enabled: !wasManaged
+						});
+					});
+						p2.vars.forEach(function (v) { if (v.stock > 0) { anyStock = true; } });
+						d.resolve({
+							success: true,
+							data: {
+								ok: report.length > 0,
+								applied: report.length,
+								enabled_manage: enabled,
+								parent_status: p2.type === 'variable' ? (anyStock ? 'instock' : 'outofstock') : (p2.vars[0].stock > 0 ? 'instock' : 'outofstock'),
+								report: report,
+								errors: errors
+							}
+						});
+						return;
+					}
+					d.resolve({ success: false, data: { error: 'اکشن ناشناخته' } });
+				}, 260);
+				return d;
+			};
+		});
+	})();
+	</script>
+	<script src="../../plugins/src/tisacase-bulk-stock-manager/assets/admin.js"></script>
+</body>
+</html>

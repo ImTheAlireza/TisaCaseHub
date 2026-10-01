@@ -232,10 +232,14 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 			if ( is_wp_error( $response ) ) {
 				return $response;
 			}
-			$code = (int) wp_remote_retrieve_response_code( $response );
-			if ( $code < 200 || $code >= 300 ) {
-				return new WP_Error( 'tsh_http', sprintf( /* translators: %d: status */ __( 'پاسخ HTTP %d از مخزن.', 'tisacase-hub' ), $code ) );
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			$err_body = (string) wp_remote_retrieve_body( $response );
+			if ( in_array( $code, array( 403, 429 ), true ) && false !== stripos( $err_body, 'rate limit' ) ) {
+				return new WP_Error( 'tsh_rate_limit', __( 'سقف درخواست API GitHub پر شده است (در هاست‌های اشتراکی رایج است از IP مشترک)؛ آینه jsDelivr امتحان شد. کمی صبر کنید و دوباره بزنید.', 'tisacase-hub' ) );
 			}
+			return new WP_Error( 'tsh_http', sprintf( /* translators: %d: status */ __( 'پاسخ HTTP %d از مخزن.', 'tisacase-hub' ), $code ) );
+		}
 			$body = wp_remote_retrieve_body( $response );
 			if ( ! is_string( $body ) || strlen( $body ) < 2 ) {
 				return new WP_Error( 'tsh_empty_zip', __( 'فایل زیپ خالی رسید.', 'tisacase-hub' ) );
@@ -523,36 +527,49 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 			return $last instanceof WP_Error ? $last : new WP_Error( 'tsh_empty', __( 'پاسخ خالی از مخزن.', 'tisacase-hub' ) );
 		}
 
-		public static function sync_catalog() {
-			self::allow();
-			$repo   = self::repo();
-			$branch = self::branch();
-			$enc  = rawurlencode( $branch );
-			$api  = 'https://api.github.com/repos/' . $repo . '/contents/plugins/dist?ref=' . $enc;
-			$body = self::get_text(
-				array(
-					$api,
-					'https://data.jsdelivr.com/v1/packages/gh/' . $repo . '@' . $enc . '/flat',
-				)
-			);
-			if ( is_wp_error( $body ) ) {
-				$pack = self::bundled_catalog();
-				if ( is_wp_error( $pack ) ) {
-					return $body;
+	public static function sync_catalog() {
+		self::allow();
+		$repo   = self::repo();
+		$branch = self::branch();
+		$enc  = rawurlencode( $branch );
+		$api  = 'https://api.github.com/repos/' . $repo . '/contents/plugins/dist?ref=' . $enc;
+		$body = self::get_text(
+			array(
+				$api,
+				'https://data.jsdelivr.com/v1/packages/gh/' . $repo . '@' . $enc . '/flat',
+			)
+		);
+
+		$names = array();
+		if ( is_wp_error( $body ) ) {
+			// آفلاین (نه GitHub و نه آینه پاسخ داد): فهرست باندل‌شده با خود هاب.
+			$pack = self::bundled_catalog();
+			if ( is_wp_error( $pack ) ) {
+				return $body;
+			}
+			$pack['repo']   = $repo;
+			$pack['branch'] = $branch;
+			update_option( 'tisacase_hub_catalog', $pack, false );
+			return $pack;
+		}
+
+		$data = json_decode( $body, true );
+		if ( ! is_array( $data ) ) {
+			return new WP_Error( 'tsh_catalog', __( 'فهرست مخزن خوانده نشد.', 'tisacase-hub' ) );
+		}
+
+		if ( isset( $data['files'] ) && is_array( $data['files'] ) ) {
+			// ساختار jsDelivr: فایل‌ها زیر «files» با نامِ شلش‌دار.
+			foreach ( $data['files'] as $f ) {
+				if ( is_array( $f ) && ! empty( $f['name'] ) ) {
+					$names[] = ltrim( (string) $f['name'], '/' );
 				}
-				$pack['repo']   = $repo;
-				$pack['branch'] = $branch;
-				update_option( 'tisacase_hub_catalog', $pack, false );
-				return $pack;
 			}
-			$data = json_decode( $body, true );
-			if ( ! is_array( $data ) ) {
-				return new WP_Error( 'tsh_catalog', __( 'فهرست مخزن خوانده نشد.', 'tisacase-hub' ) );
-			}
+		} else {
+			// ساختار GitHub API: لیست رکوردها.
 			if ( isset( $data['message'] ) && ! isset( $data[0] ) ) {
 				return new WP_Error( 'tsh_catalog', (string) $data['message'] );
 			}
-			$items = array();
 			foreach ( $data as $row ) {
 				if ( ! is_array( $row ) || empty( $row['name'] ) ) {
 					continue;
@@ -560,101 +577,122 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 				if ( ( isset( $row['type'] ) ? $row['type'] : 'file' ) !== 'file' ) {
 					continue;
 				}
-				$name = (string) $row['name'];
-				if ( ! preg_match( '/^([a-zA-Z0-9._-]+)\.zip$/', $name, $m ) ) {
-					continue;
-				}
-				$dir = $m[1];
-				if ( 'tisacase-hub' === $dir ) {
-					continue;
-				}
-				$meta = self::plugin_meta( $repo, $branch, $dir );
-				$key  = sanitize_key( isset( $meta['key'] ) ? $meta['key'] : $dir );
-				$items[ $key ] = array(
-					'title'  => $meta['title'],
-					'desc'   => $meta['desc'],
-					'group'  => $meta['group'],
-					'icon'   => $meta['icon'],
-					'dir'    => $dir,
-					'cap'    => $meta['cap'],
-					'pages'  => $meta['pages'],
-					'source' => 'github',
-				);
+				$names[] = (string) $row['name'];
 			}
-			$pack = array(
-				'repo'   => $repo,
-				'branch' => $branch,
-				'at'     => time(),
-				'items'  => $items,
-			);
-			update_option( 'tisacase_hub_catalog', $pack, false );
-			return $pack;
 		}
+
+		$items = array();
+		foreach ( $names as $name ) {
+			if ( ! preg_match( '/^([a-zA-Z0-9._-]+)\.zip$/', (string) $name, $m ) ) {
+				continue;
+			}
+			$dir = $m[1];
+			if ( 'tisacase-hub' === $dir ) {
+				continue;
+			}
+			$meta = self::plugin_meta( $repo, $branch, $dir );
+			$key  = sanitize_key( isset( $meta['key'] ) ? $meta['key'] : $dir );
+			$items[ $key ] = array(
+				'title'  => $meta['title'],
+				'desc'   => $meta['desc'],
+				'group'  => $meta['group'],
+				'icon'   => $meta['icon'],
+				'dir'    => $dir,
+				'cap'    => $meta['cap'],
+				'pages'  => $meta['pages'],
+				'source' => 'github',
+			);
+		}
+
+		// محافظ: فهرست خالی هرگز کاتالوگِ فعلی را پاک نمی‌کند.
+		if ( empty( $items ) ) {
+			return new WP_Error( 'tsh_catalog', __( 'هیچ فایل زیپ در فهرست مخزن پیدا نشد؛ فهرست قبلی حفظ شد.', 'tisacase-hub' ) );
+		}
+
+		$pack = array(
+			'repo'   => $repo,
+			'branch' => $branch,
+			'at'     => time(),
+			'items'  => $items,
+		);
+		update_option( 'tisacase_hub_catalog', $pack, false );
+		return $pack;
+	}
 
 		public static function catalog() {
 			$pack = get_option( 'tisacase_hub_catalog', array() );
 			return is_array( $pack ) ? $pack : array();
 		}
 
-		private static function plugin_meta( $repo, $branch, $dir ) {
-			$out = array(
-				'title' => $dir,
-				'desc'  => '',
-				'group' => 'products',
-				'icon'  => 'plug',
-				'cap'   => 'manage_woocommerce',
-				'pages' => array(),
-				'key'   => sanitize_key( $dir ),
-			);
-			$list_url = 'https://api.github.com/repos/' . $repo . '/contents/plugins/src/' . rawurlencode( $dir ) . '?ref=' . rawurlencode( $branch );
-			$body     = self::get_text( array( $list_url ) );
-			$files    = array();
-			if ( ! is_wp_error( $body ) ) {
-				$decoded = json_decode( $body, true );
+	private static function plugin_meta( $repo, $branch, $dir ) {
+		$out = array(
+			'title' => $dir,
+			'desc'  => '',
+			'group' => 'products',
+			'icon'  => 'plug',
+			'cap'   => 'manage_woocommerce',
+			'pages' => array(),
+			'key'   => sanitize_key( $dir ),
+		);
+		$branch_enc = rawurlencode( $branch );
+
+		// مسیر سریع: آدرسِ کنوانسیونالِ فایل اصلی — بدون مصرف از limit API.
+		// (شاخه در مسیر به‌صورت خام می‌رود — همان فرمت download_url خود GitHub؛ در query-string آرم‌کد می‌شود.)
+		$raw_url = 'https://raw.githubusercontent.com/' . $repo . '/' . $branch . '/plugins/src/' . rawurlencode( $dir ) . '/' . rawurlencode( $dir ) . '.php';
+		$php     = self::get_text( array( $raw_url ) );
+
+		// فالبک: فهرست‌گیری پوشه از API (برای ساختارهای غیرکنوانسیونال).
+		if ( is_wp_error( $php ) || false === strpos( (string) $php, 'Plugin Name:' ) ) {
+			$php = null;
+			$list_url  = 'https://api.github.com/repos/' . $repo . '/contents/plugins/src/' . rawurlencode( $dir ) . '?ref=' . $branch_enc;
+			$list_body = self::get_text( array( $list_url ) );
+			if ( ! is_wp_error( $list_body ) ) {
+				$decoded = json_decode( $list_body, true );
+				$files   = array();
 				if ( is_array( $decoded ) ) {
 					foreach ( $decoded as $row ) {
-						if ( empty( $row['name'] ) || empty( $row['download_url'] ) ) {
-							continue;
-						}
-						if ( preg_match( '/\.php$/', (string) $row['name'] ) ) {
+						if ( ! empty( $row['name'] ) && ! empty( $row['download_url'] ) && preg_match( '/\.php$/', (string) $row['name'] ) ) {
 							$files[] = (string) $row['download_url'];
 						}
 					}
 				}
-			}
-			$files[] = 'https://raw.githubusercontent.com/' . $repo . '/' . $branch . '/plugins/src/' . $dir . '/' . $dir . '.php';
-			foreach ( $files as $file_url ) {
-				$php = self::get_text( array( $file_url ) );
-				if ( is_wp_error( $php ) || false === strpos( (string) $php, 'Plugin Name:' ) ) {
-					continue;
-				}
-				$name = self::header_value( $php, 'Plugin Name' );
-				$desc = self::header_value( $php, 'Description' );
-				$hub  = self::header_value( $php, 'TisaCase Hub' );
-				if ( $name ) { $out['title'] = $name; }
-				if ( $desc ) { $out['desc'] = wp_strip_all_tags( $desc ); }
-				if ( $hub && class_exists( 'TSH_Registry' ) ) {
-					$parsed = TSH_Registry::parse_header( $hub );
-					if ( ! empty( $parsed['title'] ) ) { $out['title'] = $parsed['title']; }
-					if ( ! empty( $parsed['desc'] ) ) { $out['desc'] = $parsed['desc']; }
-					if ( ! empty( $parsed['group'] ) ) { $out['group'] = $parsed['group']; }
-					if ( ! empty( $parsed['icon'] ) ) { $out['icon'] = $parsed['icon']; }
-					if ( ! empty( $parsed['cap'] ) ) { $out['cap'] = $parsed['cap']; }
-					if ( ! empty( $parsed['key'] ) ) { $out['key'] = sanitize_key( $parsed['key'] ); }
-					if ( ! empty( $parsed['page'] ) ) {
-						$out['pages'][] = array(
-							'label'  => __( 'باز کردن', 'tisacase-hub' ),
-							'path'   => $parsed['page'],
-							'screen' => isset( $parsed['screen'] ) ? $parsed['screen'] : '',
-							'parent' => isset( $parsed['parent'] ) ? $parsed['parent'] : '',
-							'slug'   => isset( $parsed['slug'] ) ? $parsed['slug'] : '',
-						);
+				foreach ( $files as $file_url ) {
+					$candidate = self::get_text( array( $file_url ) );
+					if ( ! is_wp_error( $candidate ) && false !== strpos( (string) $candidate, 'Plugin Name:' ) ) {
+						$php = $candidate;
+						break;
 					}
 				}
-				break;
 			}
-			return $out;
 		}
+
+		if ( is_string( $php ) && false !== strpos( $php, 'Plugin Name:' ) ) {
+			$name = self::header_value( $php, 'Plugin Name' );
+			$desc = self::header_value( $php, 'Description' );
+			$hub  = self::header_value( $php, 'TisaCase Hub' );
+			if ( $name ) { $out['title'] = $name; }
+			if ( $desc ) { $out['desc'] = wp_strip_all_tags( $desc ); }
+			if ( $hub && class_exists( 'TSH_Registry' ) ) {
+				$parsed = TSH_Registry::parse_header( $hub );
+				if ( ! empty( $parsed['title'] ) ) { $out['title'] = $parsed['title']; }
+				if ( ! empty( $parsed['desc'] ) ) { $out['desc'] = $parsed['desc']; }
+				if ( ! empty( $parsed['group'] ) ) { $out['group'] = $parsed['group']; }
+				if ( ! empty( $parsed['icon'] ) ) { $out['icon'] = $parsed['icon']; }
+				if ( ! empty( $parsed['cap'] ) ) { $out['cap'] = $parsed['cap']; }
+				if ( ! empty( $parsed['key'] ) ) { $out['key'] = sanitize_key( $parsed['key'] ); }
+				if ( ! empty( $parsed['page'] ) ) {
+					$out['pages'][] = array(
+						'label'  => __( 'باز کردن', 'tisacase-hub' ),
+						'path'   => $parsed['page'],
+						'screen' => isset( $parsed['screen'] ) ? $parsed['screen'] : '',
+						'parent' => isset( $parsed['parent'] ) ? $parsed['parent'] : '',
+						'slug'   => isset( $parsed['slug'] ) ? $parsed['slug'] : '',
+					);
+				}
+			}
+		}
+		return $out;
+	}
 
 		private static function header_value( $php, $key ) {
 			if ( preg_match( '/^[ \t\/*#@]*' . preg_quote( $key, '/' ) . ':[ \t]*(.+)$/mi', $php, $m ) ) {
