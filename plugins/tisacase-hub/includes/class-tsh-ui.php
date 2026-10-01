@@ -244,17 +244,21 @@ if ( ! class_exists( 'TSH_UI' ) ) {
 						'screen' => $screen,
 						// اگر شماره‌گذاریِ قلم فارسی است، JS هم همان ارقام را بنویسد.
 						'fa'     => (bool) preg_match( '/^[\x{06F0}-\x{06F9}\x{0660}-\x{0669}]/u', TSH_View::num( 10 ) ),
-						'i18n'   => array(
-							'pinned'     => __( 'سنجاق شد', 'tisacase-hub' ),
-							'unpinned'   => __( 'از سنجاق خارج شد', 'tisacase-hub' ),
-							'error'      => __( 'خطا در ارتباط با سرور.', 'tisacase-hub' ),
-							'updating'   => __( 'در حال نصب…', 'tisacase-hub' ),
-							'zipOnly'    => __( 'فقط فایل .zip پذیرفته می‌شود.', 'tisacase-hub' ),
-							'saved'      => __( 'ذخیره شد', 'tisacase-hub' ),
-							'copied'     => __( 'کپی شد', 'tisacase-hub' ),
-							'tools'      => __( 'ابزار', 'tisacase-hub' ),
-							'match'      => __( 'نتیجه', 'tisacase-hub' ),
-						),
+					'i18n'   => array(
+						'pinned'     => __( 'سنجاق شد', 'tisacase-hub' ),
+						'unpinned'   => __( 'از سنجاق خارج شد', 'tisacase-hub' ),
+						'error'      => __( 'خطا در ارتباط با سرور.', 'tisacase-hub' ),
+						'updating'   => __( 'در حال نصب…', 'tisacase-hub' ),
+						'zipOnly'    => __( 'فقط فایل .zip پذیرفته می‌شود.', 'tisacase-hub' ),
+						'saved'      => __( 'ذخیره شد', 'tisacase-hub' ),
+						'copied'     => __( 'کپی شد', 'tisacase-hub' ),
+						'tools'      => __( 'ابزار', 'tisacase-hub' ),
+						'match'      => __( 'نتیجه', 'tisacase-hub' ),
+						'syncedOk'   => __( 'فهرست مخزن همگام شد (%s افزونه).', 'tisacase-hub' ),
+						'syncedOkOffline' => __( 'دسترسی به مخزن نبود؛ فهرست همراه خودِ هاب استفاده شد (%s افزونه).', 'tisacase-hub' ),
+						'syncedBranch' => __( 'شاخه: %s', 'tisacase-hub' ),
+						'syncReloading' => __( 'صفحه تازه می‌شود…', 'tisacase-hub' ),
+					),
 					)
 				);
 			}

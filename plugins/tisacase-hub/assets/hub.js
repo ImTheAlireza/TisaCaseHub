@@ -481,20 +481,37 @@
 			} );
 		}
 		if ( sync ) {
-			sync.addEventListener( 'click', function () {
-				sync.disabled = true;
-				post( 'tsh_repo_sync', {} ).then( function ( res ) {
-					if ( ! res || ! res.success ) {
-						window.alert( ( res && res.data && res.data.msg ) || ( cfg.i18n && cfg.i18n.error ) );
-						sync.disabled = false;
-						return;
-					}
-					window.location.reload();
-				} ).catch( function () {
-					window.alert( cfg.i18n && cfg.i18n.error );
+		sync.addEventListener( 'click', function () {
+			sync.disabled = true;
+			post( 'tsh_repo_sync', {} ).then( function ( res ) {
+				if ( ! res || ! res.success ) {
+					window.alert( ( res && res.data && res.data.msg ) || ( cfg.i18n && cfg.i18n.error ) );
 					sync.disabled = false;
-				} );
+					return;
+				}
+				var d = ( res && res.data ) || {};
+				var i18n = cfg.i18n || {};
+				var msg = '';
+				if ( d.offline && i18n.syncedOkOffline ) {
+					msg = i18n.syncedOkOffline.replace( '%s', d.count || 0 );
+				} else if ( i18n.syncedOk ) {
+					msg = i18n.syncedOk.replace( '%s', d.count || 0 );
+				}
+				if ( i18n.syncedBranch && d.branch ) {
+					msg += ( msg ? ' ' : '' ) + i18n.syncedBranch.replace( '%s', d.branch );
+				}
+				if ( i18n.syncReloading ) {
+					msg += ( msg ? ' ' : '' ) + i18n.syncReloading;
+				}
+				if ( msg ) {
+					window.alert( msg );
+				}
+				window.location.reload();
+			} ).catch( function () {
+				window.alert( cfg.i18n && cfg.i18n.error );
+				sync.disabled = false;
 			} );
+		} );
 		}
 	}() );
 }() );
