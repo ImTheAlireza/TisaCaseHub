@@ -221,7 +221,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<div class="tbsm-counts" id="tbsm-counts"></div>
 						<div class="tbsm-unified">
 							<label for="tbsm-quickset">موجودی همگانی:</label>
-							<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-num tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+							<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
 							<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 						</div>

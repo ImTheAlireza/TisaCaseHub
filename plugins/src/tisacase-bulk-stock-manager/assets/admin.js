@@ -838,14 +838,15 @@
 				var mode = (it.mode === 'in_stock' || it.mode === 'out_of_stock') ? it.mode : 'qty';
 
 				// تفاوت: عددی «۰ ← ۷» یا وضعیت «موجود ← ناموجود»
+				// فلش از «قدیمی» (راست) به «جدید» (چپ)؛ جهت راست‌به‌چپِ صفحه
 				var diff = (mode === 'qty')
-					? this.fmt(it.from) + ' \u2192 ' + this.fmt(it.to)
-					: this.statusLabel(it.from_status) + ' \u2192 ' + this.statusLabel(it.to_status);
+					? this.fmt(it.from) + ' \u2190 ' + this.fmt(it.to)
+					: this.statusLabel(it.from_status) + ' \u2190 ' + this.statusLabel(it.to_status);
 
 				rows += '<div class="tbsm-report-row">'
 					+ '<span>' + this.esc(it.name) + '</span>'
 					+ (it.sku ? '<span class="tbsm-report-sku">' + this.esc(it.sku) + '</span>' : '')
-					+ '<span class="tbsm-report-diff" dir="ltr">' + this.esc(diff) + '</span>'
+					+ '<span class="tbsm-report-diff">' + this.esc(diff) + '</span>'
 					+ '</div>';
 
 					// به‌روزرسانی کارت: حالت، بج، مقدار ورودی

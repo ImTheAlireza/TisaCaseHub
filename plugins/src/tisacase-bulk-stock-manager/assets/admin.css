@@ -300,12 +300,6 @@
 	padding-inline-start: 40px;
 }
 
-.tbsm-num {
-	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
-	direction: ltr;
-	text-align: left;
-}
-
 /* ------------------------------------------------------------------
    نتایج جست‌وجو
    ------------------------------------------------------------------ */
