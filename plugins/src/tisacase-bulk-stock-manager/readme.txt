@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.1.1
+Stable tag: 1.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.1.2 =
+* باگ‌شناسی فیلد جست‌وجو: متن تایپ‌شده دیگر زیر آیکون ذره‌بین نمی‌رفت (پد فیزیکی + type=text؛ رفع باگ RTL ورودی‌های type=search).
+* بازطراحی استایل گام ۳: سلکت «نوع موجودی» در استایل چیپ‌های وضعیت (رنگ = حالت فعلی: سبز/فیروزه‌ای/قرمز) با فلش سفارشی؛ باکس عددی هر کارت هم بر اساس مقدار رنگ می‌گیرد (سبز = موجود، قرمز = صفر/ناموجود) و دکمه‌های ± تمیزتر شدند.
 
 = 1.1.1 =
 * رفع جهت فلش گزارش: فلش حالا از مقدار «قدیمی» (راست) به «جدید» (چپ) اشاره می‌کند و متن گزارش با جهت راست‌به‌چپ صفحه خوانده می‌شود (اعداد و وضعیت‌ها).

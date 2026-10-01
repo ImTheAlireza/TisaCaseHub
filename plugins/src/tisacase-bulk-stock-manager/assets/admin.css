@@ -264,7 +264,7 @@
 
 .tbsm-search-icon {
 	position: absolute;
-	inset-inline-start: 12px;
+	right: 12px;
 	top: 50%;
 	transform: translateY(-50%);
 	color: var(--tisa-muted, #77828A);
@@ -297,7 +297,8 @@
 }
 
 .tbsm-search-input {
-	padding-inline-start: 40px;
+	/* فاصلهٔ فیزیکی: جای ذره‌بین در سمت راست (صفحه همیشه RTL است) */
+	padding: 6px 42px 6px 12px;
 }
 
 /* ------------------------------------------------------------------
@@ -692,7 +693,7 @@
 	padding: 1px 8px;
 }
 
-/* باکس موجودی: [−] [عدد] [+] */
+/* باکس موجودی: [−] [عدد] [+] — در استایل چیپ‌های وضعیت */
 .tbsm-var-stockbox {
 	display: flex;
 	align-items: stretch;
@@ -701,7 +702,34 @@
 	border-radius: 10px;
 	background: var(--tisa-surface, #FFFFFF);
 	overflow: hidden;
-	transition: border-color 130ms ease, box-shadow 130ms ease;
+	transition: border-color 130ms ease, box-shadow 130ms ease, background-color 130ms ease;
+}
+
+/* رنگ باکس بر اساس مقدار: سبز = موجود، قرمز = ناموجود */
+.tbsm-var-stockbox--in {
+	border-color: var(--tisa-success, #1A7F37);
+	background: var(--tisa-success-soft, #E5F4E7);
+}
+
+.tbsm-var-stockbox--in .tbsm-var-stock {
+	color: var(--tisa-success, #1A7F37);
+}
+
+.tbsm-var-stockbox--in .tbsm-stepbtn {
+	color: var(--tisa-success, #1A7F37);
+}
+
+.tbsm-var-stockbox--out {
+	border-color: var(--tisa-danger, #B5453A);
+	background: var(--tisa-danger-soft, #FBECEA);
+}
+
+.tbsm-var-stockbox--out .tbsm-var-stock {
+	color: var(--tisa-danger, #B5453A);
+}
+
+.tbsm-var-stockbox--out .tbsm-stepbtn {
+	color: var(--tisa-danger, #B5453A);
 }
 
 .tbsm-var-stockbox:focus-within {
@@ -711,11 +739,11 @@
 
 .tbsm-stepbtn {
 	flex-shrink: 0;
-	width: 30px;
+	width: 32px;
 	border: none;
-	background: var(--tisa-surface-2, #FAFAF8);
-	color: var(--tisa-text, #2A3439);
-	font-size: 16px;
+	background: transparent;
+	color: var(--tisa-muted, #77828A);
+	font-size: 17px;
 	font-weight: 700;
 	line-height: 1;
 	cursor: pointer;
@@ -723,13 +751,12 @@
 }
 
 .tbsm-stepbtn:hover {
-	background: var(--tisa-primary-soft, #E8F0EE);
-	color: var(--tisa-primary-ink, #0A5F52);
+	background: rgba(31, 42, 46, .08);
+	color: var(--tisa-ink, #1F2A2E);
 }
 
 .tbsm-stepbtn:active {
-	background: var(--tisa-primary, #0E7C6B);
-	color: #fff;
+	background: rgba(31, 42, 46, .14);
 }
 
 .tbsm-stepbtn:focus-visible {
@@ -743,8 +770,8 @@
 	border: none;
 	background: transparent;
 	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
-	font-size: 13.5px;
-	font-weight: 700;
+	font-size: 14px;
+	font-weight: 800;
 	direction: ltr;
 	text-align: center;
 	color: var(--tisa-ink, #1F2A2E);
@@ -753,7 +780,7 @@
 
 .tbsm-var-stock:focus {
 	outline: none;
-	background: var(--tisa-primary-soft, #E8F0EE);
+	background: rgba(255, 255, 255, .65);
 }
 
 /* دکمه‌های عددِ پیش‌فرض مرورگر را حذف می‌کنیم (استپر خودمان هست) */
@@ -768,29 +795,53 @@
 	appearance: textfield;
 }
 
-/* سلکت نوع موجودی: عددی / موجود بدون تعداد / ناموجود */
+/* سلکت نوع موجودی: در استایل چیپ‌های وضعیت (رنگ = حالت فعلی) */
 .tbsm-var-mode {
 	width: 100%;
-	min-height: 30px;
-	padding: 2px 8px;
-	border: 1px solid var(--tisa-border, #E3E1DA);
-	border-radius: 9px;
-	background: var(--tisa-surface, #FFFFFF);
+	min-height: 32px;
+	/* فاصلهٔ راست برای متن (RTL)، چپ برای فلش */
+	padding: 4px 10px 4px 24px;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: 10px;
+	background-color: var(--tisa-surface-2, #FAFAF8);
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364706D' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: left 9px center;
 	font-family: inherit;
 	font-size: 12px;
-	font-weight: 600;
+	font-weight: 800;
 	color: var(--tisa-text, #2A3439);
 	cursor: pointer;
-	transition: border-color 130ms ease, box-shadow 130ms ease;
+	-webkit-appearance: none;
+	appearance: none;
+	transition: border-color 130ms ease, box-shadow 130ms ease, background-color 130ms ease, color 130ms ease;
+}
+
+/* رنگ سلکت با حالت کارت (همان پالت چیپ‌ها) */
+.tbsm-var[data-mode="qty"] .tbsm-var-mode {
+	background-color: var(--tisa-primary-soft, #E8F0EE);
+	border-color: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-var[data-mode="in_stock"] .tbsm-var-mode {
+	background-color: var(--tisa-success-soft, #E5F4E7);
+	border-color: var(--tisa-success, #1A7F37);
+	color: var(--tisa-success, #1A7F37);
+}
+
+.tbsm-var[data-mode="out_of_stock"] .tbsm-var-mode {
+	background-color: var(--tisa-danger-soft, #FBECEA);
+	border-color: var(--tisa-danger, #B5453A);
+	color: var(--tisa-danger, #B5453A);
 }
 
 .tbsm-var-mode:hover {
-	border-color: var(--tisa-border-strong, #C9DCD7);
+	box-shadow: 0 1px 5px rgba(31, 42, 46, .12);
 }
 
 .tbsm-var-mode:focus {
 	outline: none;
-	border-color: var(--tisa-primary, #0E7C6B);
 	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
 }
 

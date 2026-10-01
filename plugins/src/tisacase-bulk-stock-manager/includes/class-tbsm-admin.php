@@ -188,7 +188,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 					</div>
 					<div class="tbsm-search">
 						<span class="tbsm-search-icon"><?php echo self::icon( 'search' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-						<input type="search" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
+						<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
 					</div>
 					<div id="tbsm-results" class="tbsm-results" hidden></div>
 					<div id="tbsm-selected" class="tbsm-selected" hidden></div>

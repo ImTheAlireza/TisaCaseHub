@@ -137,7 +137,9 @@
 					return;
 				}
 			}).on('input', '.tbsm-var-stock', function () {
-				$(this).closest('.tbsm-var').removeClass('is-invalid');
+				var $card = $(this).closest('.tbsm-var');
+				$card.removeClass('is-invalid');
+				self.paintStockbox($card);
 			}).on('change', '.tbsm-var-mode', function () {
 				self.setCardMode($(this).closest('.tbsm-var'), this.value);
 			});
@@ -448,9 +450,15 @@
 							? '<span class="tbsm-var-status-chip tbsm-var-status-chip--out">' + this.esc(this.i18n('modeOutOfStock')) + '</span>'
 							: '<span class="tbsm-var-status-chip" hidden></span>')
 					+ '</div>';
-			}
+				}
 
 			$grid.prop('hidden', false).html(html);
+
+			// رنگ اولیهٔ باکس‌های عددی (سبز/قرمز بر اساس مقدار)
+			var self = this;
+			$grid.find('.tbsm-var').each(function () {
+				self.paintStockbox($(this));
+			});
 		},
 
 		toggleCard: function ($card) {
@@ -478,6 +486,7 @@
 				next = 0;
 			}
 			$input.val(next).removeClass('is-invalid').trigger('focus');
+			this.paintStockbox($card);
 		},
 
 		/**
@@ -500,6 +509,7 @@
 				$box.prop('hidden', false);
 				$in.prop('disabled', false);
 				$chip.prop('hidden', true).attr('class', 'tbsm-var-status-chip').text('');
+				this.paintStockbox($card);
 				if ($card.attr('data-manage') === '0') {
 					// ردیابی خاموش است؛ یادآوری که با اعمال روشن می‌شود
 					if ($card.find('.tbsm-var-manage').length === 0) {
@@ -541,6 +551,18 @@
 			return status === 'instock' ? this.i18n('inStockLabel') : this.i18n('outOfStockLabel');
 		},
 
+		/** رنگ باکس عددی بر اساس مقدار: سبز (بیش از صفر) / قرمز (صفر). */
+		paintStockbox: function ($card) {
+			var $box = $card.find('.tbsm-var-stockbox');
+			if (!$box.length) {
+				return;
+			}
+			var v = parseInt($card.find('.tbsm-var-stock').val(), 10);
+			$box
+				.removeClass('tbsm-var-stockbox--in tbsm-var-stockbox--out')
+				.addClass(isNaN(v) || v <= 0 ? 'tbsm-var-stockbox--out' : 'tbsm-var-stockbox--in');
+		},
+
 		/** مقدار را در ورودی همهٔ کارت‌های انتخابی (نمایشی) درج می‌کند. */
 		quickSet: function () {
 			var self = this;
@@ -557,6 +579,7 @@
 						self.setCardMode($card, 'qty');
 					}
 					$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
+					self.paintStockbox($card);
 					n++;
 				});
 
@@ -797,6 +820,7 @@
 					self.setCardMode($card, 'qty');
 				}
 				$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
+				self.paintStockbox($card);
 			});
 
 			$.post(window.tbsmData.ajaxUrl, {
@@ -862,6 +886,7 @@
 								.removeClass('tbsm-badge--ok tbsm-badge--out')
 								.addClass(it.to > 0 ? 'tbsm-badge--ok' : 'tbsm-badge--out')
 								.text(this.i18n('stockLabel') + ': ' + this.fmt(it.to));
+							this.paintStockbox($card);
 						}
 					}
 			}
