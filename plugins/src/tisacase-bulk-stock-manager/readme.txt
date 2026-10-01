@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.1.2
+Stable tag: 1.1.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.1.3 =
+* رفع قطعی باگ «متن زیر ذره‌بین»: فیلد جست‌وجو حالا یک جعبهٔ flex است — آیکون داخل جریان (سمت راست) و ورودی شفاف بقیهٔ فضا؛ حالا متن به‌هیچ‌وجه نمی‌تواند زیر آیکون برود.
+* سلکت «نوع موجودی»: طبق بازخورد — پس‌زمینهٔ سفید (بدون رنگ‌بندی حالت) و گوشه‌های گرد مثل بقیهٔ جعبه‌ها؛ حلقهٔ focus پیش‌فرض مرورگر (که گوشه‌های تیز داشت) کاملاً حذف و با حلقهٔ گرد و نرم جایگزین شد.
 
 = 1.1.2 =
 * باگ‌شناسی فیلد جست‌وجو: متن تایپ‌شده دیگر زیر آیکون ذره‌بین نمی‌رفت (پد فیزیکی + type=text؛ رفع باگ RTL ورودی‌های type=search).

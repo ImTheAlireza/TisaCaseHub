@@ -258,17 +258,27 @@
    جست‌وجو
    ------------------------------------------------------------------ */
 .tbsm-search {
-	position: relative;
+	/* چیدمان flex: آیکون داخل جریان (در RTL سمت راست) و ورودی شفاف بقیهٔ فضا —
+	   متن هرگز نمی‌تواند زیر ذره‌بین برود، فارغ از رفتار UAِ input */
+	display: flex;
+	align-items: center;
 	max-width: 560px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 10px;
+	background: var(--tisa-surface, #FFFFFF);
+	transition: border-color 150ms cubic-bezier(.4, 0, .2, 1), box-shadow 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.tbsm-search:focus-within {
+	border-color: var(--tisa-primary, #0E7C6B);
+	box-shadow: 0 0 0 3px rgba(14, 124, 107, .22);
 }
 
 .tbsm-search-icon {
-	position: absolute;
-	right: 12px;
-	top: 50%;
-	transform: translateY(-50%);
-	color: var(--tisa-muted, #77828A);
+	flex: 0 0 auto;
 	display: inline-flex;
+	margin-inline-end: 10px;
+	color: var(--tisa-muted, #77828A);
 	pointer-events: none;
 }
 
@@ -297,8 +307,18 @@
 }
 
 .tbsm-search-input {
-	/* فاصلهٔ فیزیکی: جای ذره‌بین در سمت راست (صفحه همیشه RTL است) */
-	padding: 6px 42px 6px 12px;
+	flex: 1;
+	min-width: 0;
+	border: none;
+	border-radius: 0;
+	background: transparent;
+	padding: 6px 10px 6px 12px;
+}
+
+.tbsm-search-input:focus {
+	outline: none;
+	border-color: transparent;
+	box-shadow: none;
 }
 
 /* ------------------------------------------------------------------
@@ -795,54 +815,38 @@
 	appearance: textfield;
 }
 
-/* سلکت نوع موجودی: در استایل چیپ‌های وضعیت (رنگ = حالت فعلی) */
+/* سلکت نوع موجودی: سفید و گرد، مثل بقیهٔ جعبه‌ها */
 .tbsm-var-mode {
 	width: 100%;
 	min-height: 32px;
 	/* فاصلهٔ راست برای متن (RTL)، چپ برای فلش */
 	padding: 4px 10px 4px 24px;
-	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border: 1px solid var(--tisa-border, #E3E1DA);
 	border-radius: 10px;
-	background-color: var(--tisa-surface-2, #FAFAF8);
+	background-color: #FFFFFF;
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2364706D' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: left 9px center;
 	font-family: inherit;
-	font-size: 12px;
-	font-weight: 800;
+	font-size: 12.5px;
+	font-weight: 700;
 	color: var(--tisa-text, #2A3439);
 	cursor: pointer;
 	-webkit-appearance: none;
 	appearance: none;
-	transition: border-color 130ms ease, box-shadow 130ms ease, background-color 130ms ease, color 130ms ease;
-}
-
-/* رنگ سلکت با حالت کارت (همان پالت چیپ‌ها) */
-.tbsm-var[data-mode="qty"] .tbsm-var-mode {
-	background-color: var(--tisa-primary-soft, #E8F0EE);
-	border-color: var(--tisa-primary, #0E7C6B);
-	color: var(--tisa-primary-ink, #0A5F52);
-}
-
-.tbsm-var[data-mode="in_stock"] .tbsm-var-mode {
-	background-color: var(--tisa-success-soft, #E5F4E7);
-	border-color: var(--tisa-success, #1A7F37);
-	color: var(--tisa-success, #1A7F37);
-}
-
-.tbsm-var[data-mode="out_of_stock"] .tbsm-var-mode {
-	background-color: var(--tisa-danger-soft, #FBECEA);
-	border-color: var(--tisa-danger, #B5453A);
-	color: var(--tisa-danger, #B5453A);
+	transition: border-color 130ms ease, box-shadow 130ms ease;
 }
 
 .tbsm-var-mode:hover {
-	box-shadow: 0 1px 5px rgba(31, 42, 46, .12);
+	border-color: var(--tisa-primary, #0E7C6B);
 }
 
-.tbsm-var-mode:focus {
-	outline: none;
-	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+/* حلقهٔ focus گرد و نرم — outline پیش‌فرض مرورگر (گوشه‌های تیز) خاموش است */
+.tbsm-var-mode:focus,
+.tbsm-var-mode:focus-visible {
+	outline: none !important;
+	border-color: var(--tisa-primary, #0E7C6B);
+	box-shadow: 0 0 0 3px rgba(14, 124, 107, .18);
 }
 
 /* چیپ وضعیت در جای باکس عددی */
