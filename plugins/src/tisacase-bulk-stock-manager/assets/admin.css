@@ -1,0 +1,776 @@
+/**
+ * TisaCase Bulk Stock Manager — Admin Styles
+ * منطبق با زبان طراحی TisaCase (توکن‌های --tisa-* با فالبک مستقل).
+ *
+ * @package TisaCase_Bulk_Stock_Manager
+ */
+
+.tbsm-wrap {
+	max-width: var(--tisa-max-w, 1280px);
+	margin-top: var(--tisa-sp-4, 16px);
+	margin-inline-end: auto;
+	margin-inline-start: 0;
+	font-family: var(--tisa-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif);
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+.tbsm-wrap * {
+	box-sizing: border-box;
+}
+
+/* حالت مخفی (display‌های نویسندگی‌شده را هم بگیرد) */
+.tbsm-wrap [hidden] {
+	display: none !important;
+}
+
+/* ------------------------------------------------------------------
+   دکمه‌ها (فالبک مستقل؛ با هاب نیز همین ظاهر)
+   ------------------------------------------------------------------ */
+.tbsm-wrap .tisa-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 0 16px;
+	border: 1px solid transparent;
+	border-radius: 10px;
+	background: var(--tisa-surface-3, #F0EEE8);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: inherit;
+	font-size: 13px;
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: background 150ms cubic-bezier(.4, 0, .2, 1), border-color 150ms cubic-bezier(.4, 0, .2, 1), color 150ms cubic-bezier(.4, 0, .2, 1), box-shadow 150ms cubic-bezier(.4, 0, .2, 1), transform 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.tbsm-wrap .tisa-btn:hover {
+	background: var(--tisa-primary-soft, #E8F0EE);
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+.tbsm-wrap .tisa-btn:active {
+	transform: translateY(1px);
+}
+
+.tbsm-wrap .tisa-btn:focus-visible {
+	outline: none;
+	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+}
+
+.tbsm-wrap .tisa-btn:disabled {
+	opacity: .55;
+	cursor: not-allowed;
+	transform: none;
+}
+
+.tbsm-wrap .tisa-btn--primary {
+	background: var(--tisa-primary, #0E7C6B);
+	border-color: var(--tisa-primary-ink, #0A5F52);
+	color: var(--tisa-on-primary, #FFFFFF);
+	box-shadow: 0 1px 2px rgba(10, 95, 82, .24);
+}
+
+.tbsm-wrap .tisa-btn--primary:hover {
+	background: var(--tisa-primary-ink, #0A5F52);
+	border-color: var(--tisa-primary-deep, #064E46);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+.tbsm-wrap .tisa-btn--secondary {
+	background: var(--tisa-surface, #FFFFFF);
+	border-color: var(--tisa-border-strong, #C9DCD7);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-wrap .tisa-btn--secondary:hover {
+	background: var(--tisa-primary-tint, #F2F7F5);
+	border-color: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-wrap .tisa-btn--confirm {
+	background: var(--tisa-danger, #B5453A);
+	border-color: #96352C;
+	color: #fff;
+}
+
+.tbsm-wrap .tisa-btn--confirm:hover {
+	background: #96352C;
+}
+
+/* ------------------------------------------------------------------
+   هدر گرادیانی سبز تیساکیس
+   ------------------------------------------------------------------ */
+.tbsm-hero {
+	background: linear-gradient(135deg, var(--tisa-primary-deep, #064E46) 0%, var(--tisa-primary-ink, #0A5F52) 60%, var(--tisa-primary, #0E7C6B) 100%);
+	color: var(--tisa-on-primary, #FFFFFF);
+	padding: 24px 24px 0;
+	border-radius: 20px;
+	box-shadow: var(--tisa-shadow, 0 1px 2px rgba(31, 42, 46, .05), 0 10px 30px rgba(31, 42, 46, .06));
+	position: relative;
+	overflow: hidden;
+	margin-bottom: 20px;
+}
+
+.tbsm-hero-row {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding-bottom: 20px;
+}
+
+.tbsm-hero-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 48px;
+	height: 48px;
+	border-radius: 16px;
+	background: rgba(255, 255, 255, 0.12);
+	color: var(--tisa-on-primary, #FFFFFF);
+	flex-shrink: 0;
+}
+
+.tbsm-hero-mark svg {
+	width: 26px;
+	height: 26px;
+}
+
+.tbsm-hero-text {
+	flex: 1;
+}
+
+.tbsm-hero-title {
+	margin: 0;
+	font-size: var(--tisa-fs-hero, 26px);
+	font-weight: 800;
+	color: var(--tisa-on-primary, #FFFFFF);
+	line-height: 1.35;
+}
+
+.tbsm-hero-sub {
+	margin: 6px 0 0;
+	font-size: 13px;
+	opacity: .88;
+	line-height: 1.75;
+}
+
+.tbsm-hero-ver {
+	align-self: flex-start;
+	background: rgba(255, 255, 255, 0.15);
+	padding: 4px 12px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: .5px;
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+}
+
+/* ------------------------------------------------------------------
+   اعلان
+   ------------------------------------------------------------------ */
+.tbsm-notice {
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-inline-start-width: 4px;
+	border-radius: 14px;
+	background: var(--tisa-surface, #FFFFFF);
+	padding: 12px 16px;
+	margin-bottom: 20px;
+	font-size: 13px;
+	line-height: 1.9;
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+}
+
+.tbsm-notice--success {
+	border-color: var(--tisa-success, #1A7F37);
+	border-inline-start-color: var(--tisa-success, #1A7F37);
+	background: var(--tisa-success-soft, #E5F4E7);
+}
+
+.tbsm-notice--error {
+	border-color: var(--tisa-danger, #B5453A);
+	border-inline-start-color: var(--tisa-danger, #B5453A);
+	background: var(--tisa-danger-soft, #FBECEA);
+}
+
+.tbsm-notice--info {
+	border-color: var(--tisa-info, #135E96);
+	border-inline-start-color: var(--tisa-info, #135E96);
+	background: var(--tisa-info-soft, #F0F6FC);
+}
+
+/* ------------------------------------------------------------------
+   کارت‌های گام
+   ------------------------------------------------------------------ */
+.tbsm-card {
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 16px;
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+	padding: 20px 24px;
+	margin-bottom: 16px;
+	transition: opacity 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.tbsm-step-locked {
+	opacity: .55;
+	pointer-events: none;
+}
+
+.tbsm-step-head {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	margin-bottom: 16px;
+}
+
+.tbsm-step-num {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 34px;
+	height: 34px;
+	border-radius: 999px;
+	background: var(--tisa-primary-soft, #E8F0EE);
+	color: var(--tisa-primary-ink, #0A5F52);
+	font-weight: 800;
+	font-size: 16px;
+	flex-shrink: 0;
+}
+
+.tbsm-step-title {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 700;
+}
+
+.tbsm-step-sub {
+	margin: 2px 0 0;
+	font-size: 12px;
+	color: var(--tisa-muted, #77828A);
+	line-height: 1.7;
+}
+
+/* ------------------------------------------------------------------
+   جست‌وجو
+   ------------------------------------------------------------------ */
+.tbsm-search {
+	position: relative;
+	max-width: 560px;
+}
+
+.tbsm-search-icon {
+	position: absolute;
+	inset-inline-start: 12px;
+	top: 50%;
+	transform: translateY(-50%);
+	color: var(--tisa-muted, #77828A);
+	display: inline-flex;
+	pointer-events: none;
+}
+
+.tbsm-search-icon svg {
+	width: 17px;
+	height: 17px;
+}
+
+.tbsm-input {
+	width: 100%;
+	min-height: 36px;
+	padding: 6px 12px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 10px;
+	background: var(--tisa-surface, #FFFFFF);
+	font-family: inherit;
+	font-size: 13px;
+	color: var(--tisa-ink, #1F2A2E);
+	transition: border-color 150ms cubic-bezier(.4, 0, .2, 1), box-shadow 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.tbsm-input:focus {
+	outline: none;
+	border-color: var(--tisa-primary, #0E7C6B);
+	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+}
+
+.tbsm-search-input {
+	padding-inline-start: 40px;
+}
+
+.tbsm-num {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	direction: ltr;
+	text-align: left;
+}
+
+/* ------------------------------------------------------------------
+   نتایج جست‌وجو
+   ------------------------------------------------------------------ */
+.tbsm-results {
+	margin-top: 12px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 12px;
+	overflow: hidden;
+	max-height: 340px;
+	overflow-y: auto;
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tbsm-result {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	padding: 10px 14px;
+	border: none;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	background: transparent;
+	text-align: start;
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 13px;
+	color: inherit;
+	transition: background 120ms ease;
+}
+
+.tbsm-result:last-child {
+	border-bottom: none;
+}
+
+.tbsm-result:hover {
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tbsm-result-img {
+	width: 40px;
+	height: 40px;
+	border-radius: 9px;
+	object-fit: cover;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	background: #fff;
+	flex-shrink: 0;
+}
+
+.tbsm-result-img--none {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tbsm-result-name {
+	flex: 1;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tbsm-result-sku {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: 11.5px;
+	color: var(--tisa-muted, #77828A);
+	direction: ltr;
+}
+
+.tbsm-results-empty {
+	padding: 18px;
+	text-align: center;
+	color: var(--tisa-muted, #77828A);
+	font-size: 13px;
+}
+
+/* ------------------------------------------------------------------
+   محصول انتخاب‌شده
+   ------------------------------------------------------------------ */
+.tbsm-selected {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	margin-top: 14px;
+	padding: 12px 16px;
+	border: 1px solid var(--tisa-primary, #0E7C6B);
+	border-radius: 14px;
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tbsm-selected-img {
+	width: 52px;
+	height: 52px;
+	border-radius: 11px;
+	object-fit: cover;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	background: #fff;
+	flex-shrink: 0;
+}
+
+.tbsm-selected-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.tbsm-selected-name {
+	font-weight: 800;
+	font-size: 14px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tbsm-selected-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 5px;
+}
+
+.tbsm-selected-sku {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: 11.5px;
+	color: var(--tisa-muted, #77828A);
+	direction: ltr;
+}
+
+.tbsm-selected .tisa-btn {
+	flex-shrink: 0;
+	min-height: 30px;
+	padding: 0 12px;
+	font-size: 12px;
+}
+
+/* ------------------------------------------------------------------
+   بج‌ها
+   ------------------------------------------------------------------ */
+.tbsm-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 9px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	white-space: nowrap;
+	background: var(--tisa-primary-soft, #E8F0EE);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-badge--ok {
+	background: var(--tisa-success-soft, #E5F4E7);
+	color: var(--tisa-success, #1A7F37);
+}
+
+.tbsm-badge--out {
+	background: var(--tisa-danger-soft, #FBECEA);
+	color: var(--tisa-danger, #B5453A);
+}
+
+.tbsm-badge--muted {
+	background: #EFEDE7;
+	color: var(--tisa-muted, #77828A);
+}
+
+/* ------------------------------------------------------------------
+   گام ۲ — سلکت دسته
+   ------------------------------------------------------------------ */
+.tbsm-cat-select {
+	max-width: 420px;
+	cursor: pointer;
+}
+
+.tbsm-counts {
+	margin-top: 10px;
+	font-size: 12px;
+	color: var(--tisa-muted, #77828A);
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 16px;
+}
+
+.tbsm-counts strong {
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+/* ------------------------------------------------------------------
+   گام ۳ — نوار ابزار
+   ------------------------------------------------------------------ */
+.tbsm-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 16px;
+	padding: 12px 14px;
+	border: 1px dashed var(--tisa-border-strong, #C9DCD7);
+	border-radius: 12px;
+	background: var(--tisa-surface-2, #FAFAF8);
+	position: sticky;
+	top: 32px;
+	z-index: 5;
+}
+
+.tbsm-quickset {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-size: 12.5px;
+	font-weight: 600;
+	color: var(--tisa-text, #2A3439);
+}
+
+.tbsm-quickset .tbsm-input {
+	width: 110px;
+	min-height: 32px;
+}
+
+.tbsm-btn-quick {
+	min-height: 32px;
+	padding: 0 12px;
+	font-size: 12px;
+}
+
+.tbsm-btn-apply {
+	min-width: 240px;
+}
+
+/* ------------------------------------------------------------------
+   گام ۳ — کارت‌های متغیر
+   ------------------------------------------------------------------ */
+.tbsm-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));
+	gap: 10px;
+}
+
+.tbsm-var {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 7px;
+	padding: 11px 12px 12px;
+	border: 1.5px solid var(--tisa-border, #E3E1DA);
+	border-radius: 13px;
+	background: var(--tisa-surface, #FFFFFF);
+	cursor: pointer;
+	transition: border-color 130ms ease, background 130ms ease, box-shadow 130ms ease, opacity 130ms ease;
+	user-select: none;
+}
+
+.tbsm-var:hover {
+	border-color: var(--tisa-border-strong, #C9DCD7);
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+}
+
+.tbsm-var.is-selected {
+	border-color: var(--tisa-primary, #0E7C6B);
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tbsm-var.is-hidden {
+	display: none;
+}
+
+.tbsm-var.is-invalid .tbsm-var-stock {
+	border-color: var(--tisa-danger, #B5453A);
+	box-shadow: 0 0 0 3px rgba(181, 69, 58, .18);
+}
+
+.tbsm-var-check {
+	position: absolute;
+	inset-inline-end: 9px;
+	top: 9px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 21px;
+	height: 21px;
+	border-radius: 7px;
+	border: 1.5px solid var(--tisa-border-strong, #C9DCD7);
+	background: #fff;
+	color: transparent;
+	transition: all 130ms ease;
+}
+
+.tbsm-var-check svg {
+	width: 13px;
+	height: 13px;
+}
+
+.tbsm-var.is-selected .tbsm-var-check {
+	background: var(--tisa-primary, #0E7C6B);
+	border-color: var(--tisa-primary, #0E7C6B);
+	color: #fff;
+}
+
+.tbsm-var-name {
+	font-size: 12.5px;
+	font-weight: 700;
+	line-height: 1.5;
+	padding-inline-end: 24px;
+	min-height: 2.6em;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.tbsm-var-sku {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: 10.5px;
+	color: var(--tisa-muted, #77828A);
+	direction: ltr;
+	text-align: start;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tbsm-var-foot {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 5px;
+	min-height: 20px;
+}
+
+.tbsm-var-manage {
+	font-size: 10px;
+	font-weight: 700;
+	color: var(--tisa-warning, #8A6116);
+	background: var(--tisa-warning-soft, #FCF3D7);
+	border-radius: 999px;
+	padding: 1px 8px;
+}
+
+.tbsm-var-stock {
+	width: 100%;
+	min-height: 32px;
+	margin-top: auto;
+	padding: 4px 10px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 9px;
+	background: var(--tisa-surface, #FFFFFF);
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: 13.5px;
+	font-weight: 700;
+	direction: ltr;
+	text-align: left;
+	color: var(--tisa-ink, #1F2A2E);
+	cursor: text;
+	user-select: text;
+}
+
+.tbsm-var-stock:focus {
+	outline: none;
+	border-color: var(--tisa-primary, #0E7C6B);
+	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+}
+
+.tbsm-grid-empty {
+	grid-column: 1 / -1;
+	padding: 26px;
+	text-align: center;
+	color: var(--tisa-muted, #77828A);
+	font-size: 13px;
+	border: 1px dashed var(--tisa-border, #E3E1DA);
+	border-radius: 12px;
+}
+
+/* ------------------------------------------------------------------
+   گزارش اعمال
+   ------------------------------------------------------------------ */
+.tbsm-report {
+	margin-top: 16px;
+	border: 1px solid var(--tisa-success, #1A7F37);
+	background: var(--tisa-success-soft, #E5F4E7);
+	border-radius: 14px;
+	padding: 14px 18px;
+	font-size: 12.5px;
+	line-height: 2;
+}
+
+.tbsm-report-title {
+	font-weight: 800;
+	font-size: 13.5px;
+	margin-bottom: 4px;
+}
+
+.tbsm-report-list {
+	margin: 6px 0;
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.tbsm-report-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+}
+
+.tbsm-report-row .tbsm-report-sku {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: 11px;
+	color: var(--tisa-muted, #77828A);
+	direction: ltr;
+}
+
+.tbsm-report-diff {
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-weight: 700;
+	font-size: 12px;
+	direction: ltr;
+}
+
+.tbsm-report-note {
+	color: var(--tisa-warning, #8A6116);
+	font-weight: 700;
+}
+
+.tbsm-report-errors {
+	margin-top: 8px;
+	padding-top: 8px;
+	border-top: 1px dashed rgba(0, 0, 0, .12);
+	color: var(--tisa-danger, #B5453A);
+}
+
+/* ------------------------------------------------------------------
+   ریسپانسیو
+   ------------------------------------------------------------------ */
+@media (max-width: 782px) {
+	.tbsm-hero-row {
+		flex-wrap: wrap;
+	}
+
+	.tbsm-toolbar {
+		flex-direction: column;
+		align-items: stretch;
+		position: static;
+	}
+
+	.tbsm-quickset {
+		flex-wrap: wrap;
+	}
+
+	.tbsm-btn-apply {
+		min-width: 0;
+		width: 100%;
+	}
+
+	.tbsm-grid {
+		grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tbsm-wrap *,
+	.tbsm-wrap *::before,
+	.tbsm-wrap *::after {
+		transition: none !important;
+		animation: none !important;
+	}
+}

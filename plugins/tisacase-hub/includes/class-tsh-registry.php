@@ -249,23 +249,41 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				),
 			);
 
-			$items['brandvars'] = array(
-				'title' => __( 'گروه‌بندی متغیرها بر اساس برند', 'tisacase-hub' ),
-				'desc'  => __( 'مدل‌های محصول را به برند (آیفون/سامسونگ/شیائومی) دسته‌بندی می‌کند؛ با پنل جستجو، خط جداکننده و سواچ رنگ. فقط نمایش سمت کاربر و در حالت تست فقط روی محصول‌های انتخابی.', 'tisacase-hub' ),
-				'group' => 'products',
-				'icon'  => 'grid',
-				'dir'   => 'tisacase-brand-variations',
-				'cap'   => 'manage_woocommerce',
-				'pages' => array(
-					array(
-						'label'  => __( 'باز کردن', 'tisacase-hub' ),
-						'path'   => 'admin.php?page=tisacase-brand-variations',
-						'screen' => 'woocommerce_page_tisacase-brand-variations',
-						'parent' => 'woocommerce',
-						'slug'   => 'tisacase-brand-variations',
+				$items['brandvars'] = array(
+					'title' => __( 'گروه‌بندی متغیرها بر اساس برند', 'tisacase-hub' ),
+					'desc'  => __( 'مدل‌های محصول را به برند (آیفون/سامسونگ/شیائومی) دسته‌بندی می‌کند؛ با پنل جستجو، خط جداکننده و سواچ رنگ. فقط نمایش سمت کاربر و در حالت تست فقط روی محصول‌های انتخابی.', 'tisacase-hub' ),
+					'group' => 'products',
+					'icon'  => 'grid',
+					'dir'   => 'tisacase-brand-variations',
+					'cap'   => 'manage_woocommerce',
+					'pages' => array(
+						array(
+							'label'  => __( 'باز کردن', 'tisacase-hub' ),
+							'path'   => 'admin.php?page=tisacase-brand-variations',
+							'screen' => 'woocommerce_page_tisacase-brand-variations',
+							'parent' => 'woocommerce',
+							'slug'   => 'tisacase-brand-variations',
+						),
 					),
-				),
-			);
+				);
+
+				$items['bsm'] = array(
+					'title' => __( 'مدیریت انبوه موجودی', 'tisacase-hub' ),
+					'desc'  => __( 'جست‌وجوی محصول، کارت‌های کوچک متغیرها، فیلتر دسته با سلکت و اعمال یکجا موجودی روی انتخاب‌ها.', 'tisacase-hub' ),
+					'group' => 'products',
+					'icon'  => 'box',
+					'dir'   => 'tisacase-bulk-stock-manager',
+					'cap'   => 'manage_woocommerce',
+					'pages' => array(
+						array(
+							'label'  => __( 'باز کردن', 'tisacase-hub' ),
+							'path'   => 'admin.php?page=tisacase-bulk-stock-manager',
+							'screen' => 'woocommerce_page_tisacase-bulk-stock-manager',
+							'parent' => 'woocommerce',
+							'slug'   => 'tisacase-bulk-stock-manager',
+						),
+					),
+				);
 
 			$items['tracking'] = array(
 				'title' => __( 'آپلود کد رهگیری انبوه', 'tisacase-hub' ),
