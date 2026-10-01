@@ -258,20 +258,12 @@
    جست‌وجو
    ------------------------------------------------------------------ */
 .tbsm-search {
-	/* چیدمان flex: آیکون داخل جریان (در RTL سمت راست) و ورودی شفاف بقیهٔ فضا —
-	   متن هرگز نمی‌تواند زیر ذره‌بین برود، فارغ از رفتار UAِ input */
+	/* چیدمان flex: آیکون داخل جریان (در RTL سمت راست) و ورودی بقیهٔ فضا —
+	   متن هرگز نمی‌تواند زیر ذره‌بین برود، فارغ از رفتار UAِ input.
+	   border/حلقهٔ focus روی خودِ ورودی است (کلاس tbsm-input) تا جعبهٔ تودرتو نسازد */
 	display: flex;
 	align-items: center;
 	max-width: 560px;
-	border: 1px solid var(--tisa-border, #E3E1DA);
-	border-radius: 10px;
-	background: var(--tisa-surface, #FFFFFF);
-	transition: border-color 150ms cubic-bezier(.4, 0, .2, 1), box-shadow 150ms cubic-bezier(.4, 0, .2, 1);
-}
-
-.tbsm-search:focus-within {
-	border-color: var(--tisa-primary, #0E7C6B);
-	box-shadow: 0 0 0 3px rgba(14, 124, 107, .22);
 }
 
 .tbsm-search-icon {
@@ -307,18 +299,10 @@
 }
 
 .tbsm-search-input {
+	/* ورودی همان سبک tbsm-input را نگه می‌دارد (سفید، border، گوشهٔ گرد)؛
+	   فقط در flex یک جعبهٔ انعطاف‌پذیر می‌شود */
 	flex: 1;
 	min-width: 0;
-	border: none;
-	border-radius: 0;
-	background: transparent;
-	padding: 6px 10px 6px 12px;
-}
-
-.tbsm-search-input:focus {
-	outline: none;
-	border-color: transparent;
-	box-shadow: none;
 }
 
 /* ------------------------------------------------------------------

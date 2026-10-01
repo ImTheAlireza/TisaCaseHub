@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.1.3
+Stable tag: 1.1.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -31,6 +31,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.1.4 =
+* رفع «جعبهٔ تودرتو» فیلد جست‌وجو: border و گوشه‌های گرد فقط روی خودِ ورودی است (مثل همیشه)؛ ظرف flex دیگر border ندارد. آیکون ذره‌بین بیرون جعبه، سمت راست و در راستای ورودی — تمیز، استاندارد و بدون هیچ امکان برهم‌نهشتی متن/آیکون.
 
 = 1.1.3 =
 * رفع قطعی باگ «متن زیر ذره‌بین»: فیلد جست‌وجو حالا یک جعبهٔ flex است — آیکون داخل جریان (سمت راست) و ورودی شفاف بقیهٔ فضا؛ حالا متن به‌هیچ‌وجه نمی‌تواند زیر آیکون برود.
