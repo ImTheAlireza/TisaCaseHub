@@ -25,6 +25,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		const AJAX_CANCEL             = 'tcp_cancel_scheduled';
 		const AJAX_SEARCH             = 'tcp_search_wholesale_products';
 		const AJAX_PRODUCT_NAME_SEARCH = 'tcp_search_products_by_name';
+		const AJAX_PRODUCT_SKU_SEARCH  = 'tcp_search_products_by_sku';
 
 		const CRON_TICK  = 'tcp_process_scheduled_tick';
 		const CRON_CLEAN = 'tcp_daily_cleanup';
@@ -68,6 +69,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 			add_action( 'wp_ajax_' . self::AJAX_CANCEL, array( 'TCP_Ajax', 'ajax_cancel_scheduled' ) );
 			add_action( 'wp_ajax_' . self::AJAX_SEARCH, array( 'TCP_Ajax', 'ajax_search_wholesale_products' ) );
 			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_NAME_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_name' ) );
+			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_SKU_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_sku' ) );
 			add_action( 'admin_init', array( 'TCP_DB', 'maybe_install' ) );
 			add_action( 'admin_init', array( 'TCP_Admin', 'handle_settings_post' ) );
 			add_action( 'admin_init', array( __CLASS__, 'maybe_migrate' ) );
