@@ -31,10 +31,24 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		public static function ajax_preview() {
 			self::guard(); // nonce + capability — پیش‌نمایش هم مثل بقیهٔ اندپوینت‌ها محافظت می‌شود
+			TCP_DB::maybe_install();
 			TCP_Ops::runtime_boost(); // کاتالوگ بزرگ: حافظه/زمان کافی برای تحلیل کل محدوده
 			$args = TCP_Ops::args_from_post( wp_unslash( $_POST ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			if ( is_wp_error( $args ) ) {
 				self::send_wp_error( $args );
+			}
+
+			if ( self::preview_uses_keyset( $args ) ) {
+				$preview = TCP_DB::catalog_preview( $args, TCP_Settings::sample_size() );
+				if ( empty( $preview['parents'] ) ) {
+					wp_send_json_error( array( 'message' => 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد (فیلترها را بررسی کن).' ), 400 );
+				}
+				TCP_Ops::set_round_mode( $args['round_mode'] );
+				$samples = array();
+				foreach ( $preview['samples'] as $oid => $info ) {
+					$samples[] = TCP_Ops::sample_row( $oid, $info, $args['operation'], $args['value'] );
+				}
+				wp_send_json_success( self::preview_payload( $args, (int) $preview['parents'], (int) $preview['eligible'], $samples ) );
 			}
 
 			$parents = TCP_DB::selection_parent_ids( $args );
@@ -51,10 +65,101 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				$samples[] = TCP_Ops::sample_row( $oid, $info, $args['operation'], $args['value'] );
 			}
 
-			wp_send_json_success( array(
+			wp_send_json_success( self::preview_payload( $args, count( $parents ), (int) $analysis['eligible'], $samples ) );
+		}
+
+		/**
+		 * آرگومان ذخیره‌شدهٔ اجرا.
+		 * «همه» و دسته‌های بزرگ با کلیدست می‌روند؛ انتخاب مستقیم همان فهرست یخ‌زده می‌ماند.
+		 *
+		 * @return array|WP_Error
+		 */
+		private static function prepare_execution( $args ) {
+			$batch = max( 1, min( 100, absint( TCP_Settings::batch_size() ) ) );
+			$keyset = 'all' === $args['target_type'];
+			$ceiling = 0;
+			if ( ! $keyset && 'category' === $args['target_type'] ) {
+				$ceiling = TCP_DB::product_id_ceiling();
+				if ( TCP_DB::cached_parent_count( $args, $ceiling ) > TCP_DB::KEYSET_AT ) {
+					$keyset = true;
+				}
+			}
+			if ( $keyset ) {
+				if ( ! $ceiling ) {
+					$ceiling = TCP_DB::product_id_ceiling();
+				}
+				$store = $args;
+				$store['batch'] = min( 100, max( $batch, 40 ) );
+				$scan = array(
+					'mode'     => 'keyset',
+					'ceiling'  => $ceiling,
+				);
+				if ( 'category' === $args['target_type'] ) {
+					$scan['terms'] = TCP_DB::effective_terms( $args );
+				}
+				$store['scan'] = $scan;
+				$count = TCP_DB::count_catalog_parents( $store, $ceiling );
+				if ( $count < 1 ) {
+					return new WP_Error( 'empty', 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد.' );
+				}
+				return array(
+					'args'     => $store,
+					'parents'  => $count,
+					'pages'    => $count,
+					'ceiling'  => $ceiling,
+				);
+			}
+
+			$parents = TCP_DB::selection_parent_ids( $args );
+			if ( empty( $parents ) ) {
+				return new WP_Error( 'empty', 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد.' );
+			}
+			$store = $args;
+			$store['batch'] = $batch;
+			// فهرست اهداف در شروع یک‌بار یخ می‌زند تا فیلترهای قیمت که خودِ اجرا عوض‌شان می‌کند مجموعه را کوچک نکند.
+			$store['parent_ids'] = TCP_Ops::encode_parent_ids( $parents );
+			$n = count( $parents );
+			return array(
+				'args'    => $store,
+				'parents' => $n,
+				'pages'   => $n,
+				'ceiling' => 0,
+			);
+		}
+
+		private static function stamp_scan( $run_id, $ceiling ) {
+			if ( ! $run_id || ! $ceiling ) {
+				return;
+			}
+			TCP_DB::update_run(
+				$run_id,
+				array(
+					'scan_ceiling' => absint( $ceiling ),
+					'scan_after'   => 0,
+					'scan_pending' => 0,
+					'scan_object'  => 0,
+					'updated_at'   => TCP_DB::now(),
+				)
+			);
+		}
+
+		/** آیا پیش‌نمایش باید بدون بار کردن همهٔ شناسه‌ها انجام شود؟ */
+		private static function preview_uses_keyset( $args ) {
+			if ( 'all' === $args['target_type'] ) {
+				return true;
+			}
+			if ( 'category' !== $args['target_type'] ) {
+				return false;
+			}
+			$ceiling = TCP_DB::product_id_ceiling();
+			return TCP_DB::cached_parent_count( $args, $ceiling ) > TCP_DB::KEYSET_AT;
+		}
+
+		private static function preview_payload( $args, $parents, $eligible, $samples ) {
+			return array(
 				'preview_token'      => TCP_Ops::make_token( $args ),
-				'parent_count'       => count( $parents ),
-				'price_object_count' => (int) $analysis['eligible'],
+				'parent_count'       => (int) $parents,
+				'price_object_count' => (int) $eligible,
 				'target_type'        => $args['target_type'],
 				'include_children'   => ! empty( $args['include_children'] ),
 				'category_labels'    => self::category_labels( $args['category_ids'] ),
@@ -63,7 +168,8 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				'round_label'        => TCP_Round::describe(),
 				'jitter'             => TCP_Round::jitter(),
 				'samples'            => $samples,
-			) );
+				'catalog'            => 'all' === $args['target_type'],
+			);
 		}
 
 		private static function category_labels( $cat_ids ) {
@@ -95,6 +201,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		public static function ajax_run() {
 			self::guard();
+			TCP_DB::maybe_install();
 			TCP_Ops::runtime_boost();
 
 			$run_id = isset( $_POST['run_id'] ) ? absint( $_POST['run_id'] ) : 0;
@@ -128,6 +235,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 					wp_send_json_error( array( 'message' => 'اجرای دیگری در حال اجراست (#' . (int) $busy['active']['id'] . ').' ), 409 );
 				}
 				TCP_DB::update_run( $run_id, array( 'updated_at' => TCP_DB::now() ) );
+				TCP_DB::touch_run_beat( $run_id );
 
 				self::process_and_respond( $run_id );
 				return;
@@ -155,20 +263,14 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				), 409 );
 			}
 
-			$parents = TCP_DB::selection_parent_ids( $args );
-			if ( empty( $parents ) ) {
-				wp_send_json_error( array( 'message' => 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد.' ), 400 );
+			$prepared = self::prepare_execution( $args );
+			if ( is_wp_error( $prepared ) ) {
+				self::send_wp_error( $prepared );
 			}
-
-			$batch = max( 1, absint( TCP_Settings::batch_size() ) );
-			$args_store = $args;
-			$args_store['batch'] = $batch; // ثابت‌ماندن مرز صفحه‌ها در طول اجرا.
-			// فهرست اهداف در شروع یک‌بار یخ می‌زند: وسط اجرا فیلترهای قیمت/فروش (که خودِ
-			// عملیات عوض‌شان می‌کند) باعث کوچک‌شدن مجموعه و «تکمیل با نصف محصولات» نشود.
-			$args_store['parent_ids'] = TCP_Ops::encode_parent_ids( $parents );
-			$total_parents = count( $parents );
-			// در حالت فهرست ثابت، page = cursor تعداد والد پردازش‌شده و total_pages = کل والدها.
-			$pages = $total_parents;
+			$args_store    = $prepared['args'];
+			$total_parents = (int) $prepared['parents'];
+			$pages         = (int) $prepared['pages'];
+			$ceiling       = (int) $prepared['ceiling'];
 			$schedule = ! empty( $_POST['schedule'] ) && ! empty( TCP_Settings::setting( 'scheduled' ) );
 
 			if ( $schedule ) {
@@ -185,11 +287,14 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 					'args' => wp_json_encode( $args_store ),
 					'page' => 0,
 					'total_pages' => $pages,
-					'total_parents' => count( $parents ),
+					'total_parents' => $total_parents,
 				) );
 				if ( ! $run_id ) {
 					wp_send_json_error( array( 'message' => 'ثبت اجرا در صف ممکن نشد.' ), 500 );
 				}
+				self::stamp_scan( $run_id, $ceiling );
+				TCP_DB::touch_run_beat( $run_id );
+				TCP_Scheduler::arm_continue( $run_id );
 				TCP_Scheduler::schedule_tick();
 				wp_send_json_success( array(
 					'run_id' => (int) $run_id,
@@ -208,11 +313,14 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				'args' => wp_json_encode( $args_store ),
 				'page' => 0,
 				'total_pages' => $pages,
-				'total_parents' => count( $parents ),
+				'total_parents' => $total_parents,
 			) );
 			if ( ! $run_id ) {
 				wp_send_json_error( array( 'message' => 'شروع اجرا ممکن نشد (خطای دیتابیس).' ), 500 );
 			}
+			self::stamp_scan( $run_id, $ceiling );
+			TCP_DB::touch_run_beat( $run_id );
+			TCP_Scheduler::arm_continue( $run_id );
 			// چک دوم پس از ثبت: پنجرهٔ رقابتِ شروع هم‌زمان دو اجرا را می‌بندد.
 			$busy2 = TCP_DB::busy_slot( $run_id );
 			if ( ! empty( $busy2['active'] ) ) {
@@ -261,14 +369,66 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		/** پردازش یک صفحه و پاسخ استاندارد؛ در صورت اتمام، اجرا نهایی می‌شود. */
 		private static function process_and_respond( $run_id ) {
+			if ( ! TCP_DB::acquire_run_lock( $run_id ) ) {
+				self::send_busy();
+			}
+			try {
+				$payload = self::build_run_page( $run_id );
+			} catch ( Throwable $e ) {
+				TCP_DB::release_run_lock( $run_id );
+				wp_send_json_error( array( 'message' => 'خطای داخلی اجرا.' ), 500 );
+			}
+			TCP_DB::release_run_lock( $run_id );
+			if ( is_wp_error( $payload ) ) {
+				if ( 'retry' === $payload->get_error_code() ) {
+					self::send_busy();
+				}
+				$data   = $payload->get_error_data();
+				$status = is_array( $data ) && isset( $data['status'] ) ? (int) $data['status'] : 500;
+				wp_send_json_error( array( 'message' => $payload->get_error_message() ), $status );
+			}
+			if ( empty( $payload['done'] ) && isset( $payload['status'] ) && 'running' === $payload['status'] ) {
+				TCP_Scheduler::arm_continue( $run_id );
+			} else {
+				TCP_Scheduler::disarm_continue( $run_id );
+			}
+			wp_send_json_success( $payload );
+		}
+
+		/** 503 بدون JSON تا کلاینت آن را خطای منطقی نداند و دوباره تلاش کند. */
+		private static function send_busy() {
+			status_header( 503 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			header( 'Retry-After: 2' );
+			echo 'busy';
+			exit;
+		}
+
+		/**
+		 * یک صفحه را پردازش می‌کند. خروج نمی‌کند.
+		 *
+		 * @return array|WP_Error
+		 */
+		private static function build_run_page( $run_id ) {
 			$run = TCP_DB::get_run( $run_id );
 			if ( ! $run ) {
-				wp_send_json_error( array( 'message' => 'اجرا پیدا نشد.' ), 404 );
+				return new WP_Error( 'missing', 'اجرا پیدا نشد.', array( 'status' => 404 ) );
 			}
+			if ( 'running' !== $run['status'] ) {
+				if ( in_array( $run['status'], array( 'done', 'stopped', 'rolled_back' ), true ) ) {
+					return self::final_run_response( $run );
+				}
+				return new WP_Error( 'status', 'اجرا در وضعیت قابل‌ادامه نیست.', array( 'status' => 409 ) );
+			}
+			TCP_DB::touch_run_beat( $run_id );
 			$res = TCP_Ops::run_next_page( $run );
 			if ( ! $res['ok'] ) {
+				if ( ! empty( $res['retry'] ) ) {
+					return new WP_Error( 'retry', $res['msg'], array( 'status' => 503 ) );
+				}
 				TCP_DB::update_run( $run_id, array( 'status' => 'failed', 'last_error' => $res['msg'], 'updated_at' => TCP_DB::now() ) );
-				wp_send_json_error( array( 'message' => $res['msg'] ), 500 );
+				TCP_Scheduler::disarm_continue( $run_id );
+				return new WP_Error( 'run', $res['msg'], array( 'status' => 500 ) );
 			}
 			$data = $res['data'];
 
@@ -285,6 +445,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				'skipped'    => $data['skipped'],
 				'errors'     => $data['errors'],
 				'errors_count' => count( $data['errors'] ),
+				'partial'    => ! empty( $data['partial'] ),
 				'totals'     => array(
 					'parents' => (int) $run['count_updated'] + (int) $run['count_skipped'] + (int) $run['count_errors'],
 					'updated' => (int) $run['count_updated'],
@@ -304,7 +465,26 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 					'errors'  => (int) $run['count_errors'],
 				);
 			}
-			wp_send_json_success( $response );
+			return $response;
+		}
+
+		/**
+		 * ادامهٔ پس‌زمینه. کوکی ادمین لازم نیست؛ امضا جای آن را می‌گیرد
+		 * تا حلقهٔ داخلی سایت بعد از قطع مرورگر بتواند صفحهٔ بعد را بزند.
+		 */
+		public static function ajax_continue() {
+			$run_id = isset( $_REQUEST['run_id'] ) ? absint( $_REQUEST['run_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			$secret = isset( $_REQUEST['secret'] ) ? (string) wp_unslash( $_REQUEST['secret'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$force  = ! empty( $_REQUEST['force'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			if ( ! $run_id || ! hash_equals( TCP_Scheduler::continue_secret( $run_id ), $secret ) ) {
+				status_header( 403 );
+				exit;
+			}
+			TCP_Scheduler::drive_run( $run_id, ! $force );
+			status_header( 200 );
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo 'ok';
+			exit;
 		}
 
 		/** نهایی‌کردن اجرا به درخواست مشتری (توقف) یا ثبت «ناتمام» هنگام ترک موقت. */
@@ -324,10 +504,21 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			// leave=1 یعنی کلاینت ارتباطش را از دست داده و اجرا را رها می‌کند:
 			// «ناتمام» ثبت می‌شود تا از تب گزارش بلافاصله قابل «ادامه» باشد.
 			if ( ! empty( $_POST['leave'] ) ) {
+				$leave_args = json_decode( (string) $run['args'], true );
+				if ( is_array( $leave_args ) && TCP_Ops::is_catalog_run( $leave_args ) && 'running' === $run['status'] ) {
+					TCP_Scheduler::arm_continue( $run_id );
+					TCP_Scheduler::poke_continue( $run_id );
+					wp_send_json_success( array(
+						'message'    => 'ارتباط این صفحه قطع شد؛ نوشتن قیمت‌ها در پس‌زمینه از همان متغیر ادامه پیدا می‌کند. دکمهٔ توقف، اجرا را قطع می‌کند.',
+						'status'     => 'running',
+						'background' => true,
+					) );
+				}
 				if ( 'interrupted' === $run['status'] ) {
 					wp_send_json_success( array( 'message' => 'اجرا از قبل ناتمام ثبت شده و قابل ادامه است.', 'status' => 'interrupted' ) );
 				}
 				if ( 'running' === $run['status'] ) {
+					TCP_Scheduler::disarm_continue( $run_id );
 					TCP_DB::update_run( $run_id, array( 'status' => 'interrupted', 'updated_at' => TCP_DB::now() ) );
 					wp_send_json_success( array( 'message' => 'اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» قابل ادامه است.', 'status' => 'interrupted' ) );
 				}
@@ -341,6 +532,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( ! empty( $_POST['outcome'] ) && 'interrupted' === sanitize_key( wp_unslash( $_POST['outcome'] ) ) ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 				$outcome = 'interrupted';
 			}
+			TCP_Scheduler::disarm_continue( $run_id );
 			TCP_Ops::finalize_run( $run_id, $outcome );
 			wp_send_json_success(
 				'interrupted' === $outcome

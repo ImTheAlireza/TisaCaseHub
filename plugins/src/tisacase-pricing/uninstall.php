@@ -12,6 +12,7 @@ global $wpdb;
 wp_clear_scheduled_hook( 'tcp_process_scheduled_tick' );
 wp_clear_scheduled_hook( 'tcp_daily_cleanup' );
 wp_clear_scheduled_hook( 'tcp_refresh_product_lookup' );
+wp_clear_scheduled_hook( 'tcp_continue_run' );
 
 delete_option( 'tcp_settings' );
 delete_option( 'tcp_preview_sample_size_v2_migrated' );
@@ -19,6 +20,9 @@ delete_option( 'tcp_db_version' );
 delete_option( 'tcp_rules' );
 delete_option( 'tcp_rules_cache_version' );
 delete_option( 'tcp_lookup_refresh_pending' );
+delete_option( 'tcp_continue_runs' );
+$wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'tcp_rl_%' OR option_name LIKE 'tcp_beat_%'" ); // phpcs:ignore WordPress.DB
 
 $wpdb->query( 'DROP TABLE IF EXISTS ' . $wpdb->prefix . 'tcp_runs' ); // phpcs:ignore WordPress.DB
 $wpdb->query( 'DROP TABLE IF EXISTS ' . $wpdb->prefix . 'tcp_log' ); // phpcs:ignore WordPress.DB
+$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->postmeta} WHERE meta_key = %s", '_tcp_bulk_guard' ) ); // phpcs:ignore WordPress.DB

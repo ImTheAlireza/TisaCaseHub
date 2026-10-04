@@ -39,6 +39,10 @@ $tcp_uid           = get_current_user_id();
 						? min( 100, (int) round( ( (int) $r['page'] / (int) $r['total_pages'] ) * 100 ) )
 						: ( $finished ? 100 : (int) $r['page'] );
 					$op_val       = '' !== (string) $r['operation'] ? TCP_Ops::op_label( $r['operation'] ) : '—';
+					$run_args     = json_decode( (string) $r['args'], true );
+					if ( is_array( $run_args ) && isset( $run_args['target_type'] ) && 'all' === $run_args['target_type'] ) {
+						$op_val .= ' — همهٔ محصولات';
+					}
 					if ( null !== $r['value'] && 'none' !== TCP_Ops::op_kind( $r['operation'] ) ) {
 						$op_val .= ' (' . number_format_i18n( (float) $r['value'] ) . ')';
 					}
