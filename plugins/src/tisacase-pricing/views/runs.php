@@ -12,7 +12,7 @@ $tcp_show_rollback = TCP_Settings::rollback_enabled();
 $tcp_uid           = get_current_user_id();
 ?>
 
-<p class="tcp-lead">همهٔ تغییرات ثبت می‌شوند و تا پایان «مدت نگهداری لاگ» می‌توان هر اجرا را بازگردانی کرد یا CSV گرفت. اجرای بی‌حرکت «ناتمام» می‌شود و با «ادامه» از همان صفحه پی گرفته می‌شود.</p>
+<p class="tcp-lead">تغییراتِ دارای لاگ تا پایان «مدت نگهداری لاگ» قابل بازگردانی یا دریافت به‌صورت CSV هستند. اجرای بی‌حرکت «ناتمام» می‌شود و با «ادامه» از همان نقطه پی گرفته می‌شود.</p>
 
 <?php if ( empty( $tcp_rows ) ) : ?>
 	<div class="tcp-card tcp-card--empty">هنوز اجرایی ثبت نشده است.</div>
@@ -30,7 +30,9 @@ $tcp_uid           = get_current_user_id();
 					$row_id       = (int) $r['id'];
 					$type         = sanitize_key( $r['type'] );
 					$status       = sanitize_key( $r['status'] );
-					$can_rollback = $tcp_show_rollback && 'rollback' !== $type && in_array( $status, array( 'done', 'stopped' ), true );
+					$run_args     = json_decode( (string) $r['args'], true );
+					$catalog_run  = is_array( $run_args ) && isset( $run_args['target_type'] ) && 'all' === $run_args['target_type'];
+					$can_rollback = ( $tcp_show_rollback || $catalog_run ) && 'rollback' !== $type && in_array( $status, array( 'done', 'stopped' ), true );
 					$can_resume   = 'interrupted' === $status && (int) $r['user_id'] === $tcp_uid;
 					$can_stop     = 'running' === $status && (int) $r['user_id'] === $tcp_uid && 'rollback' !== $type;
 					$can_cancel   = 'scheduled' === $type && 'queued' === $status;
@@ -39,8 +41,7 @@ $tcp_uid           = get_current_user_id();
 						? min( 100, (int) round( ( (int) $r['page'] / (int) $r['total_pages'] ) * 100 ) )
 						: ( $finished ? 100 : (int) $r['page'] );
 					$op_val       = '' !== (string) $r['operation'] ? TCP_Ops::op_label( $r['operation'] ) : '—';
-					$run_args     = json_decode( (string) $r['args'], true );
-					if ( is_array( $run_args ) && isset( $run_args['target_type'] ) && 'all' === $run_args['target_type'] ) {
+					if ( $catalog_run ) {
 						$op_val .= ' — همهٔ محصولات';
 					}
 					if ( null !== $r['value'] && 'none' !== TCP_Ops::op_kind( $r['operation'] ) ) {

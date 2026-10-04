@@ -27,6 +27,7 @@ $GLOBALS['tcp_products']      = array();
 function __( $s, $d = null ) { return $s; }
 function esc_html( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' ); }
 function esc_attr( $s ) { return htmlspecialchars( (string) $s, ENT_QUOTES, 'UTF-8' ); }
+function esc_sql( $s ) { return addslashes( (string) $s ); }
 function sanitize_key( $s ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $s ) ); }
 function sanitize_text_field( $s ) { return is_string( $s ) ? trim( strip_tags( $s ) ) : ''; }
 function wp_unslash( $s ) { return is_string( $s ) ? stripslashes( $s ) : $s; }
@@ -68,6 +69,36 @@ function get_term_children( $id, $tax = '' ) {
 function wp_get_post_terms( $pid, $tax = '', $args = array() ) {
 	$pid = (int) $pid;
 	return isset( $GLOBALS['tcp_post_terms'][ $pid ] ) ? $GLOBALS['tcp_post_terms'][ $pid ] : array();
+}
+
+/** حداقل wpdb برای تست‌های SQLمحور بدون نصب وردپرس. */
+class TCP_Test_WPDB {
+	public $prefix = 'wp_';
+	public $posts = 'wp_posts';
+	public $postmeta = 'wp_postmeta';
+	public $terms = 'wp_terms';
+	public $term_relationships = 'wp_term_relationships';
+	public $term_taxonomy = 'wp_term_taxonomy';
+	public $last_error = '';
+
+	public function prepare( $query, ...$args ) {
+		foreach ( $args as $arg ) {
+			$query = preg_replace( '/%d/', (string) absint( $arg ), $query, 1 );
+		}
+		return $query;
+	}
+
+	public function get_col( $query ) {
+		if ( false !== strpos( $query, 'SELECT ID FROM' ) && preg_match( '/post_parent = ([0-9]+)/', $query, $m ) ) {
+			$parent = absint( $m[1] );
+			$product = isset( $GLOBALS['tcp_products'][ $parent ] ) ? $GLOBALS['tcp_products'][ $parent ] : null;
+			return $product && method_exists( $product, 'get_children' ) ? array_map( 'absint', $product->get_children() ) : array();
+		}
+		if ( false !== strpos( $query, 'SELECT object_id FROM' ) ) {
+			return array();
+		}
+		return array();
+	}
 }
 
 class WP_Error {

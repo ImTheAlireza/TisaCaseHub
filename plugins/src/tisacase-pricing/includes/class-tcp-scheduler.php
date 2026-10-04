@@ -70,14 +70,15 @@ if ( ! class_exists( 'TCP_Scheduler' ) ) {
 				return;
 			}
 
-			$start    = time();
-			$max_pages = max( 1, min( 500, absint( TCP_Settings::setting( 'cron_pages' ) ) ) );
-			$done     = false;
+				$start     = time();
+				$max_pages = max( 1, min( 500, absint( TCP_Settings::setting( 'cron_pages' ) ) ) );
+				$done      = false;
+				$failed    = false;
 
-			// سهمیهٔ زمانی تیک: هر صفحه خودش بودجهٔ زمانی دارد؛ اینجا فقط کل تیک
-			// را کوتاه نگه می‌داریم تا درخواست کرون (loopback) قطع نشود.
-			try {
-			for ( $i = 0; $i < $max_pages; $i++ ) {
+				// سهمیهٔ زمانی تیک: هر صفحه خودش بودجهٔ زمانی دارد؛ اینجا فقط کل تیک
+				// را کوتاه نگه می‌داریم تا درخواست کرون (loopback) قطع نشود.
+				try {
+				for ( $i = 0; $i < $max_pages; $i++ ) {
 				if ( ( time() - $start ) > 12 ) {
 					break; // ادامه در تیک بعد.
 				}
@@ -103,12 +104,27 @@ if ( ! class_exists( 'TCP_Scheduler' ) ) {
 					$done = true;
 					break;
 				}
-			}
-			} finally {
-				TCP_DB::release_run_lock( (int) $run['id'] );
-			}
+				}
+				} catch ( Throwable $e ) {
+					$detail = function_exists( 'mb_substr' ) ? mb_substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 ) : substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 );
+					TCP_DB::update_run( (int) $run['id'], array(
+						'status'     => $e instanceof TCP_Unsafe_Exception ? 'failed' : 'interrupted',
+						'last_error' => $detail,
+						'updated_at' => TCP_DB::now(),
+					) );
+					$failed = true;
+				} finally {
+					TCP_DB::release_run_lock( (int) $run['id'] );
+				}
 
-			if ( $done ) {
+				if ( $failed ) {
+					self::disarm_continue( (int) $run['id'] );
+					if ( TCP_DB::count_queued() > 0 ) {
+						self::schedule_tick();
+					}
+					return;
+				}
+				if ( $done ) {
 				$final = TCP_DB::get_run( (int) $run['id'] );
 				if ( $final && 'running' === $final['status'] ) {
 					TCP_Ops::finalize_run( (int) $run['id'], 'done' );
@@ -223,11 +239,19 @@ if ( ! class_exists( 'TCP_Scheduler' ) ) {
 						TCP_Ops::finalize_run( $run_id, 'done' );
 						$done = true;
 					}
+					}
+				} catch ( Throwable $e ) {
+					$detail = function_exists( 'mb_substr' ) ? mb_substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 ) : substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 );
+					TCP_DB::update_run( $run_id, array(
+						'status'     => $e instanceof TCP_Unsafe_Exception ? 'failed' : 'interrupted',
+						'last_error' => $detail,
+						'updated_at' => TCP_DB::now(),
+					) );
+					$failed = true;
+				} finally {
+					TCP_DB::release_run_lock( $run_id );
 				}
-			} finally {
-				TCP_DB::release_run_lock( $run_id );
-			}
-			if ( $failed || $done ) {
+				if ( $failed || $done ) {
 				self::disarm_continue( $run_id );
 				return;
 			}

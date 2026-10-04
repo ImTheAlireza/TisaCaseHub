@@ -10,6 +10,7 @@ require_once __DIR__ . '/stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-settings.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-round.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-ops.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcp-db.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-rules.php';
 
 /* ---------- هارنس ---------- */
@@ -39,9 +40,12 @@ function mk_args( $over = array() ) {
 		'operation'        => 'regular_decrease_percent',
 		'target_type'      => 'category',
 		'category_ids'     => array( 1, 2 ),
-		'product_ids'      => array(),
-		'include_children' => false,
-		'round_mode'       => 'none',
+		'product_ids'                => array(),
+		'include_children'           => false,
+		'excluded_category_ids'      => array(),
+		'excluded_product_ids'       => array(),
+		'exclude_category_children'  => false,
+		'round_mode'                 => 'none',
 		'value'            => 10.0,
 		'filters'          => array(
 			'only_sale'     => false,
@@ -93,6 +97,19 @@ t( 'دستهٔ خالی → خطای empty', is_wp_error( $r ) && 'empty' === $r
 $GLOBALS['tcp_terms'][55] = (object) array( 'term_id' => 55 );
 $r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'category', 'category_ids' => '999' ) );
 t( 'دستهٔ ناموجود → خطای cat', is_wp_error( $r ) && 'cat' === $r->get_error_code() );
+$r = TCP_Ops::args_from_post( array(
+	'nonce' => 'x', 'operation' => 'regular_increase_percent', 'target_type' => 'all', 'value' => '10',
+	'excluded_category_ids' => '55', 'excluded_product_ids' => '11,12,11,0,bad', 'exclude_category_children' => '1',
+) );
+t( 'استثناهای معتبر پاکسازی و در آرگومان ذخیره می‌شوند',
+	is_array( $r ) && $r['excluded_category_ids'] === array( 55 ) && $r['excluded_product_ids'] === array( 11, 12 ) && true === $r['exclude_category_children'] );
+$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'all', 'excluded_category_ids' => '999' ) );
+t( 'دستهٔ استثنا ناموجود رد می‌شود', is_wp_error( $r ) && 'excluded_cat' === $r->get_error_code() );
+$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'all', 'excluded_product_ids' => implode( ',', range( 1, 501 ) ) ) );
+t( 'بیش از ۵۰۰ محصول استثنا رد می‌شود', is_wp_error( $r ) && 'exclude_limit' === $r->get_error_code() );
+$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'all', 'excluded_category_ids' => implode( ',', range( 1, 101 ) ) ) );
+t( 'بیش از ۱۰۰ دستهٔ استثنا رد می‌شود', is_wp_error( $r ) && 'exclude_limit' === $r->get_error_code() );
+t( 'لیست شناسهٔ غیرعددی/منفی/تو در تو نادیده گرفته می‌شود', TCP_Ops::ids( array( '4', '-5', 'abc', array( '6' ), '7' ) ) === array( 4, 7 ) );
 $r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'sale_discount_percent', 'target_type' => 'products', 'product_ids' => '1', 'value' => '120' ) );
 t( 'تخفیف ۱۲۰٪ → خطای value (سقف ۱۰۰)', is_wp_error( $r ) && 'value' === $r->get_error_code() );
 $r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_increase_fixed', 'target_type' => 'products', 'product_ids' => '1', 'value' => '-5' ) );
@@ -110,6 +127,16 @@ $t1 = TCP_Ops::make_token( mk_args( array( 'category_ids' => array( 3, 1, 2 ) ) 
 $t2 = TCP_Ops::make_token( mk_args( array( 'category_ids' => array( 1, 2, 3 ) ) ) );
 t( 'ترتیب شناسه‌ها در توکن اثر ندارد', $t1 === $t2 );
 t( 'verify_token رفت‌وبرگشت', TCP_Ops::verify_token( mk_args( array( 'category_ids' => array( 3, 1, 2 ) ) ), $t1 ) === true );
+t( 'توکن استثنای محصول را امضا می‌کند',
+	TCP_Ops::make_token( mk_args( array( 'excluded_product_ids' => array( 10 ) ) ) ) !== TCP_Ops::make_token( mk_args( array( 'excluded_product_ids' => array( 11 ) ) ) ) );
+t( 'توکن استثنای زیردسته را امضا می‌کند',
+	TCP_Ops::make_token( mk_args( array( 'exclude_category_children' => true ) ) ) !== TCP_Ops::make_token( mk_args( array( 'exclude_category_children' => false ) ) ) );
+$snapshot = array( 'parents' => 1200, 'ceiling' => 1200, 'terms' => array( 3, 2 ), 'excluded_terms' => array( 9, 8 ) );
+$snapshot_token = TCP_Ops::make_token( mk_args(), $snapshot );
+t( 'snapshot شمارش/سقف/درخت دسته با همان مقدار تأیید می‌شود', TCP_Ops::verify_token( mk_args(), $snapshot_token, $snapshot ) === true );
+t( 'ترتیب درخت دسته بر توکن اثر ندارد', TCP_Ops::make_token( mk_args(), array_merge( $snapshot, array( 'terms' => array( 2, 3 ), 'excluded_terms' => array( 8, 9 ) ) ) ) === $snapshot_token );
+t( 'تغییر شمارش snapshot توکن را باطل می‌کند', TCP_Ops::verify_token( mk_args(), $snapshot_token, array_merge( $snapshot, array( 'parents' => 1199 ) ) ) === false );
+t( 'تغییر درخت دستهٔ مستثنا توکن را باطل می‌کند', TCP_Ops::verify_token( mk_args(), $snapshot_token, array_merge( $snapshot, array( 'excluded_terms' => array( 9, 10 ) ) ) ) === false );
 t( 'توکن خالی رد می‌شود', TCP_Ops::verify_token( mk_args(), '' ) === false );
 t( 'آرگومان تغییریافته توکن را باطل می‌کند', TCP_Ops::verify_token( mk_args( array( 'value' => 11.0 ) ), $t1 ) === false );
 $GLOBALS['tcp_user_id'] = 9;
@@ -117,6 +144,27 @@ $t3 = TCP_Ops::make_token( mk_args( array( 'category_ids' => array( 3, 1, 2 ) ) 
 t( 'توکن به کاربر مقید است', $t1 !== $t3 );
 t( 'args_hash مستقل از کاربر است', TCP_Ops::args_hash( mk_args() ) === TCP_Ops::args_hash( mk_args() ) );
 $GLOBALS['tcp_user_id'] = 7;
+
+$GLOBALS['tcp_term_children'][1] = array( 2 );
+$target_args = mk_args( array( 'target_type' => 'category', 'category_ids' => array( 1 ), 'include_children' => true ) );
+$target_args['scan'] = array( 'terms' => TCP_DB::effective_terms( $target_args ) );
+$GLOBALS['tcp_term_children'][1] = array( 3 );
+t( 'درخت دستهٔ هدف بعد از snapshot به تغییر سلسله‌مراتب وابسته نمی‌شود', TCP_DB::effective_terms( $target_args ) === array( 1, 2 ) );
+$GLOBALS['tcp_term_children'][55] = array( 56, 57 );
+$GLOBALS['wpdb'] = new TCP_Test_WPDB();
+$excluded_args = mk_args( array(
+	'excluded_category_ids' => array( 55 ),
+	'excluded_product_ids'  => array( 31, 32 ),
+	'exclude_category_children' => true,
+) );
+t( 'گسترش دستهٔ مستثنا زیردسته‌ها را هم می‌گیرد', TCP_DB::effective_excluded_terms( $excluded_args ) === array( 55, 56, 57 ) );
+t( 'دسته‌های استثنا در keyset از snapshot فریز‌شده خوانده می‌شوند',
+	TCP_DB::effective_excluded_terms( array_merge( $excluded_args, array( 'scan' => array( 'excluded_terms' => array( 88, 89 ) ) ) ) ) === array( 88, 89 ) );
+$exclusion_sql = call_private( 'TCP_DB', 'exclusion_filter_sql', array( 'p', $excluded_args ) );
+t( 'SQL استثنای محصول، واریشن انتخاب‌شده را نیز از مادر خارج می‌کند',
+	strpos( $exclusion_sql, 'ex.ID IN (31,32)' ) !== false && strpos( $exclusion_sql, "ex.post_type = 'product_variation'" ) !== false && strpos( $exclusion_sql, 'ex.post_parent = p.ID' ) !== false );
+t( 'SQL استثنای دسته، دسته و زیردسته‌های snapshot را حذف می‌کند',
+	strpos( $exclusion_sql, 'xtt.term_id IN (55,56,57)' ) !== false && strpos( $exclusion_sql, 'NOT EXISTS' ) !== false );
 
 echo "--- 5) محاسبهٔ قیمت عادی (calc_regular) ---\n";
 TCP_Ops::set_round_mode( 'none' );
@@ -309,7 +357,7 @@ t( 'decode رشتهٔ خراب/خالی/غیرعدد → آرایهٔ خالی',
 	&& TCP_Ops::decode_parent_ids( 'abc' ) === array() );
 t( 'decode ترتیب فهرست را حفظ می‌کند (cursor همان ترتیب شروع اجراست)', TCP_Ops::decode_parent_ids( '10,7,300' ) === array( 10, 7, 300 ) );
 $budget = TCP_Ops::time_budget();
-t( 'time_budget همیشه زیر سقف PHP و بین ۵ تا ۲۰ ثانیه است', is_int( $budget ) && $budget >= 5 && $budget <= 20, 'budget=' . var_export( $budget, true ) );
+t( 'time_budget هر درخواست را به ۵ تا ۸ ثانیه محدود می‌کند', is_int( $budget ) && $budget >= 5 && $budget <= 8, 'budget=' . var_export( $budget, true ) );
 $boost_ok = true;
 try {
 	TCP_Ops::runtime_boost();

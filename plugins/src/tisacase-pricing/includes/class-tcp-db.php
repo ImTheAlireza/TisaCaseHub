@@ -33,6 +33,14 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 			return $wpdb->prefix . self::LOG_TABLE;
 		}
 
+		/** بررسی سبک پیش‌اجرای لاگ اجباری کاتالوگ. */
+		public static function log_table_ready() {
+			global $wpdb;
+			$table = self::table_log();
+			$like  = method_exists( $wpdb, 'esc_like' ) ? $wpdb->esc_like( $table ) : addcslashes( $table, '_%\\\\' );
+			return $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $like ) ) === $table;
+		}
+
 		/* -----------------------------------------------------------------
 		 * نصب / ارتقا
 		 * --------------------------------------------------------------- */
@@ -159,9 +167,46 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				return;
 			}
 			global $wpdb;
-			$cutoff = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
-			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->prefix}tisacase_bpm_log WHERE created_at < %s", $cutoff ) );
-			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->prefix}tisacase_bpm_runs WHERE created_at < %s AND status NOT IN ('running','queued')", $cutoff ) );
+			$cutoff      = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
+			$batch_size  = 1000;
+			$batch_limit = 5;
+			$log         = self::table_log();
+			$runs        = self::table_runs();
+			$more_logs   = false;
+
+			// فقط جدول‌های خود افزونه پاک می‌شوند؛ حذف محدود مانع قفل طولانی در فروشگاه بزرگ است.
+			for ( $i = 0; $i < $batch_limit; $i++ ) {
+				$delete_logs = "DELETE FROM {$log}
+					WHERE created_at < %s
+					AND run_id NOT IN (SELECT id FROM {$runs} WHERE status IN ('running','queued') OR (status = 'interrupted' AND updated_at >= %s))
+					AND run_id NOT IN (SELECT parent_run_id FROM {$runs} WHERE type = 'rollback' AND (status IN ('running','queued') OR (status = 'interrupted' AND updated_at >= %s)) AND parent_run_id > 0)
+					LIMIT {$batch_size}";
+				$deleted = $wpdb->query( $wpdb->prepare( $delete_logs, $cutoff, $cutoff, $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				if ( false === $deleted || $deleted < $batch_size ) {
+					break;
+				}
+				if ( $i === $batch_limit - 1 ) {
+					$more_logs = true;
+				}
+			}
+
+			// تا وقتی batch لاگ‌ها پر شده، ردیف اجرا را نگه دار؛ لاگ فعال/بازگردانی نیز هرگز حذف نمی‌شود.
+			if ( ! $more_logs ) {
+				$active_rollback_query = "SELECT DISTINCT parent_run_id FROM {$runs} WHERE type = 'rollback' AND (status IN ('running','queued') OR (status = 'interrupted' AND updated_at >= %s)) AND parent_run_id > 0";
+				$active_rollback_sources = array_values( array_filter( array_map( 'absint', (array) $wpdb->get_col( $wpdb->prepare( $active_rollback_query, $cutoff ) ) ) ) );
+				$exclude_sources = empty( $active_rollback_sources ) ? '' : ' AND id NOT IN (' . implode( ',', $active_rollback_sources ) . ')';
+				for ( $i = 0; $i < $batch_limit; $i++ ) {
+					$delete_runs = "DELETE FROM {$runs} WHERE created_at < %s AND status NOT IN ('running','queued') AND NOT (status = 'interrupted' AND updated_at >= %s){$exclude_sources} LIMIT {$batch_size}";
+					$deleted = $wpdb->query( $wpdb->prepare( $delete_runs, $cutoff, $cutoff ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					if ( false === $deleted || $deleted < $batch_size ) {
+						break;
+					}
+				}
+			}
+
+			if ( $more_logs && function_exists( 'wp_next_scheduled' ) && function_exists( 'wp_schedule_single_event' ) && ! wp_next_scheduled( TCP_Settings::CRON_CLEAN ) ) {
+				wp_schedule_single_event( time() + HOUR_IN_SECONDS, TCP_Settings::CRON_CLEAN );
+			}
 		}
 
 		/* -----------------------------------------------------------------
@@ -375,12 +420,15 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 		 * لاگ تغییرات
 		 * --------------------------------------------------------------- */
 
-		public static function insert_log( $run_id, $rows ) {
-			if ( empty( $rows ) || ! TCP_Settings::logging_enabled() ) {
-				return;
+		public static function insert_log( $run_id, $rows, $force = false ) {
+			if ( empty( $rows ) ) {
+				return true;
+			}
+			if ( ! $force && ! TCP_Settings::logging_enabled() ) {
+				return true;
 			}
 			global $wpdb;
-			$table = self::table_log();
+			$table  = self::table_log();
 			$run_id = absint( $run_id );
 			$now    = self::now();
 			$values = array();
@@ -397,9 +445,10 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				);
 			}
 			if ( empty( $values ) ) {
-				return;
+				return true;
 			}
-			$wpdb->query( 'INSERT INTO ' . $table . ' (run_id,parent_id,object_id,object_type,before_value,after_value,created_at) VALUES ' . implode( ',', $values ) );
+			$inserted = $wpdb->query( 'INSERT INTO ' . $table . ' (run_id,parent_id,object_id,object_type,before_value,after_value,created_at) VALUES ' . implode( ',', $values ) );
+			return false !== $inserted && (int) $inserted === count( $values );
 		}
 
 		public static function count_log( $run_id ) {
@@ -435,12 +484,13 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				if ( empty( $cat_ids ) ) {
 					return array();
 				}
+				$effective_cat_ids = self::effective_terms( $args );
 				$tax_query = array(
 					array(
 						'taxonomy'         => 'product_cat',
 						'field'            => 'term_id',
-						'terms'            => $cat_ids,
-						'include_children' => ! empty( $args['include_children'] ),
+						'terms'            => $effective_cat_ids,
+						'include_children' => false,
 						'operator'         => 'IN',
 					),
 				);
@@ -469,10 +519,53 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				return array();
 			}
 
-			return self::apply_presence_filters( $ids, $args['operation'], $args['filters'] );
+			$ids = self::filter_excluded_parents( $ids, $args );
+			if ( empty( $ids ) ) {
+				return array();
+			}
+		return self::apply_presence_filters( $ids, $args['operation'], $args['filters'] );
+	}
+
+	/** حذف استثناها از انتخاب مستقیم/دسته‌ای؛ ترتیب اصلی فهرست هدف حفظ می‌شود. */
+	private static function filter_excluded_parents( $ids, $args ) {
+		if ( empty( $ids ) || ( empty( $args['excluded_product_ids'] ) && empty( $args['excluded_category_ids'] ) ) ) {
+			return array_values( $ids );
 		}
 
-		private static function statuses( $args ) {
+		global $wpdb;
+		$excluded = self::exclusion_filter_sql( 'p', $args );
+		if ( '' === $excluded ) {
+			return array_values( $ids );
+		}
+
+		$kept = array();
+		foreach ( array_chunk( array_values( array_unique( array_map( 'absint', $ids ) ) ), 500 ) as $chunk ) {
+			if ( empty( $chunk ) ) {
+				continue;
+			}
+			$in   = implode( ',', $chunk );
+			$rows = $wpdb->get_col( "SELECT p.ID FROM {$wpdb->posts} p WHERE p.ID IN ({$in}) AND {$excluded}" ); // phpcs:ignore WordPress.DB.PreparedSQL
+			$found = array_flip( array_map( 'absint', (array) $rows ) );
+			foreach ( $chunk as $id ) {
+				if ( isset( $found[ $id ] ) ) {
+					$kept[] = $id;
+				}
+			}
+		}
+
+		// حفظ ترتیب اصلی حتی اگر SQL بر اساس شناسه برگردانده باشد.
+		$lookup = array_flip( $kept );
+		$out    = array();
+		foreach ( $ids as $id ) {
+			$id = absint( $id );
+			if ( isset( $lookup[ $id ] ) ) {
+				$out[] = $id;
+			}
+		}
+		return array_values( array_unique( $out ) );
+	}
+
+	private static function statuses( $args ) {
 			$list = (array) ( isset( $args['filters']['statuses'] ) ? $args['filters']['statuses'] : array() );
 			if ( empty( $list ) ) {
 				return array( 'publish', 'private', 'draft', 'pending' );
@@ -876,7 +969,7 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 	 * تا زیردستهٔ ساخته‌شده وسط اجرا مجموعه را بزرگ نکند.
 	 */
 	public static function effective_terms( $args ) {
-		if ( ! empty( $args['scan']['terms'] ) && is_array( $args['scan']['terms'] ) ) {
+		if ( isset( $args['scan'] ) && is_array( $args['scan'] ) && array_key_exists( 'terms', $args['scan'] ) && is_array( $args['scan']['terms'] ) ) {
 			return array_values( array_unique( array_filter( array_map( 'absint', $args['scan']['terms'] ) ) ) );
 		}
 		if ( ! isset( $args['target_type'] ) || 'category' !== $args['target_type'] ) {
@@ -886,6 +979,27 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 		if ( empty( $ids ) || empty( $args['include_children'] ) || ! function_exists( 'get_term_children' ) ) {
 			return $ids;
 		}
+		$all = $ids;
+		foreach ( $ids as $id ) {
+			$children = get_term_children( $id, 'product_cat' );
+			if ( is_array( $children ) ) {
+				$all = array_merge( $all, array_map( 'absint', $children ) );
+			}
+		}
+		return array_values( array_unique( array_filter( $all ) ) );
+	}
+
+	/** دسته‌های مستثناشده؛ در اجراهای کلیدست، گسترش زیردسته‌ها در شروع فریز می‌شود. */
+	public static function effective_excluded_terms( $args ) {
+		if ( isset( $args['scan'] ) && is_array( $args['scan'] ) && array_key_exists( 'excluded_terms', $args['scan'] ) && is_array( $args['scan']['excluded_terms'] ) ) {
+			return array_values( array_unique( array_filter( array_map( 'absint', $args['scan']['excluded_terms'] ) ) ) );
+		}
+
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', isset( $args['excluded_category_ids'] ) ? (array) $args['excluded_category_ids'] : array() ) ) ) );
+		if ( empty( $ids ) || empty( $args['exclude_category_children'] ) || ! function_exists( 'get_term_children' ) ) {
+			return $ids;
+		}
+
 		$all = $ids;
 		foreach ( $ids as $id ) {
 			$children = get_term_children( $id, 'product_cat' );
@@ -949,43 +1063,53 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 	 * پیش‌نمایش کاتالوگ بدون ساخت WC_Product برای همه.
 	 * eligible = -1 یعنی فروشگاه آن‌قدر بزرگ است که شمارش دقیقِ متغیرها به اجرا موکول شد.
 	 */
-	public static function catalog_preview( $args, $sample_limit ) {
-		$ceiling      = self::product_id_ceiling();
-		$parents      = self::cached_parent_count( $args, $ceiling );
-		$sample_limit = max( 1, absint( $sample_limit ) );
-		$eligible     = 0;
-		if ( $parents > 0 && $parents <= 8000 ) {
-			$eligible = self::count_catalog_objects( $args, $ceiling );
-		} elseif ( $parents > 8000 ) {
-			$eligible = -1;
-		}
-		$samples = array();
-		$after   = 0;
-		for ( $i = 0; $i < 6 && count( $samples ) < $sample_limit; $i++ ) {
-			$ids = self::keyset_parent_ids( $args, $after, $ceiling, 60 );
-			if ( null === $ids || empty( $ids ) ) {
-				break;
+		public static function catalog_preview( $args, $sample_limit, $known_parents = null, $known_ceiling = 0 ) {
+			$ceiling = absint( $known_ceiling );
+			if ( ! $ceiling ) {
+				$ceiling = self::product_id_ceiling();
 			}
-			$after    = (int) end( $ids );
-			$need     = $sample_limit - count( $samples );
-			$analysis = self::analyze_targets( $ids, $args['operation'], $need );
-			foreach ( $analysis['samples'] as $oid => $info ) {
-				$samples[ $oid ] = $info;
-				if ( count( $samples ) >= $sample_limit ) {
+			$parents      = null === $known_parents ? self::count_catalog_parents( $args, $ceiling ) : absint( $known_parents );
+			$sample_limit = max( 1, absint( $sample_limit ) );
+			$eligible     = 0;
+			if ( $parents > 0 && $parents <= self::KEYSET_AT ) {
+				$eligible = self::count_catalog_objects( $args, $ceiling );
+			} elseif ( $parents > self::KEYSET_AT ) {
+				// برای کاتالوگ بزرگ، دو COUNT سراسری روی متای واریشن انجام نمی‌دهیم.
+				$eligible = -1;
+			}
+
+			$samples       = array();
+			$after         = 0;
+			$scanned       = 0;
+			$sample_ceiling = 120; // پیش‌نمایش فقط تعداد محدودی مادر را برای نمونه‌برداری می‌خواند.
+			while ( $scanned < $sample_ceiling && count( $samples ) < $sample_limit ) {
+				$limit = min( 60, $sample_ceiling - $scanned );
+				$ids   = self::keyset_parent_ids( $args, $after, $ceiling, $limit );
+				if ( null === $ids || empty( $ids ) ) {
+					break;
+				}
+				$scanned += count( $ids );
+				$after    = (int) end( $ids );
+				$need     = $sample_limit - count( $samples );
+				$analysis = self::analyze_targets( $ids, $args['operation'], $need );
+				foreach ( $analysis['samples'] as $oid => $info ) {
+					$samples[ $oid ] = $info;
+					if ( count( $samples ) >= $sample_limit ) {
+						break;
+					}
+				}
+				if ( count( $ids ) < $limit ) {
 					break;
 				}
 			}
-			if ( count( $ids ) < 60 ) {
-				break;
-			}
+
+			return array(
+				'ceiling'  => $ceiling,
+				'parents'  => $parents,
+				'eligible' => $eligible,
+				'samples'  => $samples,
+			);
 		}
-		return array(
-			'ceiling'  => $ceiling,
-			'parents'  => $parents,
-			'eligible' => $eligible,
-			'samples'  => $samples,
-		);
-	}
 
 	/** تعداد اشیاء قیمت واجد شرایط (ساده/خارجی + واریشن)، نه مادر. */
 	public static function count_catalog_objects( $args, $ceiling ) {
@@ -1045,6 +1169,41 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 		if ( ! empty( $terms ) ) {
 			$parts[] = self::term_sql( $alias, $terms );
 		}
+		$exclusions = self::exclusion_filter_sql( $alias, $args );
+		if ( $exclusions ) {
+			$parts[] = $exclusions;
+		}
+		return implode( ' AND ', $parts );
+	}
+
+	/** فیلتر SQL استثناها برای محصول مادر؛ هر واریشن انتخاب‌شده نیز کل مادر را مستثنا می‌کند. */
+	private static function exclusion_filter_sql( $alias, $args ) {
+		global $wpdb;
+		$parts = array();
+
+		$product_ids = array_values( array_unique( array_filter( array_map( 'absint', isset( $args['excluded_product_ids'] ) ? (array) $args['excluded_product_ids'] : array() ) ) ) );
+		if ( ! empty( $product_ids ) ) {
+			$in      = implode( ',', $product_ids );
+			$parts[] = "NOT EXISTS (
+				SELECT 1 FROM {$wpdb->posts} ex
+				WHERE ex.ID IN ({$in})
+				AND (
+					(ex.post_type = 'product' AND ex.ID = {$alias}.ID)
+					OR (ex.post_type = 'product_variation' AND ex.post_parent = {$alias}.ID)
+				)
+			)";
+		}
+
+		$term_ids = self::effective_excluded_terms( $args );
+		if ( ! empty( $term_ids ) ) {
+			$in      = implode( ',', array_map( 'absint', $term_ids ) );
+			$parts[] = "NOT EXISTS (
+				SELECT 1 FROM {$wpdb->term_relationships} xtr
+				INNER JOIN {$wpdb->term_taxonomy} xtt ON xtt.term_taxonomy_id = xtr.term_taxonomy_id AND xtt.taxonomy = 'product_cat'
+				WHERE xtr.object_id = {$alias}.ID AND xtt.term_id IN ({$in})
+			)";
+		}
+
 		return implode( ' AND ', $parts );
 	}
 

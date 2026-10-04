@@ -37,9 +37,23 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( is_wp_error( $args ) ) {
 				self::send_wp_error( $args );
 			}
+			// درخت دسته‌های هدف و استثنا فقط یک‌بار محاسبه می‌شود و در پیش‌نمایش، توکن و اجرا ثابت می‌ماند.
+			$args['scan'] = array(
+				'terms'          => TCP_DB::effective_terms( $args ),
+				'excluded_terms' => TCP_DB::effective_excluded_terms( $args ),
+			);
 
-			if ( self::preview_uses_keyset( $args ) ) {
-				$preview = TCP_DB::catalog_preview( $args, TCP_Settings::sample_size() );
+			$use_keyset     = 'all' === $args['target_type'];
+			$preview_ceiling = 0;
+			$preview_parents = null;
+			if ( ! $use_keyset && 'category' === $args['target_type'] ) {
+				$preview_ceiling = TCP_DB::product_id_ceiling();
+				$preview_parents = TCP_DB::count_catalog_parents( $args, $preview_ceiling );
+				$use_keyset      = $preview_parents > TCP_DB::KEYSET_AT;
+			}
+
+			if ( $use_keyset ) {
+				$preview = TCP_DB::catalog_preview( $args, TCP_Settings::sample_size(), $preview_parents, $preview_ceiling );
 				if ( empty( $preview['parents'] ) ) {
 					wp_send_json_error( array( 'message' => 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد (فیلترها را بررسی کن).' ), 400 );
 				}
@@ -48,7 +62,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				foreach ( $preview['samples'] as $oid => $info ) {
 					$samples[] = TCP_Ops::sample_row( $oid, $info, $args['operation'], $args['value'] );
 				}
-				wp_send_json_success( self::preview_payload( $args, (int) $preview['parents'], (int) $preview['eligible'], $samples ) );
+				wp_send_json_success( self::preview_payload( $args, (int) $preview['parents'], (int) $preview['eligible'], $samples, (int) $preview['ceiling'] ) );
 			}
 
 			$parents = TCP_DB::selection_parent_ids( $args );
@@ -65,7 +79,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				$samples[] = TCP_Ops::sample_row( $oid, $info, $args['operation'], $args['value'] );
 			}
 
-			wp_send_json_success( self::preview_payload( $args, count( $parents ), (int) $analysis['eligible'], $samples ) );
+			wp_send_json_success( self::preview_payload( $args, count( $parents ), (int) $analysis['eligible'], $samples, 0 ) );
 		}
 
 		/**
@@ -74,31 +88,38 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 		 *
 		 * @return array|WP_Error
 		 */
-		private static function prepare_execution( $args ) {
-			$batch = max( 1, min( 100, absint( TCP_Settings::batch_size() ) ) );
-			$keyset = 'all' === $args['target_type'];
-			$ceiling = 0;
-			if ( ! $keyset && 'category' === $args['target_type'] ) {
+		private static function prepare_execution( $args, $snapshot ) {
+			$batch   = max( 1, min( 100, absint( TCP_Settings::batch_size() ) ) );
+			$keyset  = 'all' === $args['target_type'];
+			$args['scan'] = array(
+				'terms'          => isset( $snapshot['terms'] ) ? TCP_Ops::ids( $snapshot['terms'] ) : array(),
+				'excluded_terms' => isset( $snapshot['excluded_terms'] ) ? TCP_Ops::ids( $snapshot['excluded_terms'] ) : array(),
+			);
+			$ceiling      = 0;
+			$catalog_count = null;
+
+			if ( 'category' === $args['target_type'] ) {
 				$ceiling = TCP_DB::product_id_ceiling();
-				if ( TCP_DB::cached_parent_count( $args, $ceiling ) > TCP_DB::KEYSET_AT ) {
-					$keyset = true;
-				}
+				// تصمیم «کلیدست یا فهرست» با شمارش تازه انجام می‌شود؛ همان شمارش برای اجرا هم استفاده می‌شود.
+				$catalog_count = TCP_DB::count_catalog_parents( $args, $ceiling );
+				$keyset        = $catalog_count > TCP_DB::KEYSET_AT;
 			}
+
 			if ( $keyset ) {
 				if ( ! $ceiling ) {
 					$ceiling = TCP_DB::product_id_ceiling();
 				}
-				$store = $args;
-				$store['batch'] = min( 100, max( $batch, 40 ) );
+				$store        = $args;
+				$store['batch'] = $batch; // اندازهٔ دستهٔ تنظیم‌شده رعایت می‌شود؛ برای فروشگاه بزرگ حداقل ۴۰ تحمیل نمی‌شود.
 				$scan = array(
 					'mode'     => 'keyset',
 					'ceiling'  => $ceiling,
+					// درخت دسته‌های هدف/استثنا از لحظهٔ پیش‌نمایش تا پایان اجرا ثابت می‌ماند.
+					'terms'          => $args['scan']['terms'],
+					'excluded_terms' => $args['scan']['excluded_terms'],
 				);
-				if ( 'category' === $args['target_type'] ) {
-					$scan['terms'] = TCP_DB::effective_terms( $args );
-				}
 				$store['scan'] = $scan;
-				$count = TCP_DB::count_catalog_parents( $store, $ceiling );
+				$count = null === $catalog_count ? TCP_DB::count_catalog_parents( $store, $ceiling ) : (int) $catalog_count;
 				if ( $count < 1 ) {
 					return new WP_Error( 'empty', 'هیچ محصولی در محدودهٔ انتخاب‌شده پیدا نشد.' );
 				}
@@ -143,32 +164,41 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			);
 		}
 
-		/** آیا پیش‌نمایش باید بدون بار کردن همهٔ شناسه‌ها انجام شود؟ */
-		private static function preview_uses_keyset( $args ) {
-			if ( 'all' === $args['target_type'] ) {
-				return true;
-			}
-			if ( 'category' !== $args['target_type'] ) {
-				return false;
-			}
-			$ceiling = TCP_DB::product_id_ceiling();
-			return TCP_DB::cached_parent_count( $args, $ceiling ) > TCP_DB::KEYSET_AT;
+		private static function preview_snapshot_key( $token ) {
+			return 'tcp_preview_' . substr( hash( 'sha256', get_current_user_id() . '|' . (string) $token ), 0, 40 );
 		}
 
-		private static function preview_payload( $args, $parents, $eligible, $samples ) {
+		private static function preview_payload( $args, $parents, $eligible, $samples, $ceiling = 0 ) {
+			$snapshot = array(
+				'parents'        => (int) $parents,
+				'ceiling'        => absint( $ceiling ),
+				'terms'          => isset( $args['scan']['terms'] ) ? TCP_Ops::ids( $args['scan']['terms'] ) : array(),
+				'excluded_terms' => isset( $args['scan']['excluded_terms'] ) ? TCP_Ops::ids( $args['scan']['excluded_terms'] ) : array(),
+			);
+			$token = TCP_Ops::make_token( $args, $snapshot );
+			if ( function_exists( 'set_transient' ) ) {
+				set_transient( self::preview_snapshot_key( $token ), $snapshot, 30 * MINUTE_IN_SECONDS );
+			}
 			return array(
-				'preview_token'      => TCP_Ops::make_token( $args ),
-				'parent_count'       => (int) $parents,
-				'price_object_count' => (int) $eligible,
-				'target_type'        => $args['target_type'],
-				'include_children'   => ! empty( $args['include_children'] ),
-				'category_labels'    => self::category_labels( $args['category_ids'] ),
-				'operation_label'    => TCP_Ops::op_label( $args['operation'] ),
-				'round_mode'         => $args['round_mode'],
-				'round_label'        => TCP_Round::describe(),
-				'jitter'             => TCP_Round::jitter(),
-				'samples'            => $samples,
-				'catalog'            => 'all' === $args['target_type'],
+				'preview_token'             => $token,
+				'preview_parent_count'      => $snapshot['parents'],
+				'preview_ceiling'           => $snapshot['ceiling'],
+				'parent_count'              => $snapshot['parents'],
+				'price_object_count'        => (int) $eligible,
+				'target_type'               => $args['target_type'],
+				'include_children'          => 'category' === $args['target_type'] && ! empty( $args['include_children'] ),
+				'category_labels'           => 'category' === $args['target_type'] ? self::category_labels( isset( $args['category_ids'] ) ? $args['category_ids'] : array() ) : array(),
+				'excluded_category_labels'  => self::category_labels( isset( $args['excluded_category_ids'] ) ? $args['excluded_category_ids'] : array() ),
+				'excluded_product_count'    => count( isset( $args['excluded_product_ids'] ) ? (array) $args['excluded_product_ids'] : array() ),
+				'exclude_category_children' => ! empty( $args['exclude_category_children'] ),
+				'rollback_available'        => TCP_Settings::rollback_enabled() && TCP_DB::log_table_ready(),
+				'operation_label'           => TCP_Ops::op_label( $args['operation'] ),
+				'round_mode'                => $args['round_mode'],
+				'round_label'               => TCP_Round::describe(),
+				'jitter'                    => TCP_Round::jitter(),
+				'samples'                   => $samples,
+				'catalog'                   => 'all' === $args['target_type'],
+				'chunked'                   => 'all' === $args['target_type'] || $snapshot['parents'] > TCP_DB::KEYSET_AT,
 			);
 		}
 
@@ -247,9 +277,27 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				self::send_wp_error( $args );
 			}
 
-			$preview_token = isset( $_POST['preview_token'] ) ? sanitize_text_field( wp_unslash( $_POST['preview_token'] ) ) : '';
-			if ( ! TCP_Ops::verify_token( $args, $preview_token ) ) {
+				$preview_token = isset( $_POST['preview_token'] ) ? sanitize_text_field( wp_unslash( $_POST['preview_token'] ) ) : '';
+				$posted_snapshot = array(
+					'parents' => isset( $_POST['preview_parent_count'] ) ? absint( $_POST['preview_parent_count'] ) : 0,
+					'ceiling' => isset( $_POST['preview_ceiling'] ) ? absint( $_POST['preview_ceiling'] ) : 0,
+				);
+				$stored_snapshot = function_exists( 'get_transient' ) ? get_transient( self::preview_snapshot_key( $preview_token ) ) : false;
+				if ( ! is_array( $stored_snapshot ) || ! isset( $stored_snapshot['parents'], $stored_snapshot['ceiling'] ) ||
+					(int) $stored_snapshot['parents'] !== (int) $posted_snapshot['parents'] || (int) $stored_snapshot['ceiling'] !== (int) $posted_snapshot['ceiling'] ) {
+					wp_send_json_error( array( 'message' => 'اعتبار پیش‌نمایش منقضی شده است؛ دوباره «بررسی قبل از اجرا» را بزن.' ), 409 );
+				}
+				$snapshot = array(
+					'parents'        => absint( $stored_snapshot['parents'] ),
+					'ceiling'        => absint( $stored_snapshot['ceiling'] ),
+					'terms'          => TCP_Ops::ids( isset( $stored_snapshot['terms'] ) ? $stored_snapshot['terms'] : array() ),
+					'excluded_terms' => TCP_Ops::ids( isset( $stored_snapshot['excluded_terms'] ) ? $stored_snapshot['excluded_terms'] : array() ),
+				);
+				if ( ! TCP_Ops::verify_token( $args, $preview_token, $snapshot ) ) {
 				wp_send_json_error( array( 'message' => 'پیش‌نمایش معتبر نیست یا تنظیمات بعد از بررسی تغییر کرده است. دوباره «بررسی قبل از اجرا» را بزن.' ), 409 );
+			}
+			if ( 'all' === $args['target_type'] && ( ! TCP_Settings::rollback_enabled() || ! TCP_DB::log_table_ready() ) ) {
+				wp_send_json_error( array( 'message' => 'برای تغییر همهٔ محصولات، ثبت لاگ و بازگردانی باید فعال باشد و جدول لاگ هم در دسترس باشد. تنظیمات را بررسی و دوباره پیش‌نمایش بگیر.' ), 409 );
 			}
 
 			$busy = TCP_DB::busy_slot( 0 );
@@ -263,9 +311,12 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 				), 409 );
 			}
 
-			$prepared = self::prepare_execution( $args );
+				$prepared = self::prepare_execution( $args, $snapshot );
 			if ( is_wp_error( $prepared ) ) {
 				self::send_wp_error( $prepared );
+			}
+			if ( (int) $prepared['parents'] !== (int) $snapshot['parents'] || (int) $prepared['ceiling'] !== (int) $snapshot['ceiling'] ) {
+				wp_send_json_error( array( 'message' => 'فهرست یا تعداد محصولات از زمان پیش‌نمایش تغییر کرده است؛ برای جلوگیری از تغییر ناخواسته، دوباره «بررسی قبل از اجرا» را بزن.' ), 409 );
 			}
 			$args_store    = $prepared['args'];
 			$total_parents = (int) $prepared['parents'];
@@ -372,13 +423,24 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( ! TCP_DB::acquire_run_lock( $run_id ) ) {
 				self::send_busy();
 			}
-			try {
-				$payload = self::build_run_page( $run_id );
-			} catch ( Throwable $e ) {
+				try {
+					$payload = self::build_run_page( $run_id );
+				} catch ( Throwable $e ) {
+					TCP_DB::release_run_lock( $run_id );
+					$unsafe = $e instanceof TCP_Unsafe_Exception;
+					$detail = function_exists( 'mb_substr' ) ? mb_substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 ) : substr( wp_strip_all_tags( $e->getMessage() ), 0, 240 );
+					TCP_DB::update_run( $run_id, array(
+						'status'     => $unsafe ? 'failed' : 'interrupted',
+						'last_error' => $detail,
+						'updated_at' => TCP_DB::now(),
+					) );
+					TCP_Scheduler::disarm_continue( $run_id );
+					$message = $unsafe
+						? 'به‌دلیل خطای ذخیره با وضعیت نامطمئن، ادامهٔ خودکار مسدود شد؛ محصول را دستی بررسی کن. خطا: ' . $detail
+						: 'اجرا برای جلوگیری از ادامهٔ ناامن متوقف شد و از گزارش قابل ادامه است. خطا: ' . $detail;
+					wp_send_json_error( array( 'message' => $message ), $unsafe ? 500 : 503 );
+				}
 				TCP_DB::release_run_lock( $run_id );
-				wp_send_json_error( array( 'message' => 'خطای داخلی اجرا.' ), 500 );
-			}
-			TCP_DB::release_run_lock( $run_id );
 			if ( is_wp_error( $payload ) ) {
 				if ( 'retry' === $payload->get_error_code() ) {
 					self::send_busy();
@@ -547,15 +609,18 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 
 		public static function ajax_rollback_start() {
 			self::guard();
-			if ( ! TCP_Settings::rollback_enabled() ) {
-				wp_send_json_error( array( 'message' => 'بازگردانی در تنظیمات غیرفعال است.' ), 403 );
-			}
 			$source_id = isset( $_POST['run_id'] ) ? absint( $_POST['run_id'] ) : 0;
 			$source = $source_id ? TCP_DB::get_run( $source_id ) : null;
 			if ( ! $source ) {
 				wp_send_json_error( array( 'message' => 'اجرای مبدأ پیدا نشد.' ), 404 );
 			}
-			if ( 'rollback' === $source['type'] || in_array( $source['status'], array( 'running', 'interrupted', 'queued', 'rolled_back' ), true ) ) {
+			$source_args = json_decode( (string) $source['args'], true );
+			$catalog_run = is_array( $source_args ) && isset( $source_args['target_type'] ) && 'all' === $source_args['target_type'];
+			// اگر گزینهٔ عمومی بعداً خاموش شد، اجرای «همهٔ محصولات» که با لاگ اجباری شروع شده هنوز قابل بازگردانی بماند.
+			if ( ! TCP_Settings::rollback_enabled() && ! $catalog_run ) {
+				wp_send_json_error( array( 'message' => 'بازگردانی در تنظیمات غیرفعال است.' ), 403 );
+			}
+			if ( 'rollback' === $source['type'] || in_array( $source['status'], array( 'running', 'interrupted', 'queued', 'failed', 'rolled_back' ), true ) ) {
 				wp_send_json_error( array( 'message' => 'این اجرا قابل بازگردانی نیست.' ), 409 );
 			}
 			$total_log = TCP_DB::count_log( $source_id );
