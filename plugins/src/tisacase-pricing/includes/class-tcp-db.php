@@ -45,6 +45,7 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 			$installed = get_option( 'tcp_db_version', '' );
 			if ( $installed !== TCP_Settings::DB_VERSION ) {
 				self::install();
+				self::ensure_scan_columns();
 				update_option( 'tcp_db_version', TCP_Settings::DB_VERSION, false );
 			}
 		}
@@ -71,8 +72,12 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				count_updated BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
 				count_skipped BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
 				count_errors BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
-				parent_run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
-				last_error VARCHAR(255) NOT NULL DEFAULT '',
+			parent_run_id BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			scan_after BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			scan_pending BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			scan_object BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			scan_ceiling BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+			last_error VARCHAR(255) NOT NULL DEFAULT '',
 				created_at DATETIME NULL,
 				updated_at DATETIME NULL,
 				finished_at DATETIME NULL,
@@ -94,13 +99,58 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				after_value VARCHAR(64) NOT NULL DEFAULT '',
 				created_at DATETIME NULL,
 				PRIMARY KEY  (id),
-				KEY run_id (run_id),
-				KEY object_id (object_id),
-				KEY parent_id (parent_id)
+			KEY run_id (run_id),
+			KEY object_id (object_id),
+			KEY parent_id (parent_id),
+			KEY run_parent (run_id, parent_id)
 			) {$collate};";
 
 			dbDelta( $sql_runs );
 			dbDelta( $sql_log );
+			self::ensure_scan_columns();
+		}
+
+		/**
+		 * dbDelta گاهی ستون جدید را روی جدول موجود جا می‌اندازد؛ این‌جا صریح اضافه می‌شود.
+		 * ستون‌های scan برای ادامهٔ دقیقِ اجرای «همهٔ محصولات» بعد از قطعی هستند.
+		 */
+		public static function ensure_scan_columns() {
+			global $wpdb;
+			$table = self::table_runs();
+			$found = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) );
+			if ( $found !== $table ) {
+				return;
+			}
+			$have = array();
+			foreach ( (array) $wpdb->get_results( "SHOW COLUMNS FROM {$table}", ARRAY_A ) as $col ) { // phpcs:ignore WordPress.DB.PreparedSQL
+				if ( isset( $col['Field'] ) ) {
+					$have[ $col['Field'] ] = true;
+				}
+			}
+			$add = array(
+				'scan_after'    => 'BIGINT(20) UNSIGNED NOT NULL DEFAULT 0',
+				'scan_pending'  => 'BIGINT(20) UNSIGNED NOT NULL DEFAULT 0',
+				'scan_object'   => 'BIGINT(20) UNSIGNED NOT NULL DEFAULT 0',
+				'scan_ceiling'  => 'BIGINT(20) UNSIGNED NOT NULL DEFAULT 0',
+			);
+			foreach ( $add as $name => $def ) {
+				if ( empty( $have[ $name ] ) ) {
+					$wpdb->query( "ALTER TABLE {$table} ADD COLUMN {$name} {$def}" ); // phpcs:ignore WordPress.DB.PreparedSQL
+				}
+			}
+
+			$log = self::table_log();
+			$indexes = $wpdb->get_results( "SHOW INDEX FROM {$log}", ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL
+			$has_run_parent = false;
+			foreach ( (array) $indexes as $idx ) {
+				if ( isset( $idx['Key_name'] ) && 'run_parent' === $idx['Key_name'] ) {
+					$has_run_parent = true;
+					break;
+				}
+			}
+			if ( ! $has_run_parent ) {
+				$wpdb->query( "ALTER TABLE {$log} ADD KEY run_parent (run_id, parent_id)" ); // phpcs:ignore WordPress.DB.PreparedSQL
+			}
 		}
 
 		public static function cron_cleanup() {
@@ -161,13 +211,23 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 			$allowed = array(
 				'status', 'operation', 'args', 'page', 'total_pages', 'total_parents', 'count_updated',
 				'count_skipped', 'count_errors', 'parent_run_id', 'last_error', 'updated_at', 'finished_at',
+				'scan_after', 'scan_pending', 'scan_object', 'scan_ceiling',
+			);
+			$int_keys = array(
+				'page', 'total_pages', 'total_parents', 'count_updated', 'count_skipped', 'count_errors',
+				'parent_run_id', 'scan_after', 'scan_pending', 'scan_object', 'scan_ceiling',
 			);
 			foreach ( $allowed as $key ) {
 				if ( ! array_key_exists( $key, $fields ) ) {
 					continue;
 				}
-				$set[ $key ] = $fields[ $key ];
-				$fmt[]       = is_int( $fields[ $key ] ) ? '%d' : '%s';
+				if ( in_array( $key, $int_keys, true ) ) {
+					$set[ $key ] = absint( $fields[ $key ] );
+					$fmt[]       = '%d';
+				} else {
+					$set[ $key ] = $fields[ $key ];
+					$fmt[]       = '%s';
+				}
 			}
 			if ( empty( $set ) ) {
 				return false;
@@ -182,6 +242,9 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 				return null;
 			}
 			$row['value'] = null === $row['value'] ? null : (float) $row['value'];
+			foreach ( array( 'scan_after', 'scan_pending', 'scan_object', 'scan_ceiling' ) as $scan_key ) {
+				$row[ $scan_key ] = isset( $row[ $scan_key ] ) ? absint( $row[ $scan_key ] ) : 0;
+			}
 			return $row;
 		}
 
@@ -241,6 +304,50 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 		public static function count_queued() {
 			global $wpdb;
 			return (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . self::table_runs() . " WHERE type='scheduled' AND status='queued'" );
+		}
+
+		public static function has_running_scheduled() {
+			global $wpdb;
+			return (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . self::table_runs() . " WHERE type='scheduled' AND status='running'" ) > 0;
+		}
+
+		/** قفل کوتاه تا درخواست مرورگر و ادامهٔ پس‌زمینه هم‌زمان یک اجرا را ننویسند. */
+		public static function acquire_run_lock( $run_id, $ttl = 50 ) {
+			$run_id = absint( $run_id );
+			if ( ! $run_id ) {
+				return false;
+			}
+			$key = 'tcp_rl_' . $run_id;
+			$now = time();
+			if ( add_option( $key, (string) $now, '', false ) ) {
+				return true;
+			}
+			$ts = (int) get_option( $key, 0 );
+			if ( $ts && ( $now - $ts ) < absint( $ttl ) ) {
+				return false;
+			}
+			delete_option( $key );
+			return add_option( $key, (string) $now, '', false );
+		}
+
+		public static function release_run_lock( $run_id ) {
+			delete_option( 'tcp_rl_' . absint( $run_id ) );
+		}
+
+		/** ضربان UTC تا تشخیص «مرورگر هنوز وصل است» به منطقهٔ زمانی وابسته نباشد. */
+		public static function touch_run_beat( $run_id ) {
+			$run_id = absint( $run_id );
+			if ( $run_id ) {
+				update_option( 'tcp_beat_' . $run_id, time(), false );
+			}
+		}
+
+		public static function run_beat_age( $run_id ) {
+			$ts = (int) get_option( 'tcp_beat_' . absint( $run_id ), 0 );
+			if ( ! $ts ) {
+				return 999999;
+			}
+			return time() - $ts;
 		}
 
 		public static function claim_queued_run() {
@@ -715,11 +822,360 @@ if ( ! class_exists( 'TCP_DB' ) ) {
 					WHERE meta_key = '_sku' AND post_id IN ({$ids_str})",
 					ARRAY_A
 				);
-				foreach ( (array) $rows as $r ) {
-					$out[ absint( $r['post_id'] ) ] = $r['meta_value'];
+			foreach ( (array) $rows as $r ) {
+				$out[ absint( $r['post_id'] ) ] = $r['meta_value'];
+			}
+		}
+		return $out;
+	}
+
+	/* -----------------------------------------------------------------
+	 * کاتالوگ بزرگ: پیمایش کلیدست (بدون بار کردن همهٔ شناسه‌ها در حافظه)
+	 * --------------------------------------------------------------- */
+
+	/** از این تعداد محصول مادر به بالا، دسته هم مثل «همه» با کلیدست اجرا می‌شود. */
+	const KEYSET_AT = 2000;
+
+	/** شناسه‌های واریشنِ یک مادر، به ترتیب پایدار (برای cursor قطعی). */
+	public static function child_ids( $parent_id ) {
+		global $wpdb;
+		$parent_id = absint( $parent_id );
+		if ( ! $parent_id ) {
+			return array();
+		}
+		$rows = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT ID FROM {$wpdb->posts} WHERE post_parent = %d AND post_type = 'product_variation' AND post_status NOT IN ('trash','auto-draft') ORDER BY ID ASC",
+				$parent_id
+			)
+		);
+		return array_values( array_filter( array_map( 'absint', (array) $rows ) ) );
+	}
+
+	/** شناسه‌هایی که در لاگ این اجرا برای این مادر ثبت شده‌اند (ضد اعمال دوباره). */
+	public static function logged_object_ids( $run_id, $parent_id ) {
+		global $wpdb;
+		$rows = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT object_id FROM ' . self::table_log() . ' WHERE run_id = %d AND parent_id = %d',
+				absint( $run_id ),
+				absint( $parent_id )
+			)
+		);
+		return array_values( array_unique( array_filter( array_map( 'absint', (array) $rows ) ) ) );
+	}
+
+	/** بزرگ‌ترین شناسهٔ محصول موجود؛ محصولات جدیدتر از این وارد اجرای در جریان نمی‌شوند. */
+	public static function product_id_ceiling() {
+		global $wpdb;
+		return absint( $wpdb->get_var( "SELECT MAX(ID) FROM {$wpdb->posts} WHERE post_type = 'product'" ) );
+	}
+
+	/**
+	 * دسته‌های مؤثر. اگر اجرا terms را یخ کرده باشد همان استفاده می‌شود
+	 * تا زیردستهٔ ساخته‌شده وسط اجرا مجموعه را بزرگ نکند.
+	 */
+	public static function effective_terms( $args ) {
+		if ( ! empty( $args['scan']['terms'] ) && is_array( $args['scan']['terms'] ) ) {
+			return array_values( array_unique( array_filter( array_map( 'absint', $args['scan']['terms'] ) ) ) );
+		}
+		if ( ! isset( $args['target_type'] ) || 'category' !== $args['target_type'] ) {
+			return array();
+		}
+		$ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $args['category_ids'] ) ) ) );
+		if ( empty( $ids ) || empty( $args['include_children'] ) || ! function_exists( 'get_term_children' ) ) {
+			return $ids;
+		}
+		$all = $ids;
+		foreach ( $ids as $id ) {
+			$children = get_term_children( $id, 'product_cat' );
+			if ( is_array( $children ) ) {
+				$all = array_merge( $all, array_map( 'absint', $children ) );
+			}
+		}
+		return array_values( array_unique( array_filter( $all ) ) );
+	}
+
+	/** تعداد مادرهای مطابق فیلتر، با سقف شناسه. */
+	public static function count_catalog_parents( $args, $ceiling ) {
+		global $wpdb;
+		$ceiling = absint( $ceiling );
+		if ( ! $ceiling ) {
+			return 0;
+		}
+		$where = self::parent_filter_sql( 'p', $args );
+		$sql   = "SELECT COUNT(*) FROM {$wpdb->posts} p WHERE p.post_type = 'product' AND p.ID <= %d AND {$where}";
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, $ceiling ) ); // phpcs:ignore WordPress.DB.PreparedSQL
+	}
+
+	/** همان شمارش، با کش کوتاه تا تلاش مجددِ پیش‌نمایش کاتالوگ را دوباره اسکن نکند. */
+	public static function cached_parent_count( $args, $ceiling ) {
+		$ceiling = absint( $ceiling );
+		$key     = 'tcp_pc_' . substr( TCP_Ops::args_hash( $args ), 0, 20 ) . '_' . $ceiling;
+		if ( function_exists( 'get_transient' ) ) {
+			$cached = get_transient( $key );
+			if ( false !== $cached && null !== $cached ) {
+				return (int) $cached;
+			}
+		}
+		$n = self::count_catalog_parents( $args, $ceiling );
+		if ( function_exists( 'set_transient' ) ) {
+			set_transient( $key, $n, 10 * MINUTE_IN_SECONDS );
+		}
+		return $n;
+	}
+
+	/**
+	 * صفحهٔ بعدیِ مادرها با ID > $after_id. فیلتر قیمت روی ردیف‌های هنوز پردازش‌نشده
+	 * پایدار است چون خودِ اجرا فقط شناسه‌های ≤ cursor را عوض کرده.
+	 */
+	public static function keyset_parent_ids( $args, $after_id, $ceiling, $limit ) {
+		global $wpdb;
+		$ceiling = absint( $ceiling );
+		$limit   = max( 1, min( 200, absint( $limit ) ) );
+		if ( ! $ceiling ) {
+			return array();
+		}
+		$where = self::parent_filter_sql( 'p', $args );
+		$sql   = "SELECT p.ID FROM {$wpdb->posts} p WHERE p.post_type = 'product' AND p.ID > %d AND p.ID <= %d AND {$where} ORDER BY p.ID ASC LIMIT %d";
+		$rows  = $wpdb->get_col( $wpdb->prepare( $sql, absint( $after_id ), $ceiling, $limit ) ); // phpcs:ignore WordPress.DB.PreparedSQL
+		if ( ! empty( $wpdb->last_error ) ) {
+			return null;
+		}
+		return array_values( array_filter( array_map( 'absint', (array) $rows ) ) );
+	}
+
+	/**
+	 * پیش‌نمایش کاتالوگ بدون ساخت WC_Product برای همه.
+	 * eligible = -1 یعنی فروشگاه آن‌قدر بزرگ است که شمارش دقیقِ متغیرها به اجرا موکول شد.
+	 */
+	public static function catalog_preview( $args, $sample_limit ) {
+		$ceiling      = self::product_id_ceiling();
+		$parents      = self::cached_parent_count( $args, $ceiling );
+		$sample_limit = max( 1, absint( $sample_limit ) );
+		$eligible     = 0;
+		if ( $parents > 0 && $parents <= 8000 ) {
+			$eligible = self::count_catalog_objects( $args, $ceiling );
+		} elseif ( $parents > 8000 ) {
+			$eligible = -1;
+		}
+		$samples = array();
+		$after   = 0;
+		for ( $i = 0; $i < 6 && count( $samples ) < $sample_limit; $i++ ) {
+			$ids = self::keyset_parent_ids( $args, $after, $ceiling, 60 );
+			if ( null === $ids || empty( $ids ) ) {
+				break;
+			}
+			$after    = (int) end( $ids );
+			$need     = $sample_limit - count( $samples );
+			$analysis = self::analyze_targets( $ids, $args['operation'], $need );
+			foreach ( $analysis['samples'] as $oid => $info ) {
+				$samples[ $oid ] = $info;
+				if ( count( $samples ) >= $sample_limit ) {
+					break;
 				}
 			}
-			return $out;
+			if ( count( $ids ) < 60 ) {
+				break;
+			}
 		}
+		return array(
+			'ceiling'  => $ceiling,
+			'parents'  => $parents,
+			'eligible' => $eligible,
+			'samples'  => $samples,
+		);
 	}
+
+	/** تعداد اشیاء قیمت واجد شرایط (ساده/خارجی + واریشن)، نه مادر. */
+	public static function count_catalog_objects( $args, $ceiling ) {
+		return self::count_simple_objects( $args, $ceiling ) + self::count_variation_objects( $args, $ceiling );
+	}
+
+	private static function count_simple_objects( $args, $ceiling ) {
+		global $wpdb;
+		$ceiling = absint( $ceiling );
+		if ( ! $ceiling ) {
+			return 0;
+		}
+		$op    = isset( $args['operation'] ) ? $args['operation'] : '';
+		$where = self::parent_filter_sql( 'p', $args );
+		$meta  = self::object_price_sql( 'p', $op );
+		$sql   = "SELECT COUNT(*) FROM {$wpdb->posts} p
+			WHERE p.post_type = 'product' AND p.ID <= %d AND {$where}
+			AND " . self::type_absent_sql( 'p', array( 'variable', 'grouped' ) ) . "
+			AND {$meta}";
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, $ceiling ) ); // phpcs:ignore WordPress.DB.PreparedSQL
+	}
+
+	private static function count_variation_objects( $args, $ceiling ) {
+		global $wpdb;
+		$ceiling = absint( $ceiling );
+		if ( ! $ceiling ) {
+			return 0;
+		}
+		$op    = isset( $args['operation'] ) ? $args['operation'] : '';
+		$where = self::parent_filter_sql( 'p', $args );
+		$meta  = self::object_price_sql( 'v', $op );
+		$sql   = "SELECT COUNT(*) FROM {$wpdb->posts} v
+			INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent
+			WHERE v.post_type = 'product_variation'
+			AND v.post_status NOT IN ('trash','auto-draft')
+			AND p.post_type = 'product' AND p.ID <= %d AND {$where}
+			AND " . self::type_present_sql( 'p', array( 'variable' ) ) . "
+			AND {$meta}";
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, $ceiling ) ); // phpcs:ignore WordPress.DB.PreparedSQL
+	}
+
+	/** فیلتر مادر: وضعیت + نوع + حضور متا + دسته (اگر باشد). بدون placeholder تا prepare بیرونی نشکند. */
+	private static function parent_filter_sql( $alias, $args ) {
+		$parts   = array();
+		$parts[] = self::status_sql( $alias, $args );
+		$types   = isset( $args['filters']['types'] ) ? (array) $args['filters']['types'] : array();
+		$type    = self::type_filter_sql( $alias, $types );
+		if ( $type ) {
+			$parts[] = $type;
+		}
+		$filters = isset( $args['filters'] ) ? (array) $args['filters'] : array();
+		$presence = self::presence_filter_sql( $alias, $filters );
+		if ( $presence ) {
+			$parts[] = $presence;
+		}
+		$terms = self::effective_terms( $args );
+		if ( ! empty( $terms ) ) {
+			$parts[] = self::term_sql( $alias, $terms );
+		}
+		return implode( ' AND ', $parts );
+	}
+
+	private static function status_sql( $alias, $args ) {
+		$list = self::statuses( $args );
+		if ( empty( $list ) ) {
+			return '1=0';
+		}
+		$in = "'" . implode( "','", array_map( 'esc_sql', $list ) ) . "'";
+		return "{$alias}.post_status IN ({$in})";
+	}
+
+	/** مثل tax_query ووکامرس: فقط اسلاگ صریح؛ محصول بدون نوع وارد فیلتر نوع نمی‌شود. */
+	private static function type_filter_sql( $alias, $types ) {
+		$types = array_values( array_filter( array_map( 'sanitize_key', (array) $types ), array( 'TCP_Ops', 'type_allowed' ) ) );
+		if ( empty( $types ) ) {
+			return '';
+		}
+		return self::type_present_sql( $alias, $types );
+	}
+
+	private static function type_present_sql( $alias, $slugs ) {
+		global $wpdb;
+		$slugs = array_values( array_filter( array_map( 'sanitize_key', (array) $slugs ) ) );
+		if ( empty( $slugs ) ) {
+			return '1=0';
+		}
+		$in = "'" . implode( "','", array_map( 'esc_sql', $slugs ) ) . "'";
+		return "EXISTS (
+			SELECT 1 FROM {$wpdb->term_relationships} tr
+			INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
+			INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+			WHERE tr.object_id = {$alias}.ID AND t.slug IN ({$in})
+		)";
+	}
+
+	private static function type_absent_sql( $alias, $slugs ) {
+		global $wpdb;
+		$slugs = array_values( array_filter( array_map( 'sanitize_key', (array) $slugs ) ) );
+		if ( empty( $slugs ) ) {
+			return '1=1';
+		}
+		$in = "'" . implode( "','", array_map( 'esc_sql', $slugs ) ) . "'";
+		return "NOT EXISTS (
+			SELECT 1 FROM {$wpdb->term_relationships} tr
+			INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
+			INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+			WHERE tr.object_id = {$alias}.ID AND t.slug IN ({$in})
+		)";
+	}
+
+	private static function term_sql( $alias, $term_ids ) {
+		global $wpdb;
+		$term_ids = array_values( array_unique( array_filter( array_map( 'absint', (array) $term_ids ) ) ) );
+		if ( empty( $term_ids ) ) {
+			return '1=0';
+		}
+		$in = implode( ',', $term_ids );
+		return "EXISTS (
+			SELECT 1 FROM {$wpdb->term_relationships} tr
+			INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_cat'
+			WHERE tr.object_id = {$alias}.ID AND tt.term_id IN ({$in})
+		)";
+	}
+
+	private static function presence_filter_sql( $alias, $filters ) {
+		$parts = array();
+		if ( ! empty( $filters['only_sale'] ) ) {
+			$parts[] = self::meta_on_self_or_child_sql( $alias, self::META_SALE, 'nonempty' );
+		}
+		if ( ! empty( $filters['only_wholesale'] ) ) {
+			$parts[] = self::meta_on_self_or_child_sql( $alias, TCP_WHOLESALE_META, 'positive' );
+		}
+		$min = isset( $filters['price_min'] ) && '' !== $filters['price_min'] && null !== $filters['price_min'] ? (float) $filters['price_min'] : null;
+		$max = isset( $filters['price_max'] ) && '' !== $filters['price_max'] && null !== $filters['price_max'] ? (float) $filters['price_max'] : null;
+		if ( null !== $min || null !== $max ) {
+			$parts[] = self::meta_on_self_or_child_sql( $alias, self::META_REGULAR, 'range', null === $min ? 0 : $min, null === $max ? 100000000000000 : $max );
+		}
+		return implode( ' AND ', $parts );
+	}
+
+	private static function meta_pred( $kind, $min, $max ) {
+		if ( 'range' === $kind ) {
+			$lo = number_format( (float) $min, 4, '.', '' );
+			$hi = number_format( (float) $max, 4, '.', '' );
+			return "pm.meta_value <> '' AND CAST(pm.meta_value AS DECIMAL(20,4)) BETWEEN {$lo} AND {$hi}";
+		}
+		if ( 'positive' === $kind ) {
+			return "pm.meta_value <> '' AND CAST(pm.meta_value AS DECIMAL(20,4)) > 0";
+		}
+		return "pm.meta_value <> ''";
+	}
+
+	private static function meta_on_self_or_child_sql( $alias, $meta_key, $kind, $min = 0, $max = 0 ) {
+		global $wpdb;
+		$meta_key = esc_sql( $meta_key );
+		$pred     = self::meta_pred( $kind, $min, $max );
+		return "(
+			EXISTS ( SELECT 1 FROM {$wpdb->postmeta} pm WHERE pm.post_id = {$alias}.ID AND pm.meta_key = '{$meta_key}' AND {$pred} )
+			OR EXISTS (
+				SELECT 1 FROM {$wpdb->posts} v
+				INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = v.ID
+				WHERE v.post_type = 'product_variation'
+				AND v.post_status NOT IN ('trash','auto-draft')
+				AND v.post_parent = {$alias}.ID
+				AND pm.meta_key = '{$meta_key}' AND {$pred}
+			)
+		)";
+	}
+
+	private static function object_price_sql( $alias, $operation ) {
+		if ( 0 === strpos( (string) $operation, 'wholesale_' ) ) {
+			return self::meta_on_object_sql( $alias, TCP_WHOLESALE_META, 'positive' );
+		}
+		if ( 'regular_set' === $operation ) {
+			return '1=1';
+		}
+		if ( 0 === strpos( (string) $operation, 'regular_' ) ) {
+			return self::meta_on_object_sql( $alias, self::META_REGULAR, 'nonempty' );
+		}
+		if ( 'sale_remove' === $operation ) {
+			return self::meta_on_object_sql( $alias, self::META_SALE, 'nonempty' );
+		}
+		return self::meta_on_object_sql( $alias, self::META_REGULAR, 'nonempty' );
+	}
+
+	private static function meta_on_object_sql( $alias, $meta_key, $kind ) {
+		global $wpdb;
+		$meta_key = esc_sql( $meta_key );
+		$pred     = self::meta_pred( $kind, 0, 0 );
+		return "EXISTS ( SELECT 1 FROM {$wpdb->postmeta} pm WHERE pm.post_id = {$alias}.ID AND pm.meta_key = '{$meta_key}' AND {$pred} )";
+	}
+}
 }

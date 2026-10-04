@@ -185,6 +185,9 @@ body.woocommerce_page_tisacase-pricing #wpcontent { background: var(--tisa-bg, #
 	box-shadow: 0 2px 7px rgba(10, 95, 82, .18);
 }
 .tcp-target-mode input:focus-visible + span { outline: 3px solid var(--tisa-primary-soft, #E8F0EE); outline-offset: 2px; }
+.tcp-target-mode--catalog span { font-weight: 700; }
+.tcp-all-points { margin: 12px 0 8px; padding-inline-start: 18px; }
+.tcp-all-points li { margin: 0 0 6px; }
 .tcp-product-source {
 	margin: 0 0 var(--tisa-sp-4, 16px); padding: var(--tisa-sp-4, 16px);
 	border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px);

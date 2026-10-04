@@ -21,6 +21,7 @@ $GLOBALS['tcp_currency']      = 'IRT';
 $GLOBALS['tcp_terms']         = array();
 $GLOBALS['tcp_term_children'] = array();
 $GLOBALS['tcp_post_terms']    = array();
+$GLOBALS['tcp_products']      = array();
 
 /* ---------- توابع وردپرس ---------- */
 function __( $s, $d = null ) { return $s; }
@@ -48,7 +49,10 @@ function get_option( $k, $default = false ) {
 }
 function update_option( $k, $v, $autoload = null ) { $GLOBALS['tcp_options'][ $k ] = $v; return true; }
 function add_option( $k, $v = '', $deprecated = '', $autoload = null ) {
-	if ( ! array_key_exists( $k, $GLOBALS['tcp_options'] ) ) { $GLOBALS['tcp_options'][ $k ] = $v; }
+	if ( array_key_exists( $k, $GLOBALS['tcp_options'] ) ) {
+		return false;
+	}
+	$GLOBALS['tcp_options'][ $k ] = $v;
 	return true;
 }
 function delete_option( $k ) { unset( $GLOBALS['tcp_options'][ $k ] ); return true; }
@@ -80,16 +84,35 @@ function wc_format_decimal( $v ) { return (string) (float) $v; }
 function wc_get_price_decimals() { return 0; }
 function get_woocommerce_currency() { return $GLOBALS['tcp_currency']; }
 function WC() { return new stdClass(); }
-function wc_get_product( $id ) { return null; }
+function wc_get_product( $id ) {
+	$id = (int) $id;
+	return isset( $GLOBALS['tcp_products'][ $id ] ) ? $GLOBALS['tcp_products'][ $id ] : null;
+}
 
 class WC_Product {
 	protected $id;
 	protected $parent_id;
 	protected $type;
+	public $regular = '';
+	public $sale = '';
+	public $meta = array();
+	public $saved = 0;
+	public $children = array();
 	public function __construct( $id, $type = 'simple', $parent_id = 0 ) {
 		$this->id = (int) $id; $this->type = $type; $this->parent_id = (int) $parent_id;
 	}
 	public function get_id() { return $this->id; }
 	public function get_parent_id() { return $this->parent_id; }
 	public function is_type( $t ) { return $this->type === $t; }
+	public function get_regular_price( $context = 'view' ) { return $this->regular; }
+	public function get_sale_price( $context = 'view' ) { return $this->sale; }
+	public function get_price( $context = 'view' ) { return '' !== (string) $this->sale ? $this->sale : $this->regular; }
+	public function set_regular_price( $v ) { $this->regular = $v; }
+	public function set_sale_price( $v ) { $this->sale = $v; }
+	public function set_date_on_sale_from( $v ) {}
+	public function set_date_on_sale_to( $v ) {}
+	public function save() { $this->saved++; return $this->id; }
+	public function get_meta( $key, $single = true ) { return isset( $this->meta[ $key ] ) ? $this->meta[ $key ] : ''; }
+	public function update_meta_data( $key, $value ) { $this->meta[ $key ] = $value; }
+	public function get_children() { return $this->children; }
 }

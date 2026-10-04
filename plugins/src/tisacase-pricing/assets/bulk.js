@@ -179,7 +179,7 @@
 			openDialog({
 				title: 'قطع ارتباط با سرور',
 				body: '<p>' + esc(msg) + '</p>' +
-					'<p class="tcp-muted">اجرا روی سرور از بین نرفته است؛ اتصال را بررسی کن و دوباره تلاش کن، یا بعداً از تب «گزارش و بازگردانی» ادامه بده.</p>',
+					'<p class="tcp-muted">اجرا روی سرور از بین نرفته است. اجرای «همهٔ محصولات» و دسته‌های خیلی بزرگ، اگر این پنجره را ببندی، در پس‌زمینه از همان متغیر ادامه پیدا می‌کند. بقیه را از تب «گزارش و بازگردانی» ادامه بده. دکمهٔ توقف، اجرا را واقعاً قطع می‌کند.</p>',
 				okText: 'تلاش مجدد',
 				okClass: 'button-primary'
 			}).then(function (ok) {
@@ -226,7 +226,10 @@
 			return $('input[name="tcp_target"]:checked').val() || 'category';
 		}
 		function targetType() {
-			return targetMode() === 'category' ? 'category' : 'products';
+			var mode = targetMode();
+			if (mode === 'category') { return 'category'; }
+			if (mode === 'all') { return 'all'; }
+			return 'products';
 		}
 		function currentOp() {
 			return $('#tcp-op').val();
@@ -646,9 +649,13 @@
 
 		function updateTarget() {
 			var mode = targetMode();
+			$('#tcp-all-box').toggle(mode === 'all');
 			if (mode === 'category') {
 				$('#tcp-product-box').hide();
 				$('#tcp-cat-box').show();
+			} else if (mode === 'all') {
+				$('#tcp-cat-box').hide();
+				$('#tcp-product-box').hide();
 			} else {
 				$('#tcp-cat-box').hide();
 				$('#tcp-product-box').show();
@@ -731,7 +738,9 @@
 			if (targetType() === 'category' && !($('#tcp-cats').val() || []).length) {
 				return 'حداقل یک دسته‌بندی انتخاب کن.';
 			}
-			if (targetType() === 'products' && !selectedProductIds().length) {
+			if (targetType() === 'all') {
+				// انتخاب جداگانه‌ای لازم نیست؛ فیلترهای پایین محدوده را محدود می‌کنند.
+			} else if (targetType() === 'products' && !selectedProductIds().length) {
 				return isWholesaleOp() ? 'حداقل یک محصول دارای قیمت عمده انتخاب کن.' : 'حداقل یک محصول انتخاب کن.';
 			}
 			var kind = valueKind();
@@ -825,14 +834,18 @@
 					if (d.round_mode === 'jitter') {
 						html += '<p><strong>رند:</strong> تخفیف متغیر ±' + esc(d.jitter) + '٪ — هر آیتم درصدی می‌گیرد که قیمتش روی ' + esc(d.round_label) + ' بیفتد.</p>';
 					} else if (d.round_mode === 'round') {
-						html += '<p><strong>رند:</strong> قیمت نهایی به پایین روی ' + esc(d.round_label) + ' رند می‌شود.</p>';
+						html += '<p><strong>رند:</strong> قیمت نهایی به نزدیک‌ترین ' + esc(d.round_label) + ' می‌رود (اگر به عدد بالاتر نزدیک‌تر باشد، بالا).</p>';
 					}
-					html += '<p><strong>محدوده انتخاب:</strong> ' + (d.target_type === 'products' ? 'محصولات انتخاب‌شده به صورت مستقیم' : (d.include_children ? 'دسته‌بندی + تمام زیردسته‌ها' : 'فقط خود دسته‌بندی‌ها؛ بدون زیردسته')) + '</p>';
+					var scopeText = d.target_type === 'all'
+						? 'همهٔ محصولات سایت — نوشتن دائمی قیمت در دیتابیس، متغیر‌به‌متغیر'
+						: (d.target_type === 'products' ? 'محصولات انتخاب‌شده به صورت مستقیم' : (d.include_children ? 'دسته‌بندی + تمام زیردسته‌ها' : 'فقط خود دسته‌بندی‌ها؛ بدون زیردسته'));
+					html += '<p><strong>محدوده انتخاب:</strong> ' + scopeText + '</p>';
 					if (d.category_labels && d.category_labels.length) {
 						html += '<p><strong>دسته‌ها:</strong> ' + esc(d.category_labels.join(' ، ')) + '</p>';
 					}
 					html += '<p style="font-size:16px"><strong>تعداد محصولات مادر هدف: <span style="color:#b32d2e">' + Number(d.parent_count || 0) + '</span></strong></p>';
-					html += '<p><strong>تعداد قیمت/متغیر واجد شرایط این عملیات:</strong> ' + Number(d.price_object_count || 0) + '</p>';
+					var objectCount = Number(d.price_object_count);
+					html += '<p><strong>تعداد قیمت/متغیر واجد شرایط این عملیات:</strong> ' + (objectCount < 0 ? 'روی کاتالوگ بزرگ شمرده نشد؛ اجرا تکه‌تکه و قابل‌ادامه است' : objectCount) + '</p>';
 					if (d.include_children) {
 						html += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌ها نیز لحاظ شده‌اند.</strong></p>';
 					}
@@ -857,20 +870,25 @@
 				return;
 			}
 			var parents = Number(previewInfo && previewInfo.parent_count || 0);
-			var prices = Number(previewInfo && previewInfo.price_object_count || 0);
+			var prices = Number(previewInfo && previewInfo.price_object_count);
+			var catalog = targetType() === 'all';
+			var priceText = prices < 0 ? 'تعداد قیمت‌ها روی این کاتالوگ شمرده نشد' : (prices + ' قیمت/متغیر واجد شرایط');
 
-			var body = '<p>قرار است عملیات روی <b>' + parents + '</b> محصول مادر و حدود <b>' + prices + '</b> قیمت/متغیر واجد شرایط اجرا شود.</p>';
+			var body = '<p>قرار است عملیات روی <b>' + parents + '</b> محصول مادر و ' + (prices < 0 ? priceText : ('حدود <b>' + prices + '</b> قیمت/متغیر واجد شرایط')) + ' اجرا شود.</p>';
+			if (catalog) {
+				body += '<p style="color:#b32d2e"><strong>این تغییر دائمی است و در دیتابیس نوشته می‌شود</strong> — قانون داینامیک نیست. هر متغیر از روی قیمت خودش محاسبه می‌شود. اگر اینترنت قطع شود، از همان متغیر ادامه پیدا می‌کند و دوباره اعمال نمی‌شود.</p>';
+			}
 			if (previewInfo && previewInfo.include_children) {
 				body += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌ها هم شامل عملیات هستند.</strong></p>';
 			}
 			body += '<p>' + (scheduled ? 'اجرا به صف زمان‌بندی (WP-Cron) اضافه می‌شود و در پیشخوان اطلاع‌رسانی می‌گردد.' : 'همهٔ تغییرات برای بازگردانی بعدی ثبت می‌شوند.') + '</p>';
 
-			// تأیید دستی تایپ‌شده برای تعداد زیاد.
-			if (parents >= (D.limits.threshold || 500)) {
+			// تأیید دستی تایپ‌شده برای کل فروشگاه یا تعداد زیاد.
+			if (catalog || parents >= (D.limits.threshold || 500)) {
 				var required = 'تایید ' + parents;
 				openDialog({
-					title: 'تأیید امنیتی',
-					body: '<p>تعداد محصولات زیاد است. برای جلوگیری از اشتباه، عبارت زیر را دقیقاً تایپ کن:</p>' +
+					title: catalog ? 'تأیید نوشتن دائمی روی همهٔ محصولات' : 'تأیید امنیتی',
+					body: body + '<p>برای جلوگیری از اشتباه، عبارت زیر را دقیقاً تایپ کن:</p>' +
 						'<p style="background:#f6f7f7;padding:8px;text-align:center;font-weight:700;font-size:16px" dir="ltr">' + esc(required) + '</p>' +
 						'<input type="text" id="tcp-confirm-input" autocomplete="off" placeholder="' + esc(required) + '">',
 					okText: scheduled ? 'ثبت در صف' : 'شروع اجرا',
@@ -1020,6 +1038,9 @@
 			if (d.pages) {
 				statusText += ' (' + Number(d.page || 0) + ' از ' + Number(d.pages) + ' محصول)';
 			}
+			if (d.partial) {
+				statusText += ' — ادامه از همان محصول';
+			}
 			$('#tcp-status').text(statusText);
 			runNextLoop();
 		}
@@ -1056,7 +1077,11 @@
 							return;
 						}
 						$.post(D.ajax, { action: A.finish, nonce: D.nonce, run_id: runId, leave: '1' }, null, 'json')
-							.always(function () {
+							.done(function (r) {
+								var bg = r && r.data && r.data.background;
+								showFinal((r && r.data && r.data.message) || 'ارتباط برقرار نشد؛ اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» دکمهٔ «ادامه» آن را ادامه می‌دهد.', !!bg);
+							})
+							.fail(function () {
 								showFinal('ارتباط برقرار نشد؛ اجرا ناتمام ثبت شد و از تب «گزارش و بازگردانی» دکمهٔ «ادامه» آن را ادامه می‌دهد.', false);
 							});
 					});
@@ -1164,6 +1189,9 @@
 			if (runLoop) { runLoop.flush(); }
 		});
 
+		if (new URLSearchParams(window.location.search).get('target') === 'all') {
+			$('input[name="tcp_target"][value="all"]').prop('checked', true);
+		}
 		updateTarget();
 		updateOpUi();
 		updateFilterVisibility();

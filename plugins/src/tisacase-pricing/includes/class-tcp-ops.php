@@ -21,6 +21,9 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		/** حالت رند جاری برای این درخواست/صفحه: none | round | jitter (از args می‌آید). */
 		public static $round_mode = 'none';
 
+		/** نشانِ «این اجرا این شیء را نوشته» تا قطعی وسط save درصد را دوباره اعمال نکند. */
+		const GUARD_META = '_tcp_bulk_guard';
+
 		public static function set_round_mode( $mode ) {
 			$mode = sanitize_key( (string) $mode );
 			self::$round_mode = in_array( $mode, array( 'none', 'round', 'jitter' ), true ) ? $mode : 'none';
@@ -75,6 +78,95 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		 * در افزونهٔ تغییر متغیرها): حافظهٔ ادمین، حذف سقف زمان و نادیده‌گرفتن
 		 * قطع اتصال کلاینت تا پایانِ همین محصول مادر تعهدات ثبت شوند.
 		 */
+
+		/** اجرای «کل کاتالوگ» یا دستهٔ بزرگ که با کلیدست (نه فهرست شناسه) پیش می‌رود. */
+		public static function is_catalog_run( $args ) {
+			if ( ! is_array( $args ) ) {
+				return false;
+			}
+			if ( isset( $args['target_type'] ) && 'all' === $args['target_type'] ) {
+				return true;
+			}
+			return isset( $args['scan']['mode'] ) && 'keyset' === $args['scan']['mode'];
+		}
+
+		/**
+		 * شناسه‌های باقی‌مانده بعد از cursor، به ترتیب صعودی.
+		 * cursor شناسهٔ آخرین شیءِ کاملاً تمام‌شده است؛ خودش دوباره انجام نمی‌شود.
+		 */
+		public static function pending_object_ids( $object_ids, $after_object ) {
+			$ids = array();
+			foreach ( (array) $object_ids as $id ) {
+				$id = absint( $id );
+				if ( $id ) {
+					$ids[ $id ] = $id;
+				}
+			}
+			$ids   = array_values( $ids );
+			sort( $ids, SORT_NUMERIC );
+			$after = absint( $after_object );
+			if ( ! $after ) {
+				return $ids;
+			}
+			$out = array();
+			foreach ( $ids as $id ) {
+				if ( $id > $after ) {
+					$out[] = $id;
+				}
+			}
+			return $out;
+		}
+
+		public static function guard_encode( $run_id, $before, $after ) {
+			$payload = array(
+				'r' => absint( $run_id ),
+				'b' => (string) $before,
+				'a' => (string) $after,
+			);
+			$json = function_exists( 'wp_json_encode' ) ? wp_json_encode( $payload ) : json_encode( $payload );
+			return is_string( $json ) ? $json : '';
+		}
+
+		public static function guard_decode( $raw ) {
+			$data = json_decode( (string) $raw, true );
+			if ( ! is_array( $data ) || ! isset( $data['r'] ) ) {
+				return null;
+			}
+			return array(
+				'run'    => absint( $data['r'] ),
+				'before' => isset( $data['b'] ) ? (string) $data['b'] : '',
+				'after'  => isset( $data['a'] ) ? (string) $data['a'] : '',
+			);
+		}
+
+		public static function prices_equal( $a, $b ) {
+			$a = (string) $a;
+			$b = (string) $b;
+			if ( $a === $b ) {
+				return true;
+			}
+			if ( '' === $a || '' === $b ) {
+				return false;
+			}
+			if ( function_exists( 'wc_format_decimal' ) ) {
+				return (string) wc_format_decimal( $a ) === (string) wc_format_decimal( $b );
+			}
+			return is_numeric( $a ) && is_numeric( $b ) && (float) $a === (float) $b;
+		}
+
+		/**
+		 * true یعنی قیمت این اجرا قبلاً نشسته و نباید دوباره محاسبه شود.
+		 * اگر نشان هست ولی قیمت هنوز همان «قبل» است، save کامل نشده و باید اعمال شود.
+		 */
+		public static function guard_should_skip( $raw, $current, $run_id ) {
+			$run_id = absint( $run_id );
+			$guard  = self::guard_decode( $raw );
+			if ( ! $run_id || ! $guard || $guard['run'] !== $run_id ) {
+				return false;
+			}
+			return ! self::prices_equal( $current, $guard['before'] );
+		}
+
 		public static function runtime_boost() {
 			if ( function_exists( 'wp_raise_memory_limit' ) ) {
 				wp_raise_memory_limit( 'admin' );
@@ -87,9 +179,35 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			}
 		}
 
+		/** کاهش سربار کش/شمارش در درخواست‌های کاتالوگ بزرگ. */
+		public static function begin_batch_runtime() {
+			self::runtime_boost();
+			if ( function_exists( 'wp_defer_term_counting' ) ) {
+				wp_defer_term_counting( true );
+			}
+			if ( function_exists( 'wp_defer_comment_counting' ) ) {
+				wp_defer_comment_counting( true );
+			}
+			if ( function_exists( 'wp_suspend_cache_invalidation' ) ) {
+				wp_suspend_cache_invalidation( true );
+			}
+		}
+
+		public static function end_batch_runtime() {
+			if ( function_exists( 'wp_suspend_cache_invalidation' ) ) {
+				wp_suspend_cache_invalidation( false );
+			}
+			if ( function_exists( 'wp_defer_term_counting' ) ) {
+				wp_defer_term_counting( false );
+			}
+			if ( function_exists( 'wp_defer_comment_counting' ) ) {
+				wp_defer_comment_counting( false );
+			}
+		}
+
 		/**
 		 * اعمال حالت رند روی نتیجهٔ محاسبه.
-		 * - round: به پایین روی رقم ۸.
+		 * - round: نزدیک‌ترین رقم ۸ (بالا یا پایین؛ فاصلهٔ برابر به پایین).
 		 * - jitter: فقط برای عملیات «درصد تخفیف» → درصد متغیر ±J به‌ازای هر آیتم؛ سایر عملیات مثل round.
 		 */
 		private static function finish( $op, $new, $base, $value, $seed ) {
@@ -109,7 +227,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				$r = TCP_Round::jittered_discount( (float) $base, (float) $value, $seed );
 				return $r['price'] > 0 ? $r['price'] : $new;
 			}
-			$rounded = TCP_Round::down( (float) $new );
+			$rounded = TCP_Round::nearest( (float) $new );
 			return $rounded > 0 ? $rounded : $new;
 		}
 
@@ -218,7 +336,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				return new WP_Error( 'op', 'نوع عملیات معتبر نیست.' );
 			}
 			$target = isset( $post['target_type'] ) ? sanitize_key( wp_unslash( $post['target_type'] ) ) : '';
-			if ( ! in_array( $target, array( 'category', 'products' ), true ) ) {
+			if ( ! in_array( $target, array( 'category', 'products', 'all' ), true ) ) {
 				return new WP_Error( 'target', 'نوع انتخاب محصولات معتبر نیست.' );
 			}
 
@@ -241,7 +359,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 						return new WP_Error( 'cat', 'دسته‌بندی انتخاب‌شده معتبر نیست.' );
 					}
 				}
-			} else {
+			} elseif ( 'products' === $target ) {
 				if ( empty( $args['product_ids'] ) ) {
 					return new WP_Error( 'empty', 'هیچ محصولی انتخاب نشده است.' );
 				}
@@ -479,12 +597,18 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		/**
 		 * @return array{status:string,message:string,entry:?array}
 		 */
-		private static function change_regular_sale_object( $product, $op, $value ) {
+		private static function change_regular_sale_object( $product, $op, $value, $run_id = 0 ) {
 			$id      = $product->get_id();
 			$object_type = self::is_sale_op( $op ) ? 'sale' : 'regular';
 			$before   = '';
 			$after    = '';
 			$entry    = null;
+			$run_id   = absint( $run_id );
+			$probe    = 'sale' === $object_type ? (string) $product->get_sale_price( 'edit' ) : (string) $product->get_regular_price( 'edit' );
+			$replay   = self::replay_if_done( $product, $run_id, $probe, $object_type );
+			if ( $replay ) {
+				return $replay;
+			}
 
 			try {
 				if ( self::is_regular_op( $op ) ) {
@@ -501,6 +625,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 					if ( $before === $after ) {
 						return array( 'status' => 'skip', 'message' => '#' . $id . ' قیمت تغییری نکرد.', 'entry' => null );
 					}
+					self::stamp_guard( $product, $run_id, $before, $after );
 					$product->set_regular_price( $res['new'] );
 					$product->save();
 					$entry = array( 'object_type' => $object_type, 'parent_id' => self::parent_of( $product ), 'object_id' => $id, 'before' => $before, 'after' => $after );
@@ -513,6 +638,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 						return array( 'status' => 'skip', 'message' => '#' . $id . ' فروش ویژه ندارد.', 'entry' => null );
 					}
 					$before = wc_format_decimal( $cur );
+					self::stamp_guard( $product, $run_id, $before, '' );
 					$product->set_sale_price( '' );
 					$product->set_date_on_sale_from( null );
 					$product->set_date_on_sale_to( null );
@@ -532,6 +658,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				if ( $before === $after ) {
 					return array( 'status' => 'skip', 'message' => '#' . $id . ' قیمت تغییری نکرد.', 'entry' => null );
 				}
+				self::stamp_guard( $product, $run_id, $before, $after );
 				$product->set_sale_price( $res['new'] );
 				$product->set_date_on_sale_from( null );
 				$product->set_date_on_sale_to( null );
@@ -584,15 +711,21 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			return true;
 		}
 
-		private static function change_wholesale_object( $product, $op, $value ) {
+		private static function change_wholesale_object( $product, $op, $value, $run_id = 0 ) {
 			$id      = $product->get_id();
 			$current = self::wholesale_price_raw( $id );
+			$run_id  = absint( $run_id );
+			$replay  = self::replay_if_done( $product, $run_id, $current, 'wholesale' );
+			if ( $replay ) {
+				return $replay;
+			}
 
 			if ( '' === $current ) {
 				return array( 'status' => 'skip', 'message' => '#' . $id . ' قیمت عمده ندارد.', 'entry' => null );
 			}
 			try {
 				if ( 'wholesale_clear' === $op ) {
+					self::stamp_guard_meta( $id, $run_id, $current, '' );
 					$changed = self::update_wholesale_meta( $id, '' );
 					if ( ! $changed ) {
 						return array( 'status' => 'skip', 'message' => '#' . $id . ' قیمت عمده‌ای برای حذف وجود ندارد.', 'entry' => null );
@@ -606,6 +739,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				if ( ! $res['ok'] ) {
 					return array( 'status' => 'error', 'message' => '#' . $id . ' ' . $res['msg'], 'entry' => null );
 				}
+				self::stamp_guard_meta( $id, $run_id, $current, wc_format_decimal( $res['new'] ) );
 				$changed = self::update_wholesale_meta( $id, $res['new'] );
 				if ( ! $changed ) {
 					return array( 'status' => 'skip', 'message' => '#' . $id . ' قیمت عمده تغییری نکرد.', 'entry' => null );
@@ -618,113 +752,162 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		}
 
 		/**
-		 * اجرای یک محصول مادر (و وریشن‌هایش) و برگرداندن آمار + رکوردهای لاگ.
+		 * اجرای یک محصول مادر (و وریشن‌هایش).
 		 *
-		 * @return array{updated:int,skipped:int,errors:array,entries:array}
+		 * $ctx اختیاری:
+		 * - run_id: برای نشانِ ضدِ اعمال دوباره و لاگ
+		 * - after_object: آخرین شیءِ تمام‌شده؛ از شیء بعدی ادامه بده
+		 * - deadline: microtime؛ اگر رد شود والد ناتمام برمی‌گردد
+		 * - on_object: callback( $object_id, $result ) بعد از هر شیء
+		 *
+		 * @return array{updated:int,skipped:int,errors:array,entries:array,complete:bool,sync_parent:bool}
 		 */
-		public static function process_parent( $product_id, $op, $value ) {
-			$r = array( 'updated' => 0, 'skipped' => 0, 'errors' => array(), 'entries' => array() );
+		public static function process_parent( $product_id, $op, $value, $ctx = array() ) {
+			$ctx      = is_array( $ctx ) ? $ctx : array();
+			$run_id   = isset( $ctx['run_id'] ) ? absint( $ctx['run_id'] ) : 0;
+			$after    = isset( $ctx['after_object'] ) ? absint( $ctx['after_object'] ) : 0;
+			$deadline = isset( $ctx['deadline'] ) ? (float) $ctx['deadline'] : 0;
+			$r        = array(
+				'updated'     => 0,
+				'skipped'     => 0,
+				'errors'      => array(),
+				'entries'     => array(),
+				'complete'    => true,
+				'sync_parent' => false,
+			);
+			$product_id = absint( $product_id );
 
-			if ( self::is_wholesale_op( $op ) ) {
-				return self::process_wholesale_parent( $product_id, $op, $value, $r );
-			}
-
-			$p = wc_get_product( $product_id );
+			$p = function_exists( 'wc_get_product' ) ? wc_get_product( $product_id ) : null;
 			if ( ! $p ) {
-				$r['errors'][] = '#' . $product_id . ' محصول پیدا نشد.';
+				self::emit( $ctx, $r, $product_id, array( 'status' => 'error', 'message' => '#' . $product_id . ' محصول پیدا نشد.', 'entry' => null ) );
+				return $r;
+			}
+			if ( $p->is_type( 'grouped' ) ) {
+				self::emit( $ctx, $r, $product_id, array( 'status' => 'skip', 'message' => '', 'entry' => null ) );
 				return $r;
 			}
 
-			if ( $p->is_type( 'variable' ) ) {
-				$children = $p->get_children();
-				if ( empty( $children ) ) {
-					$r['skipped']++;
-					return $r; // متغیر بدون وریشن: بی‌اثر (skip)، نه خطا.
-				}
-				foreach ( $children as $vid ) {
-					$v = wc_get_product( $vid );
-					if ( ! $v ) {
-						$r['skipped']++;
-						continue;
-					}
-					$x = self::change_regular_sale_object( $v, $op, $value );
-					self::tally( $r, $x );
-				}
-				if ( class_exists( 'WC_Product_Variable' ) ) {
-					WC_Product_Variable::sync( $product_id );
-				}
-			} elseif ( $p->is_type( 'grouped' ) ) {
-				$r['skipped']++;
-				return $r; // محصول گروهی: پشتیبانی نمی‌شود → skip.
+			$is_variable = $p->is_type( 'variable' );
+			if ( $is_variable ) {
+				$object_ids = class_exists( 'TCP_DB' ) ? TCP_DB::child_ids( $product_id ) : array_map( 'absint', (array) $p->get_children() );
 			} else {
-				$x = self::change_regular_sale_object( $p, $op, $value );
-				self::tally( $r, $x );
+				$object_ids = array( $product_id );
+			}
+			$object_ids = self::pending_object_ids( $object_ids, $after );
+
+			if ( $is_variable && empty( $object_ids ) && ! $after ) {
+				self::emit( $ctx, $r, $product_id, array( 'status' => 'skip', 'message' => '', 'entry' => null ) );
+				return $r;
+			}
+			if ( empty( $object_ids ) ) {
+				$r['sync_parent'] = $is_variable;
+				return $r;
 			}
 
-			if ( function_exists( 'wc_delete_product_transients' ) ) {
-				wc_delete_product_transients( $product_id );
+			self::prime_objects( $object_ids );
+			$logged = array();
+			if ( $run_id && class_exists( 'TCP_DB' ) ) {
+				$logged = array_flip( TCP_DB::logged_object_ids( $run_id, $product_id ) );
 			}
-			clean_post_cache( $product_id );
+
+			foreach ( $object_ids as $oid ) {
+				if ( isset( $logged[ $oid ] ) ) {
+					self::emit( $ctx, $r, $oid, array( 'status' => 'already', 'message' => '', 'entry' => null ) );
+				} else {
+					$object = ( ! $is_variable && $oid === $product_id ) ? $p : ( function_exists( 'wc_get_product' ) ? wc_get_product( $oid ) : null );
+					if ( ! $object ) {
+						self::emit( $ctx, $r, $oid, array( 'status' => 'skip', 'message' => '#' . $oid . ' پیدا نشد.', 'entry' => null ) );
+					} elseif ( self::is_wholesale_op( $op ) ) {
+						self::emit( $ctx, $r, $oid, self::change_wholesale_object( $object, $op, $value, $run_id ) );
+					} else {
+						self::emit( $ctx, $r, $oid, self::change_regular_sale_object( $object, $op, $value, $run_id ) );
+					}
+				}
+				if ( $deadline && microtime( true ) >= $deadline ) {
+					$r['complete']    = false;
+					$r['sync_parent'] = $is_variable && $r['updated'] > 0;
+					return $r;
+				}
+			}
+
+			$r['complete']    = true;
+			$r['sync_parent'] = $is_variable;
 			return $r;
 		}
 
-		private static function process_wholesale_parent( $product_id, $op, $value, $r ) {
-			$p = wc_get_product( $product_id );
-			if ( ! $p ) {
-				$r['errors'][] = '#' . $product_id . ' محصول پیدا نشد.';
-				return $r;
+		/** ثبت نتیجهٔ یک شیء در آمار و، اگر خواسته شده، در callback ادامه. */
+		private static function emit( $ctx, &$r, $object_id, $result ) {
+			self::tally( $r, $result );
+			if ( ! empty( $ctx['on_object'] ) && is_callable( $ctx['on_object'] ) ) {
+				call_user_func( $ctx['on_object'], absint( $object_id ), $result );
 			}
+		}
 
-			if ( $p->is_type( 'variable' ) ) {
-				$children = $p->get_children();
-				$wholesale_children = array();
-				foreach ( $children as $vid ) {
-					if ( '' !== self::wholesale_price_raw( $vid ) ) {
-						$wholesale_children[] = absint( $vid );
-					}
-				}
-				if ( empty( $wholesale_children ) ) {
-					$r['skipped']++;
-					return $r;
-				}
-				update_meta_cache( 'post', $wholesale_children );
-				foreach ( $wholesale_children as $vid ) {
-					$v = wc_get_product( $vid );
-					if ( ! $v ) {
-						$r['skipped']++;
-						continue;
-					}
-					$x = self::change_wholesale_object( $v, $op, $value );
-					self::tally( $r, $x );
-				}
-			} elseif ( $p->is_type( 'grouped' ) ) {
-				$r['skipped']++;
-				return $r;
-			} else {
-				if ( '' === self::wholesale_price_raw( $product_id ) ) {
-					$r['skipped']++;
-					return $r;
-				}
-				$x = self::change_wholesale_object( $p, $op, $value );
-				self::tally( $r, $x );
+		private static function prime_objects( $ids ) {
+			$ids = array_values( array_filter( array_map( 'absint', (array) $ids ) ) );
+			if ( empty( $ids ) ) {
+				return;
 			}
+			foreach ( array_chunk( $ids, 200 ) as $chunk ) {
+				if ( function_exists( 'update_meta_cache' ) ) {
+					update_meta_cache( 'post', $chunk );
+				}
+				if ( function_exists( '_prime_post_caches' ) ) {
+					_prime_post_caches( $chunk, false, true );
+				}
+			}
+		}
 
-			if ( function_exists( 'wc_delete_product_transients' ) ) {
-				wc_delete_product_transients( $product_id );
+		private static function replay_if_done( $product, $run_id, $current, $field ) {
+			$run_id = absint( $run_id );
+			if ( ! $run_id || ! is_object( $product ) || ! method_exists( $product, 'get_meta' ) ) {
+				return null;
 			}
-			clean_post_cache( $product_id );
-			return $r;
+			$raw = (string) $product->get_meta( self::GUARD_META, true );
+			if ( ! self::guard_should_skip( $raw, $current, $run_id ) ) {
+				return null;
+			}
+			$guard = self::guard_decode( $raw );
+			return array(
+				'status'  => 'updated',
+				'message' => '',
+				'entry'   => array(
+					'object_type' => $field,
+					'parent_id'   => self::parent_of( $product ),
+					'object_id'   => $product->get_id(),
+					'before'      => $guard['before'],
+					'after'       => $guard['after'],
+				),
+			);
+		}
+
+		private static function stamp_guard( $product, $run_id, $before, $after ) {
+			$run_id = absint( $run_id );
+			if ( ! $run_id || ! is_object( $product ) || ! method_exists( $product, 'update_meta_data' ) ) {
+				return;
+			}
+			$product->update_meta_data( self::GUARD_META, self::guard_encode( $run_id, $before, $after ) );
+		}
+
+		private static function stamp_guard_meta( $object_id, $run_id, $before, $after ) {
+			$run_id = absint( $run_id );
+			$object_id = absint( $object_id );
+			if ( ! $run_id || ! $object_id || ! function_exists( 'update_post_meta' ) ) {
+				return;
+			}
+			update_post_meta( $object_id, self::GUARD_META, self::guard_encode( $run_id, $before, $after ) );
 		}
 
 		private static function tally( &$r, $x ) {
-			if ( 'updated' === $x['status'] ) {
+			$status = isset( $x['status'] ) ? $x['status'] : '';
+			if ( 'updated' === $status ) {
 				$r['updated']++;
 				if ( ! empty( $x['entry'] ) ) {
 					$r['entries'][] = $x['entry'];
 				}
-			} elseif ( 'error' === $x['status'] ) {
-				$r['errors'][] = $x['message'];
-			} else {
+			} elseif ( 'error' === $status ) {
+				$r['errors'][] = isset( $x['message'] ) ? $x['message'] : '';
+			} elseif ( 'skip' === $status ) {
 				$r['skipped']++;
 			}
 		}
@@ -749,6 +932,12 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			// دسته از زمان شروعِ اجرا ذخیره شده تا با تغییر تنظیمات وسط اجرا جابه‌جا نشود.
 			$batch_size = isset( $args['batch'] ) ? absint( $args['batch'] ) : absint( $settings['batch_size'] );
 			$batch_size = max( 1, min( 100, $batch_size ) );
+
+		// Catalog-wide and very large category runs do not keep every ID in args.
+		if ( self::is_catalog_run( $args ) ) {
+			return self::run_catalog_page( $run, $args, $batch_size );
+		}
+
 
 			// اجرای قدیمیِ بدون فهرست ثابت (شروع‌شده قبل از این نسخه): از همین‌جا یک‌بار یخ می‌خورد.
 			if ( ! isset( $args['parent_ids'] ) && isset( $args['operation'] ) ) {
@@ -824,6 +1013,9 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		 * cursor جدید = تعداد والدهایی که صفحه‌بندی قدیمی عملاً پردازش کرده است.
 		 */
 		private static function freeze_run_args( $run, $args, $batch_size ) {
+			if ( self::is_catalog_run( $args ) ) {
+				return $run;
+			}
 			$parents = TCP_DB::selection_parent_ids( $args );
 			$total   = count( $parents );
 			$cursor  = min( (int) $run['page'] * $batch_size, $total );
@@ -853,85 +1045,211 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		/**
 		 * پردازش یک بازهٔ کوتاه از فهرست ثابتِ اجرا با بودجهٔ زمانی.
 		 *
-		 * در این حالت `page` سطر اجرا «تعداد والد پردازش‌شده» (cursor) است و بعد از
-		 * هر محصول مادر، cursor + آمار + لاگ در دیتابیس ثبت می‌شود؛ بنابراین بعد از
-		 * هر قطع ارتباط یا تایم‌اوت، ادامه دقیقاً از همان‌جا انجام می‌شود — نه هیچ
-		 * محصولی جا می‌ماند، نه درصد دوباره روی محصول قبلی اعمال می‌شود.
-		 * فهرست هم ثابت است: فیلترهای قیمت/فروش که خودِ اجرا عوض‌شان می‌کند،
-		 * دیگر باعث کوچک‌شدن مجموعه و «تکمیل زودهنگام با نصف محصولات» نمی‌شوند.
+		 * page = تعداد والدِ تمام‌شده. اگر یک مادر متغیر وسط بودجه قطع شود،
+		 * scan_pending/scan_object همان‌جا ذخیره می‌شود و درخواست بعد از همان متغیر ادامه می‌دهد.
 		 */
 		private static function run_frozen_page( $run, $args, $parents, $batch_size ) {
-			$run_id = (int) $run['id'];
 			$total  = count( $parents );
 			$cursor = min( max( 0, (int) $run['page'] ), $total );
-
-			if ( ! $total ) {
-				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => 0, 'pages' => 0, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
+			if ( ! $total || $cursor >= $total ) {
+				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => $cursor, 'pages' => $total, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array(), 'partial' => false ) );
 			}
-			if ( $cursor >= $total ) {
-				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => $cursor, 'pages' => $total, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array() ) );
+			$slice  = array_slice( array_values( $parents ), $cursor, $batch_size );
+			$result = self::drain_parents( $run, $args, $slice );
+			$done   = $result['page'] >= $total;
+			return self::queue_response( $result, $done, $total );
+		}
+
+		/**
+		 * پیمایش کلیدستِ کاتالوگ: هر درخواست فقط یک صفحهٔ کوچک از ID > cursor می‌خواند.
+		 * مجموعه با سقف شناسهٔ شروع اجرا یخ می‌خورد، بدون نگه داشتن همهٔ شناسه‌ها در حافظه.
+		 */
+		private static function run_catalog_page( $run, $args, $batch_size ) {
+			$ceiling = isset( $run['scan_ceiling'] ) ? absint( $run['scan_ceiling'] ) : 0;
+			if ( ! $ceiling && isset( $args['scan']['ceiling'] ) ) {
+				$ceiling = absint( $args['scan']['ceiling'] );
 			}
-
-			self::runtime_boost();
-			$budget  = self::time_budget();
-			$started = microtime( true );
-
-			$count_updated = (int) $run['count_updated'];
-			$count_skipped = (int) $run['count_skipped'];
-			$count_errors  = (int) $run['count_errors'];
-			$updated = $skipped = $processed = 0;
-			$errors  = array();
-
-			while ( $cursor < $total && $processed < $batch_size ) {
-				$x = self::process_parent( absint( $parents[ $cursor ] ), $args['operation'], isset( $args['value'] ) ? $args['value'] : null );
-
-				$updated       += $x['updated'];
-				$skipped       += $x['skipped'];
-				$count_updated += $x['updated'];
-				$count_skipped += $x['skipped'];
-				foreach ( $x['errors'] as $m ) {
-					$errors[] = wp_strip_all_tags( $m );
-				}
-				$count_errors += count( $x['errors'] );
-				$cursor++;
-				$processed++;
-
-				// ثبت لحظه‌ای بعد از هر محصول مادر: لاگ تغییرات + cursor + آمار.
-				TCP_DB::insert_log( $run_id, $x['entries'] );
-				TCP_DB::update_run(
-					$run_id,
-					array(
-						'page'          => $cursor,
-						'count_updated' => $count_updated,
-						'count_skipped' => $count_skipped,
-						'count_errors'  => $count_errors,
-						'updated_at'    => TCP_DB::now(),
-					)
-				);
-
-				// بودجه تمام شد؟ درخواست بعدی از همین‌جا ادامه می‌دهد.
-				if ( ( microtime( true ) - $started ) >= $budget && $cursor < $total ) {
-					break;
+			if ( ! $ceiling ) {
+				return array( 'ok' => false, 'msg' => 'سقف شناسهٔ این اجرا ثبت نشده؛ اجرا را از نو بساز.', 'data' => array() );
+			}
+			$after   = isset( $run['scan_after'] ) ? absint( $run['scan_after'] ) : 0;
+			$pending = isset( $run['scan_pending'] ) ? absint( $run['scan_pending'] ) : 0;
+			$fetch_n = max( $batch_size, 40 );
+			$fetch_n = min( 100, $fetch_n );
+			$queue   = array();
+			if ( $pending > $after ) {
+				$queue[] = $pending;
+			}
+			$fetched = TCP_DB::keyset_parent_ids( $args, max( $after, $pending ), $ceiling, $fetch_n );
+			if ( null === $fetched ) {
+				return array( 'ok' => false, 'retry' => true, 'msg' => 'خواندن صفحهٔ بعدی کاتالوگ ناموفق بود؛ اجرا تمام نشده و باید ادامه پیدا کند.', 'data' => array() );
+			}
+			foreach ( $fetched as $id ) {
+				if ( $id !== $pending ) {
+					$queue[] = $id;
 				}
 			}
+			$total = max( 0, (int) $run['total_parents'] );
+			if ( empty( $queue ) ) {
+				return array( 'ok' => true, 'msg' => '', 'data' => array( 'done' => true, 'progress' => 100, 'page' => (int) $run['page'], 'pages' => $total, 'parents' => 0, 'updated' => 0, 'skipped' => 0, 'errors' => array(), 'partial' => false ) );
+			}
+			$may_have_more = count( $fetched ) >= $fetch_n;
+			$result        = self::drain_parents( $run, $args, $queue );
+			$done          = $result['finished_queue'] && ! $may_have_more;
+			return self::queue_response( $result, $done, $total );
+		}
 
-			$done     = $cursor >= $total;
-			$progress = $done ? 100 : min( 99, round( ( $cursor / $total ) * 100, 1 ) );
-
+		/** پاسخ یکدست برای هر دو مسیر اجرا. */
+		private static function queue_response( $result, $done, $total ) {
+			$page     = (int) $result['page'];
+			$progress = $done ? 100 : ( $total > 0 ? min( 99, round( ( $page / $total ) * 100, 1 ) ) : 0 );
 			return array(
 				'ok'   => true,
 				'msg'  => '',
 				'data' => array(
 					'done'     => $done,
 					'progress' => $progress,
-					'page'     => $cursor,
+					'page'     => $page,
 					'pages'    => $total,
-					'parents'  => $processed,
-					'updated'  => $updated,
-					'skipped'  => $skipped,
-					'errors'   => array_slice( $errors, 0, 100 ),
+					'parents'  => (int) $result['delta']['parents'],
+					'updated'  => (int) $result['delta']['updated'],
+					'skipped'  => (int) $result['delta']['skipped'],
+					'errors'   => array_slice( $result['delta']['errors'], 0, 100 ),
+					'partial'  => ! empty( $result['partial'] ),
 				),
 			);
+		}
+
+		/**
+		 * یک صف از مادرها را با بودجهٔ زمانی و ثبت بعد از هر متغیر پردازش می‌کند.
+		 * قطع شدن درخواست حداکثر یک متغیرِ در حال save را دوباره می‌بیند و نشانِ guard جلوی درصدِ دوباره را می‌گیرد.
+		 */
+		private static function drain_parents( $run, $args, $queue ) {
+			$run_id  = (int) $run['id'];
+			$pending = isset( $run['scan_pending'] ) ? absint( $run['scan_pending'] ) : 0;
+			$obj     = isset( $run['scan_object'] ) ? absint( $run['scan_object'] ) : 0;
+			$page    = (int) $run['page'];
+			$counts  = array(
+				'updated' => (int) $run['count_updated'],
+				'skipped' => (int) $run['count_skipped'],
+				'errors'  => (int) $run['count_errors'],
+			);
+			$delta = array( 'updated' => 0, 'skipped' => 0, 'errors' => array(), 'parents' => 0 );
+			$op    = $args['operation'];
+			$value = isset( $args['value'] ) ? $args['value'] : null;
+			$touched = array();
+			$stopped = false;
+			$partial = false;
+
+			self::begin_batch_runtime();
+			$deadline = microtime( true ) + self::time_budget();
+			try {
+				foreach ( (array) $queue as $pid ) {
+					$pid    = absint( $pid );
+					$resume = ( $pending === $pid ) ? $obj : 0;
+					$x      = self::process_parent(
+						$pid,
+						$op,
+						$value,
+						array(
+							'run_id'       => $run_id,
+							'after_object' => $resume,
+							'deadline'     => $deadline,
+							'on_object'    => function ( $object_id, $result ) use ( $run_id, $pid, &$counts, &$delta ) {
+								self::absorb_result( $run_id, $pid, $object_id, $result, $counts, $delta );
+							},
+						)
+					);
+					if ( ! empty( $x['sync_parent'] ) ) {
+						$touched[] = $pid;
+					}
+					if ( ! empty( $x['complete'] ) ) {
+						$page++;
+						$delta['parents']++;
+						$pending = 0;
+						$obj     = 0;
+						TCP_DB::update_run(
+							$run_id,
+							array(
+								'page'         => $page,
+								'scan_after'   => $pid,
+								'scan_pending' => 0,
+								'scan_object'  => 0,
+								'updated_at'   => TCP_DB::now(),
+							)
+						);
+						if ( microtime( true ) >= $deadline ) {
+							$stopped = true;
+							break;
+						}
+					} else {
+						$stopped = true;
+						$partial = true;
+						break;
+					}
+				}
+			} finally {
+				self::end_batch_runtime();
+				self::sync_parents( $touched );
+			}
+
+			return array(
+				'page'           => $page,
+				'stopped_early'  => $stopped,
+				'finished_queue' => ! $stopped,
+				'partial'        => $partial,
+				'delta'          => $delta,
+				'counts'         => $counts,
+			);
+		}
+
+		/** لاگ + آمار + cursor را بعد از هر شیء می‌نویسد تا قطعی، کار را از همان‌جا ادامه دهد. */
+		private static function absorb_result( $run_id, $parent_id, $object_id, $result, &$counts, &$delta ) {
+			$status = isset( $result['status'] ) ? $result['status'] : 'skip';
+			if ( 'updated' === $status ) {
+				if ( ! empty( $result['entry'] ) ) {
+					TCP_DB::insert_log( $run_id, array( $result['entry'] ) );
+				}
+				$counts['updated']++;
+				$delta['updated']++;
+			} elseif ( 'error' === $status ) {
+				$msg = isset( $result['message'] ) ? wp_strip_all_tags( $result['message'] ) : '';
+				if ( '' !== $msg ) {
+					$delta['errors'][] = $msg;
+				}
+				$counts['errors']++;
+			} elseif ( 'skip' === $status ) {
+				$counts['skipped']++;
+				$delta['skipped']++;
+			}
+			TCP_DB::update_run(
+				$run_id,
+				array(
+					'scan_pending'  => absint( $parent_id ),
+					'scan_object'   => absint( $object_id ),
+					'count_updated' => $counts['updated'],
+					'count_skipped' => $counts['skipped'],
+					'count_errors'  => $counts['errors'],
+					'updated_at'    => TCP_DB::now(),
+				)
+			);
+		}
+
+		/** همگام‌سازی قیمت والد متغیر بعد از آزاد شدن کش. */
+		private static function sync_parents( $ids ) {
+			$ids = array_unique( array_filter( array_map( 'absint', (array) $ids ) ) );
+			foreach ( $ids as $parent_id ) {
+				$p = function_exists( 'wc_get_product' ) ? wc_get_product( $parent_id ) : null;
+				if ( $p && $p->is_type( 'variable' ) && class_exists( 'WC_Product_Variable' ) ) {
+					WC_Product_Variable::sync( $parent_id );
+				}
+				if ( function_exists( 'wc_delete_product_transients' ) ) {
+					wc_delete_product_transients( $parent_id );
+				}
+				if ( function_exists( 'clean_post_cache' ) ) {
+					clean_post_cache( $parent_id );
+				}
+			}
 		}
 
 		/**

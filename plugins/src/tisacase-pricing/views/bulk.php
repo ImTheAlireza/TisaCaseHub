@@ -18,7 +18,7 @@ if ( is_wp_error( $tcp_cats ) ) {
 $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_woocommerce_currency_symbol() : '';
 ?>
 
-<p class="tcp-lead">هدف را انتخاب کن و ابتدا «بررسی قبل از اجرا» را بزن؛ اجرا فقط پس از پیش‌نمایشِ تأییدشده فعال می‌شود و همهٔ تغییرات برای بازگردانی ثبت می‌گردد.</p>
+<p class="tcp-lead">هدف را انتخاب کن — از جمله «همهٔ محصولات سایت» — و ابتدا «بررسی قبل از اجرا» را بزن. این کار قیمت را در دیتابیس می‌نویسد (دائمی است، مثل قانون داینامیک فقط نمایش را عوض نمی‌کند). اجرا فقط پس از پیش‌نمایشِ تأییدشده فعال می‌شود و اگر اینترنت قطع شود از همان متغیر ادامه پیدا می‌کند.</p>
 
 <div id="tcp-busy-note" class="tcp-alert tcp-alert--warn" style="display:none"></div>
 
@@ -26,6 +26,10 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 	<div class="tcp-card-head"><span class="tcp-step">۱</span><div><h2>انتخاب محصولات هدف</h2><p>روش انتخاب را مشخص کن؛ قبل از اجرا می‌توانی فهرست را بررسی و ویرایش کنی.</p></div></div>
 	<div class="tcp-card-body">
 		<div class="tcp-target-modes" role="radiogroup" aria-label="روش انتخاب محصولات">
+			<label class="tcp-target-mode tcp-target-mode--catalog">
+				<input type="radio" name="tcp_target" value="all">
+				<span>همهٔ محصولات سایت</span>
+			</label>
 			<label class="tcp-target-mode">
 				<input type="radio" name="tcp_target" value="category" checked>
 				<span>انتخاب بر اساس دسته‌بندی</span>
@@ -42,6 +46,19 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				<input type="radio" name="tcp_target" value="sku">
 				<span>جستجو بر اساس SKU</span>
 			</label>
+		</div>
+
+		<div id="tcp-all-box" class="tcp-field" style="display:none">
+			<div class="tcp-alert tcp-alert--danger">
+				<strong>نوشتن دائمی روی کل فروشگاه.</strong>
+				قیمت در دیتابیس ذخیره می‌شود. اگر قانون سراسری داینامیک روشن بماند، افزایش دوباره روی قیمت جدید هم دیده می‌شود — قبل از اجرا آن را خاموش کن.
+			</div>
+			<ul class="tcp-all-points">
+				<li>همهٔ عملیات همین صفحه (قیمت عادی، فروش ویژه، عمده) روی محصولاتِ مطابق فیلترهای پایین اعمال می‌شود.</li>
+				<li>محصول متغیر، متغیر‌به‌متغیر از روی قیمت خودِ همان متغیر محاسبه می‌شود؛ نه یک عدد برای کل محصول.</li>
+				<li>اگر اینترنت وسط کار قطع شود، از همان متغیر ادامه پیدا می‌کند و درصد دوباره روی متغیرهای انجام‌شده اعمال نمی‌شود. بستن صفحه هم کار را نیمه‌کاره نمی‌گذارد؛ در پس‌زمینه تمام می‌شود. دکمهٔ توقف، اجرا را قطع می‌کند.</li>
+			</ul>
+			<p class="tcp-muted">فیلترهای وضعیت، نوع و بازهٔ قیمت هنوز اعمال می‌شوند. محصول گروهی قیمت مستقل ندارد و رد می‌شود. فروشگاه خیلی بزرگ شناسه‌ها را یکجا در حافظه جمع نمی‌کند؛ کار تکه‌تکه و قابل‌ادامه است.</p>
 		</div>
 
 		<div id="tcp-cat-box" class="tcp-field">
@@ -160,7 +177,7 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 		</div>
 
 		<div id="tcp-round-box" class="tcp-field tcp-round-box">
-			<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-round" checked><span class="tisa-switch__track" aria-hidden="true"></span><span>رند به ۸ <span class="tcp-muted">— قیمت نهایی به پایین روی <?php echo esc_html( TCP_Round::describe() ); ?> می‌رود؛ مثلاً ۶۱۲٬۳۰۰ ← ۶۰۸٬۰۰۰</span></span></label>
+			<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-round" checked><span class="tisa-switch__track" aria-hidden="true"></span><span>رند به ۸ <span class="tcp-muted">— به نزدیک‌ترین <?php echo esc_html( TCP_Round::describe() ); ?>، نه همیشه پایین. ۶۱۲٬۳۰۰ ← ۶۰۸٬۰۰۰ و ۶۱۳٬۱۰۰ ← ۶۱۸٬۰۰۰. با گام ۱۰: ۳۷۷ ← ۳۷۸ نه ۳۶۸.</span></span></label>
 			<div id="tcp-round-jitter-row" style="display:none">
 				<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-round-jitter"><span class="tisa-switch__track" aria-hidden="true"></span><span>تخفیف متغیر <span class="tcp-muted">— به‌جای دقیقاً X٪، هر آیتم درصدی در بازهٔ X±<?php echo esc_html( TCP_Round::jitter() ); ?>٪ می‌گیرد که قیمتش دقیقاً روی ۸ بیفتد. دامنه در «تنظیمات».</span></span></label>
 			</div>

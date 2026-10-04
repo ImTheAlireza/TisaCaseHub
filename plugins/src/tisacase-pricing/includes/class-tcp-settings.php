@@ -14,7 +14,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		const MAIN_PAGE  = 'tisacase-pricing';
 		const NONCE      = 'tcp_nonce';
 		const OPTION     = 'tcp_settings';
-		const DB_VERSION = '1.0.0';
+		const DB_VERSION = '1.1.1';
 
 		const AJAX_PREVIEW        = 'tcp_preview';
 		const AJAX_RUN            = 'tcp_run';
@@ -33,6 +33,10 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		/** به‌روزرسانی جدول lookup ووکامرس در پس‌زمینه (بعد از پایان هر اجرا). */
 		const CRON_LOOKUP = 'tcp_refresh_product_lookup';
 		const OPT_LOOKUP_PENDING = 'tcp_lookup_refresh_pending';
+		/** ادامهٔ اجرای در جریان اگر مرورگر قطع شود. */
+		const CRON_CONTINUE = 'tcp_continue_run';
+		const OPT_CONTINUE  = 'tcp_continue_runs';
+		const AJAX_CONTINUE = 'tcp_continue_run';
 
 		/** بیشترین درصد مجاز برای عملیات درصدی (جلوگیری از overflow). */
 		const PERCENT_CEIL = 100000.0;
@@ -70,13 +74,17 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 			add_action( 'wp_ajax_' . self::AJAX_SEARCH, array( 'TCP_Ajax', 'ajax_search_wholesale_products' ) );
 			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_NAME_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_name' ) );
 			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_SKU_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_sku' ) );
-			add_action( 'admin_init', array( 'TCP_DB', 'maybe_install' ) );
+			add_action( 'init', array( 'TCP_DB', 'maybe_install' ), 5 );
+		add_action( 'admin_init', array( 'TCP_DB', 'maybe_install' ) );
 			add_action( 'admin_init', array( 'TCP_Admin', 'handle_settings_post' ) );
 			add_action( 'admin_init', array( __CLASS__, 'maybe_migrate' ) );
 			add_action( 'init', array( 'TCP_Scheduler', 'register_cron' ) );
 			add_action( self::CRON_TICK, array( 'TCP_Scheduler', 'cron_tick' ) );
 			add_action( self::CRON_CLEAN, array( 'TCP_DB', 'cron_cleanup' ) );
 			add_action( self::CRON_LOOKUP, array( __CLASS__, 'refresh_lookup_tables' ) );
+			add_action( self::CRON_CONTINUE, array( 'TCP_Scheduler', 'continue_due' ) );
+			add_action( 'wp_ajax_' . self::AJAX_CONTINUE, array( 'TCP_Ajax', 'ajax_continue' ) );
+			add_action( 'wp_ajax_nopriv_' . self::AJAX_CONTINUE, array( 'TCP_Ajax', 'ajax_continue' ) );
 
 			// قوانین داینامیک (فیلترهای قیمت + ذخیره + جستجو).
 			TCP_Rules::hooks();

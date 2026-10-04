@@ -84,8 +84,10 @@ t( 'nonce نامعتبر → خطای nonce', is_wp_error( $r ) && 'nonce' === $
 $GLOBALS['tcp_nonce_valid'] = true;
 $r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'nope', 'target_type' => 'products', 'product_ids' => '1' ) );
 t( 'عملیات نامعتبر → خطای op', is_wp_error( $r ) && 'op' === $r->get_error_code() );
-$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'all', 'product_ids' => '1' ) );
+$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'nope', 'product_ids' => '1' ) );
 t( 'نوع انتخاب نامعتبر → خطای target', is_wp_error( $r ) && 'target' === $r->get_error_code() );
+$r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_increase_percent', 'target_type' => 'all', 'value' => '10' ) );
+t( 'هدف «همه» پذیرفته می‌شود و به شناسهٔ محصول نیاز ندارد', is_array( $r ) && 'all' === $r['target_type'] && 10.0 === $r['value'] );
 $r = TCP_Ops::args_from_post( array( 'nonce' => 'x', 'operation' => 'regular_set', 'target_type' => 'category' ) );
 t( 'دستهٔ خالی → خطای empty', is_wp_error( $r ) && 'empty' === $r->get_error_code() );
 $GLOBALS['tcp_terms'][55] = (object) array( 'term_id' => 55 );
@@ -132,7 +134,10 @@ $r = call_private( 'TCP_Ops', 'calc_regular', array( 'regular_increase_fixed', '
 t( 'نتیجهٔ نجومی → ok=false (RESULT_CEIL)', $r['ok'] === false );
 TCP_Ops::set_round_mode( 'round' );
 $r = call_private( 'TCP_Ops', 'calc_regular', array( 'regular_decrease_percent', '612300', 15 ) );
-t( 'کاهش ۱۵٪ با رند: → ۵۱۸٬۰۰۰ (…۸٬۰۰۰)', $r['ok'] && (float) $r['new'] === 518000.0, var_export( $r['new'], true ) );
+t( 'کاهش ۱۵٪ با رند: → ۵۱۸٬۰۰۰ (نزدیک‌ترین …۸٬۰۰۰)', $r['ok'] && (float) $r['new'] === 518000.0, var_export( $r['new'], true ) );
+TCP_Ops::set_round_mode( 'round' );
+$r = call_private( 'TCP_Ops', 'calc_regular', array( 'regular_increase_percent', '557364', 10 ) );
+t( 'افزایش ۱۰٪ با رند: ۶۱۳٬۱۰۰٫۴ ← ۶۱۸٬۰۰۰ نه ۶۰۸٬۰۰۰', $r['ok'] && (float) $r['new'] === 618000.0, var_export( $r['new'], true ) );
 TCP_Ops::set_round_mode( 'jitter' );
 $r = call_private( 'TCP_Ops', 'calc_regular', array( 'regular_decrease_percent', '612300', 15, 42 ) );
 t( 'حالت jitter روی …۸٬۰۰۰ می‌نشیند و زیر قیمت پایه است', $r['ok'] && fmod( (float) $r['new'], 10000 ) === 8000.0 && (float) $r['new'] < 612300, var_export( $r['new'], true ) );
@@ -174,6 +179,10 @@ t( 'down: عددِ روی خط تکان نمی‌خورد', TCP_Round::down( 608
 t( 'down: ۶۰۷٬۹۹۹ ← ۵۹۸٬۰۰۰', TCP_Round::down( 607999 ) === 598000.0 );
 t( 'nearest: ۶۱۳٬۰۰۰ ← ۶۰۸٬۰۰۰ (فاصلهٔ برابر → پایین)', TCP_Round::nearest( 613000 ) === 608000.0 );
 t( 'nearest: ۶۱۴٬۰۰۰ ← ۶۱۸٬۰۰۰', TCP_Round::nearest( 614000 ) === 618000.0 );
+t( 'nearest: ۶۱۳٬۱۰۰ ← ۶۱۸٬۰۰۰ (به بالا نزدیک‌تر است)', TCP_Round::nearest( 613100 ) === 618000.0 );
+$GLOBALS['tcp_options']['tcp_settings'] = array( 'round_step' => 10, 'round_digit' => 8 );
+t( 'nearest گام ۱۰: ۳۷۷ ← ۳۷۸ نه ۳۶۸', TCP_Round::nearest( 377 ) === 378.0 && TCP_Round::down( 377 ) === 368.0, var_export( TCP_Round::nearest( 377 ), true ) );
+$GLOBALS['tcp_options']['tcp_settings'] = array();
 $u1 = TCP_Round::unit( 'seed-1' );
 $u2 = TCP_Round::unit( 'seed-1' );
 t( 'unit قطعی و در بازهٔ [0,1)', $u1 === $u2 && $u1 >= 0 && $u1 < 1 );
@@ -188,7 +197,9 @@ t( 'jittered_discount: تنوع بین شناسه‌ها (>۱ قیمت متفا�
 $d = TCP_Round::discount( 100000, 10, 'none', 1 );
 t( 'discount(none) = عدد خام', $d['price'] === 90000.0 );
 $d = TCP_Round::discount( 612300, 15, 'round', 1 );
-t( 'discount(round) = رند به پایین …۸٬۰۰۰', $d['price'] === 518000.0, var_export( $d['price'], true ) );
+t( 'discount(round) = نزدیک‌ترین …۸٬۰۰۰', $d['price'] === 518000.0, var_export( $d['price'], true ) );
+$d = TCP_Round::discount( 620000, 15, 'round', 1 );
+t( 'discount(round) اگر به ۸ بالاتر نزدیک‌تر باشد بالا می‌رود', $d['price'] === 528000.0, var_export( $d['price'], true ) );
 $d = TCP_Round::discount( 0, 10, 'round', 1 );
 t( 'پایهٔ صفر → قیمت صفر (بدون تقسیم بر صفر)', $d['price'] === 8000.0 || $d['price'] === 0.0, var_export( $d, true ) );
 
@@ -306,6 +317,48 @@ try {
 	$boost_ok = false;
 }
 t( 'runtime_boost بدون استثنا اجرا می‌شود', $boost_ok );
+
+echo "--- 13) همهٔ محصولات: کلیدست، نشان ضدِ اعمال دوباره، ادامه از متغیر ---\n";
+t( 'is_catalog_run: هدف همه', TCP_Ops::is_catalog_run( array( 'target_type' => 'all' ) ) === true );
+t( 'is_catalog_run: دستهٔ بزرگ با scan.keyset', TCP_Ops::is_catalog_run( array( 'target_type' => 'category', 'scan' => array( 'mode' => 'keyset' ) ) ) === true );
+t( 'is_catalog_run: انتخاب مستقیم نیست', TCP_Ops::is_catalog_run( array( 'target_type' => 'products' ) ) === false );
+t( 'pending_object_ids شناسهٔ تمام‌شده را دوباره برنمی‌گرداند', TCP_Ops::pending_object_ids( array( 5, 3, 0, 5, 9 ), 3 ) === array( 5, 9 ) );
+t( 'pending_object_ids بدون cursor همه را مرتب برمی‌گرداند', TCP_Ops::pending_object_ids( array( 8, 2 ), 0 ) === array( 2, 8 ) );
+$guard = TCP_Ops::guard_encode( 4, '100000', '110000' );
+t( 'guard_encode/decode', TCP_Ops::guard_decode( $guard ) === array( 'run' => 4, 'before' => '100000', 'after' => '110000' ) );
+t( 'نشانِ همان اجرا و قیمتِ بعد → ردِ اعمال دوباره', TCP_Ops::guard_should_skip( $guard, '110000', 4 ) === true );
+t( 'نشان هست ولی قیمت هنوز «قبل» است → save کامل نشده و باید اعمال شود', TCP_Ops::guard_should_skip( $guard, '100000', 4 ) === false );
+t( 'نشانِ اجرای دیگر نادیده گرفته می‌شود', TCP_Ops::guard_should_skip( $guard, '110000', 9 ) === false );
+
+$simple = new WC_Product( 21, 'simple' );
+$simple->regular = '100000';
+$GLOBALS['tcp_products'][21] = $simple;
+TCP_Ops::set_round_mode( 'none' );
+$first = TCP_Ops::process_parent( 21, 'regular_increase_percent', 10, array( 'run_id' => 4 ) );
+t( 'اعمال ۱۰٪ روی محصول ساده یک‌بار ذخیره می‌شود', 1 === $simple->saved && 1 === $first['updated'] && $first['complete'] === true, 'saved=' . $simple->saved . ' price=' . $simple->regular );
+$second = TCP_Ops::process_parent( 21, 'regular_increase_percent', 10, array( 'run_id' => 4 ) );
+t( 'قطع بعد از save: درصد دوباره اعمال نمی‌شود', 1 === $simple->saved && (float) $simple->regular === 110000.0, 'saved=' . $simple->saved . ' price=' . var_export( $simple->regular, true ) . ' second=' . var_export( $second['updated'], true ) );
+
+$parent = new WC_Product( 30, 'variable' );
+$parent->children = array( 31, 32, 33 );
+$GLOBALS['tcp_products'][30] = $parent;
+foreach ( array( 31, 32, 33 ) as $vid ) {
+	$v = new WC_Product( $vid, 'variation', 30 );
+	$v->regular = '200000';
+	$GLOBALS['tcp_products'][ $vid ] = $v;
+}
+$partial = TCP_Ops::process_parent( 30, 'regular_increase_percent', 10, array( 'run_id' => 8, 'deadline' => microtime( true ) - 1 ) );
+t( 'بودجهٔ تمام‌شده وسط مادر متغیر: فقط اولین متغیر و والد ناتمام',
+	$partial['complete'] === false && 1 === $GLOBALS['tcp_products'][31]->saved && 0 === $GLOBALS['tcp_products'][32]->saved,
+	var_export( array( $partial['complete'], $GLOBALS['tcp_products'][31]->saved, $GLOBALS['tcp_products'][32]->saved ), true ) );
+$rest = TCP_Ops::process_parent( 30, 'regular_increase_percent', 10, array( 'run_id' => 8, 'after_object' => 31 ) );
+t( 'ادامه از متغیر بعدی، متغیر انجام‌شده را دوباره ذخیره نمی‌کند',
+	$rest['complete'] === true && 1 === $GLOBALS['tcp_products'][31]->saved && 1 === $GLOBALS['tcp_products'][32]->saved && 1 === $GLOBALS['tcp_products'][33]->saved && (float) $GLOBALS['tcp_products'][33]->regular === 220000.0,
+	var_export( array( $GLOBALS['tcp_products'][31]->saved, $GLOBALS['tcp_products'][32]->saved, $GLOBALS['tcp_products'][33]->saved, $GLOBALS['tcp_products'][33]->regular ), true ) );
+$grouped = new WC_Product( 40, 'grouped' );
+$GLOBALS['tcp_products'][40] = $grouped;
+$g = TCP_Ops::process_parent( 40, 'regular_increase_percent', 10, array( 'run_id' => 8 ) );
+t( 'محصول گروهی رد می‌شود و ذخیره نمی‌شود', 1 === $g['skipped'] && 0 === $grouped->saved && true === $g['complete'] );
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

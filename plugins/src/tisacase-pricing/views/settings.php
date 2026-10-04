@@ -43,7 +43,7 @@ $tcp_bool = static function ( $name, $label, $value ) {
 						<option value="<?php echo esc_attr( $d ); ?>" <?php selected( (int) $s['round_digit'], $d ); ?>><?php echo esc_html( number_format_i18n( $d ) ); ?></option>
 					<?php endfor; ?>
 				</select>
-				<p class="tcp-muted">قیمت‌ها به این رقم ختم می‌شوند؛ با ۸ و گام ۱۰٬۰۰۰ → ۵۹۸٬۰۰۰، ۶۰۸٬۰۰۰، …</p>
+				<p class="tcp-muted">قیمت به نزدیک‌ترین عددی می‌رود که به این رقم ختم شود (نه همیشه پایین). با ۸ و گام ۱۰: ۳۷۷ ← ۳۷۸. با گام ۱۰٬۰۰۰: ۶۱۲٬۳۰۰ ← ۶۰۸٬۰۰۰ و ۶۱۳٬۱۰۰ ← ۶۱۸٬۰۰۰.</p>
 			</div>
 			<?php $tcp_num( 'round_step', 'گام رند (۰ = خودکار)', $s['round_step'], 0, null, 'خودکار: تومان ۱۰٬۰۰۰ / ریال ۱۰۰٬۰۰۰. مثلاً با ۱۰۰٬۰۰۰ قیمت‌ها می‌شوند ۵۸۰٬۰۰۰، ۶۸۰٬۰۰۰، …' ); ?>
 			<div class="tcp-set">

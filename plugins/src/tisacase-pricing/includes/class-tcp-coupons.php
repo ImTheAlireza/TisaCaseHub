@@ -322,11 +322,13 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			if ( $goods < 2 * $step ) {
 				return;
 			}
-			$diff = round( $goods - TCP_Round::down( $goods ), wc_get_price_decimals() );
-			if ( $diff <= 0 ) {
+			$target = TCP_Round::nearest( $goods );
+			$diff   = round( $target - $goods, wc_get_price_decimals() );
+			if ( 0.0 === (float) $diff ) {
 				return;
 			}
-			$cart->add_fee( 'رند قیمت', -1 * $diff, false );
+			// مثبت = چند واحد تا ۸ بالاتر؛ منفی = تا ۸ پایین‌تر. هر کدام نزدیک‌تر باشد.
+			$cart->add_fee( 'رند قیمت', $diff, false );
 		}
 	}
 }

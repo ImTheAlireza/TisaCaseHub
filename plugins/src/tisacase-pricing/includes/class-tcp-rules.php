@@ -310,7 +310,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			if ( 'none' === $rule['mode'] || $v < 2 * TCP_Round::step() ) {
 				return round( $v );
 			}
-			return TCP_Round::down( $v );
+			return TCP_Round::nearest( $v );
 		}
 
 		private static function calculated_sale( $product, $rule ) {

@@ -100,7 +100,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 	</div>
 
 	<div class="tcp-cp-toggles">
-		<?php $tcp_toggle( 'round_to_8', 'رند به ۸', $d['round'], '— مبلغ نهایی اقلام بعد از کد، به پایین روی ' . TCP_Round::describe() . ' می‌رود (اختلاف به‌صورت «رند قیمت» در سبد نمایش داده می‌شود).' ); ?>
+		<?php $tcp_toggle( 'round_to_8', 'رند به ۸', $d['round'], '— مبلغ نهایی اقلام بعد از کد به نزدیک‌ترین ' . TCP_Round::describe() . ' می‌رود، بالا یا پایین (اختلاف به‌صورت «رند قیمت» در سبد نمایش داده می‌شود).' ); ?>
 		<?php $tcp_toggle( 'free_shipping', 'ارسال رایگان', $d['free_shipping'], '— روش حمل «ارسال رایگان» باید در منطقهٔ حمل فعال و روی «نیاز به کوپن» باشد.' ); ?>
 		<?php $tcp_toggle( 'individual_use', 'استفادهٔ انفرادی', $d['individual'], '— با کد دیگری جمع نمی‌شود.' ); ?>
 		<?php $tcp_toggle( 'exclude_sale_items', 'بدون اقلام حراجی', $d['excl_sale'], '— روی محصولاتی که فروش ویژهٔ واقعی دارند اعمال نمی‌شود.' ); ?>
