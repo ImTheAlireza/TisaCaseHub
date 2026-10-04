@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       TisaCase — مدیریت گروهی متغیرها و مدل‌ها
  * Plugin URI:        https://tisacase.com
- * Description:       افزونه پیشرفته بازسازی، تولید گروهی متغیرها و قیمت‌گذاری انبوه محصولات متغیر ووکامرس.
- * Version:           2.0.3
+ * Description:       افزونه مدیریت، افزودن، حذف و جایگزینی گروهی متغیرها و قیمت‌گذاری محصولات ووکامرس.
+ * Version:           2.1.1
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 5.0
@@ -20,7 +20,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCBVM_VERSION', '2.0.3' );
+define( 'TCBVM_VERSION', '2.1.1' );
 define( 'TCBVM_FILE', __FILE__ );
 define( 'TCBVM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCBVM_URL', plugin_dir_url( __FILE__ ) );

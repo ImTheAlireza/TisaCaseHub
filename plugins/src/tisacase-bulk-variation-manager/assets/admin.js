@@ -20,6 +20,7 @@
 			this.bindProductSearch();
 			this.bindProductTable();
 			this.bindModelsInput();
+			this.bindOperationMode();
 			this.bindPriceFormat();
 			this.bindActions();
 			this.bindPresets();
@@ -49,6 +50,12 @@
 		formatNumber: function(num) {
 			if (!num && num !== 0) return '0';
 			return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+		},
+
+		escapeHtml: function(value) {
+			return String(value === null || value === undefined ? '' : value).replace(/[&<>"']/g, function(char) {
+				return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char];
+			});
 		},
 
 		/**
@@ -434,6 +441,7 @@
 		renderProductTable: function() {
 			const self = this;
 			const pids = Object.keys(self.selectedProducts);
+			$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			const $tbody = $('#tcbvm-products-tbody');
 			const $box = $('#tcbvm-products-box');
 
@@ -545,6 +553,45 @@
 		},
 
 		/**
+		 * تنظیم فرم، قیمت و توضیحات بر اساس رفتار انتخاب‌شده.
+		 */
+		bindOperationMode: function() {
+			const updateMode = function() {
+				const mode = $('#tcbvm-operation-mode').val() || 'replace_all';
+				const descriptions = {
+					replace_all: {
+						mode: 'حالت جایگزینی کامل همان رفتار قبلی است؛ همهٔ variationهای موجود حذف می‌شوند و فهرست تازه ساخته می‌شود.',
+						label: 'مقادیر جدید مدل/ویژگی (هر خط یک مقدار، یا با خط عمودی | جدا کنید):',
+						help: 'برای حفظ کاما داخل نام مقدار، فهرست را با خط جدید یا | جدا کنید؛ در این حالت variationهای فعلی جایگزین می‌شوند.'
+					},
+					add_missing: {
+						mode: 'مقادیر و قیمت variationهای فعلی حفظ می‌شوند؛ فقط ترکیب‌هایی ساخته می‌شوند که دقیقاً وجود ندارند. ورودی تکراری دوباره ساخته یا قیمت‌گذاری نمی‌شود.',
+						label: 'مقادیر مدل/ویژگی برای افزودن (هر خط یک مقدار، یا با خط عمودی | جدا کنید):',
+						help: 'برای حفظ کاما داخل نام مقدار، فهرست را با خط جدید یا | جدا کنید. اگر سایر ویژگی‌های متغیر وجود دارد، گزینهٔ ترکیب را روشن کنید.'
+					},
+					remove_values: {
+						mode: 'variationهایی که مقدار ویژگی هدفشان با فهرست منطبق باشد حذف می‌شوند و همان گزینه‌ها از ویژگی هدف برداشته می‌شود؛ سایر variationها و ویژگی‌ها حفظ می‌شوند. قیمت نادیده گرفته می‌شود.',
+						label: 'مقادیر ویژگی برای حذف (هر خط یک مقدار، یا با خط عمودی | جدا کنید):',
+						help: 'هر variation دارای یکی از این مقادیر در ویژگی هدف حذف می‌شود؛ چیزی ساخته نمی‌شود و قیمت واردشده اثری ندارد.'
+					}
+				};
+				const copy = descriptions[mode] || descriptions.replace_all;
+				$('#tcbvm-operation-mode-help').text(copy.mode);
+				$('#tcbvm-models-label').text(copy.label);
+				$('#tcbvm-models-help').text(copy.help);
+				$('#tcbvm-pricing-card').toggleClass('tcbvm-hidden', mode === 'remove_values');
+				$('#tcbvm-combine-field').toggleClass('tcbvm-hidden', mode === 'remove_values');
+				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
+			};
+
+			$('#tcbvm-operation-mode').on('change', updateMode);
+			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other').on('input change', function() {
+				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
+			});
+			updateMode();
+		},
+
+		/**
 		 * مدیریت ورودی مدل‌ها و الگوهای آماده
 		 */
 		bindModelsInput: function() {
@@ -553,7 +600,8 @@
 			const updateCount = function() {
 				const raw = $('#tcbvm-models-input').val();
 				const list = self.parseModelsList(raw);
-				$('#tcbvm-models-count').text(self.toPersianDigits(list.length) + ' متغیر تعریف شد');
+				$('#tcbvm-models-count').text(self.toPersianDigits(list.length) + ' مقدار تعریف شد');
+				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			};
 
 			$('#tcbvm-models-input').on('input keyup change', updateCount);
@@ -635,14 +683,15 @@
 					return;
 				}
 
+				const operationMode = $('#tcbvm-operation-mode').val() || 'replace_all';
 				const price = $('#tcbvm-regular-price').val().replace(/[^\d]/g, '');
-				if (!price) {
+				if (operationMode !== 'remove_values' && !price) {
 					alert(tcbvmData.i18n.enterPricePrompt);
 					return;
 				}
 
 				const salePrice = $('#tcbvm-sale-price').val().replace(/[^\d]/g, '');
-				const combineOther = $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
+				const combineOther = operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
 
 				const $btn = $(this);
 				$btn.prop('disabled', true).addClass('is-busy');
@@ -658,7 +707,8 @@
 						new_values: models,
 						price: price,
 						sale_price: salePrice,
-						combine_other: combineOther
+						combine_other: combineOther,
+						operation_mode: operationMode
 					},
 					success: function(resp) {
 						$btn.prop('disabled', false).removeClass('is-busy');
@@ -693,13 +743,19 @@
 					return;
 				}
 
+				const operationMode = $('#tcbvm-operation-mode').val() || 'replace_all';
 				const price = $('#tcbvm-regular-price').val().replace(/[^\d]/g, '');
-				if (!price) {
+				if (operationMode !== 'remove_values' && !price) {
 					alert(tcbvmData.i18n.enterPricePrompt);
 					return;
 				}
 
-				const promptMsg = tcbvmData.i18n.confirmStart.replace('{n}', self.toPersianDigits(pids.length));
+				const modeConfirmation = operationMode === 'add_missing'
+					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.'
+					: (operationMode === 'remove_values'
+						? 'حذف: variationهای دارای مقادیر فهرست‌شده در ویژگی هدف و همان گزینه‌ها حذف می‌شوند؛ قیمت اثری ندارد.'
+						: 'جایگزینی: همهٔ variationهای فعلی حذف و مقادیر فهرست‌شده از نو ساخته می‌شوند.');
+				const promptMsg = tcbvmData.i18n.confirmStart.replace('{n}', self.toPersianDigits(pids.length)) + '\n\n' + modeConfirmation;
 				if (!confirm(promptMsg)) {
 					return;
 				}
@@ -708,11 +764,12 @@
 				product_ids: pids,
 				attr_name: attrName,
 				new_values: models,
-				price: price,
-				sale_price: $('#tcbvm-sale-price').val().replace(/[^\d]/g, ''),
-				stock_status: $('#tcbvm-stock-status').val(),
-				combine_other: $('#tcbvm-combine-other').is(':checked') ? 1 : 0
-			});
+					price: price,
+					sale_price: $('#tcbvm-sale-price').val().replace(/[^\d]/g, ''),
+					stock_status: $('#tcbvm-stock-status').val(),
+					combine_other: operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0,
+					operation_mode: operationMode
+				});
 		});
 
 		// دکمه لغو عملیات (توقف پس از پایان بستهٔ جاری)
@@ -736,24 +793,74 @@
 			$content.empty();
 
 			let html = '<div class="tcbvm-preview-grid">';
+			const operationMode = data.operation_mode || 'replace_all';
+			const isRemoveMode = operationMode === 'remove_values';
+			const operationLabel = data.operation_mode_label || 'جایگزینی کامل';
 			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(data.total_products) + '</span><span class="tcbvm-stat-lbl">محصول انتخابی</span></div>';
-			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(data.new_values_count) + '</span><span class="tcbvm-stat-lbl">متغیر جدید (' + data.attr_name + ')</span></div>';
-			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(self.formatNumber(data.price)) + '</span><span class="tcbvm-stat-lbl">قیمت متغیرها (تومان)</span></div>';
-			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(self.formatNumber(data.total_new_vars)) + '</span><span class="tcbvm-stat-lbl">مجموع ترکیب‌های تولیدی</span></div>';
+			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(data.new_values_count) + '</span><span class="tcbvm-stat-lbl">مقدار در فهرست (' + self.escapeHtml(data.attr_name) + ')</span></div>';
+			if (!isRemoveMode) {
+				html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + self.toPersianDigits(self.formatNumber(data.price)) + '</span><span class="tcbvm-stat-lbl">قیمت متغیرهای تازه (تومان)</span></div>';
+			}
+			html += '<p class="tcbvm-preview-mode" style="grid-column:1/-1;margin:0;color:#475569;"><strong>رفتار:</strong> ' + self.escapeHtml(operationLabel) + '</p>';
+			const preflightErrors = Number(data.preflight_error_count || 0);
+			const overLimitCount = Number(data.over_limit_count || 0);
+			const previewIssues = Array.isArray(data.preview_issues) ? data.preview_issues : [];
+			const previewTotal = isRemoveMode ? Number(data.total_remove_vars || 0) : Number(data.total_new_vars || 0);
+			const totalLabel = !isRemoveMode && (data.total_new_vars_capped || preflightErrors) ? 'حداقل ' : '';
+			const totalValue = totalLabel + self.toPersianDigits(self.formatNumber(previewTotal));
+			const totalNotes = [];
+			if (preflightErrors) totalNotes.push('برآورد ناقص؛ محاسبهٔ ' + self.toPersianDigits(preflightErrors) + ' محصول ناموفق بود');
+			if (overLimitCount) totalNotes.push(self.toPersianDigits(overLimitCount) + ' محصول بیش از سقف ۳۰۰۰ ترکیب است و در اجرا رد می‌شود');
+			else if (data.total_new_vars_capped && !isRemoveMode) totalNotes.push('برآورد محدودشده');
+			const totalNote = totalNotes.length ? ' (' + totalNotes.join('؛ ') + ')' : '';
+			const totalDescription = isRemoveMode ? 'مجموع variationهای منطبق برای حذف' : (operationMode === 'add_missing' ? 'ترکیب‌های جدید برای افزودن' : 'مجموع ترکیب‌های تولیدی');
+			html += '<div class="tcbvm-stat-box"><span class="tcbvm-stat-num">' + totalValue + '</span><span class="tcbvm-stat-lbl">' + totalDescription + totalNote + '</span></div>';
+			if (preflightErrors) {
+				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">⚠️ محاسبهٔ برخی محصولات کامل نشد؛ اجرای همان محصول در سرور نیز برای جلوگیری از شمارش نادرست متوقف می‌شود.</p>';
+			}
+			if (overLimitCount) {
+				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">⚠️ ' + self.toPersianDigits(overLimitCount) + ' محصول از سقف ایمنی ۳۰۰۰ ترکیب عبور کرده است؛ اجرای همان محصول بدون تغییر رد می‌شود.</p>';
+			}
+			if (previewIssues.length) {
+				html += '<div class="tcbvm-preview-failures" style="grid-column:1/-1;"><strong>مواردی که در اجرا رد می‌شوند یا متوقف‌شونده‌اند:</strong><ul>';
+				previewIssues.forEach(function(issue) {
+					const productId = self.toPersianDigits(self.formatNumber(Number(issue.id) || 0));
+					const reason = issue.reason === 'missing_product'
+						? 'محصول در دسترس نیست.'
+						: (issue.reason === 'over_limit' ? 'بیش از سقف ۳۰۰۰ ترکیب؛ محصول بدون تغییر رد می‌شود.' : 'خواندن یا شمارش گزینه‌های ویژگی ناموفق بود.');
+					html += '<li>محصول #' + productId + ': ' + reason + '</li>';
+				});
+				if (data.preview_issues_truncated) {
+					html += '<li>فهرست شناسه‌ها به ۱۰۰ مورد محدود شده است؛ تعداد کامل موارد در هشدارهای بالا آمده است.</li>';
+				}
+				html += '</ul></div>';
+			}
 			html += '</div>';
 
 			if (data.samples && data.samples.length) {
-				html += '<h4 style="margin: 16px 0 8px; font-size: 14px;">نمونه محصولات جهت بازسازی متغیرها:</h4>';
+				const sampleTitle = isRemoveMode ? 'نمونه محصولات و متغیرهای منطبق برای حذف:' : (operationMode === 'add_missing' ? 'نمونه ترکیب‌های تازه برای افزودن:' : 'نمونه محصولات جهت بازسازی متغیرها:');
+				html += '<h4 style="margin: 16px 0 8px; font-size: 14px;">' + sampleTitle + '</h4>';
 				html += '<div class="tcbvm-table-scroll"><table class="tisa-table tcbvm-table">';
-				html += '<thead><tr><th>شناسه</th><th>نام محصول</th><th>وضعیت فعلی</th><th>تغییرات</th><th>ترکیب ویژگی‌ها</th></tr></thead><tbody>';
+				html += '<thead><tr><th>شناسه</th><th>نام محصول</th><th>وضعیت فعلی</th><th>' + (isRemoveMode ? 'حذف پیش‌بینی‌شده' : (operationMode === 'add_missing' ? 'افزودن پیش‌بینی‌شده' : 'تغییرات')) + '</th><th>ترکیب ویژگی‌ها</th></tr></thead><tbody>';
 
 				data.samples.forEach(function(s) {
 					html += '<tr>';
 					html += '<td><span class="tisa-code">#' + s.id + '</span></td>';
-					html += '<td><strong>' + s.name + '</strong></td>';
+					html += '<td><strong>' + self.escapeHtml(s.name) + '</strong></td>';
 					html += '<td>' + self.toPersianDigits(s.old_vars) + ' متغیر فعلی</td>';
-					html += '<td><span class="tcbvm-badge tcbvm-badge--success">' + self.toPersianDigits(s.new_vars) + ' متغیر جدید</span></td>';
-					html += '<td><small class="tcbvm-muted">' + s.other_attrs + '</small></td>';
+					let sampleCount;
+					if (s.preflight_error) {
+						sampleCount = 'اجرای این محصول متوقف می‌شود: ' + s.preflight_error;
+					} else if (isRemoveMode) {
+						sampleCount = self.toPersianDigits(s.remove_vars || 0) + ' متغیر حذف می‌شود';
+					} else if (s.over_limit) {
+						sampleCount = 'بیش از ۳۰۰۰؛ اجرای این محصول رد می‌شود';
+					} else {
+						sampleCount = self.toPersianDigits(s.new_vars) + (operationMode === 'add_missing' ? ' ترکیب تازه افزوده می‌شود' : ' متغیر جدید');
+					}
+					const sampleDanger = !!s.preflight_error || !!s.over_limit;
+					html += '<td><span class="tcbvm-badge ' + (sampleDanger ? 'tcbvm-badge--danger' : 'tcbvm-badge--success') + '">' + self.escapeHtml(sampleCount) + '</span></td>';
+					html += '<td><small class="tcbvm-muted">' + self.escapeHtml(s.other_attrs) + '</small></td>';
 					html += '</tr>';
 				});
 
@@ -770,6 +877,8 @@
 		 */
 		startBatchExecution: function(params) {
 			const self = this;
+			const operationMode = params.operation_mode || 'replace_all';
+			const operationLabel = operationMode === 'add_missing' ? 'افزودن ترکیب‌های جدید' : (operationMode === 'remove_values' ? 'حذف مقادیر واردشده' : 'جایگزینی کامل');
 			self.isExecuting = true;
 			self.cancelRequested = false;
 			$('#tcbvm-btn-cancel-run').prop('disabled', false).text('لغو عملیات');
@@ -789,7 +898,7 @@
 			$('#tcbvm-btn-run, #tcbvm-btn-preview').prop('disabled', true);
 			$('html, body').animate({ scrollTop: $progressWrap.offset().top - 30 }, 400);
 
-			self.log('آغاز عملیات تغییر و تولید گروهی متغیرها برای ' + params.product_ids.length + ' محصول…', 'info');
+			self.log('آغاز عملیات «' + operationLabel + '» برای ' + params.product_ids.length + ' محصول…', 'info');
 
 			// ۱) ایجاد نشست
 			$.ajax({
@@ -804,7 +913,8 @@
 					price: params.price,
 					sale_price: params.sale_price,
 					stock_status: params.stock_status,
-					combine_other: params.combine_other
+					combine_other: params.combine_other,
+					operation_mode: params.operation_mode
 				},
 				success: function(resp) {
 					if (!resp.success || !resp.data || !resp.data.batches) {
@@ -853,8 +963,16 @@
 						self.finishRun(runId, totalCreated, totalDeleted, allItems, function() {
 							$bar.css('width', '100%');
 							$pPercent.text('۱۰۰٪');
-							$pText.text('تولید و بازسازی تمام متغیرها با موفقیت تکمیل و ثبت شد.');
-							self.log('پایان تمام بسته‌ها! ' + totalCreated + ' متغیر تازه ساخته و ' + totalDeleted + ' متغیر قدیمی پاکسازی شد.', 'success');
+							if (operationMode === 'remove_values') {
+								$pText.text('حذف مقادیر منطبق با موفقیت تکمیل و در تاریخچه ثبت شد.');
+								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر مطابق فهرست حذف شد.', 'success');
+							} else if (operationMode === 'add_missing') {
+								$pText.text('افزودن ترکیب‌های جدید تکمیل شد؛ متغیرهای قبلی و ترکیب‌های تکراری حفظ شدند.');
+								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' ترکیب تازه افزوده شد؛ متغیرهای قبلی حفظ شدند.', 'success');
+							} else {
+								$pText.text('تولید و بازسازی تمام متغیرها با موفقیت تکمیل و ثبت شد.');
+								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' متغیر تازه ساخته و ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر قدیمی پاکسازی شد.', 'success');
+							}
 							self.isExecuting = false;
 							$('#tcbvm-btn-run, #tcbvm-btn-preview').prop('disabled', false);
 							$('#tcbvm-btn-cancel-run').prop('disabled', true);
@@ -885,6 +1003,7 @@
 								combine_other: params.combine_other
 							},
 							success: function(bResp) {
+								const stopForSafety = !bResp.success || !!(bResp.data && (bResp.data.stop || bResp.data.fatal));
 								if (bResp.success && bResp.data && bResp.data.items) {
 									bResp.data.items.forEach(function(it) {
 										processedCount++;
@@ -910,6 +1029,19 @@
 								}
 
 								// به‌روزرسانی نوار پیشرفت و آمار
+								if (stopForSafety && bResp.success && bResp.data && bResp.data.items) {
+									const returnedIds = Object.create(null);
+									bResp.data.items.forEach(function(it) { returnedIds[String(it.id)] = true; });
+									batchIds.forEach(function(pid) {
+										if (!returnedIds[String(pid)]) {
+											processedCount++;
+											failedCount++;
+											const skipped = { id: pid, status: 'error', title: 'محصول #' + pid, message: 'به‌دلیل توقف ایمنی، این محصول پردازش نشد.' };
+											allItems.push(skipped);
+										}
+									});
+								}
+
 								const pct = Math.round((processedCount / totalProducts) * 100);
 								$bar.css('width', pct + '%');
 								$pPercent.text(self.toPersianDigits(pct) + '٪');
@@ -918,18 +1050,34 @@
 								$('#tcbvm-stat-success').text(self.toPersianDigits(successCount));
 								$('#tcbvm-stat-failed').text(self.toPersianDigits(failedCount));
 
+								if (stopForSafety) {
+									const stopMessage = bResp.data && bResp.data.message ? bResp.data.message : 'پاسخ امن و کامل از سرور دریافت نشد.';
+									self.finishRun(runId, totalCreated, totalDeleted, allItems, function() {
+										$pText.text('عملیات برای ایمنی متوقف شد؛ ادامهٔ بسته‌ها اجرا نشد. وضعیت محصولات پردازش‌شده را در تاریخچه بررسی کنید.');
+										self.log('⚠ ادامهٔ عملیات متوقف شد: ' + stopMessage + '؛ برای بازگردانی، از تاریخچه استفاده کنید.', 'error');
+										self.isExecuting = false;
+										$('#tcbvm-btn-run, #tcbvm-btn-preview').prop('disabled', false);
+										$('#tcbvm-btn-cancel-run').prop('disabled', true);
+									}, 'failed');
+									return;
+								}
+
 								currentBatchIndex++;
 								setTimeout(runNextBatch, 50);
 							},
 							error: function(xhr, status, err) {
-								self.log('خطای شبکه در بسته ' + batchNum + ': ' + err + '. تلاش برای ادامه بسته بعدی…', 'error');
+								self.log('خطای شبکه در بسته ' + batchNum + ': ' + err + '؛ ادامهٔ عملیات متوقف شد تا از تداخل درخواست‌ها جلوگیری شود.', 'error');
 								batchIds.forEach(function(pid) {
 									processedCount++;
 									failedCount++;
-									allItems.push({ id: pid, status: 'error', title: 'محصول #' + pid, message: 'خطای شبکه در ارتباط با سرور' });
+									allItems.push({ id: pid, status: 'error', title: 'محصول #' + pid, message: 'پاسخ شبکه نامشخص است؛ وضعیت را از تاریخچه بررسی کنید.' });
 								});
-								currentBatchIndex++;
-								setTimeout(runNextBatch, 100);
+								self.finishRun(runId, totalCreated, totalDeleted, allItems, function() {
+									$pText.text('به‌علت خطای شبکه، عملیات متوقف شد. وضعیت محصولات را در تاریخچه بررسی کنید.');
+									self.isExecuting = false;
+									$('#tcbvm-btn-run, #tcbvm-btn-preview').prop('disabled', false);
+									$('#tcbvm-btn-cancel-run').prop('disabled', true);
+								}, 'failed');
 							}
 						});
 					};
@@ -1039,10 +1187,13 @@
 
 			$('.tc-btn-rollback').on('click', function(e) {
 				e.preventDefault();
-				if (!confirm(tcbvmData.i18n.confirmRollback)) return;
-
 				const $btn = $(this);
 				const runId = $btn.data('run-id');
+				const runStatus = String($btn.data('run-status') || '');
+				const confirmation = 'in_progress' === runStatus
+					? 'این اجرا ناتمام است. اگر قفل آزاد باشد، تغییرهای انجام‌شده بازگردانده و بسته‌های بعدی متوقف می‌شوند؛ اگر بسته‌ای هنوز قفل دارد، درخواست بازگردانی رد می‌شود. ادامه می‌دهید؟'
+					: tcbvmData.i18n.confirmRollback;
+				if (!confirm(confirmation)) return;
 				$btn.prop('disabled', true).text('در حال بازگردانی…');
 
 				$.ajax({
@@ -1418,6 +1569,7 @@
 								attr_name: attrName
 							},
 							success: function(bResp) {
+								const stopForSafety = !bResp.success || !!(bResp.data && (bResp.data.stop || bResp.data.fatal));
 								if (bResp.success && bResp.data && bResp.data.items) {
 									bResp.data.items.forEach(function(it) {
 										processedCount++;
@@ -1441,6 +1593,19 @@
 									});
 								}
 
+								if (stopForSafety && bResp.success && bResp.data && bResp.data.items) {
+									const returnedIds = Object.create(null);
+									bResp.data.items.forEach(function(it) { returnedIds[String(it.id)] = true; });
+									batchIds.forEach(function(pid) {
+										if (!returnedIds[String(pid)]) {
+											processedCount++;
+											failedCount++;
+											const skipped = { id: pid, status: 'error', title: 'محصول #' + pid, message: 'به‌دلیل توقف ایمنی، این محصول پردازش نشد.' };
+											allItems.push(skipped);
+										}
+									});
+								}
+
 								const pct = Math.round((processedCount / totalProducts) * 100);
 								$bar.css('width', pct + '%');
 								$pPercent.text(self.toPersianDigits(pct) + '٪');
@@ -1448,18 +1613,36 @@
 								$('#tcbvm-purge-stat-success').text(self.toPersianDigits(successCount));
 								$('#tcbvm-purge-stat-failed').text(self.toPersianDigits(failedCount));
 
+								if (stopForSafety) {
+									const stopMessage = bResp.data && bResp.data.message ? bResp.data.message : 'پاسخ امن و کامل از سرور دریافت نشد.';
+									self.finishRun(runId, 0, totalDeleted, allItems, function() {
+										$pText.text('پاکسازی برای ایمنی متوقف شد؛ ادامهٔ بسته‌ها و حذف سراسری اجرا نشد. وضعیت را در تاریخچه بررسی کنید.');
+										self.log('⚠ ادامهٔ پاکسازی متوقف شد: ' + stopMessage + '؛ حذف سراسری انجام نشد.', 'error', consoleId);
+										self.isPurging = false;
+										self.purgeCancelRequested = false;
+										$('#tcbvm-btn-purge-run, #tcbvm-btn-purge-search').prop('disabled', false);
+										$('#tcbvm-btn-cancel-purge-run').prop('disabled', true);
+									}, 'failed');
+									return;
+								}
+
 								currentBatchIndex++;
 								setTimeout(runNextBatch, 50);
 							},
 							error: function(xhr, status, err) {
-								self.log('خطای شبکه در بسته ' + batchNum + ': ' + err, 'error', consoleId);
+								self.log('خطای شبکه در بسته ' + batchNum + ': ' + err + '؛ ادامهٔ پاکسازی متوقف شد.', 'error', consoleId);
 								batchIds.forEach(function(pid) {
 									processedCount++;
 									failedCount++;
-									allItems.push({ id: pid, status: 'error', title: 'محصول #' + pid, message: 'خطای شبکه در ارتباط با سرور' });
+									allItems.push({ id: pid, status: 'error', title: 'محصول #' + pid, message: 'پاسخ شبکه نامشخص است؛ وضعیت را از تاریخچه بررسی کنید.' });
 								});
-								currentBatchIndex++;
-								setTimeout(runNextBatch, 100);
+								self.finishRun(runId, 0, totalDeleted, allItems, function() {
+									$pText.text('به‌علت خطای شبکه، پاکسازی متوقف شد؛ حذف سراسری انجام نشد. وضعیت را در تاریخچه بررسی کنید.');
+									self.isPurging = false;
+									self.purgeCancelRequested = false;
+									$('#tcbvm-btn-purge-run, #tcbvm-btn-purge-search').prop('disabled', false);
+									$('#tcbvm-btn-cancel-purge-run').prop('disabled', true);
+								}, 'failed');
 							}
 						});
 					};
