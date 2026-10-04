@@ -8,6 +8,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
+if ( ! class_exists( 'TCP_Unsafe_Exception' ) ) {
+	class TCP_Unsafe_Exception extends RuntimeException {}
+}
+
 if ( ! class_exists( 'TCP_Ops' ) ) {
 
 	final class TCP_Ops {
@@ -17,6 +21,10 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		const KIND_AMOUNT  = 'amount';
 		const KIND_SET     = 'set';
 		const KIND_NONE    = 'none';
+
+		/** سقف ورودی‌های استثنا برای جلوگیری از درخواست/کوئری بسیار بزرگ. */
+		const MAX_EXCLUDED_PRODUCTS   = 500;
+		const MAX_EXCLUDED_CATEGORIES = 100;
 
 		/** حالت رند جاری برای این درخواست/صفحه: none | round | jitter (از args می‌آید). */
 		public static $round_mode = 'none';
@@ -61,16 +69,16 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		}
 
 		/**
-		 * بودجهٔ زمانی (ثانیه) هر درخواست پردازش؛ عمداً زیر مرز max_execution_time
-		 * می‌ماند تا پاسخ همیشه به کلاینت برسد و حلقهٔ اجرا با «قطع ارتباط با سرور» نشکند.
-		 * اگر محدودیتی تعریف نشده باشد (0) پیش‌فرض ۲۰ ثانیه است.
+		 * بودجهٔ زمانی (ثانیه) هر درخواست پردازش؛ عمداً کوتاه می‌ماند تا هر مرحله
+		 * پاسخ سریع برگرداند و اجرای کاتالوگ به چند درخواست سبک تقسیم شود.
+		 * اگر محدودیتی تعریف نشده باشد (0) سقف هر مرحله ۸ ثانیه است.
 		 */
 		public static function time_budget() {
 			$t = (int) ini_get( 'max_execution_time' );
 			if ( $t <= 0 ) {
-				return 20;
+				return 8;
 			}
-			return max( 5, min( 20, $t - 5 ) );
+			return max( 5, min( 8, $t - 5 ) );
 		}
 
 		/**
@@ -154,17 +162,25 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			return is_numeric( $a ) && is_numeric( $b ) && (float) $a === (float) $b;
 		}
 
-		/**
-		 * true یعنی قیمت این اجرا قبلاً نشسته و نباید دوباره محاسبه شود.
-		 * اگر نشان هست ولی قیمت هنوز همان «قبل» است، save کامل نشده و باید اعمال شود.
-		 */
-		public static function guard_should_skip( $raw, $current, $run_id ) {
+		/** وضعیت نشان را سه‌حالته می‌کند تا تغییر خارجی با «ذخیرهٔ موفق» اشتباه نشود. */
+		public static function guard_state( $raw, $current, $run_id ) {
 			$run_id = absint( $run_id );
 			$guard  = self::guard_decode( $raw );
 			if ( ! $run_id || ! $guard || $guard['run'] !== $run_id ) {
-				return false;
+				return 'none';
 			}
-			return ! self::prices_equal( $current, $guard['before'] );
+			if ( self::prices_equal( $current, $guard['before'] ) ) {
+				return 'before';
+			}
+			if ( self::prices_equal( $current, $guard['after'] ) ) {
+				return 'after';
+			}
+			return 'conflict';
+		}
+
+		/** فقط قیمت دقیقاً برابر با مقدار مقصد، اعمالِ انجام‌شدهٔ همان اجراست. */
+		public static function guard_should_skip( $raw, $current, $run_id ) {
+			return 'after' === self::guard_state( $raw, $current, $run_id );
 		}
 
 		public static function runtime_boost() {
@@ -341,12 +357,15 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			}
 
 			$args = array(
-				'operation'        => $op,
-				'target_type'      => $target,
-				'category_ids'     => self::ids( isset( $post['category_ids'] ) ? $post['category_ids'] : '' ),
-				'product_ids'      => self::ids( isset( $post['product_ids'] ) ? $post['product_ids'] : '' ),
-				'include_children' => ! empty( $post['include_children'] ),
-				'round_mode'       => isset( $post['round_mode'] ) && in_array( sanitize_key( wp_unslash( $post['round_mode'] ) ), array( 'none', 'round', 'jitter' ), true ) ? sanitize_key( wp_unslash( $post['round_mode'] ) ) : 'none',
+				'operation'                  => $op,
+				'target_type'                => $target,
+				'category_ids'               => self::ids( isset( $post['category_ids'] ) ? $post['category_ids'] : '' ),
+				'product_ids'                => self::ids( isset( $post['product_ids'] ) ? $post['product_ids'] : '' ),
+				'include_children'           => ! empty( $post['include_children'] ),
+				'excluded_category_ids'      => self::ids( isset( $post['excluded_category_ids'] ) ? $post['excluded_category_ids'] : '' ),
+				'excluded_product_ids'       => self::ids( isset( $post['excluded_product_ids'] ) ? $post['excluded_product_ids'] : '' ),
+				'exclude_category_children'  => ! empty( $post['exclude_category_children'] ),
+				'round_mode'                 => isset( $post['round_mode'] ) && in_array( sanitize_key( wp_unslash( $post['round_mode'] ) ), array( 'none', 'round', 'jitter' ), true ) ? sanitize_key( wp_unslash( $post['round_mode'] ) ) : 'none',
 			);
 
 			if ( 'category' === $target ) {
@@ -362,6 +381,19 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			} elseif ( 'products' === $target ) {
 				if ( empty( $args['product_ids'] ) ) {
 					return new WP_Error( 'empty', 'هیچ محصولی انتخاب نشده است.' );
+				}
+			}
+
+			if ( count( $args['excluded_product_ids'] ) > self::MAX_EXCLUDED_PRODUCTS ) {
+				return new WP_Error( 'exclude_limit', 'حداکثر ' . self::MAX_EXCLUDED_PRODUCTS . ' محصول را می‌توان از عملیات مستثنا کرد.' );
+			}
+			if ( count( $args['excluded_category_ids'] ) > self::MAX_EXCLUDED_CATEGORIES ) {
+				return new WP_Error( 'exclude_limit', 'حداکثر ' . self::MAX_EXCLUDED_CATEGORIES . ' دسته را می‌توان از عملیات مستثنا کرد.' );
+			}
+			foreach ( $args['excluded_category_ids'] as $cid ) {
+				$t = get_term( absint( $cid ), 'product_cat' );
+				if ( ! $t || is_wp_error( $t ) ) {
+					return new WP_Error( 'excluded_cat', 'دسته‌بندی مستثناشده معتبر نیست؛ صفحه را تازه‌سازی کن.' );
 				}
 			}
 
@@ -442,18 +474,40 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 
 		public static function ids( $raw ) {
 			$parts = is_array( $raw ) ? $raw : explode( ',', (string) $raw );
-			return array_values( array_unique( array_filter( array_map( 'absint', $parts ) ) ) );
+			$ids   = array();
+			foreach ( $parts as $part ) {
+				if ( ! is_scalar( $part ) ) {
+					continue;
+				}
+				$part = trim( (string) $part );
+				if ( '' === $part || ! preg_match( '/^\\d+$/', $part ) ) {
+					continue;
+				}
+				$id = absint( $part );
+				if ( $id ) {
+					$ids[] = $id;
+				}
+			}
+			return array_values( array_unique( $ids ) );
 		}
 
 		/**
 		 * توکن/امضای آرگومان‌ها. از پنجرهٔ زمانی حذف شد تا اجراهای طولانی قطع نشوند.
 		 */
-		private static function canonical( $args, $with_user ) {
-			$cats = $args['category_ids'];
-			$prods = $args['product_ids'];
+		private static function canonical( $args, $with_user, $snapshot = array() ) {
+			$cats             = isset( $args['category_ids'] ) ? (array) $args['category_ids'] : array();
+			$prods            = isset( $args['product_ids'] ) ? (array) $args['product_ids'] : array();
+			$excluded_cats     = isset( $args['excluded_category_ids'] ) ? (array) $args['excluded_category_ids'] : array();
+			$excluded_products = isset( $args['excluded_product_ids'] ) ? (array) $args['excluded_product_ids'] : array();
+			$target_terms      = array_values( array_unique( array_filter( array_map( 'absint', isset( $snapshot['terms'] ) ? (array) $snapshot['terms'] : array() ) ) ) );
+			$excluded_terms    = array_values( array_unique( array_filter( array_map( 'absint', isset( $snapshot['excluded_terms'] ) ? (array) $snapshot['excluded_terms'] : array() ) ) ) );
 			sort( $cats, SORT_NUMERIC );
 			sort( $prods, SORT_NUMERIC );
-			$filters = $args['filters'];
+			sort( $excluded_cats, SORT_NUMERIC );
+			sort( $excluded_products, SORT_NUMERIC );
+			sort( $target_terms, SORT_NUMERIC );
+			sort( $excluded_terms, SORT_NUMERIC );
+			$filters = isset( $args['filters'] ) ? (array) $args['filters'] : array();
 			$types   = isset( $filters['types'] ) ? $filters['types'] : array();
 			sort( $types );
 			$statuses = isset( $filters['statuses'] ) ? $filters['statuses'] : array();
@@ -465,19 +519,26 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 
 			return implode( '|', array(
 				$with_user ? (string) get_current_user_id() : '',
-				(string) $args['target_type'],
+				isset( $args['target_type'] ) ? (string) $args['target_type'] : '',
 				implode( ',', $cats ),
 				implode( ',', $prods ),
 				! empty( $args['include_children'] ) ? '1' : '0',
+				implode( ',', $excluded_cats ),
+				implode( ',', $excluded_products ),
+				! empty( $args['exclude_category_children'] ) ? '1' : '0',
 				isset( $args['round_mode'] ) ? (string) $args['round_mode'] : 'none',
-				(string) $args['operation'],
-				$num( $args['value'] ),
+				isset( $args['operation'] ) ? (string) $args['operation'] : '',
+				$num( isset( $args['value'] ) ? $args['value'] : null ),
 				! empty( $filters['only_sale'] ) ? '1' : '0',
 				! empty( $filters['only_wholesale'] ) ? '1' : '0',
-				$num( $filters['price_min'] ),
-				$num( $filters['price_max'] ),
+				$num( isset( $filters['price_min'] ) ? $filters['price_min'] : null ),
+				$num( isset( $filters['price_max'] ) ? $filters['price_max'] : null ),
 				implode( ',', $types ),
 				implode( ',', $statuses ),
+				absint( isset( $snapshot['parents'] ) ? $snapshot['parents'] : 0 ),
+				absint( isset( $snapshot['ceiling'] ) ? $snapshot['ceiling'] : 0 ),
+				implode( ',', $target_terms ),
+				implode( ',', $excluded_terms ),
 			) );
 		}
 
@@ -485,16 +546,16 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			return hash( 'sha256', self::canonical( $args, false ) );
 		}
 
-		public static function make_token( $args ) {
-			return hash_hmac( 'sha256', self::canonical( $args, true ), wp_salt( 'nonce' ) );
+		public static function make_token( $args, $snapshot = array() ) {
+			return hash_hmac( 'sha256', self::canonical( $args, true, $snapshot ), wp_salt( 'nonce' ) );
 		}
 
-		public static function verify_token( $args, $token ) {
+		public static function verify_token( $args, $token, $snapshot = array() ) {
 			$token = (string) $token;
 			if ( '' === $token ) {
 				return false;
 			}
-			$expected = self::make_token( $args );
+			$expected = self::make_token( $args, $snapshot );
 			return hash_equals( $expected, $token );
 		}
 
@@ -667,7 +728,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				return array( 'status' => 'updated', 'message' => '#' . $id . ' فروش ویژه تغییر کرد.', 'entry' => $entry );
 
 			} catch ( Throwable $e ) {
-				return array( 'status' => 'error', 'message' => '#' . $id . ' خطا: ' . $e->getMessage(), 'entry' => null );
+				return array( 'status' => 'error', 'message' => '#' . $id . ' خطا: ' . $e->getMessage(), 'entry' => null, 'unsafe' => true );
 			}
 		}
 
@@ -747,7 +808,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				$entry = array( 'object_type' => 'wholesale', 'parent_id' => self::parent_of( $product ), 'object_id' => $id, 'before' => $current, 'after' => wc_format_decimal( $res['new'] ) );
 				return array( 'status' => 'updated', 'message' => '#' . $id . ' قیمت عمده به ' . $res['new'] . ' تغییر کرد.', 'entry' => $entry );
 			} catch ( Throwable $e ) {
-				return array( 'status' => 'error', 'message' => '#' . $id . ' خطای قیمت عمده: ' . $e->getMessage(), 'entry' => null );
+				return array( 'status' => 'error', 'message' => '#' . $id . ' خطای قیمت عمده: ' . $e->getMessage(), 'entry' => null, 'unsafe' => true );
 			}
 		}
 
@@ -863,9 +924,13 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			if ( ! $run_id || ! is_object( $product ) || ! method_exists( $product, 'get_meta' ) ) {
 				return null;
 			}
-			$raw = (string) $product->get_meta( self::GUARD_META, true );
-			if ( ! self::guard_should_skip( $raw, $current, $run_id ) ) {
+			$raw   = (string) $product->get_meta( self::GUARD_META, true );
+			$state = self::guard_state( $raw, $current, $run_id );
+			if ( 'before' === $state || 'none' === $state ) {
 				return null;
+			}
+			if ( 'conflict' === $state ) {
+				throw new TCP_Unsafe_Exception( 'قیمت فعلی با مقدار قبل و بعدِ ثبت‌شده برای همین اجرا هم‌خوان نیست؛ برای جلوگیری از ثبت لاگ نادرست یا اعمال دوباره، محصول دستی بررسی شود.' );
 			}
 			$guard = self::guard_decode( $raw );
 			return array(
@@ -926,6 +991,9 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			$args = json_decode( (string) $run['args'], true );
 			if ( ! is_array( $args ) ) {
 				return array( 'ok' => false, 'msg' => 'دادهٔ اجرا خراب است؛ اجرا را از نو بساز.', 'data' => array() );
+			}
+			if ( isset( $args['target_type'] ) && 'all' === $args['target_type'] && ! TCP_DB::log_table_ready() ) {
+				throw new RuntimeException( 'جدول لاگ در دسترس نیست؛ برای جلوگیری از تغییر بدون قابلیت بازگردانی، اجرا متوقف شد.' );
 			}
 			self::set_round_mode( isset( $args['round_mode'] ) ? $args['round_mode'] : 'none' );
 			$settings   = TCP_Settings::get_settings();
@@ -1074,8 +1142,7 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			}
 			$after   = isset( $run['scan_after'] ) ? absint( $run['scan_after'] ) : 0;
 			$pending = isset( $run['scan_pending'] ) ? absint( $run['scan_pending'] ) : 0;
-			$fetch_n = max( $batch_size, 40 );
-			$fetch_n = min( 100, $fetch_n );
+			$fetch_n = max( 1, min( 100, absint( $batch_size ) ) );
 			$queue   = array();
 			if ( $pending > $after ) {
 				$queue[] = $pending;
@@ -1135,9 +1202,10 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 				'errors'  => (int) $run['count_errors'],
 			);
 			$delta = array( 'updated' => 0, 'skipped' => 0, 'errors' => array(), 'parents' => 0 );
-			$op    = $args['operation'];
-			$value = isset( $args['value'] ) ? $args['value'] : null;
-			$touched = array();
+			$op        = $args['operation'];
+			$value     = isset( $args['value'] ) ? $args['value'] : null;
+			$force_log = isset( $args['target_type'] ) && 'all' === $args['target_type'];
+			$touched   = array();
 			$stopped = false;
 			$partial = false;
 
@@ -1155,8 +1223,8 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 							'run_id'       => $run_id,
 							'after_object' => $resume,
 							'deadline'     => $deadline,
-							'on_object'    => function ( $object_id, $result ) use ( $run_id, $pid, &$counts, &$delta ) {
-								self::absorb_result( $run_id, $pid, $object_id, $result, $counts, $delta );
+							'on_object'    => function ( $object_id, $result ) use ( $run_id, $pid, $force_log, &$counts, &$delta ) {
+								self::absorb_result( $run_id, $pid, $object_id, $result, $counts, $delta, $force_log );
 							},
 						)
 					);
@@ -1204,17 +1272,25 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		}
 
 		/** لاگ + آمار + cursor را بعد از هر شیء می‌نویسد تا قطعی، کار را از همان‌جا ادامه دهد. */
-		private static function absorb_result( $run_id, $parent_id, $object_id, $result, &$counts, &$delta ) {
+		private static function absorb_result( $run_id, $parent_id, $object_id, $result, &$counts, &$delta, $force_log = false ) {
 			$status = isset( $result['status'] ) ? $result['status'] : 'skip';
 			if ( 'updated' === $status ) {
-				if ( ! empty( $result['entry'] ) ) {
-					TCP_DB::insert_log( $run_id, array( $result['entry'] ) );
+				$must_log = $force_log || TCP_Settings::logging_enabled();
+				if ( $must_log && empty( $result['entry'] ) ) {
+					throw new RuntimeException( 'تغییر قیمت انجام شد اما جزئیات لازم برای ثبت لاگ در دسترس نیست؛ اجرا متوقف شد.' );
+				}
+				if ( ! empty( $result['entry'] ) && ! TCP_DB::insert_log( $run_id, array( $result['entry'] ), $force_log ) ) {
+					// Cursor را جلو نمی‌بریم؛ guard باعث می‌شود ادامهٔ همان شیء را بدون اعمال دوباره ثبت کنیم.
+					throw new RuntimeException( 'ثبت لاگ قیمت ناموفق بود؛ اجرا متوقف شد تا امکان بازگردانی از بین نرود.' );
 				}
 				$counts['updated']++;
 				$delta['updated']++;
-			} elseif ( 'error' === $status ) {
-				$msg = isset( $result['message'] ) ? wp_strip_all_tags( $result['message'] ) : '';
-				if ( '' !== $msg ) {
+				} elseif ( 'error' === $status ) {
+					$msg = isset( $result['message'] ) ? wp_strip_all_tags( $result['message'] ) : '';
+					if ( ! empty( $result['unsafe'] ) && ( $force_log || TCP_Settings::logging_enabled() ) ) {
+						throw new TCP_Unsafe_Exception( 'وضعیت ذخیرهٔ محصول پس از خطای قیمت نامطمئن است؛ اجرا متوقف شد تا از اعمال دوباره جلوگیری شود. ' . $msg );
+					}
+					if ( '' !== $msg ) {
 					$delta['errors'][] = $msg;
 				}
 				$counts['errors']++;

@@ -212,6 +212,14 @@ body.woocommerce_page_tisacase-pricing #wpcontent { background: var(--tisa-bg, #
 .tcp-product-selection-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--tisa-sp-2, 8px); }
 .tcp-product-selection-title h3 { margin: 0; font-size: var(--tisa-fs-h3, 15.5px); font-weight: 700; }
 .tcp-selection-badge { display: inline-flex; align-items: center; min-height: 24px; padding: 2px 9px; border-radius: var(--tisa-r-pill, 999px); background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52); font-size: var(--tisa-fs-tiny, 11px); font-weight: 700; }
+.tcp-exceptions { margin-top: var(--tisa-sp-4, 16px); border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface-2, #FAFAF8); }
+.tcp-exceptions > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--tisa-sp-3, 12px); padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px); color: var(--tisa-ink, #1F2A2E); cursor: pointer; list-style: none; }
+.tcp-exceptions > summary::-webkit-details-marker { display: none; }
+.tcp-exceptions > summary > span:first-child { display: flex; flex-direction: column; gap: 2px; }
+.tcp-exceptions > summary strong { font-size: var(--tisa-fs-control, 13px); }
+.tcp-exceptions > summary small { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
+.tcp-exceptions-body { padding: 0 var(--tisa-sp-4, 16px) var(--tisa-sp-4, 16px); border-top: 1px solid var(--tisa-border, #E3E1DA); }
+.tcp-exclusion-grid { margin-top: var(--tisa-sp-3, 12px); }
 #tcp-selected-product-count { margin: 3px 0 0; font-weight: 600; }
 .tcp-product-empty { padding: var(--tisa-sp-5, 24px); border: 1px dashed var(--tisa-border-strong, #C9C6BD); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface-2, #FAFAF8); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-control, 13px); text-align: center; }
 .tcp-product-table-scroll { max-height: 380px; overflow: auto; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface, #fff); }
@@ -290,6 +298,8 @@ tr.is-excluded td:not(.tcp-rule-name):not(.tcp-rule-flags):not(:last-child) { op
 	.tcp-target-mode span { justify-content: flex-start; text-align: right; }
 	.tcp-product-selection-header { align-items: flex-start; }
 	.tcp-product-selection-header > .button { white-space: nowrap; }
+	.tcp-exceptions > summary { align-items: flex-start; flex-direction: column; }
+	.tcp-exclusion-grid { grid-template-columns: 1fr; }
 	.tcp-name-search-actions { width: 100%; justify-content: space-between; }
 }
 

@@ -5,114 +5,180 @@
  * @package TisaCase_Bulk_Variation_Manager
  */
 
-.tcbvm-wrap {
-	max-width: var(--tisa-max-w);
-	margin-top: var(--tisa-sp-4);
-	margin-inline-end: auto;
-	margin-inline-start: 0;
-	font-family: var(--tisa-font);
-	color: var(--tisa-ink);
+.tcbvm-wrap.wrap {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 1120px;
+	margin: var(--tisa-sp-6, 32px) auto 0;
+	padding: 0 var(--tisa-sp-5, 24px) var(--tisa-sp-8, 64px);
+	font-family: var(--tisa-font, inherit);
+	color: var(--tisa-ink, #1F2A2E);
 }
 
-.tcbvm-wrap * {
+.tcbvm-wrap *,
+.tcbvm-wrap *::before,
+.tcbvm-wrap *::after {
 	box-sizing: border-box;
 }
 
 /* ------------------------------------------------------------------
-   هدر گرادیانی سبز تیساکیس
+   هدر و منوی اصلی — هماهنگ با سایر صفحات مدیریت TisaCase
    ------------------------------------------------------------------ */
 .tcbvm-hero {
-	background: linear-gradient(135deg, var(--tisa-primary-deep, #064E46) 0%, var(--tisa-primary-ink, #0A5F52) 60%, var(--tisa-primary, #0E7C6B) 100%);
-	color: var(--tisa-on-primary, #FFFFFF);
-	padding: var(--tisa-sp-5) var(--tisa-sp-5) 0;
-	border-radius: var(--tisa-r-xl);
-	box-shadow: var(--tisa-shadow);
 	position: relative;
 	overflow: hidden;
-	margin-bottom: var(--tisa-sp-5);
+	margin: 0 0 var(--tisa-sp-6, 32px);
+	padding: var(--tisa-sp-6, 32px) var(--tisa-sp-6, 32px) 0;
+	border-radius: var(--tisa-r-xl, 22px);
+	background: linear-gradient(120deg, var(--tisa-primary-deep, #0A5F52) 0%, var(--tisa-primary, #0E7C6B) 60%, var(--tisa-primary-bright, #17A088) 100%);
+	color: var(--tisa-on-primary, #FFFFFF);
+	box-shadow: 0 18px 40px -22px rgba(10, 95, 82, .55);
+}
+
+.tcbvm-hero::before {
+	content: "";
+	position: absolute;
+	inset: auto -120px -160px auto;
+	width: 380px;
+	height: 380px;
+	border-radius: 50%;
+	background: radial-gradient(closest-side, rgba(255, 255, 255, .14), rgba(255, 255, 255, 0));
+	pointer-events: none;
 }
 
 .tcbvm-hero-row {
+	position: relative;
 	display: flex;
 	align-items: center;
-	gap: var(--tisa-sp-4);
-	padding-bottom: var(--tisa-sp-4);
+	gap: var(--tisa-sp-4, 16px);
 }
 
 .tcbvm-hero-mark {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	width: 48px;
-	height: 48px;
-	border-radius: var(--tisa-r-lg);
-	background: rgba(255, 255, 255, 0.12);
+	flex: 0 0 auto;
+	display: grid;
+	place-items: center;
+	width: 44px;
+	height: 44px;
+	border-radius: var(--tisa-r, 14px);
+	background: rgba(255, 255, 255, .16);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .18);
 	color: var(--tisa-on-primary, #FFFFFF);
-	flex-shrink: 0;
+}
+
+.tcbvm-hero-mark svg {
+	width: 22px;
+	height: 22px;
 }
 
 .tcbvm-hero-text {
-	flex: 1;
+	flex: 1 1 auto;
+	min-width: 0;
 }
 
-.tcbvm-hero-title {
+.tcbvm-wrap h1.tcbvm-hero-title {
 	margin: 0;
-	font-size: var(--tisa-fs-hero);
+	padding: 0;
+	font-size: var(--tisa-fs-hero, 24px);
 	font-weight: 800;
+	line-height: 1.3;
 	color: var(--tisa-on-primary, #FFFFFF);
-	line-height: var(--tisa-lh-tight);
 }
 
 .tcbvm-hero-sub {
-	margin: var(--tisa-sp-1) 0 0;
-	font-size: var(--tisa-fs-control);
-	opacity: 0.88;
+	margin: 3px 0 0;
+	font-size: var(--tisa-fs-control, 13px);
+	line-height: var(--tisa-lh, 1.8);
 	color: var(--tisa-on-primary, #FFFFFF);
-	line-height: var(--tisa-lh);
+	opacity: .82;
 }
 
 .tcbvm-hero-ver {
-	align-self: flex-start;
-	background: rgba(255, 255, 255, 0.15);
+	flex: 0 0 auto;
+	padding: 4px 10px;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: rgba(255, 255, 255, .14);
 	color: var(--tisa-on-primary, #FFFFFF);
-	padding: var(--tisa-sp-1) var(--tisa-sp-3);
-	border-radius: var(--tisa-r-pill);
-	font-size: var(--tisa-fs-tiny);
-	font-weight: 700;
-	letter-spacing: 0.5px;
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: var(--tisa-fs-tiny, 11px);
 }
 
-/* تب‌های قرصی در انتهای هدر */
 .tcbvm-tabs {
+	position: relative;
 	display: flex;
-	gap: var(--tisa-sp-2);
-	border-top: 1px solid rgba(255, 255, 255, 0.12);
-	padding-top: var(--tisa-sp-3);
-	overflow-x: auto;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	margin: var(--tisa-sp-5, 24px) 0 0;
+	padding: 0 0 var(--tisa-sp-5, 24px);
+	border: 0;
 }
 
-.tcbvm-tab {
+/* specificity بالاتر از لینک عمومیِ .tisa-wrap تا کنتراست منو حفظ شود. */
+.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab {
 	display: inline-flex;
 	align-items: center;
-	padding: var(--tisa-sp-2) var(--tisa-sp-4);
-	border-radius: var(--tisa-r-sm) var(--tisa-r-sm) 0 0;
-	color: rgba(255, 255, 255, 0.8);
-	text-decoration: none;
-	font-size: var(--tisa-fs-control);
-	font-weight: 600;
-	transition: all var(--tisa-t);
-	white-space: nowrap;
-}
-
-.tcbvm-tab:hover {
+	justify-content: center;
+	min-height: 38px;
+	padding: 0 var(--tisa-sp-4, 16px);
+	border: 1px solid rgba(255, 255, 255, .18);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: rgba(255, 255, 255, .11);
 	color: var(--tisa-on-primary, #FFFFFF);
-	background: rgba(255, 255, 255, 0.1);
+	font-size: var(--tisa-fs-control, 13px);
+	font-weight: 600;
+	text-decoration: none;
+	white-space: nowrap;
+	transition: background .15s, border-color .15s, color .15s, box-shadow .15s;
 }
 
-.tcbvm-tab.is-active {
-	color: var(--tisa-primary-deep, #064E46);
+.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab:hover {
+	border-color: rgba(255, 255, 255, .42);
+	background: rgba(255, 255, 255, .2);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab.is-active {
+	border-color: var(--tisa-surface, #FFFFFF);
 	background: var(--tisa-surface, #FFFFFF);
-	box-shadow: var(--tisa-shadow-sm);
+	color: var(--tisa-primary-ink, #0A5F52);
+	box-shadow: var(--tisa-shadow-sm, 0 2px 8px rgba(0, 0, 0, .12));
+}
+
+.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab:focus-visible {
+	outline: 0;
+	box-shadow: 0 0 0 3px rgba(255, 255, 255, .42);
+}
+
+@media (max-width: 782px) {
+	.tcbvm-wrap.wrap {
+		padding-inline: var(--tisa-sp-3, 12px);
+	}
+
+	.tcbvm-hero {
+		padding: var(--tisa-sp-5, 24px) var(--tisa-sp-4, 16px) 0;
+	}
+
+	.tcbvm-tabs {
+		gap: var(--tisa-sp-2, 8px);
+		margin-top: var(--tisa-sp-4, 16px);
+		padding-bottom: var(--tisa-sp-4, 16px);
+	}
+
+	.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab {
+		flex: 1 1 auto;
+		white-space: normal;
+		text-align: center;
+	}
+}
+
+@media (max-width: 480px) {
+	.tcbvm-hero-row {
+		align-items: flex-start;
+	}
+
+	.tcbvm-wrap .tcbvm-tabs a.tcbvm-tab {
+		flex-basis: calc(50% - var(--tisa-sp-2, 8px));
+	}
 }
 
 /* ------------------------------------------------------------------

@@ -157,11 +157,11 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 					'presets'   => TCBVM_Core::get_presets(),
 					'batchSize' => TCBVM_Core::get_batch_size(),
 					'i18n'      => array(
-						'confirmStart'         => 'آیا از شروع تولید و بازسازی متغیرها روی {n} محصول انتخابی مطمئن هستید؟ از تمام متغیرها و قیمت‌های قبلی نسخه پشتیبان کامل برای بازگردانی تهیه خواهد شد.',
+						'confirmStart'         => 'آیا از اجرای عملیات انتخاب‌شده روی {n} محصول مطمئن هستید؟ پیش از هر تغییر، از داده‌های محصول برای تلاشِ بازگردانی snapshot تهیه می‌شود.',
 						'confirmRollback'      => 'آیا از بازگردانی وضعیت محصولات به حالت قبل از این عملیات اطمینان دارید؟',
 						'selectProductsPrompt' => 'لطفاً ابتدا حداقل یک محصول را از جدول انتخاب کنید.',
 						'enterAttrPrompt'      => 'لطفاً نام ویژگی را وارد کنید (مثلاً: مدل گوشی).',
-						'enterModelsPrompt'    => 'لطفاً حداقل یک متغیر جدید در کادر متغیرها وارد نمایید.',
+						'enterModelsPrompt'    => 'لطفاً حداقل یک مقدار ویژگی در فهرست وارد کنید.',
 						'enterPricePrompt'     => 'لطفاً مبلغ قیمت متغیرها را وارد نمایید.',
 						'completedText'        => 'عملیات تولید و بازسازی متغیرها با موفقیت پایان یافت.',
 						'confirmDeletePreset'  => 'آیا از حذف این الگو مطمئن هستید؟',
@@ -222,9 +222,9 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 						</div>
 						<span class="tcbvm-hero-ver" dir="ltr">v<?php echo esc_html( TCBVM_VERSION ); ?></span>
 					</div>
-					<nav class="tcbvm-tabs" role="tablist">
+					<nav class="tcbvm-tabs" aria-label="بخش‌های افزونه">
 						<?php foreach ( $tabs as $key => $label ) : ?>
-							<a class="tcbvm-tab<?php echo $tab === $key ? ' is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'tab', $key, $base ) ); ?>">
+							<a class="tcbvm-tab<?php echo $tab === $key ? ' is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'tab', $key, $base ) ); ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>>
 								<?php echo esc_html( $label ); ?>
 							</a>
 						<?php endforeach; ?>
@@ -396,7 +396,7 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 															<?php if ( 'rolled_back' === $r_status ) : ?>
 																<span class="tcbvm-muted">—</span>
 															<?php else : ?>
-																<button type="button" class="tisa-btn tisa-btn--danger tisa-btn--sm tc-btn-rollback" data-run-id="<?php echo esc_attr( $r_id ); ?>">
+																<button type="button" class="tisa-btn tisa-btn--danger tisa-btn--sm tc-btn-rollback" data-run-id="<?php echo esc_attr( $r_id ); ?>" data-run-status="<?php echo esc_attr( $r_status ); ?>">
 																	بازگردانی (Rollback)
 																</button>
 															<?php endif; ?>
@@ -821,8 +821,8 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 							<div class="tcbvm-card-head">
 								<span class="tcbvm-step">۲</span>
 								<div>
-									<h2>مشخصات ویژگی و متغیرهای جدید</h2>
-									<p>نام ویژگی مورد نظر را وارد کرده و لیست متغیرهای جدید را تعریف کنید.</p>
+<h2>مشخصات ویژگی و مقادیر ورودی</h2>
+										<p>نام ویژگی هدف، رفتار با متغیرهای فعلی و فهرست مقادیر را مشخص کنید.</p>
 								</div>
 							</div>
 							<div class="tcbvm-card-body">
@@ -839,10 +839,10 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 												<option value="<?php echo esc_attr( $a['label'] ); ?>"><?php echo esc_html( $a['name'] ); ?></option>
 											<?php endforeach; ?>
 										</datalist>
-										<p class="tcbvm-muted">نام ویژگی را بنویسید؛ اگر ویژگی از قبل روی محصولات باشد مقادیر آن نوسازی می‌شود و در غیر این صورت به عنوان ویژگی متغیر جدید اضافه خواهد شد.</p>
+										<p class="tcbvm-muted">نام ویژگی هدف را بنویسید؛ رفتار با مقادیر فعلی را در فهرست «رفتار با متغیرهای موجود» انتخاب کنید.</p>
 									</div>
 
-									<div class="tcbvm-field">
+									<div class="tcbvm-field" id="tcbvm-combine-field">
 										<label class="tcbvm-label">حالت ترکیب با سایر ویژگی‌ها</label>
 										<div class="tcbvm-switch-card">
 											<label class="tisa-switch tcbvm-toggle">
@@ -855,11 +855,21 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 									</div>
 								</div>
 
+								<div class="tcbvm-field">
+									<label class="tcbvm-label" for="tcbvm-operation-mode">رفتار با متغیرهای موجود</label>
+									<select id="tcbvm-operation-mode" class="tcbvm-select">
+										<option value="replace_all">جایگزینی کامل — حذف همهٔ متغیرهای قبلی و ساخت فقط مقادیر این فهرست</option>
+										<option value="add_missing">افزودن موارد جدید — حفظ قبلی‌ها؛ ترکیب‌های تکراری و قیمتشان دست‌نخورده می‌مانند</option>
+										<option value="remove_values">حذف مقادیر فهرست‌شده — حذف variationهای دارای این مقادیر در ویژگی هدف و برداشتن همان گزینه‌ها</option>
+									</select>
+									<p id="tcbvm-operation-mode-help" class="tcbvm-muted">حالت جایگزینی کامل همان رفتار قبلی است؛ همهٔ variationهای موجود حذف می‌شوند و فهرست تازه ساخته می‌شود.</p>
+								</div>
+
 								<!-- باکس تعریف متغیرهای جدید -->
 								<div class="tcbvm-field">
 									<div class="tcbvm-field-header">
-										<label class="tcbvm-label" for="tcbvm-models-input">لیست متغیرهای جدید (هر خط یک متغیر، یا با خط عمودی | جدا کنید):</label>
-										<span id="tcbvm-models-count" class="tcbvm-badge tcbvm-badge--info">۰ متغیر تعریف شد</span>
+										<label id="tcbvm-models-label" class="tcbvm-label" for="tcbvm-models-input">مقادیر مدل/ویژگی (هر خط یک مقدار، یا با خط عمودی | جدا کنید):</label>
+										<span id="tcbvm-models-count" class="tcbvm-badge tcbvm-badge--info">۰ مقدار تعریف شد</span>
 									</div>
 
 									<!-- چیپ‌های الگوهای سریع -->
@@ -874,13 +884,13 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 									</div>
 
 									<textarea id="tcbvm-models-input" class="tcbvm-textarea" rows="6" placeholder="iPhone 11&#10;iPhone 12&#10;iPhone 13&#10;iPhone 14 Pro&#10;iPhone 15 Pro Max&#10;iPhone 16 Pro Max&#10;Galaxy S24 Ultra&#10;(یا به صورت: iPhone 11 | iPhone 12 | iPhone 13)"></textarea>
-									<p class="tcbvm-muted">کاما داخل نام متغیر حفظ می‌شود (مثلاً <span class="tisa-code">iPhone 7,8,SE</span> یک متغیر حساب می‌شود). برای هر متغیر یک خط یا علامت | بگذارید.</p>
+									<p id="tcbvm-models-help" class="tcbvm-muted">کاما داخل نام مقدار حفظ می‌شود (مثلاً <span class="tisa-code">iPhone 7,8,SE</span> یک مقدار حساب می‌شود). برای هر مقدار یک خط یا علامت | بگذارید.</p>
 								</div>
 							</div>
 						</section>
 
 						<!-- گام ۳: قیمت‌گذاری متغیرها -->
-						<section class="tcbvm-card">
+						<section id="tcbvm-pricing-card" class="tcbvm-card">
 							<div class="tcbvm-card-head">
 								<span class="tcbvm-step">۳</span>
 								<div>

@@ -94,7 +94,7 @@
 
 		/** وقفهٔ تلاش‌های متوالی (میلی‌ثانیه)؛ جمع ~۳.۵ دقیقه تلاش خودکار. */
 		var RETRY_DELAYS = [1500, 3000, 6000, 10000, 15000, 20000, 30000, 30000, 30000, 30000, 30000, 30000];
-		/** سقف زمان AJAX اجرا؛ سرور هر درخواست را زیر ~۲۰ ثانیه پاسخ می‌دهد. */
+		/** سقف زمان AJAX اجرا؛ هر مرحلهٔ پردازش حدود ۸ ثانیه بودجه دارد. */
 		var RUN_AJAX_TIMEOUT = 60000;
 
 		/**
@@ -284,6 +284,14 @@
 				.prop('checked', total > 0 && selected === total)
 				.prop('indeterminate', selected > 0 && selected < total)
 				.prop('disabled', total === 0 || running);
+		}
+
+		function updateExclusionCount() {
+			var products = ($('#tcp-excluded-products').val() || []).length;
+			var cats = ($('#tcp-excluded-cats').val() || []).length;
+			var total = products + cats;
+			var label = total ? (total + ' استثنا (' + products + ' محصول، ' + cats + ' دسته)') : 'بدون استثنا';
+			$('#tcp-exclusion-badge').text(label);
 		}
 
 		function renderSelectedProducts() {
@@ -601,6 +609,9 @@
 				category_ids: ($('#tcp-cats').val() || []).join(','),
 				product_ids: selectedProductIds().join(','),
 				include_children: $('#tcp-children').is(':checked') ? '1' : '0',
+				excluded_category_ids: ($('#tcp-excluded-cats').val() || []).join(','),
+				excluded_product_ids: ($('#tcp-excluded-products').val() || []).join(','),
+				exclude_category_children: $('#tcp-exclude-children').is(':checked') ? '1' : '0',
 				operation: currentOp(),
 				value: $('#tcp-value').val() || '',
 				round_mode: $('#tcp-round-jitter').is(':checked') ? 'jitter' : ($('#tcp-round').is(':checked') ? 'round' : 'none'),
@@ -700,14 +711,15 @@
 			$('#tcp-start').prop('disabled', v ? true : !previewValid);
 			$('#tcp-schedule').prop('disabled', v ? true : !previewValid);
 			$('input[name="tcp_target"],#tcp-children,#tcp-op,#tcp-value,#tcp-round,#tcp-round-jitter').prop('disabled', v);
-			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale')
+			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-excluded-products,#tcp-excluded-cats,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale,#tcp-exclude-children')
 				.prop('disabled', v);
 			$('#tcp-name-search-term,#tcp-name-search-button,#tcp-name-load-more,#tcp-clear-products,#tcp-product-select-all').prop('disabled', v);
 			$('#tcp-sku-search-term,#tcp-sku-search-button,#tcp-sku-load-more').prop('disabled', v);
 			$('#tcp-selected-products .tcp-selected-product-checkbox,#tcp-selected-products .tcp-product-remove').prop('disabled', v);
-			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses').trigger('change.select2');
+			$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-excluded-products,#tcp-excluded-cats,#tcp-filter-types,#tcp-filter-statuses').trigger('change.select2');
 			$('#tcp-stop').toggle(v);
 			updateSelectedProductCount();
+			updateExclusionCount();
 		}
 
 		function resetProgress() {
@@ -841,13 +853,27 @@
 						: (d.target_type === 'products' ? 'محصولات انتخاب‌شده به صورت مستقیم' : (d.include_children ? 'دسته‌بندی + تمام زیردسته‌ها' : 'فقط خود دسته‌بندی‌ها؛ بدون زیردسته'));
 					html += '<p><strong>محدوده انتخاب:</strong> ' + scopeText + '</p>';
 					if (d.category_labels && d.category_labels.length) {
-						html += '<p><strong>دسته‌ها:</strong> ' + esc(d.category_labels.join(' ، ')) + '</p>';
+						html += '<p><strong>دسته‌های هدف:</strong> ' + esc(d.category_labels.join(' ، ')) + '</p>';
 					}
-					html += '<p style="font-size:16px"><strong>تعداد محصولات مادر هدف: <span style="color:#b32d2e">' + Number(d.parent_count || 0) + '</span></strong></p>';
+					var excludedCategories = d.excluded_category_labels || [];
+					var excludedProducts = Number(d.excluded_product_count || 0);
+					if (excludedCategories.length || excludedProducts) {
+						html += '<div class="tcp-alert tcp-alert--warn"><strong>استثناهای فعال:</strong> ' + excludedProducts + ' محصول' +
+							(excludedCategories.length ? ' و دسته‌های «' + esc(excludedCategories.join('»، «')) + '»' : '') +
+							(excludedCategories.length ? (d.exclude_category_children ? ' (همراه زیردسته‌ها)' : ' (فقط همین دسته‌ها)') : '') +
+							'. استثنا بر انتخاب هدف اولویت دارد.</div>';
+					}
+					html += '<p style="font-size:16px"><strong>تعداد محصولات مادر هدف پس از فیلتر و استثنا: <span style="color:#b32d2e">' + Number(d.parent_count || 0) + '</span></strong></p>';
 					var objectCount = Number(d.price_object_count);
-					html += '<p><strong>تعداد قیمت/متغیر واجد شرایط این عملیات:</strong> ' + (objectCount < 0 ? 'روی کاتالوگ بزرگ شمرده نشد؛ اجرا تکه‌تکه و قابل‌ادامه است' : objectCount) + '</p>';
+					html += '<p><strong>تعداد قیمت/متغیر واجد شرایط این عملیات:</strong> ' + (objectCount < 0 ? 'برای جلوگیری از شمارش سنگین، دقیق محاسبه نشد؛ اجرا در دسته‌های کوچک و قابل‌ادامه انجام می‌شود' : objectCount) + '</p>';
 					if (d.include_children) {
-						html += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌ها نیز لحاظ شده‌اند.</strong></p>';
+						html += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌های دسته‌های هدف نیز لحاظ شده‌اند.</strong></p>';
+					}
+					if (d.target_type === 'all' && !d.rollback_available) {
+						html += '<div class="tcp-alert tcp-alert--danger"><strong>اجرا مسدود است:</strong> برای تغییر همهٔ محصولات، ثبت لاگ و بازگردانی باید در تنظیمات فعال و جدول لاگ در دسترس باشد.</div>';
+					}
+					if (d.chunked) {
+						html += '<p class="tcp-muted">اجرا به‌صورت ترتیبی و تکه‌ای انجام می‌شود؛ پردازش هر مرحله حدود ۸ ثانیه بودجه دارد و اندازهٔ دسته از «تنظیمات ← اجرا» می‌آید.</p>';
 					}
 					if (Number(d.parent_count || 0) >= (D.limits.threshold || 500)) {
 						html += '<p style="background:#fff2f0;border:1px solid #d63638;padding:9px"><strong>هشدار پرریسک:</strong> بیش از ' + (D.limits.threshold || 500) + ' محصول مادر در محدوده است. هنگام اجرا باید شمارهٔ دقیق را دستی تایپ کنی.</p>';
@@ -855,8 +881,9 @@
 					$('#tcp-preview-summary').html(html);
 					$('#tcp-preview-box').show();
 					renderSamples(d.samples);
-					$('#tcp-start').prop('disabled', running);
-					$('#tcp-schedule').prop('disabled', running || !(D.limits && D.limits.scheduledEnabled));
+					var missingRecovery = d.target_type === 'all' && !d.rollback_available;
+					$('#tcp-start').prop('disabled', running || missingRecovery);
+					$('#tcp-schedule').prop('disabled', running || missingRecovery || !(D.limits && D.limits.scheduledEnabled));
 				}
 			});
 		}
@@ -869,6 +896,10 @@
 				inform('توجه', 'ابتدا بررسی قبل از اجرا را انجام بده.');
 				return;
 			}
+			if (targetType() === 'all' && !(previewInfo && previewInfo.rollback_available)) {
+				inform('اجرا مسدود است', 'برای تغییر همهٔ محصولات، ثبت لاگ و بازگردانی را در تنظیمات فعال کن و در دسترس بودن جدول لاگ را بررسی کن؛ سپس دوباره پیش‌نمایش بگیر.');
+				return;
+			}
 			var parents = Number(previewInfo && previewInfo.parent_count || 0);
 			var prices = Number(previewInfo && previewInfo.price_object_count);
 			var catalog = targetType() === 'all';
@@ -878,10 +909,28 @@
 			if (catalog) {
 				body += '<p style="color:#b32d2e"><strong>این تغییر دائمی است و در دیتابیس نوشته می‌شود</strong> — قانون داینامیک نیست. هر متغیر از روی قیمت خودش محاسبه می‌شود. اگر اینترنت قطع شود، از همان متغیر ادامه پیدا می‌کند و دوباره اعمال نمی‌شود.</p>';
 			}
-			if (previewInfo && previewInfo.include_children) {
-				body += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌ها هم شامل عملیات هستند.</strong></p>';
-			}
-			body += '<p>' + (scheduled ? 'اجرا به صف زمان‌بندی (WP-Cron) اضافه می‌شود و در پیشخوان اطلاع‌رسانی می‌گردد.' : 'همهٔ تغییرات برای بازگردانی بعدی ثبت می‌شوند.') + '</p>';
+				if (previewInfo && previewInfo.include_children) {
+					body += '<p style="color:#b32d2e"><strong>هشدار: زیردسته‌های هدف هم شامل عملیات هستند.</strong></p>';
+				}
+				var excludedCategories = (previewInfo && previewInfo.excluded_category_labels) || [];
+				var excludedProducts = Number(previewInfo && previewInfo.excluded_product_count || 0);
+				if (excludedCategories.length || excludedProducts) {
+					body += '<div class="tcp-alert tcp-alert--warn"><strong>استثناها:</strong> ' + excludedProducts + ' محصول' +
+						(excludedCategories.length ? '، دسته‌های «' + esc(excludedCategories.join('»، «')) + '»' : '') +
+						(excludedCategories.length ? (previewInfo.exclude_category_children ? ' و زیردسته‌هایشان' : ' (فقط همین دسته‌ها)') : '') +
+						'. این موارد تغییر نمی‌کنند.</div>';
+				}
+				if (previewInfo && previewInfo.chunked) {
+					body += '<p class="tcp-muted">اجرا به‌صورت تکه‌ای انجام می‌شود تا فشار هر درخواست محدود بماند.</p>';
+				}
+				if (scheduled) {
+					body += '<p>اجرا به صف زمان‌بندی (WP-Cron) اضافه می‌شود و در پیشخوان اطلاع‌رسانی می‌گردد.</p>';
+				}
+				if (previewInfo && previewInfo.rollback_available) {
+					body += '<p>همهٔ تغییرات برای گزارش و بازگردانی بعدی ثبت می‌شوند.</p>';
+				} else {
+					body += '<p style="color:#b32d2e"><strong>هشدار:</strong> ثبت لاگ/بازگردانی خاموش است؛ این عملیات قابل بازگشت نخواهد بود.</p>';
+				}
 
 			// تأیید دستی تایپ‌شده برای کل فروشگاه یا تعداد زیاد.
 			if (catalog || parents >= (D.limits.threshold || 500)) {
@@ -900,7 +949,7 @@
 					}
 				}).then(function (val) {
 					if (val === null) { return; }
-					doStart(scheduled);
+					doStart(scheduled, val);
 				});
 				return;
 			}
@@ -911,14 +960,17 @@
 				okText: scheduled ? 'ثبت در صف' : 'اجرا کن',
 				okClass: 'button-primary'
 			}).then(function (ok) {
-				if (ok) { doStart(scheduled); }
+				if (ok) { doStart(scheduled, ''); }
 			});
 		}
 
-		function doStart(scheduled) {
+		function doStart(scheduled, confirmation) {
 			var payload = commonPayload({
 				action: A.run,
 				preview_token: previewToken,
+				preview_parent_count: String(previewInfo && previewInfo.preview_parent_count || 0),
+				preview_ceiling: String(previewInfo && previewInfo.preview_ceiling || 0),
+				confirmation: confirmation || '',
 				schedule: scheduled ? '1' : '0'
 			});
 
@@ -1110,8 +1162,11 @@
 			$('#tcp-children-warning').toggle($(this).is(':checked'));
 			invalidatePreview();
 		});
-		$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale')
-			.on('change', invalidatePreview);
+		$('#tcp-cats,#tcp-products,#tcp-wholesale-products,#tcp-excluded-products,#tcp-excluded-cats,#tcp-exclude-children,#tcp-filter-types,#tcp-filter-statuses,#tcp-price-min,#tcp-price-max,#tcp-filter-only-sale,#tcp-filter-only-wholesale')
+			.on('change', function () {
+				if ($(this).is('#tcp-excluded-products,#tcp-excluded-cats')) { updateExclusionCount(); }
+				invalidatePreview();
+			});
 		$('#tcp-products,#tcp-wholesale-products').on('change', addManualProductsFromSelect);
 			$('#tcp-filter-types,#tcp-filter-statuses,#tcp-filter-only-wholesale').on('change', function () {
 				if (running) { return; }
@@ -1195,6 +1250,7 @@
 		updateTarget();
 		updateOpUi();
 		updateFilterVisibility();
+		updateExclusionCount();
 		$('#tcp-children-warning').toggle($('#tcp-children').is(':checked'));
 		if (!(D.limits && D.limits.scheduledEnabled)) { $('#tcp-schedule').hide(); }
 		$(document.body).trigger('wc-enhanced-select-init');

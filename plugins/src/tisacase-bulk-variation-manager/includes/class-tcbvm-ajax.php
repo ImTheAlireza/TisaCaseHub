@@ -260,26 +260,28 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 		public static function ajax_preview() {
 			self::check_auth();
 
-			$product_ids   = isset( $_POST['product_ids'] ) ? array_map( 'absint', (array) $_POST['product_ids'] ) : array();
-			$attr_name     = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
-			$new_values    = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
-			$price         = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
-			$sale_price    = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
-			$combine_other = ! empty( $_POST['combine_other'] );
+			$product_ids    = isset( $_POST['product_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['product_ids'] ) ) ) ) : array();
+			$attr_name      = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
+			$new_values     = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
+			$price          = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
+			$sale_price     = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
+			$combine_other  = ! empty( $_POST['combine_other'] );
+			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'لطفاً ابتدا حداقل یک محصول را انتخاب کنید.' ) );
 			}
 
-			if ( empty( $new_values ) ) {
-				wp_send_json_error( array( 'message' => 'لطفاً حداقل یک متغیر جدید تعریف کنید.' ) );
+			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
+			if ( empty( $clean_values ) ) {
+				wp_send_json_error( array( 'message' => 'لطفاً حداقل یک مقدار ویژگی وارد کنید.' ) );
 			}
 
-			if ( '' === trim( $price ) ) {
+			if ( TCBVM_OPS::MODE_REMOVE_VALUES !== $operation_mode && '' === trim( $price ) ) {
 				wp_send_json_error( array( 'message' => 'وارد کردن قیمت متغیرها الزامی است.' ) );
 			}
 
-			$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $new_values, $price, $sale_price, $combine_other );
+			$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode );
 			wp_send_json_success( $preview );
 		}
 
@@ -290,13 +292,14 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$product_ids   = isset( $_POST['product_ids'] ) ? array_map( 'absint', (array) $_POST['product_ids'] ) : array();
-			$attr_name     = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
-			$new_values    = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
-			$price         = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
-			$sale_price    = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
-			$stock_status  = isset( $_POST['stock_status'] ) ? sanitize_key( $_POST['stock_status'] ) : 'instock';
-			$combine_other = ! empty( $_POST['combine_other'] );
+			$product_ids    = isset( $_POST['product_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['product_ids'] ) ) ) ) : array();
+			$attr_name      = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
+			$new_values     = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
+			$price          = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
+			$sale_price     = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
+			$stock_status   = isset( $_POST['stock_status'] ) ? sanitize_key( $_POST['stock_status'] ) : 'instock';
+			$combine_other  = ! empty( $_POST['combine_other'] );
+			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'محصولی برای اجرا انتخاب نشده است.' ) );
@@ -304,14 +307,14 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 
 			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
 			if ( empty( $clean_values ) ) {
-				wp_send_json_error( array( 'message' => 'لیست متغیرهای جدید خالی است.' ) );
+				wp_send_json_error( array( 'message' => 'فهرست مقادیر ویژگی خالی است.' ) );
 			}
 
-			if ( '' === trim( $price ) ) {
+			if ( TCBVM_OPS::MODE_REMOVE_VALUES !== $operation_mode && '' === trim( $price ) ) {
 				wp_send_json_error( array( 'message' => 'قیمت متغیرها مشخص نشده است.' ) );
 			}
 
-			$run_title = sprintf( 'تولید انبوه متغیرهای ویژگی «%s»', $attr_name );
+			$run_title = sprintf( '%s — ویژگی «%s»', TCBVM_OPS::operation_mode_label( $operation_mode ), $attr_name );
 
 			$run_id = TCBVM_Backup::create_run_session( $run_title, $product_ids, array(
 				'attr_name'     => $attr_name,
@@ -320,7 +323,11 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				'sale_price'    => $sale_price,
 				'stock_status'  => $stock_status,
 				'combine_other' => $combine_other,
+				'operation_mode' => $operation_mode,
 			) );
+			if ( ! $run_id ) {
+				wp_send_json_error( array( 'message' => 'ثبت امن نشست اجرا ناموفق بود یا قفل تاریخچه در دسترس نیست؛ اجرا آغاز نشد.' ) );
+			}
 
 			$settings   = TCBVM_Core::get_settings();
 			$batch_size = max( 1, (int) $settings['batch_size'] );
@@ -343,7 +350,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			self::prepare_runtime();
 
 			$run_id        = isset( $_POST['run_id'] ) ? sanitize_text_field( wp_unslash( $_POST['run_id'] ) ) : '';
-			$batch_ids     = isset( $_POST['batch_ids'] ) ? array_map( 'absint', (array) $_POST['batch_ids'] ) : array();
+			$batch_ids     = isset( $_POST['batch_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['batch_ids'] ) ) ) ) : array();
 			$attr_name     = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
 			$new_values    = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
 			$price         = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
@@ -367,7 +374,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 					$combine_other
 				);
 			} catch ( \Throwable $e ) {
-				TCBVM_Backup::flush();
+				TCBVM_Backup::flush( $run_id );
 				self::send_error_json( array(
 					'message' => 'خطا در پردازش بسته: ' . $e->getMessage(),
 					'fatal'   => true,
@@ -395,11 +402,13 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'شناسه اجرا ارسال نشده است.' ) );
 			}
 
-			TCBVM_Backup::finish_run_session( $run_id, $status, array(
+			if ( ! TCBVM_Backup::finish_run_session( $run_id, $status, array(
 				'created_count' => $created_count,
 				'deleted_count' => $deleted_count,
 				'items'         => $items,
-			) );
+			) ) ) {
+				wp_send_json_error( array( 'message' => 'ثبت پایان اجرا ناموفق بود؛ تاریخچه دست‌کاری نشد و می‌توانید دوباره تلاش کنید.' ) );
+			}
 
 			// پاکسازی ترنزینت‌های سراسری قیمت ووکامرس
 			wc_delete_product_transients();
@@ -580,7 +589,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$product_ids = isset( $_POST['product_ids'] ) ? array_map( 'absint', (array) $_POST['product_ids'] ) : array();
+			$product_ids = isset( $_POST['product_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['product_ids'] ) ) ) ) : array();
 			$attr_name   = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : '';
 
 			if ( empty( $product_ids ) ) {
@@ -595,6 +604,9 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				$product_ids,
 				array( 'attr_name' => $attr_name, 'operation_type' => 'purge_attribute' )
 			);
+			if ( ! $run_id ) {
+				wp_send_json_error( array( 'message' => 'ثبت امن نشست پاکسازی ناموفق بود یا قفل تاریخچه در دسترس نیست؛ پاکسازی آغاز نشد.' ) );
+			}
 
 			$settings   = TCBVM_Core::get_settings();
 			$batch_size = max( 1, (int) $settings['batch_size'] );
@@ -616,7 +628,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			self::prepare_runtime();
 
 			$run_id    = isset( $_POST['run_id'] ) ? sanitize_text_field( wp_unslash( $_POST['run_id'] ) ) : '';
-			$batch_ids = isset( $_POST['batch_ids'] ) ? array_map( 'absint', (array) $_POST['batch_ids'] ) : array();
+			$batch_ids = isset( $_POST['batch_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['batch_ids'] ) ) ) ) : array();
 			$attr_name = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : '';
 
 			if ( empty( $run_id ) || empty( $batch_ids ) || '' === trim( $attr_name ) ) {
@@ -625,39 +637,80 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 
 			TCBVM_OPS::ensure_all_attribute_taxonomies_registered();
 			$matches = TCBVM_DB::resolve_attribute_globally( $attr_name );
-
-			$items   = array();
-			$deleted = 0;
-
-			foreach ( $batch_ids as $product_id ) {
-				try {
-					$res = TCBVM_OPS::purge_attribute_from_product( $product_id, $run_id, $matches );
-				} catch ( \Throwable $e ) {
-					$res = array(
-						'success' => false,
-						'title'   => "محصول #{$product_id}",
-						'message' => 'خطا: ' . $e->getMessage(),
-						'deleted' => 0,
-					);
-				}
-
-				$deleted += isset( $res['deleted'] ) ? (int) $res['deleted'] : 0;
-				$items[]  = array(
-					'id'      => $product_id,
-					'status'  => ! empty( $res['success'] ) ? 'success' : 'error',
-					'title'   => isset( $res['title'] ) ? $res['title'] : "محصول #{$product_id}",
-					'message' => isset( $res['message'] ) ? $res['message'] : '',
-					'deleted' => isset( $res['deleted'] ) ? (int) $res['deleted'] : 0,
-				);
+			if ( ! TCBVM_Backup::lock_run( $run_id ) ) {
+				self::send_error_json( array( 'message' => 'قفل اجرا در دسترس نیست؛ بسته پاکسازی متوقف شد.', 'fatal' => true ) );
 			}
 
-			TCBVM_Backup::flush();
+			$items         = array();
+			$deleted       = 0;
+			$stop          = false;
+			$run_lock_lost = false;
+			$stop_message  = '';
+			try {
+				if ( ! TCBVM_Backup::run_is_active( $run_id ) ) {
+					$stop         = true;
+					$stop_message = 'اجرای پاکسازی فعال نیست؛ ادامه داده نشد.';
+				}
+				foreach ( $batch_ids as $batch_index => $product_id ) {
+					if ( $stop ) {
+						break;
+					}
+					if ( 0 === ( $batch_index % 10 ) && ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
+						$stop          = true;
+						$run_lock_lost = true;
+						$stop_message  = 'قفل اجرا از دست رفت؛ ادامهٔ بسته متوقف شد.';
+						break;
+					}
+					if ( ! TCBVM_Backup::run_is_active( $run_id ) ) {
+						$stop         = true;
+						$stop_message = 'اجرای پاکسازی دیگر فعال نیست؛ ادامه داده نشد.';
+						break;
+					}
+
+					try {
+						$res = TCBVM_OPS::purge_attribute_from_product( $product_id, $run_id, $matches );
+					} catch ( \Throwable $e ) {
+						$res = array(
+							'success' => false,
+							'title'   => "محصول #{$product_id}",
+							'message' => 'خطا: ' . $e->getMessage(),
+							'deleted' => 0,
+						);
+					}
+
+					$item_message = isset( $res['message'] ) ? (string) $res['message'] : '';
+					$deleted     += isset( $res['deleted'] ) ? (int) $res['deleted'] : 0;
+					$items[]      = array(
+						'id'      => $product_id,
+						'status'  => ! empty( $res['success'] ) ? 'success' : 'error',
+						'title'   => isset( $res['title'] ) ? $res['title'] : "محصول #{$product_id}",
+						'message' => $item_message,
+						'deleted' => isset( $res['deleted'] ) ? (int) $res['deleted'] : 0,
+					);
+					if ( empty( $res['success'] ) && false !== strpos( $item_message, 'قفل' ) ) {
+						$stop         = true;
+						$stop_message = $item_message;
+						if ( false !== strpos( $item_message, 'قفل اجرا' ) || false !== strpos( $item_message, 'قفل اجرای' ) ) {
+							$run_lock_lost = true;
+						}
+					}
+				}
+
+				if ( ! $run_lock_lost && ! TCBVM_Backup::flush( $run_id ) ) {
+					$stop         = true;
+					$stop_message = 'ثبت امن وضعیت batch ناموفق بود؛ ادامهٔ پاکسازی متوقف شد.';
+				}
+			} finally {
+				TCBVM_Backup::unlock_run( $run_id );
+			}
 
 			self::clean_output();
 			self::$responded = true;
 			wp_send_json_success( array(
 				'items'         => $items,
 				'deleted_count' => $deleted,
+				'stop'          => $stop,
+				'message'       => $stop_message,
 			) );
 		}
 

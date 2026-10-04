@@ -53,6 +53,14 @@ function update_option($name, $value, $autoload = null) {
     return true;
 }
 
+function add_option($name, $value = '', $deprecated = '', $autoload = 'yes') {
+    if (array_key_exists($name, $GLOBALS['wcto_options'])) {
+        return false;
+    }
+    $GLOBALS['wcto_options'][$name] = $value;
+    return true;
+}
+
 function delete_option($name) {
     unset($GLOBALS['wcto_options'][$name]);
     return true;
@@ -104,12 +112,12 @@ function register_setting($group, $name, $args = []) { return true; }
 /* ---------- زمان‌بندی (WP-Cron) ---------- */
 
 function wp_schedule_single_event($timestamp, $hook, $args = []) {
-    $GLOBALS['wcto_cron'][] = ['ts' => (int) $timestamp, 'hook' => $hook, 'args' => $args];
+    $GLOBALS['wcto_cron'][] = ['ts' => (int) $timestamp, 'hook' => $hook, 'args' => $args, 'schedule' => false];
     return true;
 }
 
 function wp_schedule_event($timestamp, $recurrence, $hook, $args = []) {
-    $GLOBALS['wcto_cron'][] = ['ts' => (int) $timestamp, 'hook' => $hook, 'args' => $args];
+    $GLOBALS['wcto_cron'][] = ['ts' => (int) $timestamp, 'hook' => $hook, 'args' => $args, 'schedule' => $recurrence];
     return true;
 }
 
@@ -122,9 +130,35 @@ function wp_next_scheduled($hook, $args = []) {
     return false;
 }
 
-function wp_unschedule_event($timestamp, $hook, $args = []) { return true; }
-function wp_clear_scheduled_hook($hook, $args = []) { return 0; }
-function _get_cron_array() { return []; }
+function wp_unschedule_event($timestamp, $hook, $args = []) {
+    foreach ($GLOBALS['wcto_cron'] as $i => $ev) {
+        if ($ev['ts'] === (int) $timestamp && $ev['hook'] === $hook && $ev['args'] === $args) {
+            unset($GLOBALS['wcto_cron'][$i]);
+            $GLOBALS['wcto_cron'] = array_values($GLOBALS['wcto_cron']);
+            return true;
+        }
+    }
+    return false;
+}
+function wp_clear_scheduled_hook($hook, $args = []) {
+    $before = count($GLOBALS['wcto_cron']);
+    $GLOBALS['wcto_cron'] = array_values(array_filter($GLOBALS['wcto_cron'], function ($event) use ($hook, $args) {
+        return !($event['hook'] === $hook && $event['args'] === $args);
+    }));
+    return $before - count($GLOBALS['wcto_cron']);
+}
+function _get_cron_array() {
+    $cron = [];
+    foreach ($GLOBALS['wcto_cron'] as $event) {
+        $args = isset($event['args']) && is_array($event['args']) ? $event['args'] : [];
+        $key = md5(serialize($args));
+        $cron[$event['ts']][$event['hook']][$key] = [
+            'schedule' => isset($event['schedule']) ? $event['schedule'] : false,
+            'args'     => $args,
+        ];
+    }
+    return $cron;
+}
 function spawn_cron($timestamp = 0) { return true; }
 
 /* ---------- متای پست (قفل ارسال) ---------- */
@@ -210,6 +244,7 @@ function current_time($type, $gmt = 0) { return $type === 'timestamp' ? time() :
 function wp_timezone_string() { return 'Asia/Tehran'; }
 function wp_timezone() { return new DateTimeZone('Asia/Tehran'); }
 function wp_rand($min = 0, $max = 0) { return mt_rand($min, $max); }
+function wp_generate_uuid4() { static $i = 0; $i++; return sprintf('00000000-0000-4000-8000-%012d', $i); }
 
 /* ---------- ووکامرس ---------- */
 
@@ -288,6 +323,7 @@ function is_wp_error($thing) { return false; }
 
 class WCTO_Fake_WPDB {
     public $prefix = 'wp_';
+    public $posts = 'wp_posts';
     public $queries = [];
     public function get_charset_collate() { return ''; }
     public function esc_like($text) { return addcslashes((string) $text, '_%\\'); }
