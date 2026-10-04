@@ -222,9 +222,9 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 						</div>
 						<span class="tcbvm-hero-ver" dir="ltr">v<?php echo esc_html( TCBVM_VERSION ); ?></span>
 					</div>
-					<nav class="tcbvm-tabs" role="tablist">
+					<nav class="tcbvm-tabs" aria-label="بخش‌های افزونه">
 						<?php foreach ( $tabs as $key => $label ) : ?>
-							<a class="tcbvm-tab<?php echo $tab === $key ? ' is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'tab', $key, $base ) ); ?>">
+							<a class="tcbvm-tab<?php echo $tab === $key ? ' is-active' : ''; ?>" href="<?php echo esc_url( add_query_arg( 'tab', $key, $base ) ); ?>"<?php echo $tab === $key ? ' aria-current="page"' : ''; ?>>
 								<?php echo esc_html( $label ); ?>
 							</a>
 						<?php endforeach; ?>
