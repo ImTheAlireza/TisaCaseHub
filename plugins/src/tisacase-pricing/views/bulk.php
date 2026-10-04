@@ -147,33 +147,35 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				</div>
 			</div>
 
-			<details id="tcp-exceptions" class="tcp-exceptions">
-				<summary>
-					<span><strong>استثناها (اختیاری)</strong><small>محصول یا دسته‌ای را انتخاب کن تا از این اجرا کنار گذاشته شود.</small></span>
-					<span id="tcp-exclusion-badge" class="tcp-selection-badge">بدون استثنا</span>
-				</summary>
-				<div class="tcp-exceptions-body">
-					<p class="tcp-muted">استثناها روی همهٔ روش‌های انتخاب (همهٔ فروشگاه، دسته یا فهرست دستی) اولویت دارند. اگر محصول متغیر را انتخاب کنی، تمام واریشن‌های همان محصول هم مستثنا می‌شوند. پیش‌نمایش تعداد نهایی را بعد از اعمال استثناها نشان می‌دهد.</p>
-					<div class="tcp-grid-2 tcp-exclusion-grid">
-						<div>
-							<label class="tcp-label" for="tcp-excluded-products">محصولات مستثنا</label>
-							<select id="tcp-excluded-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
-							<p class="tcp-muted">حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_PRODUCTS ); ?> محصول.</p>
-						</div>
-						<div>
-							<label class="tcp-label" for="tcp-excluded-cats">دسته‌های مستثنا</label>
-							<select id="tcp-excluded-cats" class="wc-enhanced-select" multiple="multiple" data-tcp-w="wide" data-placeholder="دسته‌بندی را انتخاب کن…">
-								<?php foreach ( $tcp_cats as $cat ) : ?>
-									<option value="<?php echo esc_attr( $cat->term_id ); ?>"><?php echo esc_html( TCP_Admin::cat_label( $cat ) ); ?></option>
-								<?php endforeach; ?>
-							</select>
-							<p class="tcp-muted">حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_CATEGORIES ); ?> دسته.</p>
-						</div>
-					</div>
-					<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-exclude-children" checked><span class="tisa-switch__track" aria-hidden="true"></span><span>زیردسته‌های دسته‌های مستثنا هم کنار گذاشته شوند <span class="tcp-muted">— پیش‌فرض روشن</span></span></label>
-				</div>
-			</details>
+
 		</div>
+
+		<details id="tcp-exceptions" class="tcp-exceptions">
+			<summary>
+				<span><strong>استثناها (اختیاری)</strong><small>محصول یا دسته‌ای را انتخاب کن تا از این اجرا کنار گذاشته شود.</small></span>
+				<span id="tcp-exclusion-badge" class="tcp-selection-badge">بدون استثنا</span>
+			</summary>
+			<div class="tcp-exceptions-body">
+				<p class="tcp-muted">استثناها روی همهٔ روش‌های انتخاب (همهٔ فروشگاه، دسته یا فهرست دستی) اولویت دارند. اگر محصول متغیر را انتخاب کنی، تمام واریشن‌های همان محصول هم مستثنا می‌شوند. پیش‌نمایش تعداد نهایی را بعد از اعمال استثناها نشان می‌دهد.</p>
+				<div class="tcp-grid-2 tcp-exclusion-grid">
+					<div>
+						<label class="tcp-label" for="tcp-excluded-products">محصولات مستثنا</label>
+						<select id="tcp-excluded-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
+						<p class="tcp-muted">حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_PRODUCTS ); ?> محصول.</p>
+					</div>
+					<div>
+						<label class="tcp-label" for="tcp-excluded-cats">دسته‌های مستثنا</label>
+						<select id="tcp-excluded-cats" class="wc-enhanced-select" multiple="multiple" data-tcp-w="wide" data-placeholder="دسته‌بندی را انتخاب کن…">
+							<?php foreach ( $tcp_cats as $cat ) : ?>
+								<option value="<?php echo esc_attr( $cat->term_id ); ?>"><?php echo esc_html( TCP_Admin::cat_label( $cat ) ); ?></option>
+							<?php endforeach; ?>
+						</select>
+						<p class="tcp-muted">حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_CATEGORIES ); ?> دسته.</p>
+					</div>
+				</div>
+				<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-exclude-children" checked><span class="tisa-switch__track" aria-hidden="true"></span><span>زیردسته‌های دسته‌های مستثنا هم کنار گذاشته شوند <span class="tcp-muted">— پیش‌فرض روشن</span></span></label>
+			</div>
+		</details>
 	</div>
 </section>
 
