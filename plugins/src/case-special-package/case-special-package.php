@@ -3,7 +3,7 @@
  * Plugin Name: پکیج ویژه قاب موبایل
  * Plugin URI:  https://example.com/wc-case-special-package
  * Description: افزودن گزینه «پکیج ویژه» با قیمت ثابت به محصولات قاب موبایل (تشخیص از روی عنوان/دسته‌بندی، با لیست استثنا بر اساس SKU و کلمات منفیِ وتوکننده). قیمت به ازای هر عدد محاسبه و در فاکتور، ایمیل و پیشخوان نمایش داده می‌شود.
- * Version:     1.5.1
+ * Version:     1.5.3
  * Author:      علیرضا شعبان زاده
  * Text Domain: case-special-package
  * WC requires at least: 5.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'WCSP_MAIN_FILE', __FILE__ );
-define( 'WCSP_VERSION', '1.5.1' );
+define( 'WCSP_VERSION', '1.5.3' );
 
 /**
  * کلاس اصلی پلاگین.
@@ -29,6 +29,18 @@ final class WC_Case_Special_Package {
 
 	/** @var WC_Case_Special_Package|null */
 	private static $instance = null;
+
+	/** @var array<string, bool>|null شناسهٔ اشیای محصولِ علامت‌خورده در سبدِ همین درخواست. */
+	private static $packaged_cart_product_hashes = null;
+
+	/** @var array<string, array<string, float|bool>> قیمت‌های پکیج که در این محاسبه اعمال و تأیید شده‌اند. */
+	private static $applied_package_prices = array();
+
+	/** @var array<string, bool> آیتم‌هایی که موتور قیمت‌گذاری برایشان خطا داده است. */
+	private static $package_price_failures = array();
+
+	/** @var bool جلوگیری از نمایش چندبارهٔ هشدار یکسان در همان درخواست. */
+	private static $package_validation_notice_added = false;
 
 	/**
 	 * دریافت نمونه یکتا (Singleton).
@@ -45,6 +57,7 @@ final class WC_Case_Special_Package {
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_post_wcsp_refresh_stats', array( __CLASS__, 'handle_refresh_stats' ) );
+		add_action( 'admin_post_wcsp_emergency_pause', array( __CLASS__, 'handle_emergency_pause' ) );
 		// اولویت ۲۰: بعد از ووکامرس تا هندل‌های select2/enhanced-select ثبت شده باشند.
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ), 20 );
 
@@ -58,7 +71,31 @@ final class WC_Case_Special_Package {
 		// سبد خرید.
 		add_filter( 'woocommerce_add_cart_item_data', array( $this, 'add_cart_item_data' ), 10, 2 );
 		add_filter( 'woocommerce_get_item_data', array( $this, 'get_item_data' ), 10, 2 );
+
+		// افزونهٔ قیمت‌گذاری، ابتدا قیمت فعال (از جمله تخفیف داینامیک) را محاسبه می‌کند؛
+		// سپس این فیلتر فقط روی همان آیتم سبد که پکیج را انتخاب کرده، مبلغ را می‌افزاید.
+		add_filter( 'tisacase_pricing_final_active_price', array( $this, 'add_package_to_active_price' ), 10, 2 );
+
+		// سازگاری با نسخه‌های قدیمی TisaCase Pricing که هوک بالایی را ندارند.
+		// PHP_INT_MAX تضمین می‌کند قیمت داینامیکِ اولویت 99999 پیش از این فیلتر باشد.
+		add_filter( 'woocommerce_product_get_price', array( $this, 'add_package_after_legacy_pricing' ), PHP_INT_MAX, 2 );
+		add_filter( 'woocommerce_product_variation_get_price', array( $this, 'add_package_after_legacy_pricing' ), PHP_INT_MAX, 2 );
+
+		// آغاز هر محاسبهٔ تازه؛ نتایج قبلی نباید به‌عنوان تأیید جدید استفاده شوند.
+		add_action( 'woocommerce_before_calculate_totals', array( $this, 'begin_price_verification' ), 1, 0 );
+
+		// مسیر قدیمی برای فروشگاه‌هایی که TisaCase Pricing فعال نیست.
 		add_action( 'woocommerce_before_calculate_totals', array( $this, 'adjust_price' ), 20, 1 );
+
+		// اگر قیمت پکیج قابل تأیید نباشد، سبد/پرداخت را fail-closed می‌کنیم.
+		add_action( 'woocommerce_check_cart_items', array( $this, 'validate_package_pricing' ), PHP_INT_MAX, 0 );
+		add_action( 'woocommerce_after_checkout_validation', array( $this, 'validate_checkout_package_pricing' ), PHP_INT_MAX, 2 );
+		add_action( 'tisacase_pricing_active_price_calculation_failed', array( $this, 'mark_tisacase_price_failure' ), 10, 1 );
+
+		// کش نگاشت شیء محصول به آیتم پکیج‌دار را با هر تغییر سبد باطل می‌کنیم.
+		foreach ( array( 'woocommerce_cart_loaded_from_session', 'woocommerce_add_to_cart', 'woocommerce_cart_item_removed', 'woocommerce_cart_item_restored', 'woocommerce_cart_emptied', 'woocommerce_cart_updated', 'woocommerce_after_cart_item_quantity_update' ) as $cart_change_hook ) {
+			add_action( $cart_change_hook, array( $this, 'reset_cart_state' ), 10, 0 );
+		}
 
 		// سفارش / فاکتور / ایمیل.
 		add_action( 'woocommerce_checkout_create_order_line_item', array( $this, 'save_order_item_meta' ), 10, 4 );
@@ -85,6 +122,22 @@ final class WC_Case_Special_Package {
 		check_admin_referer( 'wcsp_refresh_stats' );
 		self::flush_stats();
 		wp_safe_redirect( admin_url( 'admin.php?page=wcsp-settings&stats-refreshed=1#wcsp-dash' ) );
+		exit;
+	}
+
+	/** توقف اضطراری فروش پکیج با nonce و capability؛ قیمت‌ها/محصولات ذخیره‌شده تغییر نمی‌کنند. */
+	public static function handle_emergency_pause() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( 'دسترسی ندارید.' );
+		}
+		check_admin_referer( 'wcsp_emergency_pause' );
+
+		$settings            = self::get_settings();
+		$settings['enabled'] = 'no';
+		update_option( self::OPTION_KEY, $settings );
+		self::flush_stats();
+
+		wp_safe_redirect( admin_url( 'admin.php?page=wcsp-settings&emergency-paused=1#general' ) );
 		exit;
 	}
 
@@ -315,7 +368,9 @@ final class WC_Case_Special_Package {
 					</nav>
 				</header>
 
-				<?php if ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore ?>
+				<?php if ( isset( $_GET['emergency-paused'] ) ) : // phpcs:ignore ?>
+					<div class="wcsp-flashbar" role="alert">فروش پکیج متوقف شد. آیتم‌های پکیج‌دارِ از قبل در سبد تا حذف یا رفع مشکل اجازهٔ پرداخت ندارند.</div>
+				<?php elseif ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore ?>
 					<div class="wcsp-flashbar" role="status">تنظیمات ذخیره شد.</div>
 				<?php elseif ( isset( $_GET['stats-refreshed'] ) ) : // phpcs:ignore ?>
 					<div class="wcsp-flashbar" role="status">آمار دوباره از سفارش‌ها محاسبه شد.</div>
@@ -429,6 +484,11 @@ final class WC_Case_Special_Package {
 								<span class="tisa-switch__track" aria-hidden="true"></span>
 								<span>قابلیت پکیج ویژه فعال باشد</span>
 							</label>
+
+							<div class="wcsp-field">
+								<p class="wcsp-hint">اگر محاسبهٔ پکیج مشکوک شد، این دکمه فوراً انتخاب پکیج را غیرفعال می‌کند. سبدهای دارای پکیج تا حذف آن یا رفع مشکل اجازهٔ پرداخت نمی‌گیرند.</p>
+								<a class="button button-secondary" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=wcsp_emergency_pause' ), 'wcsp_emergency_pause' ) ); ?>">توقف اضطراری فروش پکیج</a>
+							</div>
 
 							<div class="wcsp-field">
 								<label class="wcsp-label" for="wcsp_price">قیمت پکیج (به ازای هر عدد)</label>
@@ -579,7 +639,8 @@ final class WC_Case_Special_Package {
 								<li><b>کلمات منفی:</b> برای بیرون‌گذاشتن زیرگروه‌ها؛ مثلاً با کلمهٔ «تبلت» هیچ محصولی که «قاب تبلت» در عنوانش باشد گزینه نمی‌گیرد. حالت «کلمهٔ کامل» جلوی تطبیق‌های ناخواسته (کیف ↔ کیفیت) را می‌گیرد.</li>
 								<li><b>محاسبه:</b> مبلغ پکیج به قیمت هر واحد اضافه می‌شود و با تعداد ضرب می‌شود.</li>
 								<li><b>فاکتور و ایمیل:</b> زیر همان آیتم: «بله — X در هر عدد × N عدد = Y».</li>
-								<li><b>امنیت:</b> واجد شرایط بودن هنگام افزودن به سبد دوباره سمت سرور بررسی می‌شود.</li>
+								<li><b>امنیت:</b> واجد شرایط بودن هنگام افزودن به سبد دوباره سمت سرور بررسی می‌شود؛ قیمت نامعتبر یا قابل‌تأییدنبودن آیتم پکیج checkout را متوقف می‌کند.</li>
+								<li><b>توقف اضطراری:</b> دکمهٔ تنظیمات قابلیت را خاموش می‌کند؛ سبدهای قدیمیِ پکیج‌دار تا حذف آیتم یا رفع مشکل پرداخت نمی‌شوند. این دکمه بازگشت کد نیست.</li>
 								<li><b>اولویت استثنا:</b> لیست SKU بر همه قوانین مقدم است.</li>
 								<li><b>سبد/پرداخت بلوکی:</b> چک‌باکس با صفحات کلاسیک (shortcode) کار می‌کند.</li>
 								<li><b>کش آمار:</b> اعداد داشبورد تا یک ساعت کش می‌شوند و با ذخیره محصول یا تغییر سفارش تازه می‌شوند.</li>
@@ -1000,7 +1061,7 @@ final class WC_Case_Special_Package {
 		$price    = (float) $settings['price'];
 		$text     = $settings['checkbox_text'];
 		?>
-		<p class="form-row form-row-wide wcsp-package-row" style="clear:both;">
+		<p class="form-row form-row-wide wcsp-package-row">
 			<label for="wcsp_package_checkbox" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
 				<input type="checkbox" id="wcsp_package_checkbox" name="<?php echo esc_attr( self::CART_KEY ); ?>" value="1" style="width:auto; margin:0;" />
 				<span>
@@ -1053,6 +1114,15 @@ final class WC_Case_Special_Package {
 		$price    = (float) $settings['price'];
 		$qty      = isset( $cart_item['quantity'] ) ? (int) $cart_item['quantity'] : 1;
 
+		if ( 'yes' !== $settings['enabled'] || $price <= 0 || empty( $cart_item['data'] ) || ! $cart_item['data'] instanceof WC_Product || ! self::is_eligible( $cart_item['data'] ) ) {
+			$item_data[] = array(
+				'key'     => $settings['label'],
+				'value'   => 'متوقف — این آیتم را از سبد حذف کنید یا با فروشگاه تماس بگیرید.',
+				'display' => 'متوقف — این آیتم را از سبد حذف کنید یا با فروشگاه تماس بگیرید.',
+			);
+			return $item_data;
+		}
+
 		$item_data[] = array(
 			'key'     => $settings['label'],
 			'value'   => wp_strip_all_tags(
@@ -1077,15 +1147,17 @@ final class WC_Case_Special_Package {
 	}
 
 	/**
-	 * افزودن قیمت پکیج به قیمت هر واحد — به‌صورت خودکار در تعداد ضرب می‌شود.
-	 * محاسبه از قیمت پایه (regular/sale) انجام می‌شود تا در اجرای چندباره هوک دوبار جمع نشود.
+	 * مسیر پشتیبان برای افزودن قیمت پکیج به قیمت هر واحد، وقتی موتور قیمت‌گذاری تیساکیس فعال نیست.
+	 * در این حالت از قیمت خام regular/sale استفاده می‌شود تا اجرای دوبارهٔ هوک، مبلغ را تکراری اضافه نکند.
 	 */
 	public function adjust_price( $cart ) {
+		$this->reset_cart_product_cache();
+
 		if ( is_admin() && ! wp_doing_ajax() ) {
 			return;
 		}
 		if ( did_action( 'woocommerce_before_calculate_totals' ) >= 3 ) {
-			return; // محافظت در برابر حلقه.
+			return; // محافظت در برابر حلقه؛ در صورت ناتمام‌ماندن تأیید، checkout مسدود می‌شود.
 		}
 
 		$settings = self::get_settings();
@@ -1094,7 +1166,13 @@ final class WC_Case_Special_Package {
 			return;
 		}
 
-		foreach ( $cart->get_cart() as $cart_item ) {
+		try {
+			$cart_items = $cart->get_cart();
+		} catch ( Throwable $error ) {
+			return;
+		}
+
+		foreach ( $cart_items as $cart_item ) {
 			if ( empty( $cart_item[ self::CART_KEY ] ) || ! isset( $cart_item['data'] ) ) {
 				continue;
 			}
@@ -1104,14 +1182,336 @@ final class WC_Case_Special_Package {
 				continue;
 			}
 
-			// اگر محصول دیگر واجد شرایط نیست (مثلاً تنظیمات عوض شده)، مبلغ اضافه نشود.
-			if ( ! self::is_eligible( $product ) ) {
+			try {
+				// اگر محصول دیگر واجد شرایط نیست، مبلغ اضافه نشود و validation پرداخت را متوقف کند.
+				if ( ! self::is_eligible( $product ) ) {
+					self::mark_package_price_failure( $product );
+					continue;
+				}
+
+				// وقتی موتور قیمت‌گذاری تیساکیس فعال است، مبلغ از مسیر هوکِ قیمت نهایی می‌آید.
+				if ( self::supports_tisacase_pricing_integration( $product ) || self::has_tisacase_price_filter( $product ) ) {
+					continue;
+				}
+
+				$base_price = $product->is_on_sale() ? $product->get_sale_price( 'edit' ) : $product->get_regular_price( 'edit' );
+				if ( ! is_numeric( $base_price ) || (float) $base_price < 0 ) {
+					self::mark_package_price_failure( $product );
+					continue;
+				}
+
+				$base  = (float) $base_price;
+				$final = $base + $package;
+				if ( ! is_finite( $base ) || ! is_finite( $final ) ) {
+					self::mark_package_price_failure( $product );
+					continue;
+				}
+
+				$product->set_price( $final );
+				self::record_package_price( $product, $final );
+			} catch ( Throwable $error ) {
+				self::mark_package_price_failure( $product );
+			}
+		}
+	}
+
+	/**
+	 * افزودن مبلغ پکیج پس از محاسبهٔ قیمت فعال توسط TisaCase Pricing.
+	 *
+	 * این هوک با قیمت عادی، حراج واقعی، قانون داینامیک و قیمت همکاری کار می‌کند؛
+	 * مبلغ فقط برای شیء محصولی افزوده می‌شود که در سبد با گزینهٔ پکیج ثبت شده است.
+	 *
+	 * @param mixed      $price   قیمت فعال محاسبه‌شده.
+	 * @param WC_Product $product محصول جاری.
+	 * @return mixed
+	 */
+	public function add_package_to_active_price( $price, $product ) {
+		return $this->add_package_to_cart_product_price( $price, $product );
+	}
+
+	/**
+	 * پشتیبانی از نسخه‌های قدیمی موتور قیمت‌گذاری که هوک اختصاصی قیمت نهایی ندارند.
+	 *
+	 * @param mixed      $price   قیمت پس از فیلترهای قبلی ووکامرس.
+	 * @param WC_Product $product محصول جاری.
+	 * @return mixed
+	 */
+	public function add_package_after_legacy_pricing( $price, $product ) {
+		if ( self::supports_tisacase_pricing_integration( $product ) || ! self::has_tisacase_price_filter( $product ) ) {
+			return $price;
+		}
+
+		return $this->add_package_to_cart_product_price( $price, $product );
+	}
+
+	/**
+	 * مبلغ پکیج را فقط برای آیتم انتخاب‌شده در سبد، بدون تغییر قیمت ذخیره‌شدهٔ محصول، اضافه می‌کند.
+	 * هر خطا یا قیمت غیرعددی ثبت می‌شود تا اعتبارسنجی، پرداخت ناامن را مسدود کند.
+	 *
+	 * @param mixed      $price   قیمت فعال.
+	 * @param WC_Product $product محصول جاری.
+	 * @return mixed
+	 */
+	private function add_package_to_cart_product_price( $price, $product ) {
+		if ( ! $product instanceof WC_Product ) {
+			return $price;
+		}
+
+		try {
+			if ( ! self::is_selected_cart_product( $product ) ) {
+				return $price;
+			}
+			if ( ! is_numeric( $price ) || (float) $price < 0 ) {
+				self::mark_package_price_failure( $product );
+				return $price;
+			}
+
+			$settings = self::get_settings();
+			$package  = (float) $settings['price'];
+			if ( 'yes' !== $settings['enabled'] || $package <= 0 || ! self::is_eligible( $product ) ) {
+				self::mark_package_price_failure( $product );
+				return $price;
+			}
+
+			$final = (float) $price + $package;
+			if ( ! is_finite( $final ) ) {
+				self::mark_package_price_failure( $product );
+				return $price;
+			}
+
+			self::record_package_price( $product, $final );
+			return $final;
+		} catch ( Throwable $error ) {
+			self::mark_package_price_failure( $product );
+			return $price;
+		}
+	}
+
+	/** شروع نسل تازهٔ محاسبه؛ رکوردهای قیمت قبلی تأیید محسوب نمی‌شوند. */
+	public function begin_price_verification() {
+		self::$applied_package_prices          = array();
+		self::$package_price_failures          = array();
+		self::$package_validation_notice_added = false;
+		$this->reset_cart_product_cache();
+	}
+
+	/** ثبت قیمت مورد انتظار پس از افزودن موفق پکیج. */
+	private static function record_package_price( $product, $expected ) {
+		$hash = spl_object_hash( $product );
+		self::$applied_package_prices[ $hash ] = array(
+			'expected' => (float) $expected,
+			'verified' => true,
+		);
+		unset( self::$package_price_failures[ $hash ] );
+	}
+
+	/** ثبت خطای قیمت برای جلوگیری از پرداخت با مبلغ نامطمئن. */
+	private static function mark_package_price_failure( $product ) {
+		if ( $product instanceof WC_Product ) {
+			self::$package_price_failures[ spl_object_hash( $product ) ] = true;
+		}
+	}
+
+	/**
+	 * اگر موتور داینامیک خطا داد، ثبت کن تا validation پرداخت را fail-closed متوقف کند.
+	 *
+	 * @param WC_Product $product محصولی که محاسبه‌اش شکست خورده است.
+	 */
+	public function mark_tisacase_price_failure( $product ) {
+		// اگر محصول در سبد پکیج‌دار نباشد، رکورد بلااستفاده می‌ماند و checkout آن را نادیده می‌گیرد.
+		if ( $product instanceof WC_Product ) {
+			self::mark_package_price_failure( $product );
+		}
+	}
+
+	/** قیمت مورد انتظار در مسیر پشتیبان، وقتی موتور قیمت‌گذاری تیساکیس فعال نیست. */
+	private static function fallback_package_price( $product, $settings ) {
+		try {
+			$base_price = $product->is_on_sale() ? $product->get_sale_price( 'edit' ) : $product->get_regular_price( 'edit' );
+			if ( ! is_numeric( $base_price ) || (float) $base_price < 0 ) {
+				return null;
+			}
+
+			$expected = (float) $base_price + (float) $settings['price'];
+			return is_finite( $expected ) ? $expected : null;
+		} catch ( Throwable $error ) {
+			return null;
+		}
+	}
+
+	/** آیا قیمت مورد انتظار با مبلغ نهایی getter، با دقت اعشار فروشگاه، برابر است؟ */
+	private static function package_prices_match( $actual, $expected ) {
+		if ( ! is_numeric( $actual ) || ! is_numeric( $expected ) ) {
+			return false;
+		}
+
+		$decimals  = function_exists( 'wc_get_price_decimals' ) ? max( 0, min( 8, (int) wc_get_price_decimals() ) ) : 2;
+		$tolerance = 0.5 / pow( 10, $decimals );
+		return abs( (float) $actual - (float) $expected ) <= $tolerance;
+	}
+
+	/** پاک‌کردن نگاشت کش‌شده پس از تغییر محتوای سبد. */
+	public function reset_cart_product_cache() {
+		self::$packaged_cart_product_hashes = null;
+	}
+
+	/** بازنشانی وضعیت هشدار پس از تغییر سبد. */
+	public function reset_cart_state() {
+		$this->reset_cart_product_cache();
+		self::$applied_package_prices          = array();
+		self::$package_price_failures          = array();
+		self::$package_validation_notice_added = false;
+	}
+
+	/** بررسی می‌کند همهٔ آیتم‌های پکیج‌دار واقعاً با قیمت درست وارد totals شده‌اند. */
+	private function has_unverified_package_price() {
+		if ( ! function_exists( 'WC' ) ) {
+			return false;
+		}
+
+		$woocommerce = WC();
+		if ( ! is_object( $woocommerce ) || ! isset( $woocommerce->cart ) || ! is_object( $woocommerce->cart ) || ! method_exists( $woocommerce->cart, 'get_cart' ) ) {
+			return false;
+		}
+
+		try {
+			$cart_items = (array) $woocommerce->cart->get_cart();
+		} catch ( Throwable $error ) {
+			return true;
+		}
+
+		$has_package_line = false;
+		foreach ( $cart_items as $cart_item ) {
+			if ( ! empty( $cart_item[ self::CART_KEY ] ) ) {
+				$has_package_line = true;
+				break;
+			}
+		}
+		if ( ! $has_package_line ) {
+			return false;
+		}
+
+		// اطمینان از اجرای مسیر پشتیبان حتی اگر validation پیش از totals فراخوانی شده باشد.
+		// در صورت فعال‌بودن TCP، این تابع قیمت خام را دست‌کاری نمی‌کند.
+		$this->adjust_price( $woocommerce->cart );
+
+		$settings = self::get_settings();
+		foreach ( $cart_items as $cart_item ) {
+			if ( empty( $cart_item[ self::CART_KEY ] ) ) {
 				continue;
 			}
 
-			$base = (float) ( $product->is_on_sale() ? $product->get_sale_price( 'edit' ) : $product->get_regular_price( 'edit' ) );
-			$product->set_price( $base + $package );
+			$product = isset( $cart_item['data'] ) ? $cart_item['data'] : null;
+			if ( ! $product instanceof WC_Product || 'yes' !== $settings['enabled'] || (float) $settings['price'] <= 0 ) {
+				return true;
+			}
+
+			try {
+				if ( ! self::is_eligible( $product ) ) {
+					return true;
+				}
+				$actual_price = $product->get_price();
+			} catch ( Throwable $error ) {
+				self::mark_package_price_failure( $product );
+				return true;
+			}
+
+			$hash = spl_object_hash( $product );
+			if ( ! empty( self::$package_price_failures[ $hash ] ) ) {
+				return true;
+			}
+
+			if ( ! empty( self::$applied_package_prices[ $hash ]['verified'] ) ) {
+				$expected_price = self::$applied_package_prices[ $hash ]['expected'];
+			} elseif ( ! self::has_tisacase_price_filter( $product ) ) {
+				$expected_price = self::fallback_package_price( $product, $settings );
+				if ( null === $expected_price ) {
+					return true;
+				}
+			} else {
+				return true;
+			}
+
+			if ( ! self::package_prices_match( $actual_price, $expected_price ) ) {
+				return true;
+			}
 		}
+
+		return false;
+	}
+
+	/** جلوگیری از پرداخت با مبلغ پکیجِ نامطمئن در سبد کلاسیک. */
+	public function validate_package_pricing() {
+		if ( $this->has_unverified_package_price() ) {
+			$this->add_package_price_error_notice();
+		}
+	}
+
+	/** جلوگیری از ثبت سفارش اگر اعتبارسنجی سبد در مسیر پرداخت رد شده باشد. */
+	public function validate_checkout_package_pricing( $data, $errors ) {
+		if ( ! $this->has_unverified_package_price() ) {
+			return;
+		}
+
+		$message = self::package_price_error_message();
+		if ( is_object( $errors ) && method_exists( $errors, 'add' ) ) {
+			$errors->add( 'wcsp_package_price_unverified', $message );
+		} else {
+			$this->add_package_price_error_notice();
+		}
+	}
+
+	private function add_package_price_error_notice() {
+		if ( self::$package_validation_notice_added || ! function_exists( 'wc_add_notice' ) ) {
+			return;
+		}
+
+		wc_add_notice( self::package_price_error_message(), 'error' );
+		self::$package_validation_notice_added = true;
+	}
+
+	private static function package_price_error_message() {
+		return __( 'قیمت پکیج این سبد قابل تأیید نیست یا فروش پکیج متوقف شده است. برای جلوگیری از ثبت سفارش با مبلغ اشتباه، آیتم پکیج‌دار را حذف کنید یا با فروشگاه تماس بگیرید.', 'case-special-package' );
+	}
+
+	/** آیا شیء جاری همان آیتم سبدی است که مشتری برایش پکیج را انتخاب کرده؟ */
+	private static function is_selected_cart_product( $product ) {
+		if ( ! $product instanceof WC_Product || ! function_exists( 'WC' ) ) {
+			return false;
+		}
+
+		$woocommerce = WC();
+		if ( ! is_object( $woocommerce ) || ! isset( $woocommerce->cart ) || ! is_object( $woocommerce->cart ) || ! method_exists( $woocommerce->cart, 'get_cart' ) ) {
+			return false;
+		}
+
+		if ( null === self::$packaged_cart_product_hashes ) {
+			self::$packaged_cart_product_hashes = array();
+			foreach ( (array) $woocommerce->cart->get_cart() as $cart_item ) {
+				if ( ! empty( $cart_item[ self::CART_KEY ] ) && isset( $cart_item['data'] ) && $cart_item['data'] instanceof WC_Product ) {
+					self::$packaged_cart_product_hashes[ spl_object_hash( $cart_item['data'] ) ] = true;
+				}
+			}
+		}
+
+		return isset( self::$packaged_cart_product_hashes[ spl_object_hash( $product ) ] );
+	}
+
+	/** آیا نسخهٔ نصب‌شدهٔ TisaCase Pricing از هوک قیمت نهایی پشتیبانی می‌کند و فیلترش فعال است؟ */
+	private static function supports_tisacase_pricing_integration( $product ) {
+		return class_exists( 'TCP_Rules' )
+			&& defined( 'TCP_Rules::FINAL_ACTIVE_PRICE_HOOK' )
+			&& self::has_tisacase_price_filter( $product );
+	}
+
+	/** آیا فیلتر قیمت فعال TisaCase Pricing روی نوع محصول جاری نصب است؟ */
+	private static function has_tisacase_price_filter( $product ) {
+		if ( ! class_exists( 'TCP_Rules' ) || ! function_exists( 'has_filter' ) || ! $product instanceof WC_Product ) {
+			return false;
+		}
+
+		$hook = $product->is_type( 'variation' ) ? 'woocommerce_product_variation_get_price' : 'woocommerce_product_get_price';
+		return false !== has_filter( $hook, array( 'TCP_Rules', 'filter_active_price' ) );
 	}
 
 	/* ------------------------------------------------------------------

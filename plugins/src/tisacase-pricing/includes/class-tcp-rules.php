@@ -12,11 +12,12 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 
 	final class TCP_Rules {
 
-		const OPTION         = 'tcp_rules';
-		const CACHE_VERSION  = 'tcp_rules_cache_version';
-		const PRIORITY       = 99999;
-		const WHOLESALE_ROLE = 'tisacase_partner';
-		const WHOLESALE_CAP  = 'tisacase_view_wholesale_prices';
+		const OPTION                  = 'tcp_rules';
+		const CACHE_VERSION           = 'tcp_rules_cache_version';
+		const PRIORITY                = 99999;
+		const FINAL_ACTIVE_PRICE_HOOK = 'tisacase_pricing_final_active_price';
+		const WHOLESALE_ROLE          = 'tisacase_partner';
+		const WHOLESALE_CAP            = 'tisacase_view_wholesale_prices';
 
 		const ACTION_SAVE   = 'tcp_rules_save';
 		const ACTION_SYNC   = 'tcp_rules_sync_all';
@@ -360,19 +361,40 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			return '' !== $new ? $new : $price;
 		}
 
+		/**
+		 * قیمت قابل پرداخت را پس از اعمال قانون داینامیک برمی‌گرداند.
+		 *
+		 * هوک FINAL_ACTIVE_PRICE_HOOK نقطهٔ اتصال برای افزونه‌هایی است که باید مبلغی
+		 * را به قیمت فعال اضافه کنند؛ مقدار ورودی به آن، قیمت نهایی همین موتور است،
+		 * نه قیمت خامِ ذخیره‌شده در متای محصول.
+		 *
+		 * @param mixed     $price   قیمت فعال اولیهٔ ووکامرس.
+		 * @param WC_Product $product محصول جاری.
+		 * @return mixed قیمت نهایی پس از تعدیل‌های وابسته.
+		 */
 		public static function filter_active_price( $price, $product ) {
-			$rule = self::applicable_rule( $product );
-			if ( ! $rule || self::partner_locked( $product ) ) {
+			try {
+				$active_price = $price;
+				$rule         = self::applicable_rule( $product );
+
+				if ( $rule && ! self::partner_locked( $product ) ) {
+					$sale = (float) $rule['sale'] > 0 ? self::calculated_sale( $product, $rule ) : '';
+					if ( '' !== $sale ) {
+						$active_price = $sale;
+					} else {
+						$regular = self::calculated_regular( $product, $rule );
+						if ( '' !== $regular ) {
+							$active_price = $regular;
+						}
+					}
+				}
+
+				return apply_filters( self::FINAL_ACTIVE_PRICE_HOOK, $active_price, $product );
+			} catch ( Throwable $error ) {
+				// از شکستن صفحهٔ سبد جلوگیری کن؛ افزونهٔ متصل می‌تواند پرداخت این آیتم را مسدود کند.
+				do_action( 'tisacase_pricing_active_price_calculation_failed', $product );
 				return $price;
 			}
-			if ( (float) $rule['sale'] > 0 ) {
-				$sale = self::calculated_sale( $product, $rule );
-				if ( '' !== $sale ) {
-					return $sale;
-				}
-			}
-			$regular = self::calculated_regular( $product, $rule );
-			return '' !== $regular ? $regular : $price;
 		}
 
 		public static function variation_regular_price( $price, $variation, $parent ) {

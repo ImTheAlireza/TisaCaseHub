@@ -162,17 +162,25 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			return is_numeric( $a ) && is_numeric( $b ) && (float) $a === (float) $b;
 		}
 
-		/**
-		 * true یعنی قیمت این اجرا قبلاً نشسته و نباید دوباره محاسبه شود.
-		 * اگر نشان هست ولی قیمت هنوز همان «قبل» است، save کامل نشده و باید اعمال شود.
-		 */
-		public static function guard_should_skip( $raw, $current, $run_id ) {
+		/** وضعیت نشان را سه‌حالته می‌کند تا تغییر خارجی با «ذخیرهٔ موفق» اشتباه نشود. */
+		public static function guard_state( $raw, $current, $run_id ) {
 			$run_id = absint( $run_id );
 			$guard  = self::guard_decode( $raw );
 			if ( ! $run_id || ! $guard || $guard['run'] !== $run_id ) {
-				return false;
+				return 'none';
 			}
-			return ! self::prices_equal( $current, $guard['before'] );
+			if ( self::prices_equal( $current, $guard['before'] ) ) {
+				return 'before';
+			}
+			if ( self::prices_equal( $current, $guard['after'] ) ) {
+				return 'after';
+			}
+			return 'conflict';
+		}
+
+		/** فقط قیمت دقیقاً برابر با مقدار مقصد، اعمالِ انجام‌شدهٔ همان اجراست. */
+		public static function guard_should_skip( $raw, $current, $run_id ) {
+			return 'after' === self::guard_state( $raw, $current, $run_id );
 		}
 
 		public static function runtime_boost() {
@@ -916,9 +924,13 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 			if ( ! $run_id || ! is_object( $product ) || ! method_exists( $product, 'get_meta' ) ) {
 				return null;
 			}
-			$raw = (string) $product->get_meta( self::GUARD_META, true );
-			if ( ! self::guard_should_skip( $raw, $current, $run_id ) ) {
+			$raw   = (string) $product->get_meta( self::GUARD_META, true );
+			$state = self::guard_state( $raw, $current, $run_id );
+			if ( 'before' === $state || 'none' === $state ) {
 				return null;
+			}
+			if ( 'conflict' === $state ) {
+				throw new TCP_Unsafe_Exception( 'قیمت فعلی با مقدار قبل و بعدِ ثبت‌شده برای همین اجرا هم‌خوان نیست؛ برای جلوگیری از ثبت لاگ نادرست یا اعمال دوباره، محصول دستی بررسی شود.' );
 			}
 			$guard = self::guard_decode( $raw );
 			return array(

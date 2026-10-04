@@ -376,6 +376,7 @@ $guard = TCP_Ops::guard_encode( 4, '100000', '110000' );
 t( 'guard_encode/decode', TCP_Ops::guard_decode( $guard ) === array( 'run' => 4, 'before' => '100000', 'after' => '110000' ) );
 t( 'نشانِ همان اجرا و قیمتِ بعد → ردِ اعمال دوباره', TCP_Ops::guard_should_skip( $guard, '110000', 4 ) === true );
 t( 'نشان هست ولی قیمت هنوز «قبل» است → save کامل نشده و باید اعمال شود', TCP_Ops::guard_should_skip( $guard, '100000', 4 ) === false );
+t( 'قیمت سوم با قبل و بعد هم‌خوان نیست و به‌عنوان تعارض شناخته می‌شود', TCP_Ops::guard_state( $guard, '105000', 4 ) === 'conflict' && TCP_Ops::guard_should_skip( $guard, '105000', 4 ) === false );
 t( 'نشانِ اجرای دیگر نادیده گرفته می‌شود', TCP_Ops::guard_should_skip( $guard, '110000', 9 ) === false );
 
 $simple = new WC_Product( 21, 'simple' );

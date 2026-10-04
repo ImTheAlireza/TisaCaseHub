@@ -949,7 +949,7 @@
 					}
 				}).then(function (val) {
 					if (val === null) { return; }
-					doStart(scheduled);
+					doStart(scheduled, val);
 				});
 				return;
 			}
@@ -960,16 +960,17 @@
 				okText: scheduled ? 'ثبت در صف' : 'اجرا کن',
 				okClass: 'button-primary'
 			}).then(function (ok) {
-				if (ok) { doStart(scheduled); }
+				if (ok) { doStart(scheduled, ''); }
 			});
 		}
 
-		function doStart(scheduled) {
+		function doStart(scheduled, confirmation) {
 			var payload = commonPayload({
 				action: A.run,
 				preview_token: previewToken,
 				preview_parent_count: String(previewInfo && previewInfo.preview_parent_count || 0),
 				preview_ceiling: String(previewInfo && previewInfo.preview_ceiling || 0),
+				confirmation: confirmation || '',
 				schedule: scheduled ? '1' : '0'
 			});
 

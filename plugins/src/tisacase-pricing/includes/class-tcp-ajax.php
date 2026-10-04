@@ -318,6 +318,20 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 			if ( (int) $prepared['parents'] !== (int) $snapshot['parents'] || (int) $prepared['ceiling'] !== (int) $snapshot['ceiling'] ) {
 				wp_send_json_error( array( 'message' => 'فهرست یا تعداد محصولات از زمان پیش‌نمایش تغییر کرده است؛ برای جلوگیری از تغییر ناخواسته، دوباره «بررسی قبل از اجرا» را بزن.' ), 409 );
 			}
+			$confirm_threshold = TCP_Settings::confirm_threshold();
+			if ( ! $confirm_threshold ) {
+				$confirm_threshold = 500; // با مقدار پیش‌فرض رابط کاربری هم‌سو بماند.
+			}
+			$requires_confirmation = 'all' === $args['target_type'] || (int) $prepared['parents'] >= $confirm_threshold;
+			if ( $requires_confirmation ) {
+				$confirmation = isset( $_POST['confirmation'] ) && is_scalar( $_POST['confirmation'] )
+					? trim( sanitize_text_field( wp_unslash( $_POST['confirmation'] ) ) )
+					: '';
+				$required_confirmation = 'تایید ' . (int) $prepared['parents'];
+				if ( ! hash_equals( $required_confirmation, $confirmation ) ) {
+					wp_send_json_error( array( 'message' => 'برای اجرای گسترده، عبارت تأیید «' . $required_confirmation . '» باید در درخواست ثبت شود.' ), 409 );
+				}
+			}
 			$args_store    = $prepared['args'];
 			$total_parents = (int) $prepared['parents'];
 			$pages         = (int) $prepared['pages'];
