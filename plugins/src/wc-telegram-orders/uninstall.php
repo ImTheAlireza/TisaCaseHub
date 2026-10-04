@@ -14,6 +14,7 @@ global $wpdb;
 delete_option('wc_telegram_orders_settings');
 delete_option('wc_telegram_pinned_messages');
 delete_option('wc_telegram_last_report_end');
+delete_option('wc_telegram_daily_report_lock');
 delete_option('wc_telegram_migrated_version');
 delete_option('wc_telegram_template_version');
 delete_option('wc_telegram_log_db_version');
@@ -30,8 +31,8 @@ wp_clear_scheduled_hook('wc_telegram_maintenance');
 wp_clear_scheduled_hook('wc_telegram_send_status');
 wp_clear_scheduled_hook('wc_telegram_sweep_pending');
 
-// رویدادهایی که «با آرگومان» زمان‌بندی شده‌اند (ارسال سفارش/علان موجودی) با
-// wp_clear_scheduled_hook پاک نمی‌شوند؛ مستقیماً از آرایه کرون حذف می‌شوند
+// رویدادهای باقی‌مانده (از جمله زمان‌بندی‌های قدیمی با آرگومان) مستقیماً از
+// آرایهٔ کرون حذف می‌شوند تا هیچ callback افزونه پس از حذف اجرا نشود.
 $crons = get_option('cron');
 if (is_array($crons)) {
     $changed = false;
@@ -39,7 +40,7 @@ if (is_array($crons)) {
         if (!is_array($hooks)) {
             continue;
         }
-        foreach (['wc_telegram_stock_flush', 'wc_telegram_send_order'] as $hook) {
+        foreach (['wc_telegram_daily_report', 'wc_telegram_stock_flush', 'wc_telegram_send_order'] as $hook) {
             if (isset($hooks[$hook])) {
                 unset($crons[$timestamp][$hook]);
                 $changed = true;

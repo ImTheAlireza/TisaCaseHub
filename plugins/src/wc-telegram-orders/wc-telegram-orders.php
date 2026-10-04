@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ارسال سفارش‌ها به تلگرام ووکامرس
  * Description:       ارسال خودکار سفارش‌های جدید ووکامرس به تلگرام با فرمت فارسی دلخواه + گزارش روزانه فروش (با سنجاق خودکار) + اعلان کمبود موجودی محصولات + سیستم لاگ رویدادها در پنل.
- * Version:           1.14.1
+ * Version:           1.14.2
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            علیرضا شعبان زاده
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_TELEGRAM_ORDERS_VERSION', '1.14.1');
+define('WC_TELEGRAM_ORDERS_VERSION', '1.14.2');
 define('WC_TELEGRAM_ORDERS_OPTION', 'wc_telegram_orders_settings');
 define('WC_TELEGRAM_ORDERS_FILE', __FILE__);
 
@@ -40,6 +40,9 @@ class WC_Telegram_Orders {
     const LOG_COOLDOWN     = 600;                            // بازه توقف اعلان تکراری هر محصول (ثانیه)
     const PINNED_OPTION    = 'wc_telegram_pinned_messages';  // آخرین پیام سنجاق‌شده در هر چت
     const LAST_REPORT_OPTION = 'wc_telegram_last_report_end'; // پایان بازه آخرین گزارش روزانه (UTC)
+    const DAILY_REPORT_LOCK_OPTION = 'wc_telegram_daily_report_lock'; // قفل اتمیک برای جلوگیری از گزارش خودکار هم‌زمان
+    const DAILY_REPORT_LOCK_TTL = 1800; // قفل پس از توقف غیرعادی حداکثر پس از ۳۰ دقیقه آزاد می‌شود
+    const DAILY_REPORT_DUPLICATE_WINDOW = 900; // تکرار خودکار تا ۱۵ دقیقه پس از گزارش موفق نادیده گرفته می‌شود
     const MIGRATION_OPTION = 'wc_telegram_migrated_version';  // نسخه‌ای که مهاجرت قالب‌ها برایش انجام شده
     const TEMPLATE_VERSION_OPTION = 'wc_telegram_template_version'; // نسخهٔ قالب پیش‌فرضی که اعمال شده
     const TEMPLATE_VERSION = '1.12.4';                        // فقط با تغییرِ قالب پیش‌فرض بالا می‌رود
@@ -2646,19 +2649,26 @@ class WC_Telegram_Orders {
         return $this->log_table_ready;
     }
 
-    // اگر به هر دلیلی (مثل آپدیت دستی) زمان‌بندی پاک شده بود، دوباره بساز؛ اگر غیرفعال است پاک کن
+    // اگر به هر دلیلی زمان‌بندی پاک یا چندبار ثبت شده بود، آن را به یک رویداد روزانه برگردان.
     public function maybe_schedule_daily() {
         $s = $this->get_settings();
-        $scheduled = wp_next_scheduled(self::CRON_HOOK);
+        $events = $this->daily_report_events();
         if ($s['enabled'] !== 'yes' || $s['daily_enabled'] !== 'yes') {
-            if ($scheduled) {
+            if (!empty($events)) {
                 $this->clear_daily_schedule();
             }
             return;
         }
-        if (!$scheduled) {
+
+        $valid_schedule = count($events) === 1
+            && empty($events[0]['args'])
+            && isset($events[0]['schedule'])
+            && $events[0]['schedule'] === 'daily';
+        if (!$valid_schedule) {
+            $this->clear_daily_schedule();
             $this->schedule_daily_report();
         }
+
         // نگهداری لاگ مستقل از گزارش روزانه است (حتی اگر گزارش غیرفعال باشد لاگ پاک‌سازی می‌شود)
         if (!wp_next_scheduled(self::MAINT_HOOK)) {
             wp_schedule_event(time() + HOUR_IN_SECONDS, 'daily', self::MAINT_HOOK);
@@ -2692,11 +2702,31 @@ class WC_Telegram_Orders {
         return (bool) wp_schedule_event($ts, 'daily', self::CRON_HOOK);
     }
 
+    private function daily_report_events() {
+        $crons = function_exists('_get_cron_array') ? _get_cron_array() : [];
+        if (!is_array($crons)) {
+            return [];
+        }
+
+        $events = [];
+        foreach ($crons as $timestamp => $hooks) {
+            if (!isset($hooks[self::CRON_HOOK]) || !is_array($hooks[self::CRON_HOOK])) {
+                continue;
+            }
+            foreach ($hooks[self::CRON_HOOK] as $event) {
+                $events[] = [
+                    'timestamp' => (int) $timestamp,
+                    'schedule'  => isset($event['schedule']) ? (string) $event['schedule'] : '',
+                    'args'      => isset($event['args']) && is_array($event['args']) ? $event['args'] : [],
+                ];
+            }
+        }
+        return $events;
+    }
+
     private function clear_daily_schedule() {
-        $ts = wp_next_scheduled(self::CRON_HOOK);
-        while ($ts) {
-            wp_unschedule_event($ts, self::CRON_HOOK);
-            $ts = wp_next_scheduled(self::CRON_HOOK);
+        foreach ($this->daily_report_events() as $event) {
+            wp_unschedule_event($event['timestamp'], self::CRON_HOOK, $event['args']);
         }
     }
 
@@ -3001,7 +3031,103 @@ class WC_Telegram_Orders {
     // اجرا شود هیچ سفارشی بین دو گزارش جا نمی‌ماند (قبلاً بازه «امروز» بود و سفارش‌های
     // دقیقه آخر روز یا روزی که کرون دیر اجرا می‌شد کاملاً از دست می‌رفتند).
     // اجرای دستی: بازه مشخص از طریق $day_start/$day_end.
+    /**
+     * گزارش خودکار را در کل سایت به‌صورت اتمیک قفل می‌کند؛ گزارش دستی عمداً مستقل می‌ماند.
+     * قفل از ارسال موازیِ چند رویداد WP-Cron جلوگیری می‌کند و پایان آخرین گزارش موفق،
+     * تکرارهای پشت‌سرهم همان اجرا را هم تا چند دقیقه بعد بی‌اثر می‌کند.
+     */
     public function send_daily_report($day_start = null, $day_end = null, $manual = false) {
+        if (!function_exists('wc_get_orders')) {
+            return ['ok' => false, 'message' => 'ووکامرس فعال نیست.'];
+        }
+        if ($manual) {
+            return $this->send_daily_report_unlocked($day_start, $day_end, true);
+        }
+
+        $lock_token = $this->acquire_daily_report_lock();
+        if ($lock_token === false) {
+            $this->log('info', 'daily', 'duplicate_blocked',
+                'اجرای تکراری گزارش روزانه نادیده گرفته شد؛ یک گزارش دیگر در حال ارسال است.',
+                ['reason' => 'lock_held'], 0);
+            return [
+                'ok'        => true,
+                'duplicate' => true,
+                'sent'      => [],
+                'message'   => 'گزارش خودکار دیگری در حال ارسال است؛ اجرای تکراری نادیده گرفته شد.',
+            ];
+        }
+
+        try {
+            $now  = time();
+            $last = (int) get_option(self::LAST_REPORT_OPTION, 0);
+            if ($last > 0 && abs($now - $last) < self::DAILY_REPORT_DUPLICATE_WINDOW) {
+                $this->log('info', 'daily', 'duplicate_blocked',
+                    'اجرای تکراری گزارش روزانه نادیده گرفته شد؛ گزارش اخیر قبلاً با موفقیت ارسال شده است.',
+                    ['reason' => 'recent_success', 'last_report_end' => $last], 0);
+                return [
+                    'ok'        => true,
+                    'duplicate' => true,
+                    'sent'      => [],
+                    'message'   => 'گزارش خودکار این نوبت قبلاً ارسال شده است؛ اجرای تکراری نادیده گرفته شد.',
+                ];
+            }
+
+            return $this->send_daily_report_unlocked($day_start, $day_end, false);
+        } finally {
+            $this->release_daily_report_lock($lock_token);
+        }
+    }
+
+    /** قفل یکتا در جدول options؛ برخلاف transient، add_option در دیتابیس اتمیک است. */
+    private function acquire_daily_report_lock() {
+        $now   = time();
+        $token = wp_generate_uuid4();
+        $lock  = [
+            'token'   => $token,
+            'expires' => $now + self::DAILY_REPORT_LOCK_TTL,
+        ];
+
+        if (add_option(self::DAILY_REPORT_LOCK_OPTION, $lock, '', 'no')) {
+            return $token;
+        }
+
+        $existing = get_option(self::DAILY_REPORT_LOCK_OPTION, false);
+        if (is_array($existing) && isset($existing['expires']) && (int) $existing['expires'] > $now) {
+            return false;
+        }
+
+        // قفلِ مانده از توقف غیرعادی: با compare-and-swap جایگزینش کن تا دو فرایند
+        // هم‌زمان نتوانند یک قفلِ منقضی را هم‌زمان تصاحب کنند.
+        global $wpdb;
+        if (is_array($existing) && isset($wpdb->options) && method_exists($wpdb, 'prepare') && method_exists($wpdb, 'query')) {
+            $query = $wpdb->prepare(
+                "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s",
+                maybe_serialize($lock),
+                self::DAILY_REPORT_LOCK_OPTION,
+                maybe_serialize($existing)
+            );
+            if (1 !== (int) $wpdb->query($query)) {
+                return false;
+            }
+            wp_cache_delete(self::DAILY_REPORT_LOCK_OPTION, 'options');
+            wp_cache_delete('alloptions', 'options');
+            wp_cache_delete('notoptions', 'options');
+            return $token;
+        }
+
+        // مسیر سازگار برای محیط‌های تست یا دیتابیس‌های mock شده.
+        delete_option(self::DAILY_REPORT_LOCK_OPTION);
+        return add_option(self::DAILY_REPORT_LOCK_OPTION, $lock, '', 'no') ? $token : false;
+    }
+
+    private function release_daily_report_lock($token) {
+        $lock = get_option(self::DAILY_REPORT_LOCK_OPTION, false);
+        if (is_array($lock) && isset($lock['token']) && hash_equals((string) $lock['token'], (string) $token)) {
+            delete_option(self::DAILY_REPORT_LOCK_OPTION);
+        }
+    }
+
+    private function send_daily_report_unlocked($day_start = null, $day_end = null, $manual = false) {
         if (!function_exists('wc_get_orders')) {
             return ['ok' => false, 'message' => 'ووکامرس فعال نیست.'];
         }

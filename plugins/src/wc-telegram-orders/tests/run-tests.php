@@ -510,6 +510,42 @@ foreach (['orders', 'products', 'stats'] as $tb) {
 }
 unset($_GET['tab']);
 
+echo "--- 16) جلوگیری از ارسال تکراری گزارش روزانه ---\n";
+
+$p = setup(['daily_pin' => 'no']);
+$auto_first = $p->send_daily_report();
+$auto_second = $p->send_daily_report();
+t('گزارش خودکارِ نخست ارسال می‌شود', !empty($auto_first['ok']) && count($p->sent_messages) === 1);
+t('اجرای خودکار تکراری پس از موفقیت بی‌اثر است', !empty($auto_second['duplicate']) && count($p->sent_messages) === 1);
+t('قفل گزارش پس از پایان آزاد می‌شود', get_option(WC_Telegram_Orders::DAILY_REPORT_LOCK_OPTION, false) === false);
+
+$p = setup(['daily_pin' => 'no']);
+$held_token = $p->call('acquire_daily_report_lock');
+$blocked_report = $p->send_daily_report();
+t('اجرای هم‌زمان هنگام در دسترس نبودن قفل پیام نمی‌فرستد', !empty($blocked_report['duplicate']) && empty($p->sent_messages));
+$p->call('release_daily_report_lock', [$held_token]);
+
+$p = setup(['daily_pin' => 'no']);
+update_option(WC_Telegram_Orders::DAILY_REPORT_LOCK_OPTION, ['token' => 'stale-lock', 'expires' => time() - 1]);
+$recovered_token = $p->call('acquire_daily_report_lock');
+t('قفل مانده از توقف قبلی پس از انقضا قابل‌بازیابی است', is_string($recovered_token) && $recovered_token !== '');
+$p->call('release_daily_report_lock', [$recovered_token]);
+
+$p = setup(['daily_pin' => 'no']);
+$manual_start = time() - DAY_IN_SECONDS;
+$manual_end   = time();
+$p->send_daily_report($manual_start, $manual_end, true);
+$p->send_daily_report($manual_start, $manual_end, true);
+t('گزارش دستی مستقل است و با اجرای دستیِ قبلی مسدود نمی‌شود', count($p->sent_messages) === 2);
+
+$p = setup();
+wp_schedule_event(time() + 100, 'daily', WC_Telegram_Orders::CRON_HOOK);
+wp_schedule_event(time() + 200, 'daily', WC_Telegram_Orders::CRON_HOOK);
+wp_schedule_event(time() + 300, 'daily', WC_Telegram_Orders::CRON_HOOK, ['legacy']);
+$p->maybe_schedule_daily();
+$daily_events = wcto_cron_hooks(WC_Telegram_Orders::CRON_HOOK);
+t('زمان‌بندی‌های قدیمی و تکراری به یک کرون روزانهٔ بی‌آرگومان پاک‌سازی می‌شوند', count($daily_events) === 1 && $daily_events[0]['args'] === [] && $daily_events[0]['schedule'] === 'daily', var_export($daily_events, true));
+
 /* ---------- نتیجه ---------- */
 
 echo "\nنتیجه: {$pass} موفق، {$fail} ناموفق\n";
