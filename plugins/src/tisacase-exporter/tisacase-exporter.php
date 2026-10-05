@@ -3,7 +3,7 @@
  * Plugin Name: TisaCase Exporter — مرکز خروجی تیساکیس
  * Plugin URI: https://tisacase.com
  * Description: مرکز خروجی تیساکیس برای ووکامرس — پنج بخش داده با فیلتر و انتخاب ستون، پیش‌نمایش اختیاری، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری، ادامهٔ اجرای ناتمام، تاریخچه و WP-CLI.
- * Version: 2.1.4
+ * Version: 2.1.5
  * Author: علیرضا شعبان زاده
  * Author URI: https://tisacase.com
  * Requires PHP: 7.4
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TISA_EXPORTER_FILE', __FILE__ );
-define( 'TISA_EXPORTER_VERSION', '2.1.4' );
+define( 'TISA_EXPORTER_VERSION', '2.1.5' );
 define( 'TISA_EXPORTER_DIR', plugin_dir_path( __FILE__ ) );
 
 /*

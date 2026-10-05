@@ -616,18 +616,34 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			self::text( self::$mx + 9, $band_bottom + 12, $marklay['glyphs'], 8.6, true, self::$accent_soft, $marklay['actual_text'] );
 
-			/* خط فیلترهای فعال: برای نسخهٔ چاپی معلوم باشد این برگه چیست. */
+			/* خلاصهٔ فیلترها در نوار جداگانه می‌آید تا با نام سایت/تاریخ تداخل نکند. */
 			$filters = trim( (string) self::meta_value( 'filters' ) );
+			$head_top = $band_bottom - 5.0;
 
 			if ( '' !== $filters ) {
-				$flay = TisaCase_Exporter_Pdf_Text::layout( $filters, self::$font_pt, true );
+				$filter_size   = 7.0;
+				$filter_line_h = 8.6;
+				$filter_text   = __( 'فیلترها: ', TisaCase_Exporter::TEXT_DOMAIN ) . $filters;
+				$filter_max    = max( 20.0, ( self::$content - 18.0 ) / $filter_size );
+				$filter_lines  = TisaCase_Exporter_Pdf_Text::wrap( $filter_text, $filter_max, self::$font_pt, true );
+				$filter_height = ( count( $filter_lines ) * $filter_line_h ) + 5.0;
+				$filter_top    = $band_bottom - 4.0;
+				$filter_bottom = $filter_top - $filter_height;
 
-				if ( ( $flay['width'] * 7.0 ) < ( self::$content * 0.72 ) ) {
-					self::text( self::$mx + self::$content - 9 - ( $flay['width'] * 7.0 ), $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft, $flay['actual_text'] );
+				self::rect( self::$mx, $filter_bottom, self::$content, $filter_height, self::$accent_soft, null );
+
+				$filter_y = $filter_top - 3.6 - ( $filter_size * 0.86 );
+
+				foreach ( $filter_lines as $filter_line ) {
+					$filter_layout = TisaCase_Exporter_Pdf_Text::layout( $filter_line, self::$font_pt, true );
+					$filter_x      = self::$mx + self::$content - 9 - ( $filter_layout['width'] * $filter_size );
+
+					self::text( $filter_x, $filter_y, $filter_layout['glyphs'], $filter_size, false, self::$accent_dark, $filter_layout['actual_text'] );
+					$filter_y -= $filter_line_h;
 				}
-			}
 
-			$head_top = $band_bottom - 5.0;
+				$head_top = $filter_bottom - 5.0;
+			}
 
 			/* عنوان ستون‌ها هم می‌تواند دو خط شود (مثل «موبایل (989xxxxxxx)»)؛
 			   ارتفاع سرستون از تعداد خط‌های واقعی درمی‌آید. */
