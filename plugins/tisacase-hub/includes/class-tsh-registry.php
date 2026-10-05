@@ -334,7 +334,7 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 			);
 
 			$items['exporter'] = array(
-				'title' => __( 'خروجی گرفتن', 'tisacase-hub' ),
+				'title' => __( 'مرکز خروجی تیساکیس', 'tisacase-hub' ),
 				'desc'  => __( 'شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — با فیلتر، انتخاب ستون، پیش‌نمایش، پنج قالب خروجی (TXT/CSV/اکسل/JSON/PDF فارسی) و پاک‌سازی خودکار فایل موقت.', 'tisacase-hub' ),
 				'group' => 'orders',
 				'icon'  => 'upload',
@@ -342,7 +342,7 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				'cap'   => 'manage_woocommerce',
 				'pages' => array(
 					array(
-						'label'  => __( 'خروجی گرفتن', 'tisacase-hub' ),
+						'label'  => __( 'مرکز خروجی تیساکیس', 'tisacase-hub' ),
 						'path'   => 'admin.php?page=tisacase-exporter',
 						'screen' => 'woocommerce_page_tisacase-exporter',
 						'parent' => 'woocommerce',

@@ -2,7 +2,7 @@
  * اسموکتست قالب PDF افزونهٔ tisacase-exporter — بدون نیاز به وردپرس.
  *
  * موتور PHP را در WASM اجرا می‌کند (php-wasm)، کلاس‌های افزونه را لود می‌کند،
- * با یک جدول مشتریان فارسی و یک لیست شماره، PDF واقعی می‌سازد و ۲۱ چک انجام می‌دهد:
+ * با یک جدول مشتریان فارسی و یک لیست شماره، PDF واقعی می‌سازد و چندین چک انجام می‌دهد:
  * سرآیند/پایان/xref، خواندن قلم جاسازی‌شده، شکل‌دهی (init/medi/fina و لام-الف)،
  * شکستن خط، دو‌جهته‌بودن ایمیل، و دست‌نخورده‌ماندن خروجی TXT نسخهٔ ۱.x.
  *
@@ -173,7 +173,35 @@ fclose($h2);
 $ppdf = file_get_contents('/out/phones.pdf');
 check(0 === strpos($ppdf, '%PDF-1.4'), 'PDF شماره‌ها ساخته شد (' . strlen($ppdf) . ' بایت)');
 
-/* ---------- ۴) رگرسیون: TXT باید دست‌نخورده بماند ---------- */
+/* ---------- ۴) حتی جدول‌های تمام‌عددی هم آرایش و تراز RTL دارند ---------- */
+$num_cols = array(
+	array('key' => 'id', 'label' => 'شناسه', 'type' => 'num'),
+	array('key' => 'total', 'label' => 'مبلغ کل', 'type' => 'money'),
+	array('key' => 'date', 'label' => 'تاریخ', 'type' => 'date'),
+);
+$num_labels = array_map(function ($col) { return $col['label']; }, $num_cols);
+$num_keys = array_map(function ($col) { return $col['key']; }, $num_cols);
+$num_meta = array('title' => 'سفارش‌ها', 'site' => 'فروشگاه تیساکیس', 'date' => '۱۴ مهر ۱۴۰۵', 'columns' => $num_cols);
+$num_handle = fopen('/out/numeric.pdf', 'wb');
+TisaCase_Exporter_Pdf::open($num_handle, $num_labels, $num_keys, $num_meta);
+for ($i = 0; $i < 40; $i++) {
+	TisaCase_Exporter_Pdf::row(array($i + 1, 125000 + ($i * 1000), '1405-07-14'));
+}
+$reflection = new ReflectionClass('TisaCase_Exporter_Pdf');
+$columns_property = $reflection->getProperty('cols');
+$columns_property->setAccessible(true);
+$positioned = $columns_property->getValue();
+$slots = array_map(function ($column) { return $column['slot']; }, $positioned);
+$right_aligned = count($positioned) === 3;
+foreach ($positioned as $column) {
+	$right_aligned = $right_aligned && 'right' === $column['align'];
+}
+check(array(2, 1, 0) === $slots, 'ترتیب ستون‌های PDF تمام‌عددی از راست به چپ است: ' . json_encode($slots));
+check($right_aligned, 'همهٔ سلول‌ها و سرستون‌های PDF راست‌چین هستند');
+TisaCase_Exporter_Pdf::close();
+fclose($num_handle);
+
+/* ---------- ۵) رگرسیون: TXT باید دست‌نخورده بماند ---------- */
 $h3 = fopen('/out/phones.txt', 'wb');
 TisaCase_Exporter_Format::stream_open('txt', array('موبایل (989xxxxxxx)'), array('phone'), $h3, $pmeta);
 for ($i = 0; $i < 3; $i++) {

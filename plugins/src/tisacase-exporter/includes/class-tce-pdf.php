@@ -273,14 +273,14 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 			);
 			self::$writer->emit( self::$obj_catalog, '<< /Type /Catalog /Pages ' . self::$obj_pages . ' 0 R >>' );
 
-			$title = ( '' !== (string) self::meta_value( 'title' ) ) ? (string) self::meta_value( 'title' ) : __( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN );
+			$title = ( '' !== (string) self::meta_value( 'title' ) ) ? (string) self::meta_value( 'title' ) : __( 'مرکز خروجی تیساکیس', TisaCase_Exporter::TEXT_DOMAIN );
 
 			self::$writer->emit(
 				self::$obj_info,
 				sprintf(
 					'<< /Title <%s> /Producer <%s> /Creator <%s> /CreationDate (%s) >>',
 					self::text_hex( $title ),
-					self::text_hex( 'خروجی گرفتن' ),
+					self::text_hex( 'مرکز خروجی تیساکیس' ),
 					self::text_hex( 'TisaCase Exporter' ),
 					self::pdf_date()
 				)
@@ -344,7 +344,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 					'label'   => (string) $label,
 					'type'    => $type,
 					'rtl'     => $rtl,
-					'align'   => ( 1 === $count ) ? 'right' : ( $rtl ? 'right' : 'left' ),
+					'align'   => 'right',
 					'cap'     => isset( $caps[ $type ] ) ? $caps[ $type ] : 2,
 					'share'   => isset( $shares[ $type ] ) ? $shares[ $type ] : 0.24,
 					'need'    => 0.0,
@@ -570,15 +570,9 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 			}
 		}
 
-		/** جدول راست‌به‌چپ است؟ */
+		/** آرایش همهٔ جدول‌های PDF فارسی RTL است؛ نوع داده فقط جهت متن درون سلول را تعیین می‌کند. */
 		private static function table_rtl() {
-			foreach ( self::$cols as $col ) {
-				if ( $col['rtl'] ) {
-					return true;
-				}
-			}
-
-			return false;
+			return true;
 		}
 
 		/** آغاز صفحهٔ تازه: نوار عنوان + سرستون‌ها. */
@@ -597,7 +591,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			self::rect( self::$mx, $band_bottom, self::$content, $band_h, self::$accent, null );
 
-			$title   = ( '' !== (string) self::meta_value( 'title' ) ) ? (string) self::meta_value( 'title' ) : __( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN );
+			$title   = ( '' !== (string) self::meta_value( 'title' ) ) ? (string) self::meta_value( 'title' ) : __( 'مرکز خروجی تیساکیس', TisaCase_Exporter::TEXT_DOMAIN );
 			$layout  = TisaCase_Exporter_Pdf_Text::layout( $title, self::bold_spec(), true );
 			$size    = 12.5;
 			$x_title = self::$mx + self::$content - 9 - ( $layout['width'] * $size );
@@ -617,7 +611,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$sublay['actual_text']
 			);
 
-			$mark    = __( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN );
+			$mark    = __( 'مرکز خروجی تیساکیس', TisaCase_Exporter::TEXT_DOMAIN );
 			$marklay = TisaCase_Exporter_Pdf_Text::layout( $mark, self::bold_spec(), true );
 
 			self::text( self::$mx + 9, $band_bottom + 12, $marklay['glyphs'], 8.6, true, self::$accent_soft, $marklay['actual_text'] );
@@ -629,7 +623,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$flay = TisaCase_Exporter_Pdf_Text::layout( $filters, self::$font_pt, true );
 
 				if ( ( $flay['width'] * 7.0 ) < ( self::$content * 0.72 ) ) {
-					self::text( self::$mx + 9, $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft, $flay['actual_text'] );
+					self::text( self::$mx + self::$content - 9 - ( $flay['width'] * 7.0 ), $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft, $flay['actual_text'] );
 				}
 			}
 
@@ -739,7 +733,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			$lay = TisaCase_Exporter_Pdf_Text::layout( implode( ' · ', $items ), self::$font_pt, true );
 
-			self::text( self::$mx + self::$content - ( $lay['width'] * 7.2 ), $y + 2.5, $lay['glyphs'], 7.2, false, self::$muted, $lay['actual_text'] );
+			self::text( self::$mx + self::$content - ( $lay['width'] * 7.2 ), $y + 14.0, $lay['glyphs'], 7.2, false, self::$muted, $lay['actual_text'] );
 
 			$page_label = sprintf(
 				/* translators: %s: شمارهٔ صفحه */
@@ -757,7 +751,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			$play = TisaCase_Exporter_Pdf_Text::layout( $page_label, self::$font_pt, true );
 
-			self::text( self::$mx, $y + 2.5, $play['glyphs'], 7.2, false, self::$muted, $play['actual_text'] );
+			self::text( self::$mx + self::$content - ( $play['width'] * 7.2 ), $y + 2.5, $play['glyphs'], 7.2, false, self::$muted, $play['actual_text'] );
 		}
 
 		/* -----------------------------------------------------------------

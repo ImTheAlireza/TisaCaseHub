@@ -126,7 +126,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Modules' ) ) {
 			return (string) $keys[0];
 		}
 
-		/** آدرس یک بخش در صفحهٔ «خروجی گرفتن». */
+		/** آدرس یک بخش در صفحهٔ «مرکز خروجی تیساکیس». */
 		public static function url( $id ) {
 			return add_query_arg(
 				array(

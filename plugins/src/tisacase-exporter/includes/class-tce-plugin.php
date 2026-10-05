@@ -1,6 +1,6 @@
 <?php
 /**
- * هسته افزونهٔ «خروجی گرفتن»: ثابت‌ها، تنظیمات قابل‌فیلتر و اتصال هوک‌ها.
+ * هستهٔ افزونهٔ «مرکز خروجی تیساکیس»: ثابت‌ها، تنظیمات قابل‌فیلتر و اتصال هوک‌ها.
  *
  * @package TisaCase_Exporter
  */
@@ -147,8 +147,8 @@ if ( ! class_exists( 'TisaCase_Exporter' ) ) {
 		public static function admin_menu() {
 			add_submenu_page(
 				'woocommerce',
-				__( 'خروجی گرفتن', self::TEXT_DOMAIN ),
-				__( 'خروجی گرفتن', self::TEXT_DOMAIN ),
+				__( 'مرکز خروجی تیساکیس', self::TEXT_DOMAIN ),
+				__( 'مرکز خروجی تیساکیس', self::TEXT_DOMAIN ),
 				'manage_woocommerce',
 				self::MENU_SLUG,
 				array( 'TisaCase_Exporter_Admin_Page', 'admin_page' )
