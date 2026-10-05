@@ -285,6 +285,26 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 			);
 		}
 
+		/**
+		 * عیب‌یابی شمارش: چرا عدد خروجی این عدد است؟
+		 * خروجی: نردبان فیلترها (سهم هر فیلتر)، شمارش هر وضعیت و آمار موبایل.
+		 */
+		public static function ajax_diagnose() {
+			TisaCase_Exporter_Session::ensure_access();
+			check_ajax_referer( TisaCase_Exporter::NONCE_ACTION, 'nonce' );
+
+			$module = self::requested_module();
+
+			if ( null === $module ) {
+				wp_send_json_error( array( 'message' => __( 'بخش خروجی معتبر نیست.', TisaCase_Exporter::TEXT_DOMAIN ) ), 400 );
+			}
+
+			$class   = $module['class'];
+			$filters = call_user_func( array( $class, 'normalize_filters' ), self::raw_filters() );
+
+			wp_send_json_success( TisaCase_Exporter_Diagnostics::report( $module['id'], $filters ) );
+		}
+
 		/** لغو خروجی جاری + پاک‌سازی فوری. */
 		public static function ajax_cancel() {
 			TisaCase_Exporter_Session::ensure_access();

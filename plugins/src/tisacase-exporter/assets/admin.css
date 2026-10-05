@@ -431,3 +431,57 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 }
 .tisa-exp.is-standalone .tisa-table td { padding: 10px var(--tisa-sp-4, 16px); border-block-end: 1px solid var(--tisa-border, #E3E1DA); color: var(--tisa-text, #2A3439); }
 .tisa-exp.is-standalone .tisa-empty { display: grid; place-items: center; gap: var(--tisa-sp-2, 8px); padding: var(--tisa-sp-6, 32px) var(--tisa-sp-5, 24px); text-align: center; color: var(--tisa-muted, #77828A); }
+
+/* ---------- کارت عیب‌یابی شمارش ---------- */
+.tisa-exp__diag-head {
+	display: flex; flex-wrap: wrap; align-items: center; gap: var(--tisa-sp-3, 12px);
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+}
+.tisa-exp__diag-head b { font-size: var(--tisa-fs-h3, 16px); font-weight: 800; color: var(--tisa-ink, #1F2A2E); }
+.tisa-exp__diag-h { margin: var(--tisa-sp-4, 16px) 0 var(--tisa-sp-2, 8px); font-size: var(--tisa-fs-meta, 12.5px); font-weight: 700; color: var(--tisa-muted, #77828A); }
+.tisa-exp__diag-table td { vertical-align: top; }
+.tisa-exp__diag-table td:first-child { width: 60%; }
+.tisa-exp__diag-num { font-weight: 800; color: var(--tisa-ink, #1F2A2E); text-align: end; white-space: nowrap; }
+.tisa-exp__diag-delta { text-align: end; white-space: nowrap; color: var(--tisa-muted, #77828A); font-weight: 700; }
+.tisa-exp__diag-delta.is-down { color: var(--tisa-warning-ink, #8A6116); }
+.tisa-exp__diag-delta.is-up { color: var(--tisa-success, #1A7F37); }
+.tisa-exp__diag-note { display: block; margin-block-start: 3px; font-size: var(--tisa-fs-tiny, 11px); color: var(--tisa-muted, #77828A); font-weight: 400; }
+.tisa-exp__diag-chips { display: flex; flex-wrap: wrap; gap: var(--tisa-sp-2, 8px); }
+.tisa-exp__diag-chip {
+	display: inline-flex; align-items: center; gap: 6px;
+	padding: 3px 10px; border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-3, #F6F5F1); color: var(--tisa-muted, #77828A);
+	font-size: var(--tisa-fs-tiny, 11px); box-shadow: inset 0 0 0 1px var(--tisa-border, #E3E1DA);
+}
+.tisa-exp__diag-chip b { color: var(--tisa-ink, #1F2A2E); font-weight: 800; }
+.tisa-exp__diag-chip.is-on { background: var(--tisa-primary-soft, #E4F1EE); color: var(--tisa-primary-ink, #0A5F52); box-shadow: inset 0 0 0 1px var(--tisa-primary, #0E7C6B); }
+.tisa-exp__diag-chip.is-zero { opacity: .55; }
+.tisa-exp__diag-chip i { width: 6px; height: 6px; border-radius: 50%; background: var(--tisa-primary, #0E7C6B); }
+.tisa-exp__diag-stats { display: flex; flex-wrap: wrap; gap: var(--tisa-sp-3, 12px); }
+.tisa-exp__diag-stats span {
+	display: flex; flex-direction: column; gap: 2px; min-width: 120px;
+	padding: var(--tisa-sp-2, 8px) var(--tisa-sp-3, 12px);
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface-2, #FAFAF8); border: 1px solid var(--tisa-border, #E3E1DA);
+}
+.tisa-exp__diag-stats i { font-style: normal; font-size: var(--tisa-fs-tiny, 11px); color: var(--tisa-muted, #77828A); }
+.tisa-exp__diag-stats b { font-size: var(--tisa-fs-h3, 16px); font-weight: 800; color: var(--tisa-ink, #1F2A2E); }
+.tisa-exp__diag-warnings { display: grid; gap: var(--tisa-sp-2, 8px); margin-block-start: var(--tisa-sp-4, 16px); }
+.tisa-exp__diag-warnings p {
+	margin: 0; padding: var(--tisa-sp-2, 8px) var(--tisa-sp-3, 12px);
+	border-radius: var(--tisa-r-sm, 10px); font-size: var(--tisa-fs-meta, 12.5px); line-height: 1.9;
+	background: var(--tisa-surface-3, #F6F5F1); color: var(--tisa-text, #2A3439);
+	border-inline-start: 3px solid var(--tisa-border-strong, #C9DCD7);
+}
+.tisa-exp__diag-warnings p.is-ok { background: var(--tisa-success-soft, #E5F4E7); color: var(--tisa-success-ink, #14532D); border-inline-start-color: var(--tisa-success, #1A7F37); }
+.tisa-exp__diag-warnings p.is-warn { background: var(--tisa-warning-soft, #FCF3D7); color: var(--tisa-warning-ink, #8A6116); border-inline-start-color: var(--tisa-warning, #C08A19); }
+.tisa-exp__diag-warnings p.is-fail { background: var(--tisa-danger-soft, #FBE9E9); color: var(--tisa-danger-ink, #8A1F1F); border-inline-start-color: var(--tisa-danger, #B3261E); }
+.tisa-exp__diag-loading { padding: var(--tisa-sp-4, 16px); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12.5px); }
+.tisa-exp__check-count {
+	font-weight: 700; color: var(--tisa-muted, #77828A);
+	background: var(--tisa-surface-3, #F6F5F1); border-radius: var(--tisa-r-pill, 999px);
+	padding: 0 6px; font-size: var(--tisa-fs-tiny, 11px);
+}

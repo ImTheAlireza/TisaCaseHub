@@ -78,7 +78,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Phones' ) ) {
 		public static function count( array $filters ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 
 			if ( self::hpos_enabled() ) {
@@ -122,12 +122,22 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Phones' ) ) {
 		private static function fetch_hpos( array $filters, $cursor, $limit ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 
+			/*
+			 * شماره/نام صورتحساب در HPOS با زنجیرهٔ سه‌منبعی خوانده می‌شود
+			 * (`wc_order_addresses` ← `wc_orders_meta` ← `wp_postmeta`) تا سفارش‌های
+			 * سایت‌های مهاجرت‌کرده/ایمپورت‌شده بی‌دلیل «بدون شماره» شمرده نشوند.
+			 */
+			$phone = self::hpos_phone_expr();
+			$first = self::hpos_name_part_expr( 'first_name', '_billing_first_name' );
+			$last  = self::hpos_name_part_expr( 'last_name', '_billing_last_name' );
+
 			$sql = "SELECT o.id AS order_id, o.status AS status, o.date_created_gmt AS date,"
-				. ' o.total_amount AS total, a.phone AS phone,'
-				. " CONCAT_WS(' ', a.first_name, a.last_name) AS name"
+				. " o.total_amount AS total,"
+				. " {$phone} AS phone,"
+				. " CONCAT_WS(' ', {$first}, {$last} ) AS name"
 				. " FROM {$wpdb->prefix}wc_orders o"
 				. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
 				. " WHERE o.type = 'shop_order' AND o.status IN ( " . self::placeholders( $statuses ) . ' )'
@@ -156,7 +166,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Phones' ) ) {
 		private static function fetch_legacy( array $filters, $cursor, $limit ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 
 			$sql = "SELECT ID AS order_id, post_status AS status, post_date_gmt AS date"

@@ -270,6 +270,160 @@ if ( ! class_exists( 'TisaCase_Exporter_Module' ) ) {
 
 		/* ---------------- ابزار دیتابیس ---------------- */
 
+		/**
+		 * WC_DateTime → رشتهٔ زمان GMT.
+		 *
+		 * Format::value برای نوع date فرض می‌کند ورودی GMT است و آن را به وقت محلی سایت
+		 * تبدیل می‌کند؛ پس اینجا باید زمان واقعی UTC برگردد، نه `$date->date()` (که خودش
+		 * وقت محلی می‌دهد و باعث تبدیل دوباره و ساعت اشتباه می‌شد).
+		 *
+		 * @param mixed $date شیء WC_DateTime.
+		 * @return string
+		 */
+		protected static function gmt_string( $date ) {
+			if ( is_object( $date ) && method_exists( $date, 'getTimestamp' ) ) {
+				return gmdate( 'Y-m-d H:i:s', (int) $date->getTimestamp() );
+			}
+
+			if ( is_object( $date ) && method_exists( $date, 'date' ) ) {
+				return (string) $date->date( 'Y-m-d H:i:s' );
+			}
+
+			return '';
+		}
+
+		/**
+		 * وضعیت‌های مؤثر برای کوئری.
+		 *
+		 * قاعده:
+		 * - اگر کاربر هیچ وضعیتی ارسال نکرده باشد (فیلد در فرم نبوده) ⇒ پیش‌فرض همهٔ وضعیت‌ها.
+		 * - اگر کاربر «هیچ‌کدام» را زده باشد، فیلتر یک آرایهٔ خالی می‌شود و باید هیچ ردیفی
+		 *   برنگردد (قبلاً در این حالت اشتباهاً «همهٔ وضعیت‌ها» خروجی می‌گرفت).
+		 *
+		 * @param array $filters فیلترهای نرمال‌شده.
+		 * @return array<int,string>
+		 */
+		public static function effective_statuses( array $filters ) {
+			if ( empty( $filters['statuses'] ) ) {
+				if ( array_key_exists( 'statuses', $filters ) && is_array( $filters['statuses'] ) ) {
+					// «هیچ‌کدام»: با یک مقدار بی‌همتا هیچ ردیفی مطابقت نمی‌کند.
+					return array( '__tisacase_none__' );
+				}
+
+				return self::default_statuses();
+			}
+
+			return array_values( array_map( 'strval', (array) $filters['statuses'] ) );
+		}
+
+		/**
+		 * شمارش سفارش‌ها به تفکیک وضعیت (بدون فیلتر تاریخ).
+		 *
+		 * @return array<string,int> به‌همراه کلید ویژهٔ `__sources__` برای مقایسهٔ HPOS/قدیمی.
+		 */
+		public static function order_status_counts() {
+			global $wpdb;
+
+			$out = array();
+
+			if ( self::hpos_enabled() ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$rows = $wpdb->get_results(
+					"SELECT status AS k, COUNT(*) AS c FROM {$wpdb->prefix}wc_orders WHERE type = 'shop_order' GROUP BY status",
+					ARRAY_A
+				);
+			} else {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+				$rows = $wpdb->get_results(
+					"SELECT post_status AS k, COUNT(*) AS c FROM {$wpdb->posts} WHERE post_type = 'shop_order' GROUP BY post_status",
+					ARRAY_A
+				);
+			}
+
+			foreach ( (array) $rows as $row ) {
+				$out[ (string) $row['k'] ] = (int) $row['c'];
+			}
+
+			$out['__sources__'] = self::storage_counts();
+
+			return $out;
+		}
+
+		/** تعداد کل سفارش‌ها در هر دو منبع داده (برای مقایسه). */
+		protected static function storage_counts() {
+			global $wpdb;
+
+			$prefix = $wpdb->prefix;
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$hpos = self::table_exists( 'wc_orders' )
+				? (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$prefix}wc_orders WHERE type = 'shop_order'" )
+				: 0;
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching
+			$legacy = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = 'shop_order'" );
+
+			return array(
+				'hpos'   => $hpos,
+				'legacy' => $legacy,
+			);
+		}
+
+		/**
+		 * آمار موبایل در محدودهٔ وضعیت/تاریخ جاری: کل، دارای شماره و شمارهٔ یکتا.
+		 *
+		 * @param array $filters فیلترها (وجود has_phone/min_total/نوع مشتری مهم نیست).
+		 * @return array{total:int,with_phone:int,unique:int}
+		 */
+		public static function phone_stats( array $filters ) {
+			global $wpdb;
+
+			$statuses          = self::effective_statuses( $filters );
+			list( $from, $to ) = self::gmt_bounds( $filters );
+			$params            = array_merge( $statuses, array() );
+			$extra             = '';
+
+			if ( '' !== $from ) {
+				$extra   .= ' AND date_created_gmt >= %s';
+				$params[] = $from;
+			}
+			if ( '' !== $to ) {
+				$extra   .= ' AND date_created_gmt <= %s';
+				$params[] = $to;
+			}
+
+			if ( self::hpos_enabled() ) {
+				// همان زنجیرهٔ سه‌منبعی خواندن شماره، تا آمار کارت عیب‌یابی با خروجی واقعی بخواند.
+				$phone = static::hpos_phone_expr();
+
+				$sql = "SELECT COUNT(DISTINCT o.id) AS total,"
+					. " COUNT(DISTINCT CASE WHEN {$phone} <> '' THEN o.id END ) AS with_phone,"
+					. " COUNT(DISTINCT CASE WHEN {$phone} <> '' THEN {$phone} END ) AS uniq"
+					. " FROM {$wpdb->prefix}wc_orders o"
+					. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
+					. " WHERE o.type = 'shop_order' AND o.status IN ( " . self::placeholders( $statuses ) . ' )' . $extra;
+			} else {
+				$extra2 = str_replace( 'date_created_gmt', 'p.post_date_gmt', $extra );
+
+				$sql = "SELECT COUNT(DISTINCT p.ID) AS total,"
+					. " COUNT(DISTINCT CASE WHEN COALESCE( ph.meta_value, '' ) <> '' THEN p.ID END ) AS with_phone,"
+					. " COUNT(DISTINCT CASE WHEN COALESCE( ph.meta_value, '' ) <> '' THEN ph.meta_value END ) AS uniq"
+					. " FROM {$wpdb->posts} p"
+					. " LEFT JOIN {$wpdb->postmeta} ph ON ph.post_id = p.ID AND ph.meta_key = '_billing_phone'"
+					. " WHERE p.post_type = 'shop_order' AND p.post_status IN ( " . self::placeholders( $statuses ) . ' )' . $extra2;
+			}
+
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
+			$row = $wpdb->get_row( $wpdb->prepare( $sql, $params ), ARRAY_A );
+
+			return array(
+				'total'      => isset( $row['total'] ) ? (int) $row['total'] : 0,
+				'with_phone' => isset( $row['with_phone'] ) ? (int) $row['with_phone'] : 0,
+				'unique'     => isset( $row['uniq'] ) ? (int) $row['uniq'] : 0,
+			);
+		}
+
+
 		/** تشخیص حافظه authoritative سفارش‌ها (HPOS یا Posts قدیمی). */
 		public static function hpos_enabled() {
 			if ( class_exists( '\Automattic\WooCommerce\Utilities\OrderUtil' ) ) {
@@ -353,6 +507,65 @@ if ( ! class_exists( 'TisaCase_Exporter_Module' ) ) {
 			$cache[ $suffix ] = ( $table === $found );
 
 			return $cache[ $suffix ];
+		}
+
+		/* -----------------------------------------------------------------
+		 * خواندن داده‌های صورتحساب در HPOS (با پشتیبان‌های چندمنبعی)
+		 * ----------------------------------------------------------------- */
+
+		/**
+		 * عبارت شمارهٔ موبایل صورتحساب در HPOS با سه منبع پشتیبان.
+		 *
+		 * ترتیب خواندن: جدول آدرس‌های سفارش (`wc_order_addresses.phone`) ← متای سفارش
+		 * (`wc_orders_meta._billing_phone`) ← متای نوشتهٔ قدیمی (`wp_postmeta._billing_phone`).
+		 *
+		 * چرا؟ چون در سایت‌هایی که سفارش‌ها را ایمپورت/مهاجرت کرده‌اند یا فقط یک سمت داده
+		 * پر است، خواندن تک‌منبعی باعث می‌شود سفارش‌های دارای شماره «بدون شماره» شمرده شوند
+		 * (مثلاً ۳۰۰ سفارش در حال انجام ولی خروجی ۲۷ ردیف).
+		 *
+		 * پیش‌شرط: جدول‌ها با نام‌های `o` (سفارش) و `a` (آدرس) در کوئری حاضر باشند.
+		 *
+		 * @return string عبارت SQL.
+		 */
+		protected static function hpos_phone_expr() {
+			global $wpdb;
+
+			$meta  = $wpdb->prefix . 'wc_orders_meta';
+			$posts = $wpdb->postmeta;
+
+			return "COALESCE( NULLIF(a.phone, ''),"
+				. " ( SELECT hm.meta_value FROM {$meta} hm WHERE hm.order_id = o.id AND hm.meta_key = '_billing_phone' LIMIT 1 ),"
+				. " ( SELECT lp.meta_value FROM {$posts} lp WHERE lp.post_id = o.id AND lp.meta_key = '_billing_phone' LIMIT 1 ), '' )";
+		}
+
+		/**
+		 * یک بخش از نام صورتحساب (نام یا نام خانوادگی) در HPOS با همان زنجیرهٔ پشتیبان.
+		 *
+		 * @param string $address_column ستون جدول آدرس‌ها (first_name/last_name).
+		 * @param string $meta_key       کلید متا (_billing_first_name/…).
+		 * @return string عبارت SQL.
+		 */
+		protected static function hpos_name_part_expr( $address_column, $meta_key ) {
+			global $wpdb;
+
+			$meta  = $wpdb->prefix . 'wc_orders_meta';
+			$posts = $wpdb->postmeta;
+			$col   = preg_replace( '/[^a-z_]/', '', (string) $address_column );
+			$key   = esc_sql( (string) $meta_key );
+
+			return "COALESCE( NULLIF(a.{$col}, ''),"
+				. " ( SELECT hm.meta_value FROM {$meta} hm WHERE hm.order_id = o.id AND hm.meta_key = '{$key}' LIMIT 1 ),"
+				. " ( SELECT lp.meta_value FROM {$posts} lp WHERE lp.post_id = o.id AND lp.meta_key = '{$key}' LIMIT 1 ), '' )";
+		}
+
+		/**
+		 * شرط «سفارش شمارهٔ موبایل دارد» در HPOS — دقیقاً همان زنجیرهٔ `hpos_phone_expr()`،
+		 * تا شمارش (KPI/پیش‌نمایش) و خروجی واقعی همیشه یک عدد بدهند.
+		 *
+		 * @return string شرط SQL (بدون AND ابتدایی).
+		 */
+		protected static function hpos_has_phone_condition() {
+			return static::hpos_phone_expr() . " <> ''";
 		}
 
 		/**

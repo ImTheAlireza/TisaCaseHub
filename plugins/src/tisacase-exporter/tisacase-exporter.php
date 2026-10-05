@@ -3,7 +3,7 @@
  * Plugin Name: TisaCase Exporter — خروجی گرفتن
  * Plugin URI: https://tisacase.com
  * Description: مرکز خروجی گرفتن تیساکیس — پنج بخش (شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف) با فیلتر، انتخاب ستون، پیش‌نمایش ۲۵ ردیف، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری با حافظهٔ محدود، ادامه پس از قطعی، تاریخچهٔ اجراها و دستور WP-CLI.
- * Version: 2.1.1
+ * Version: 2.1.2
  * Author: علیرضا شعبان زاده
  * Author URI: https://tisacase.com
  * Requires PHP: 7.4
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TISA_EXPORTER_FILE', __FILE__ );
-define( 'TISA_EXPORTER_VERSION', '2.1.1' );
+define( 'TISA_EXPORTER_VERSION', '2.1.2' );
 define( 'TISA_EXPORTER_DIR', plugin_dir_path( __FILE__ ) );
 
 /*
@@ -52,6 +52,7 @@ require_once TISA_EXPORTER_DIR . 'includes/class-tce-module-customers.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-module-products.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-module-coupons.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-modules.php';
+require_once TISA_EXPORTER_DIR . 'includes/class-tce-diagnostics.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-storage.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-session.php';
 require_once TISA_EXPORTER_DIR . 'includes/class-tce-pipeline.php';

@@ -154,17 +154,42 @@
 		return select ? select.value : '';
 	}
 
+	function dateMode() {
+		var select = $( '[data-filter="date_mode"] select' );
+
+		return select ? select.value : '';
+	}
+
+	function selectedStatuses() {
+		if ( ! $( '[data-filter="statuses"]' ) ) {
+			return -1; // این بخش فیلتر وضعیت ندارد.
+		}
+
+		return $$( '[data-filter="statuses"] input[type="checkbox"]:checked' ).length;
+	}
+
 	function validate() {
 		if ( collectColumns().length === 0 ) {
 			toast( cfg.l10n.needColumns, 'warn' );
 			return false;
 		}
 
-		var from = $( '[data-filter="date_from"] input' );
-		var to   = $( '[data-filter="date_to"] input' );
+		/*
+		 * در حالت «بدون محدودیت تاریخ» تاریخ‌ها نادیده گرفته می‌شوند؛ پس ترتیبشان هم
+		 * نباید جلوی شروع خروجی را بگیرد (قبلاً در همین حالت خطا می‌داد).
+		 */
+		if ( dateMode() !== 'all' ) {
+			var from = $( '[data-filter="date_from"] input' );
+			var to   = $( '[data-filter="date_to"] input' );
 
-		if ( from && to && from.value && to.value && from.value > to.value ) {
-			toast( cfg.l10n.invalidDates, 'warn' );
+			if ( from && to && from.value && to.value && from.value > to.value ) {
+				toast( cfg.l10n.invalidDates, 'warn' );
+				return false;
+			}
+		}
+
+		if ( selectedStatuses() === 0 ) {
+			toast( cfg.l10n.noStatus, 'warn' );
 			return false;
 		}
 
@@ -323,6 +348,22 @@
 
 			if ( payload.storage ) {
 				bits.push( sprintf( cfg.l10n.storage, payload.storage ) );
+			}
+
+			/*
+			 * خلاصهٔ پایان کار: تفکیک «بررسی‌شده / خروجی / کنارگذاشته / تکراری» تا معلوم
+			 * باشد چرا تعداد ردیف‌های فایل از تعداد ردیف‌های فیلترشده کمتر است.
+			 */
+			if ( payload.done ) {
+				bits.push( sprintf( cfg.l10n.exportedShort, fmt( payload.exported ) ) );
+
+				if ( Number( payload.skipped ) > 0 ) {
+					bits.push( sprintf( cfg.l10n.skippedShort, fmt( payload.skipped ) ) );
+				}
+
+				if ( payload.dedup ) {
+					bits.push( sprintf( cfg.l10n.duplicatesShort, fmt( payload.duplicates ) ) );
+				}
 			}
 
 			if ( bits.length ) {
@@ -669,6 +710,129 @@
 	}
 
 	/* -----------------------------------------------------------------
+	 * عیب‌یابی شمارش
+	 * ----------------------------------------------------------------- */
+
+	function levelClass( level ) {
+		if ( level === 'ok' ) {
+			return 'is-ok';
+		}
+		if ( level === 'warn' ) {
+			return 'is-warn';
+		}
+		if ( level === 'fail' ) {
+			return 'is-fail';
+		}
+
+		return 'is-info';
+	}
+
+	function renderDiagnose( data ) {
+		var box = $( '#tisa-exp-diagnose-out' );
+
+		if ( ! box ) {
+			return;
+		}
+
+		if ( ! data || ! data.ok ) {
+			box.innerHTML = '<div class="tisa-empty">' + esc( ( data && data.message ) || cfg.l10n.ajaxError ) + '</div>';
+			return;
+		}
+
+		var html = '';
+
+		html += '<div class="tisa-exp__diag-head">' +
+			'<b>' + esc( sprintf( cfg.l10n.diagnoseHeadline, fmt( data.total ), data.unit || '' ) ) + '</b>' +
+			'<span class="tisa-badge tisa-badge--outline" dir="ltr">' + esc( data.storage || '' ) + '</span>' +
+			'</div>';
+
+		if ( Array.isArray( data.steps ) && data.steps.length ) {
+			html += '<h3 class="tisa-exp__diag-h">' + esc( cfg.l10n.diagnoseLadder ) + '</h3>';
+			html += '<div class="tisa-table-scroll"><table class="tisa-table tisa-exp__diag-table"><tbody>';
+
+			data.steps.forEach( function ( step ) {
+				var delta = Number( step.delta ) || 0;
+				var deltaText = delta === 0
+					? cfg.l10n.diagnoseNoChange
+					: ( delta > 0 ? '+' + fmt( delta ) : '−' + fmt( Math.abs( delta ) ) );
+
+				html += '<tr>' +
+					'<td>' + esc( step.label ) + ( step.hint ? '<small class="tisa-exp__diag-note">' + esc( step.hint ) + '</small>' : '' ) + '</td>' +
+					'<td class="tisa-exp__diag-num" dir="ltr">' + esc( fmt( step.count ) ) + '</td>' +
+					'<td class="tisa-exp__diag-delta' + ( delta < 0 ? ' is-down' : ( delta > 0 ? ' is-up' : '' ) ) + '" dir="ltr">' + esc( deltaText ) + '</td>' +
+					'</tr>';
+			} );
+
+			html += '</tbody></table></div>';
+		}
+
+		if ( Array.isArray( data.statuses ) && data.statuses.length ) {
+			html += '<h3 class="tisa-exp__diag-h">' + esc( cfg.l10n.diagnoseStatuses ) + '</h3>';
+			html += '<div class="tisa-exp__diag-chips">';
+
+			data.statuses.forEach( function ( item ) {
+				var cls = 'tisa-exp__diag-chip' + ( item.selected ? ' is-on' : '' ) + ( item.count === 0 ? ' is-zero' : '' );
+
+				html += '<span class="' + cls + '">' + esc( item.label ) +
+					' <b dir="ltr">' + esc( fmt( item.count ) ) + '</b>' +
+					( item.selected ? '<i title="' + esc( cfg.l10n.diagnoseSelected ) + '"></i>' : '' ) +
+					'</span>';
+			} );
+
+			html += '</div>';
+		}
+
+		if ( data.phones && ( data.phones.total || data.phones.with_phone ) ) {
+			html += '<h3 class="tisa-exp__diag-h">' + esc( cfg.l10n.diagnosePhones ) + '</h3>';
+			html += '<div class="tisa-exp__diag-stats">' +
+				'<span><i>' + esc( cfg.l10n.diagnoseTotal ) + '</i><b dir="ltr">' + esc( fmt( data.phones.total ) ) + '</b></span>' +
+				'<span><i>' + esc( cfg.l10n.diagnoseWithPhone ) + '</i><b dir="ltr">' + esc( fmt( data.phones.with_phone ) ) + '</b></span>' +
+				'<span><i>' + esc( cfg.l10n.diagnoseWithoutPhone ) + '</i><b dir="ltr">' + esc( fmt( data.phones.missing ) ) + '</b></span>' +
+				'<span><i>' + esc( cfg.l10n.diagnoseUniquePhones ) + '</i><b dir="ltr">' + esc( fmt( data.phones.unique ) ) + '</b></span>' +
+				'</div>';
+		}
+
+		if ( Array.isArray( data.warnings ) && data.warnings.length ) {
+			html += '<div class="tisa-exp__diag-warnings">';
+
+			data.warnings.forEach( function ( item ) {
+				html += '<p class="' + levelClass( item.level ) + '">' + esc( item.text ) + '</p>';
+			} );
+
+			html += '</div>';
+		}
+
+		box.innerHTML = html;
+	}
+
+	function diagnose() {
+		var button = $( '#tisa-exp-diagnose' );
+		var box    = $( '#tisa-exp-diagnose-out' );
+
+		if ( button ) {
+			button.disabled = true;
+			button.classList.add( 'is-busy' );
+		}
+
+		if ( box ) {
+			box.innerHTML = '<div class="tisa-exp__diag-loading">' + esc( cfg.l10n.diagnoseBusy ) + '</div>';
+		}
+
+		post( cfg.actions.diagnose, formPayload() ).then( function ( data ) {
+			renderDiagnose( data );
+		} ).catch( function ( error ) {
+			if ( box ) {
+				box.innerHTML = '<div class="tisa-empty">' + esc( cfg.l10n.diagnoseError + ' ' + error.message ) + '</div>';
+			}
+		} ).then( function () {
+			if ( button ) {
+				button.disabled = false;
+				button.classList.remove( 'is-busy' );
+			}
+		} );
+	}
+
+	/* -----------------------------------------------------------------
 	 * تاریخچه
 	 * ----------------------------------------------------------------- */
 
@@ -802,6 +966,7 @@
 			input.value = ( value === null || typeof value === 'undefined' ) ? '' : String( value );
 		} );
 
+		syncDateMode();
 		updateOutputHint();
 
 		var card = $( '#tisa-exp-card-filters' );
@@ -852,6 +1017,16 @@
 
 		if ( format === 'pdf' ) {
 			parts.push( 'PDF با قلم فارسی جاسازی‌شده ساخته می‌شود؛ از تاریخچه دکمهٔ «چاپ» دارد.' );
+		}
+
+		var variations = $( '[data-filter="each_variation"] input' );
+
+		if ( variations && variations.checked ) {
+			parts.push( 'با «هر متغیر یک ردیف»، تعداد ردیف‌های خروجی از عدد «کل» بیشتر می‌شود.' );
+		}
+
+		if ( dateMode() === 'all' ) {
+			parts.push( 'بازهٔ تاریخ نادیده گرفته می‌شود؛ همهٔ ردیف‌ها از هر تاریخی می‌آیند.' );
 		}
 
 		node.textContent = parts.join( ' · ' );
@@ -1012,6 +1187,12 @@
 
 		if ( defaultColumns ) {
 			defaultColumns.addEventListener( 'click', setDefaultColumns );
+		}
+
+		var diagnoseButton = $( '#tisa-exp-diagnose' );
+
+		if ( diagnoseButton ) {
+			diagnoseButton.addEventListener( 'click', diagnose );
 		}
 
 		var historyClear = $( '#tisa-exp-history-clear' );

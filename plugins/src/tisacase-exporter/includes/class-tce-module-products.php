@@ -234,13 +234,13 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Products' ) ) {
 			return is_array( $terms ) ? implode( '، ', $terms ) : '';
 		}
 
-		/** تاریخ WC_DateTime → رشتهٔ GMT (Format::value تبدیلش می‌کند). */
+		/**
+		 * تاریخ WC_DateTime → رشتهٔ GMT.
+		 * (Format::value نوع date همین را به وقت محلی سایت تبدیل می‌کند؛ اگر اینجا وقت
+		 * محلی برگردانده شود، تبدیل دوباره انجام و ساعت گزارش اشتباه می‌شد.)
+		 */
 		private static function gmt_date( $date ) {
-			if ( is_object( $date ) && method_exists( $date, 'date' ) ) {
-				return $date->date( 'Y-m-d H:i:s' );
-			}
-
-			return '';
+			return self::gmt_string( $date );
 		}
 
 		/** خلاصهٔ ویژگی‌ها: «رنگ: قرمز، سایز: XL». */

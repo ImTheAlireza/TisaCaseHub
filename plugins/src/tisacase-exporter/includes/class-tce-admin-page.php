@@ -60,6 +60,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					self::render_filters_card( $section );
 					self::render_output_card( $section );
 					self::render_run_card( $section );
+					self::render_diagnose_card();
 					self::render_preview_card();
 					self::render_history_card();
 					?>
@@ -113,6 +114,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					'process' => TisaCase_Exporter::AJAX_PROCESS,
 					'cancel'  => TisaCase_Exporter::AJAX_CANCEL,
 					'preview' => TisaCase_Exporter::AJAX_PREVIEW,
+					'diagnose' => TisaCase_Exporter::AJAX_DIAGNOSE,
 					'history' => TisaCase_Exporter::AJAX_HISTORY,
 				),
 				'batch'      => TisaCase_Exporter::batch_size(),
@@ -182,12 +184,17 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					case 'multiselect':
 						$options = isset( $field['options'] ) && is_array( $field['options'] ) ? $field['options'] : array();
 						$picked  = is_array( $default ) ? array_map( 'strval', $default ) : array();
+						$counts  = ( 'statuses' === $name ) ? self::status_counts() : array();
 						?>
 						<div class="tisa-exp__checks" role="group" aria-label="<?php echo esc_attr( $label ); ?>">
 							<?php foreach ( $options as $value => $option_label ) : ?>
 								<label class="tisa-check tisa-exp__check">
 									<input type="checkbox" name="filters[<?php echo esc_attr( $name ); ?>][]" value="<?php echo esc_attr( $value ); ?>"<?php checked( in_array( (string) $value, $picked, true ) ); ?>>
-									<span><?php echo esc_html( wp_strip_all_tags( (string) $option_label ) ); ?></span>
+									<span><?php echo esc_html( wp_strip_all_tags( (string) $option_label ) ); ?><?php
+										if ( isset( $counts[ (string) $value ] ) ) {
+											echo ' <b class="tisa-exp__check-count" dir="ltr">' . esc_html( number_format_i18n( (int) $counts[ (string) $value ] ) ) . '</b>';
+										}
+									?></span>
 								</label>
 							<?php endforeach; ?>
 						</div>
@@ -360,6 +367,54 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 		}
 
 		/** کارت پیش‌نمایش. */
+		/** شمارش سفارش‌ها به تفکیک وضعیت برای نمایش کنار چک‌باکس‌ها (کش‌شده). */
+		private static function status_counts() {
+			static $cache = null;
+
+			if ( is_array( $cache ) ) {
+				return $cache;
+			}
+
+			$cache   = array();
+			$section = self::current_section();
+
+			if ( null === $section ) {
+				return $cache;
+			}
+
+			$class = $section['class'];
+
+			if ( ! method_exists( $class, 'order_status_counts' ) ) {
+				return $cache;
+			}
+
+			$counts = (array) call_user_func( array( $class, 'order_status_counts' ) );
+			unset( $counts['__sources__'] );
+
+			$cache = $counts;
+
+			return $cache;
+		}
+
+		/** کارت عیب‌یابی شمارش (چرا عدد خروجی این عدد است؟). */
+		private static function render_diagnose_card() {
+			?>
+			<section class="tisa-exp__card" id="tisa-exp-card-diagnose">
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step tisa-exp__step--soft" aria-hidden="true">
+						<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+					</span>
+					<div>
+						<h2><?php esc_html_e( 'عیب‌یابی شمارش', TisaCase_Exporter::TEXT_DOMAIN ); ?></h2>
+						<p><?php esc_html_e( 'این بررسی فقط شمارش می‌کند و هیچ فایلی نمی‌سازد؛ اگر عدد این‌جا با عدد ووکامرس نمی‌خواند، علتش را دقیقاً نشان می‌دهد.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
+					</div>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tisa-exp-diagnose"><?php esc_html_e( 'بررسی شمارش', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+				</div>
+				<div class="tisa-exp__card-body" id="tisa-exp-diagnose-out"></div>
+			</section>
+			<?php
+		}
+
 		private static function render_preview_card() {
 			?>
 			<section class="tisa-exp__card" id="tisa-exp-card-preview" hidden>
@@ -514,11 +569,33 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 				'previewEmpty' => __( 'با این فیلترها ردیفی پیدا نشد.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'resumed'     => __( 'خروجی نیمه‌کاره پیدا شد؛ برای ادامه دکمهٔ «ادامه خروجی» را بزنید.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'needColumns' => __( 'حداقل یک ستون انتخاب کنید.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'noStatus'    => __( 'هیچ وضعیتی انتخاب نشده است؛ با این حالت هیچ سفارشی خروجی نمی‌گیرد. «انتخاب همه» یا «هیچ‌کدام» را بررسی کنید.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'exportedShort' => __( 'خروجی: %1', TisaCase_Exporter::TEXT_DOMAIN ),
+				'skippedShort' => __( 'کنارگذاشته: %1', TisaCase_Exporter::TEXT_DOMAIN ),
+				'duplicatesShort' => __( 'تکراری حذف‌شده: %1', TisaCase_Exporter::TEXT_DOMAIN ),
 				'invalidDates' => __( 'تاریخ «از» بعد از تاریخ «تا» است.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'outputHint'  => __( 'خروجی: %1 ردیف در هر فایل، %2 ستون', TisaCase_Exporter::TEXT_DOMAIN ),
 				'filteredBy'  => __( 'فیلترها', TisaCase_Exporter::TEXT_DOMAIN ),
 				'columnsLabel' => __( 'ستون‌ها', TisaCase_Exporter::TEXT_DOMAIN ),
 				'deepInfo'    => __( 'داده‌ها روی سرور شما می‌مانند و هرگز جایی ارسال نمی‌شوند.', TisaCase_Exporter::TEXT_DOMAIN ),
+				/* عیب‌یابی شمارش */
+				'diagnose'    => __( 'بررسی شمارش', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseBusy' => __( 'در حال بررسی…', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseError' => __( 'بررسی شمارش ناموفق بود:', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseHeadline' => __( 'عدد نهایی این فیلترها: %1 (واحد: %2)', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseLadder' => __( 'سهم هر فیلتر در کم‌شدن تعداد', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseStatuses' => __( 'شمارش سفارش‌ها به تفکیک وضعیت (کل سایت، بدون فیلتر تاریخ)', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseSelected' => __( 'انتخاب‌شده در فرم', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnosePhones' => __( 'وضعیت شمارهٔ موبایل در همین محدوده', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseTotal' => __( 'کل سفارش‌ها', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseWithPhone' => __( 'دارای شمارهٔ موبایل', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseWithoutPhone' => __( 'بدون شمارهٔ موبایل', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseUniquePhones' => __( 'شمارهٔ یکتا', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseNoChange' => __( 'بدون تغییر', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseStorage' => __( 'منبع داده', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseHint' => __( 'این بررسی فقط شمارش می‌کند و هیچ فایلی نمی‌سازد؛ اگر عدد این‌جا با عدد ووکامرس نمی‌خواند، علتش را دقیقاً نشان می‌دهد.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'diagnoseNoStatuses' => __( 'هیچ وضعیتی انتخاب نشده؛ با این حالت خروجی خالی می‌شود.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'skippedHint' => __( 'ردیف کنارگذاشته‌شده', TisaCase_Exporter::TEXT_DOMAIN ),
 			);
 		}
 	}

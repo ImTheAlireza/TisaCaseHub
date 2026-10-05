@@ -19,9 +19,15 @@ if ( ! class_exists( 'TisaCase_Exporter_Lifecycle' ) ) {
 			}
 		}
 
+		/**
+		 * غیرفعال‌سازی: فقط کرون پاک می‌شود.
+		 *
+		 * عمداً هیچ فایلی حذف نمی‌شود: غیرفعال‌سازی برای عیب‌یابی/آزمایش انجام می‌شود و
+		 * نباید تاریخچهٔ خروجی‌ها و فایل‌های آمادهٔ دانلود کاربران را از بین ببرد
+		 * (قبلاً sweep اجباری همهٔ پوشه‌ها را پاک می‌کرد). پاک‌سازی کامل فقط در Uninstall.
+		 */
 		public static function deactivate() {
 			wp_clear_scheduled_hook( TisaCase_Exporter::CRON_HOOK );
-			TisaCase_Exporter_Storage::sweep_old_exports( true );
 		}
 
 		/** حذف کامل ردپاها هنگام Uninstall (فایل‌ها، کرون و transientهای جدول options). */

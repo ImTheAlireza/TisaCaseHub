@@ -100,26 +100,28 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 		public static function count( array $filters ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 			$params   = array_merge( $statuses, array() );
 			$sql      = '';
 
 			if ( self::hpos_enabled() ) {
-				$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}wc_orders o";
-
-				if ( ! empty( $filters['has_phone'] ) ) {
-					$sql .= " INNER JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'";
-				}
+				/*
+				 * شرط «دارای شماره» باید *دقیقاً* همان زنجیرهٔ خواندن خروجی باشد
+				 * (`wc_order_addresses` ← `wc_orders_meta` ← `wp_postmeta`)؛ وگرنه عدد
+				 * KPI/پیش‌نمایش با تعداد ردیف‌های واقعی خروجی نمی‌خواند.
+				 */
+				$sql = "SELECT COUNT(*) FROM {$wpdb->prefix}wc_orders o"
+					. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'";
 
 				$sql .= " WHERE o.type = 'shop_order' AND o.status IN ( " . self::placeholders( $statuses ) . ' )';
 
 				if ( ! empty( $filters['has_phone'] ) ) {
-					$sql .= " AND a.phone <> ''";
+					$sql .= ' AND ' . self::hpos_has_phone_condition();
 				}
-				if ( 'guest' === $filters['customer_type'] ) {
+				if ( 'guest' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 					$sql .= ' AND o.customer_id = 0';
-				} elseif ( 'registered' === $filters['customer_type'] ) {
+				} elseif ( 'registered' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 					$sql .= ' AND o.customer_id > 0';
 				}
 				if ( ! empty( $filters['min_total'] ) ) {
@@ -154,9 +156,11 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 			if ( ! empty( $filters['has_phone'] ) ) {
 				$sql .= " AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} ph WHERE ph.post_id = p.ID AND ph.meta_key = '_billing_phone' AND ph.meta_value <> '' )";
 			}
-			if ( 'guest' === $filters['customer_type'] ) {
+			$customer_type = isset( $filters['customer_type'] ) ? (string) $filters['customer_type'] : 'all';
+
+			if ( 'guest' === $customer_type ) {
 				$sql .= " AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} cu WHERE cu.post_id = p.ID AND cu.meta_key = '_customer_user' AND CAST(cu.meta_value AS UNSIGNED) = 0 )";
-			} elseif ( 'registered' === $filters['customer_type'] ) {
+			} elseif ( 'registered' === $customer_type ) {
 				$sql .= " AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} cu WHERE cu.post_id = p.ID AND cu.meta_key = '_customer_user' AND CAST(cu.meta_value AS UNSIGNED) > 0 )";
 			}
 			if ( ! empty( $filters['min_total'] ) ) {
@@ -184,16 +188,37 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 		private static function fetch_hpos( array $filters, $cursor, $limit, array $columns ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 			$want     = static function ( $key ) use ( $columns ) {
 				return empty( $columns ) || in_array( $key, $columns, true );
 			};
 
+			$meta = $wpdb->prefix . 'wc_orders_meta';
+
+			/*
+			 * شماره/نام صورتحساب در HPOS با زنجیرهٔ سه‌منبعی خوانده می‌شود
+			 * (`wc_order_addresses` ← `wc_orders_meta` ← `wp_postmeta`) تا روی سایت‌هایی که
+			 * سفارش‌ها را ایمپورت/مهاجرت کرده‌اند هیچ ستونی بی‌دلیل خالی نماند.
+			 */
+			$phone_sql = $want( 'phone' )
+				? self::hpos_phone_expr() . ' AS phone'
+				: "'' AS phone";
+
+			$name_sql = $want( 'customer_name' )
+				? "CONCAT_WS(' ', " . self::hpos_name_part_expr( 'first_name', '_billing_first_name' )
+					. ', ' . self::hpos_name_part_expr( 'last_name', '_billing_last_name' )
+					. ' ) AS customer_name'
+				: "'' AS customer_name";
+
+			$email_sql = $want( 'email' )
+				? "COALESCE( NULLIF(o.billing_email, ''), ( SELECT m3.meta_value FROM {$meta} m3"
+					. " WHERE m3.order_id = o.id AND m3.meta_key = '_billing_email' LIMIT 1 ), '' ) AS email"
+				: ' o.billing_email AS email';
+
 			$sql = "SELECT o.id AS order_id, o.status AS status, o.date_created_gmt AS date,"
-				. ' o.total_amount AS total, o.billing_email AS email, o.payment_method_title AS payment_method,'
-				. ' o.customer_note AS customer_note, a.phone AS phone,'
-				. " CONCAT_WS(' ', a.first_name, a.last_name) AS customer_name,"
+				. " o.total_amount AS total, {$email_sql}, o.payment_method_title AS payment_method,"
+				. " o.customer_note AS customer_note, {$phone_sql}, {$name_sql},"
 				. ' a.city AS city, a.state AS state, a.address_1 AS address, a.postcode AS postcode, a.company AS company';
 
 			if ( $want( 'items_count' ) ) {
@@ -218,11 +243,11 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 			$params = array_merge( $statuses, array( absint( $cursor ) ) );
 
 			if ( ! empty( $filters['has_phone'] ) ) {
-				$sql .= " AND a.phone <> ''";
+				$sql .= ' AND ' . self::hpos_has_phone_condition();
 			}
-			if ( 'guest' === $filters['customer_type'] ) {
+			if ( 'guest' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$sql .= ' AND o.customer_id = 0';
-			} elseif ( 'registered' === $filters['customer_type'] ) {
+			} elseif ( 'registered' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$sql .= ' AND o.customer_id > 0';
 			}
 			if ( ! empty( $filters['min_total'] ) ) {
@@ -250,7 +275,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 		private static function fetch_legacy( array $filters, $cursor, $limit, array $columns ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 			$params   = array_merge( $statuses, array( absint( $cursor ) ) );
 

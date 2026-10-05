@@ -15,7 +15,27 @@
  * خروجی PDFها در /tmp/pdf-out/ نوشته می‌شود (و مسیرشان چاپ می‌شود).
  */
 import fs from 'node:fs';
-import { PhpNode } from 'php-wasm/PhpNode';
+
+/*
+ * php-wasm این‌جا نصب نیست (بستهٔ تست، نه وابستگی افزونه). اول از محل نصب معمولِ تست
+ * (/tmp/node_modules) لود می‌شود و اگر نبود، از import معمول استفاده می‌شود.
+ */
+let PhpNode = null;
+for (const spec of [
+  process.env.PHP_WASM || '',
+  '/tmp/node_modules/php-wasm/PhpNode.js',
+  'php-wasm/PhpNode',
+].filter(Boolean)) {
+  try {
+    ({ PhpNode } = await import(spec));
+    break;
+  } catch (e) { /* بعدی */ }
+}
+
+if (!PhpNode) {
+  console.error('php-wasm پیدا نشد. یک‌بار اجرا کنید:  cd /tmp && npm i php-wasm');
+  process.exit(2);
+}
 
 const PLUGIN = '/home/user/TisaCaseHub/plugins/src/tisacase-exporter';
 const OUT = '/tmp/pdf-out';

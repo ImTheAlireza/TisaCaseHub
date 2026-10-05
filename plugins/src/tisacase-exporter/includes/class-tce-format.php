@@ -61,6 +61,11 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 					return '' !== $phone ? $phone : self::clean_cell( $value );
 
 				case 'money':
+					// مقدار خالی نباید «0.00» چاپ شود (مثلاً قیمت فروش ویژهٔ تنظیم‌نشده).
+					if ( '' === trim( (string) $value ) ) {
+						return '';
+					}
+
 					$decimals = function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2;
 					return number_format( (float) $value, $decimals, '.', '' );
 

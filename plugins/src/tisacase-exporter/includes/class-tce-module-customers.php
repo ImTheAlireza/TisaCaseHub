@@ -91,18 +91,30 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 			return array( 'phone' => __( 'شماره موبایل', TisaCase_Exporter::TEXT_DOMAIN ) );
 		}
 
+		/**
+		 * عبارت SQL شمارهٔ موبایل در HPOS: اول جدول آدرس‌ها، بعد پشتیبان `wc_orders_meta`.
+		 * (سایت‌هایی که سفارش‌ها را ایمپورت/مهاجرت کرده‌اند ممکن است ردیف آدرس نداشته باشند.)
+		 */
+		private static function phone_expr() {
+			return self::hpos_phone_expr();
+		}
+
+		/** عبارت SQL یک بخش از نام (نام/نام خانوادگی) با زنجیرهٔ پشتیبان. */
+		private static function name_part_expr( $address_column, $meta_key ) {
+			return self::hpos_name_part_expr( $address_column, $meta_key );
+		}
+
 		/** شرط‌های WHERE/HAVING مشترک. */
-		private static function sql_parts( array $filters, array &$params ) {
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+		private static function sql_parts( array $filters, array &$params ) {			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 
 			$params = array_merge( $params, $statuses );
 
 			$where = ' AND o.status IN ( ' . self::placeholders( $statuses ) . ' )';
 
-			if ( 'guest' === $filters['customer_type'] ) {
+			if ( 'guest' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$where .= ' AND o.customer_id = 0';
-			} elseif ( 'registered' === $filters['customer_type'] ) {
+			} elseif ( 'registered' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$where .= ' AND o.customer_id > 0';
 			}
 			if ( '' !== $from ) {
@@ -125,16 +137,16 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 		private static function sql_parts_legacy( array $filters, array &$params ) {
 			global $wpdb;
 
-			$statuses = ! empty( $filters['statuses'] ) ? $filters['statuses'] : self::default_statuses();
+			$statuses = self::effective_statuses( $filters );
 			list( $from, $to ) = self::gmt_bounds( $filters );
 
 			$params = array_merge( $params, $statuses );
 
 			$where = ' AND p.post_status IN ( ' . self::placeholders( $statuses ) . ' )';
 
-			if ( 'guest' === $filters['customer_type'] ) {
+			if ( 'guest' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$where .= " AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} cu WHERE cu.post_id = p.ID AND cu.meta_key = '_customer_user' AND CAST(cu.meta_value AS UNSIGNED) = 0 )";
-			} elseif ( 'registered' === $filters['customer_type'] ) {
+			} elseif ( 'registered' === ( isset( $filters['customer_type'] ) ? $filters['customer_type'] : 'all' ) ) {
 				$where .= " AND EXISTS ( SELECT 1 FROM {$wpdb->postmeta} cu WHERE cu.post_id = p.ID AND cu.meta_key = '_customer_user' AND CAST(cu.meta_value AS UNSIGNED) > 0 )";
 			}
 			if ( '' !== $from ) {
@@ -164,10 +176,12 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 					$params[] = (int) $filters['min_orders'];
 				}
 
-				$sql = "SELECT COUNT(*) FROM ( SELECT a.phone FROM {$wpdb->prefix}wc_orders o"
-					. " INNER JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
-					. " WHERE o.type = 'shop_order' AND a.phone <> ''" . $where
-					. ' GROUP BY a.phone' . $having . ' ) AS grouped';
+				$phone = self::phone_expr();
+
+				$sql = "SELECT COUNT(*) FROM ( SELECT {$phone} AS phone FROM {$wpdb->prefix}wc_orders o"
+					. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
+					. " WHERE o.type = 'shop_order' AND {$phone} <> ''" . $where
+					. ' GROUP BY phone' . $having . ' ) AS grouped';
 			} else {
 				$params    = array();
 				list( $where, $having ) = self::sql_parts_legacy( $filters, $params );
@@ -197,9 +211,13 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 			$params    = array();
 			list( $where, $having ) = self::sql_parts( $filters, $params );
 
+			$phone = self::phone_expr();
+			$first = self::name_part_expr( 'first_name', '_billing_first_name' );
+			$last  = self::name_part_expr( 'last_name', '_billing_last_name' );
+
 			// پارامترها به ترتیب متن SQL: statuses… سپس cursor در HAVING و LIMIT.
-			$sql = 'SELECT a.phone AS phone,'
-				. " MAX(CONCAT_WS(' ', a.first_name, a.last_name)) AS name,"
+			$sql = "SELECT {$phone} AS phone,"
+				. " MAX(CONCAT_WS(' ', {$first}, {$last})) AS name,"
 				. ' MAX(a.email) AS email,'
 				. ' COUNT(DISTINCT o.id) AS orders_count,'
 				. ' SUM(o.total_amount) AS total_spent,'
@@ -207,12 +225,12 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 				. ' MIN(o.date_created_gmt) AS first_order,'
 				. ' MAX(a.city) AS city, MAX(a.state) AS state, MAX(a.company) AS company'
 				. " FROM {$wpdb->prefix}wc_orders o"
-				. " INNER JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
-				. " WHERE o.type = 'shop_order' AND a.phone <> ''" . $where
-				. ' GROUP BY a.phone';
+				. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
+				. " WHERE o.type = 'shop_order' AND {$phone} <> ''" . $where
+				. ' GROUP BY phone';
 
 			// cursor + min_orders در HAVING (ترتیب: ابتدا شرط cursor، بعد min_orders اگر باشد).
-			$having_sql    = ' HAVING a.phone > %s';
+			$having_sql    = ' HAVING phone > %s';
 			$having_params = array( (string) $cursor );
 
 			if ( ! empty( $filters['min_orders'] ) ) {
@@ -220,7 +238,12 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 				$having_params[] = (int) $filters['min_orders'];
 			}
 
-			$sql .= $having_sql . ' ORDER BY a.phone ASC LIMIT %d';
+			/*
+			 * ترتیب باید روی «همان عبارت گروه‌بندی» باشد (alias `phone`)؛ `a.phone` هم در
+			 * MySQL سخت‌گیر (ONLY_FULL_GROUP_BY) خطا می‌دهد و هم وقتی داده از متا می‌آید NULL
+			 * است و صفحه‌بندی را خراب می‌کند (ردیف‌های ازدست‌رفته/تکراری).
+			 */
+			$sql .= $having_sql . ' ORDER BY phone ASC LIMIT %d';
 
 			$all_params = array_merge( $params, $having_params, array( (int) $limit ) );
 

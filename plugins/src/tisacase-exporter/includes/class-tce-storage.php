@@ -153,25 +153,16 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				return $dir;
 			}
 
-			/*
-			 * شروع خروجی جدید فقط وقتی مجاز است که قفل آزاد باشد؛ بنابراین هیچ پردازش
-			 * فعالی از همین کاربر در جریان نیست و پاک‌سازی پوشه‌های قبلیِ همین کاربر ایمن است.
-			 */
-			$prefix = self::user_dir_prefix();
-
-			if ( '' !== $prefix && is_dir( dirname( $prefix ) ) ) {
-				$entries = @scandir( dirname( $prefix ) );
-
-				if ( is_array( $entries ) ) {
-					$family = basename( $prefix );
-
-					foreach ( $entries as $entry ) {
-						if ( 0 === strpos( $entry, $family ) ) {
-							self::delete_directory( trailingslashit( dirname( $prefix ) ) . $entry );
-						}
-					}
-				}
-			}
+		/*
+		 * پاک‌سازی جلسه‌های قدیمیِ همین کاربر.
+		 *
+		 * قبلاً هر شروع خروجی، همهٔ پوشه‌های قبلی را حذف می‌کرد؛ نتیجه این بود که با ساختن
+		 * یک خروجی جدید، فایل‌های خروجی قبلی (که در «تاریخچه» دکمهٔ دانلود دارند) از بین
+		 * می‌رفت و کاربر «فایل‌ها پاک شده‌اند» می‌دید. الان جدیدترین جلسه‌ها نگه داشته
+		 * می‌شوند و بقیه فقط اگر از پنجرهٔ نگهداری کوتاه گذشته باشند پاک می‌شوند
+		 * (پاک‌سازی نهایی طبق FILE_TTL با کرون ساعتی انجام می‌شود).
+		 */
+			self::prune_user_dirs( $dir );
 
 			if ( is_dir( $dir ) ) {
 				self::delete_directory( $dir );
@@ -183,6 +174,78 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 
 			self::protect_directory( $dir );
 			return $dir;
+		}
+
+		/**
+		 * پاک‌سازی ملایم پوشه‌های قبلیِ همین کاربر.
+		 *
+		 * @param string $keep_dir پوشهٔ جلسهٔ فعلی که در هر حالت می‌ماند.
+		 */
+		private static function prune_user_dirs( $keep_dir ) {
+			$prefix = self::user_dir_prefix();
+
+			if ( '' === $prefix || ! is_dir( dirname( $prefix ) ) ) {
+				return;
+			}
+
+			$parent  = dirname( $prefix );
+			$family  = basename( $prefix );
+			$entries = @scandir( $parent );
+
+			if ( ! is_array( $entries ) ) {
+				return;
+			}
+
+			$candidates = array();
+
+			foreach ( $entries as $entry ) {
+				if ( '.' === $entry || '..' === $entry || 0 !== strpos( $entry, $family ) ) {
+					continue;
+				}
+
+				$path = trailingslashit( $parent ) . $entry;
+
+				if ( ! is_dir( $path ) || is_link( $path ) || $path === $keep_dir ) {
+					continue;
+				}
+
+				$candidates[] = array(
+					'path'  => $path,
+					'mtime' => (int) @filemtime( $path ),
+				);
+			}
+
+			if ( empty( $candidates ) ) {
+				return;
+			}
+
+			// تازه‌ترین جلسه‌ها همیشه می‌مانند تا دانلود از تاریخچه کار کند.
+			usort(
+				$candidates,
+				static function ( $a, $b ) {
+					return $b['mtime'] <=> $a['mtime'];
+				}
+			);
+
+			$keep_recent = array_slice( $candidates, 0, 2 );
+			$keep_paths  = array();
+
+			foreach ( $keep_recent as $item ) {
+				$keep_paths[] = $item['path'];
+			}
+
+			foreach ( $candidates as $item ) {
+				if ( in_array( $item['path'], $keep_paths, true ) ) {
+					continue;
+				}
+
+				// پنجرهٔ ارفاق: جلسه‌های تازه (یک ساعت اخیر) هم دست‌نخورده می‌مانند.
+				if ( $item['mtime'] > 0 && ( time() - $item['mtime'] ) < HOUR_IN_SECONDS ) {
+					continue;
+				}
+
+				self::delete_directory( $item['path'] );
+			}
 		}
 
 		/** حذف چند فایل (بی‌خطر نسبت به مقادیر نامعتبر). */

@@ -22,6 +22,7 @@ if ( ! class_exists( 'TisaCase_Exporter' ) ) {
 		const AJAX_PROCESS      = 'tisacase_export_process';
 		const AJAX_CANCEL       = 'tisacase_export_cancel';
 		const AJAX_PREVIEW      = 'tisacase_export_preview';
+		const AJAX_DIAGNOSE     = 'tisacase_export_diagnose';
 		const AJAX_HISTORY      = 'tisacase_export_history_clear';
 		const DOWNLOAD          = 'tisacase_export_download';
 		const DOWNLOAD_ZIP      = 'tisacase_export_download_zip';
@@ -77,6 +78,7 @@ if ( ! class_exists( 'TisaCase_Exporter' ) ) {
 				add_action( 'wp_ajax_' . self::AJAX_PROCESS, array( 'TisaCase_Exporter_Ajax', 'ajax_process' ) );
 				add_action( 'wp_ajax_' . self::AJAX_CANCEL, array( 'TisaCase_Exporter_Ajax', 'ajax_cancel' ) );
 				add_action( 'wp_ajax_' . self::AJAX_PREVIEW, array( 'TisaCase_Exporter_Ajax', 'ajax_preview' ) );
+				add_action( 'wp_ajax_' . self::AJAX_DIAGNOSE, array( 'TisaCase_Exporter_Ajax', 'ajax_diagnose' ) );
 				add_action( 'wp_ajax_' . self::AJAX_HISTORY, array( 'TisaCase_Exporter_Ajax', 'ajax_history_clear' ) );
 				add_action( 'admin_post_' . self::DOWNLOAD, array( 'TisaCase_Exporter_Download', 'download_file' ) );
 				add_action( 'admin_post_' . self::DOWNLOAD_ZIP, array( 'TisaCase_Exporter_Download', 'download_zip' ) );
