@@ -2,12 +2,12 @@
 
 > **وضعیت اجرا (به‌روزرسانی نهایی — ۲٫۰٫۰ کامل شد):**
 > ۱) **تغییر کامل هویت انجام شد:** پوشه `plugins/src/tisacase-exporter/`، فایل اصلی `tisacase-exporter.php`، کلاس‌ها `TisaCase_Exporter_*` (فایل‌ها `class-tce-*.php`)، اکشن‌ها `tisacase_export_*`، Text Domain `tisacase-exporter`، اسلاگ `admin.php?page=tisacase-exporter`، پوشهٔ فایل‌ها `tisacase-private-exports`، نسخه **۲٫۰٫۰**. CLI: `wp tisacase export [<section>]` (+ نام قدیمی `export-phones` به‌عنوان alias).
-> ۲) **جایگزینی در هاب انجام شد:** کلید رجیستری `phones` → `exporter`، کارت با آیکون `upload`، `catalog.json` و توضیح کارت به‌روز شد، زیپ قدیمی `tisacase-order-phone-exporter.zip` از مخزن **حذف** شد، `plugins/dist/tisacase-exporter.zip` (۲۵ فایل) ساخته شد و هاب به **۱٫۹٫۱۰** رفت.
+> ۲) **جایگزینی در هاب انجام شد:** کلید رجیستری `phones` → `exporter`، کارت با آیکون `upload`، `catalog.json` و توضیح کارت به‌روز شد، زیپ قدیمی `tisacase-order-phone-exporter.zip` از مخزن **حذف** شد، `plugins/dist/tisacase-exporter.zip` (۲۶ فایل) ساخته شد و هاب با توضیح به‌روز به **۱٫۹٫۱۱** رفت.
 > ۳) **هستهٔ مشترک ساخته شد (فاز ۰ب + فاز ۴):** `class-tce-module.php` (قرارداد ماژول)، `class-tce-format.php` (TXT/CSV/XLS/JSON با استریم)، `class-tce-modules.php` (رجیستری `tisacase_exporter_modules` + نوار ناوبری «هدر جدا»)، `class-tce-storage.php` (پوشهٔ خصوصی هر جلسه + Sweep + مسیرهای نسخهٔ قبل)، `class-tce-session.php` (State/قفل/Tombstone)، `class-tce-pipeline.php` (پارت‌های ۱۰هزارتایی + External Sort برای یکتاسازی)، `class-tce-history.php` (تاریخچهٔ ۲۰ اجرا)، `class-tce-ajax.php`، `class-tce-download.php` (دانلود تکی + ZIP)، `class-tce-cli.php` و `class-tce-admin-page.php` + `assets/admin.js` + `assets/admin.css`.
 > ۴) **پنج بخش کامل (فازهای ۱ تا ۳ یک‌جا):** شماره‌ها (خروجی مو‌به‌مو مثل ۱٫۵٫۰: هر خط یک `989xxxxxxxxx`، بدون سرستون) · سفارش‌ها (۱۶ ستون) · مشتری‌ها (تجمیع بر اساس موبایل، شامل مهمان) · محصول‌ها (با گزینهٔ «هر متغیر یک ردیف») · کدهای تخفیف. هر بخش: فیلتر اختصاصی، انتخاب ستون، قالب خروجی، حذف تکراری انتخابی و KPI پویا.
 > ۵) **رابط کاربری:** کارت‌های شماره‌دار (۱ فیلتر، ۲ ستون/قالب، ۳ اجرا و پیشرفت، ۴ پیش‌نمایش ۲۵ ردیف، ۵ تاریخچه) با اعلان شناور، اعداد فارسی، تخمین زمان باقی‌مانده، دکمه‌های «ادامه خروجی» و «توقف و پاک‌سازی» و «اجرای مجدد با همین تنظیمات» از تاریخچه.
 > ۶) **ریدایرکت مسیر قدیمی منتفی است** (افزونهٔ قدیم حذف شد)؛ سازگاری فقط روی خروجی فایل و alias دستور CLI تضمین شده است.
-> ۷) چک‌ها: `php-lint` (۲۳ فایل، ۰ خطا) · `tools/php-check.py` (۰ مشکل) · `tools/ui-audit.py` (۷/۷ پاک) · `tools/hub-check.py` (سبز).
+> ۷) چک‌ها: `php-lint` (۲۳ فایل، ۰ خطا) · `tools/php-check.py` (۰ مشکل) · `tools/ui-audit.py` (۷/۷ پاک) · `tools/hub-check.py` (سبز) · تست رفتاری UI با jsdom (۲۰/۲۰ سنجه روی CSS/JS واقعی).
 > ۸) باقی‌ماندهٔ اختیاری (فاز ۵ و ۶): اجرای پس‌زمینه/زمان‌بندی/ارسال ایمیل-تلگرام، تست خودکار، `readme.txt`/`.pot` و به‌روزرسانی مستندات هاب.
 
 > ورودی این پروپوزال: `PHONE_EXPORTER_REVIEW.md` (بررسی وضعیت فعلی، ۱۲ یافته) · افزونهٔ فعلی: `tisacase-order-phone-exporter` ۱٫۵٫۰
@@ -178,7 +178,7 @@ TisaCase_Exporter_Module {
 
 | فاز | محتوا | خروجی قابل تحویل | حجم |
 |---|---|---|---|
-| **۰الف** | ✅ **انجام شد:** تغییر هویت کامل + جایگزینی در هاب + حذف زیپ قدیم + alias CLI + مهاجرت نام پوشهٔ فایل‌ها | `plugins/dist/tisacase-exporter.zip` (۲٫۰٫۰) + هاب ۱٫۹٫۱۰ | S |
+| **۰الف** | ✅ **انجام شد:** تغییر هویت کامل + جایگزینی در هاب + حذف زیپ قدیم + alias CLI + مهاجرت نام پوشهٔ فایل‌ها | `plugins/dist/tisacase-exporter.zip` (۲٫۰٫۰) + هاب ۱٫۹٫۱۱ | S |
 | **۰ب** | ✅ **انجام شد (گزینهٔ الف):** رجیستری بخش‌ها + نوار ناوبری «هدر جدا» + هدر هر بخش + انتقال عین‌به‌عین بخش شماره‌ها + کارت «به‌زودی» بقیه | `plugins/dist/tisacase-exporter.zip` (۱۸ فایل) | S–M |
 | **۱** | ✅ **انجام شد (در همین ۲٫۰٫۰):** ماژول سفارش‌ها + فیلتر وضعیت/بازهٔ تاریخ + سطح آیتم | همان زیپ ۲٫۰٫۰ | M–L |
 | **۲** | ✅ **انجام شد (در همین ۲٫۰٫۰):** ماژول مشتری‌ها (تجمعی از سفارش‌ها، شامل مهمان‌ها) | همان زیپ ۲٫۰٫۰ | M |
