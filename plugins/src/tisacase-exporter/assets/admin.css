@@ -22,8 +22,8 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 	display: flex;
 	align-items: center;
 	gap: var(--tisa-sp-4, 16px);
-	margin: 0 0 var(--tisa-sp-6, 32px);
-	padding: var(--tisa-sp-6, 32px);
+	margin: 0 0 var(--tisa-sp-5, 24px);
+	padding: 24px 28px;
 	border-radius: var(--tisa-r-xl, 22px);
 	background: linear-gradient(120deg, var(--tisa-primary-deep, #0A5F52) 0%, var(--tisa-primary, #0E7C6B) 60%, var(--tisa-primary-bright, #17A088) 100%);
 	color: var(--tisa-on-primary, #fff);
@@ -39,24 +39,37 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 	pointer-events: none;
 }
 .tisa-exp__hero-mark {
+	position: relative;
+	z-index: 1;
 	flex: 0 0 auto;
 	display: inline-flex; align-items: center; justify-content: center;
-	width: 46px; height: 46px;
-	border-radius: var(--tisa-r, 14px);
+	width: 52px; height: 52px;
+	border: 1px solid rgba(255, 255, 255, .2);
+	border-radius: var(--tisa-r-lg, 18px);
 	background: rgba(255, 255, 255, .14);
 }
-.tisa-exp__hero-mark svg { width: 22px; height: 22px; }
-.tisa-exp__hero-text { flex: 1 1 auto; min-width: 0; position: relative; }
-.tisa-exp h1.tisa-exp__title { margin: 0; padding: 0; font-size: var(--tisa-fs-hero, 24px); font-weight: 800; line-height: 1.3; color: var(--tisa-on-primary, #fff); }
-.tisa-exp__sub { margin: 3px 0 0; font-size: var(--tisa-fs-control, 13px); opacity: .78; }
+.tisa-exp__hero-mark svg { width: 24px; height: 24px; }
+.tisa-exp__hero-text { flex: 1 1 auto; min-width: 0; position: relative; z-index: 1; }
+.tisa-exp__eyebrow { margin: 0 0 4px; font-size: var(--tisa-fs-tiny, 11px); font-weight: 700; letter-spacing: .02em; opacity: .78; }
+.tisa-exp h1.tisa-exp__title { margin: 0; padding: 0; font-size: var(--tisa-fs-hero, 25px); font-weight: 800; line-height: 1.3; color: var(--tisa-on-primary, #fff); }
+.tisa-exp__sub { margin: 4px 0 0; font-size: var(--tisa-fs-control, 13px); opacity: .82; }
+.tisa-exp__hero-meta { position: relative; z-index: 1; display: inline-flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .tisa-exp__hero-pill {
+	display: inline-flex;
 	flex: 0 0 auto;
-	padding: 4px 10px;
+	align-items: center;
+	gap: 7px;
+	min-height: 34px;
+	padding: 5px 11px;
+	border: 1px solid rgba(255, 255, 255, .22);
 	border-radius: var(--tisa-r-pill, 999px);
-	background: rgba(255, 255, 255, .14);
-	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	background: rgba(255, 255, 255, .12);
 	font-size: var(--tisa-fs-tiny, 11px);
+	white-space: nowrap;
 }
+.tisa-exp__hero-pill--storage strong { color: var(--tisa-on-primary, #fff); font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); }
+.tisa-exp__hero-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tisa-on-primary, #fff); box-shadow: 0 0 0 3px rgba(255, 255, 255, .14); }
+.tisa-exp__hero-pill--version { font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); opacity: .9; }
 
 /* ---------- کارت ---------- */
 .tisa-exp__card {
@@ -179,12 +192,21 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 
 /* ---------- هدر هر بخش ---------- */
 .tisa-exp__section-head {
-	display: flex; align-items: flex-start; justify-content: space-between; gap: var(--tisa-sp-3, 12px);
+	display: flex; align-items: center; gap: var(--tisa-sp-4, 16px);
 	margin: 0 0 var(--tisa-sp-4, 16px);
-	padding: 0 2px;
+	padding: 16px 20px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-lg, 18px);
+	background: var(--tisa-surface, #fff);
 }
-.tisa-exp__section-title { margin: 0 0 3px; padding: 0; font-size: var(--tisa-fs-h2, 20px); font-weight: 800; color: var(--tisa-ink, #1F2A2E); }
-.tisa-exp__section-sub { margin: 0; font-size: var(--tisa-fs-meta, 12.5px); line-height: 1.9; color: var(--tisa-muted, #77828A); }
+.tisa-exp__section-icon { flex: 0 0 auto; display: grid; place-items: center; width: 42px; height: 42px; border-radius: var(--tisa-r, 14px); background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52); }
+.tisa-exp__section-icon svg { width: 21px; height: 21px; }
+.tisa-exp__section-copy { flex: 1 1 auto; min-width: 0; }
+.tisa-exp__section-eyebrow { margin: 0 0 2px; font-size: var(--tisa-fs-tiny, 11px); font-weight: 700; color: var(--tisa-primary-ink, #0A5F52); }
+.tisa-exp__section-title { margin: 0 0 2px; padding: 0; font-size: var(--tisa-fs-h2, 20px); font-weight: 800; line-height: 1.4; color: var(--tisa-ink, #1F2A2E); }
+.tisa-exp__section-sub { margin: 0; font-size: var(--tisa-fs-meta, 12.5px); line-height: 1.8; color: var(--tisa-muted, #77828A); }
+.tisa-exp__section-step { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-pill, 999px); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-tiny, 11px); white-space: nowrap; }
+.tisa-exp__section-step strong { color: var(--tisa-primary-ink, #0A5F52); font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); font-size: var(--tisa-fs-tiny, 11px); }
 
 /* ---------- بخش‌های آینده ---------- */
 .tisa-exp__card--soon { border-style: dashed; }
@@ -317,9 +339,22 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 .tisa-exp__toast.is-fail { background: var(--tisa-danger, #B5453A); }
 
 @media (max-width: 782px) {
+	.tisa-exp__hero { flex-wrap: wrap; align-items: flex-start; gap: 12px; padding: 20px; }
+	.tisa-exp__hero-mark { width: 46px; height: 46px; border-radius: var(--tisa-r, 14px); }
+	.tisa-exp__hero-text { flex: 1 1 calc(100% - 64px); }
+	.tisa-exp__hero-meta { flex: 1 1 100%; padding-inline-start: 58px; }
+	.tisa-exp__section-head { align-items: flex-start; padding: 14px 16px; }
+	.tisa-exp__section-icon { width: 38px; height: 38px; }
 	.tisa-exp__head-actions, .tisa-exp__reset { margin-inline-start: 0; }
 	.tisa-exp__hist-actions { width: 100%; }
 	.tisa-exp__toast { inset-inline: 16px; max-width: none; }
+}
+@media (max-width: 480px) {
+	.tisa-exp__hero { padding: 16px; }
+	.tisa-exp__hero-meta { flex-wrap: wrap; padding-inline-start: 0; }
+	.tisa-exp__section-head { gap: 10px; padding: 12px; }
+	.tisa-exp__section-sub { font-size: var(--tisa-fs-tiny, 11px); }
+	.tisa-exp__section-step { align-self: flex-start; padding: 6px 9px; }
 }
 
 /* ==================================================================
@@ -484,4 +519,64 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 	font-weight: 700; color: var(--tisa-muted, #77828A);
 	background: var(--tisa-surface-3, #F6F5F1); border-radius: var(--tisa-r-pill, 999px);
 	padding: 0 6px; font-size: var(--tisa-fs-tiny, 11px);
+}
+
+/* ---------- فیلترهای متراکم و خوانا ---------- */
+.tisa-exp [hidden] { display: none !important; }
+.tisa-exp__fields { grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; }
+.tisa-exp__field { grid-column: span 4; gap: 7px; }
+.tisa-exp__field[data-type="multiselect"] { grid-column: 1 / -1; }
+.tisa-exp__field[data-filter="date_mode"] { grid-column: span 4; }
+.tisa-exp__checks { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 7px; }
+.tisa-exp__checks .tisa-exp__check {
+	width: 100%; min-height: 40px; justify-content: space-between;
+	margin: 0; padding: 7px 10px; border-radius: var(--tisa-r-sm, 10px);
+}
+.tisa-exp__checks .tisa-exp__check > span { min-width: 0; }
+.tisa-exp__check-count { display: inline-flex; align-items: center; margin-inline-start: 7px; direction: ltr; }
+.tisa-exp__field-actions { flex-wrap: wrap; gap: 8px 14px; margin-top: 3px; }
+.tisa-exp__field[data-filter="date_from"],
+.tisa-exp__field[data-filter="date_to"] { transition: opacity .16s ease; }
+
+/* ---------- یک اقدام اصلی، پیش‌نمایش اختیاری ---------- */
+.tisa-exp__run-launch {
+	display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 20px;
+	padding: 18px 20px; border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r, 14px); background: var(--tisa-surface-2, #FAFAF8);
+}
+.tisa-exp__run-summary { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.tisa-exp__run-icon {
+	flex: 0 0 auto; display: grid; place-items: center; width: 42px; height: 42px;
+	border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-primary-soft, #E8F0EE);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+.tisa-exp__run-icon svg { width: 21px; height: 21px; }
+.tisa-exp__run-copy { display: grid; gap: 3px; min-width: 0; }
+.tisa-exp__run-copy > strong { color: var(--tisa-ink, #1F2A2E); font-size: var(--tisa-fs-control, 13px); font-weight: 800; }
+.tisa-exp__run-copy .tisa-exp__meta { line-height: 1.7; }
+.tisa-exp__run-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 14px; }
+.tisa-exp__run-actions .tisa-exp__actions { gap: 8px; }
+.tisa-exp__run-actions #tisa-exp-cancel { padding-inline: 4px; }
+.tisa-exp__run-row { align-items: center; }
+
+@media (max-width: 900px) {
+	.tisa-exp__fields { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+	.tisa-exp__field { grid-column: span 3; }
+	.tisa-exp__field[data-type="multiselect"] { grid-column: 1 / -1; }
+	.tisa-exp__field[data-filter="date_mode"] { grid-column: span 3; }
+	.tisa-exp__run-launch { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+	.tisa-exp__run-actions { justify-content: space-between; }
+}
+
+@media (max-width: 560px) {
+	.tisa-exp__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 10px; }
+	.tisa-exp__field { grid-column: span 1; }
+	.tisa-exp__field[data-type="multiselect"],
+	.tisa-exp__field[data-filter="date_mode"] { grid-column: 1 / -1; }
+	.tisa-exp__checks { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
+	.tisa-exp__run-launch { padding: 14px; }
+	.tisa-exp__run-actions { justify-content: flex-start; }
+	.tisa-exp__run-actions .tisa-exp__actions { width: 100%; }
+	.tisa-exp__run-actions .tisa-btn { flex: 1 1 auto; }
+	.tisa-exp__run-actions #tisa-exp-cancel { flex: 0 0 auto; }
 }

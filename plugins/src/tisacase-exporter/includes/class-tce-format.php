@@ -57,8 +57,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 		public static function value( $value, $type = 'text' ) {
 			switch ( $type ) {
 				case 'phone':
-					$phone = TisaCase_Exporter_Phone::normalize_phone( $value );
-					return '' !== $phone ? $phone : self::clean_cell( $value );
+					// شمارهٔ نامعتبر نباید به شکل خام از فیلتر «فقط موبایل معتبر» عبور کند.
+					return TisaCase_Exporter_Phone::normalize_phone( $value );
 
 				case 'money':
 					// مقدار خالی نباید «0.00» چاپ شود (مثلاً قیمت فروش ویژهٔ تنظیم‌نشده).
@@ -105,7 +105,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 						: __( 'خیر', TisaCase_Exporter::TEXT_DOMAIN );
 
 				case 'code':
-					return trim( (string) $value );
+					// code هم در TSV داخلی ذخیره می‌شود؛ تب/خط جدید می‌تواند ردیف را بشکند.
+					return self::clean_cell( $value );
 
 				default: // text
 					return self::clean_cell( $value );

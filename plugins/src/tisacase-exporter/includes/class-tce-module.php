@@ -393,24 +393,33 @@ if ( ! class_exists( 'TisaCase_Exporter_Module' ) ) {
 			}
 
 			if ( self::hpos_enabled() ) {
-				// همان زنجیرهٔ سه‌منبعی خواندن شماره، تا آمار کارت عیب‌یابی با خروجی واقعی بخواند.
-				$phone = static::hpos_phone_expr();
+				// شماره‌ها را پس از یک لایهٔ داخلی به قالب canonical تبدیل می‌کنیم.
+				$digits    = self::phone_digits_sql( static::hpos_phone_expr() );
+				$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
 
-				$sql = "SELECT COUNT(DISTINCT o.id) AS total,"
-					. " COUNT(DISTINCT CASE WHEN {$phone} <> '' THEN o.id END ) AS with_phone,"
-					. " COUNT(DISTINCT CASE WHEN {$phone} <> '' THEN {$phone} END ) AS uniq"
+				$sql = "SELECT COUNT(DISTINCT source.order_id) AS total,"
+					. " COUNT(DISTINCT CASE WHEN source.phone <> '' THEN source.order_id END ) AS with_phone,"
+					. " COUNT(DISTINCT CASE WHEN source.phone <> '' THEN source.phone END ) AS uniq"
+					. ' FROM ( SELECT raw.order_id, ' . $canonical . ' AS phone'
+					. " FROM ( SELECT o.id AS order_id, {$digits} AS phone_digits"
 					. " FROM {$wpdb->prefix}wc_orders o"
 					. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
-					. " WHERE o.type = 'shop_order' AND o.status IN ( " . self::placeholders( $statuses ) . ' )' . $extra;
+					. " WHERE o.type = 'shop_order' AND o.status IN ( " . self::placeholders( $statuses ) . ' )' . $extra
+					. ' ) AS raw ) AS source';
 			} else {
-				$extra2 = str_replace( 'date_created_gmt', 'p.post_date_gmt', $extra );
+				$extra2    = str_replace( 'date_created_gmt', 'p.post_date_gmt', $extra );
+				$digits    = self::phone_digits_sql( "COALESCE( ph.meta_value, '' )" );
+				$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
 
-				$sql = "SELECT COUNT(DISTINCT p.ID) AS total,"
-					. " COUNT(DISTINCT CASE WHEN COALESCE( ph.meta_value, '' ) <> '' THEN p.ID END ) AS with_phone,"
-					. " COUNT(DISTINCT CASE WHEN COALESCE( ph.meta_value, '' ) <> '' THEN ph.meta_value END ) AS uniq"
+				$sql = "SELECT COUNT(DISTINCT source.order_id) AS total,"
+					. " COUNT(DISTINCT CASE WHEN source.phone <> '' THEN source.order_id END ) AS with_phone,"
+					. " COUNT(DISTINCT CASE WHEN source.phone <> '' THEN source.phone END ) AS uniq"
+					. ' FROM ( SELECT raw.order_id, ' . $canonical . ' AS phone'
+					. " FROM ( SELECT p.ID AS order_id, {$digits} AS phone_digits"
 					. " FROM {$wpdb->posts} p"
 					. " LEFT JOIN {$wpdb->postmeta} ph ON ph.post_id = p.ID AND ph.meta_key = '_billing_phone'"
-					. " WHERE p.post_type = 'shop_order' AND p.post_status IN ( " . self::placeholders( $statuses ) . ' )' . $extra2;
+					. " WHERE p.post_type = 'shop_order' AND p.post_status IN ( " . self::placeholders( $statuses ) . ' )' . $extra2
+					. ' ) AS raw ) AS source';
 			}
 
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
@@ -512,6 +521,51 @@ if ( ! class_exists( 'TisaCase_Exporter_Module' ) ) {
 		/* -----------------------------------------------------------------
 		 * خواندن داده‌های صورتحساب در HPOS (با پشتیبان‌های چندمنبعی)
 		 * ----------------------------------------------------------------- */
+
+		/**
+		 * پاک‌کردن رقم‌های فارسی/عربی و جداکننده‌های رایج از عبارت شماره.
+		 * این عبارت در لایهٔ داخلی یک derived table به `phone_digits` نام‌گذاری می‌شود؛
+		 * مرحلهٔ canonical بعدی فقط به alias کوتاه ارجاع می‌دهد و SQL باد نمی‌کند.
+		 *
+		 * @param string $expr عبارت SQL خام شماره.
+		 * @return string عبارت SQL شامل ارقام ASCII و بدون جداکننده.
+		 */
+		protected static function phone_digits_sql( $expr ) {
+			$sql = "COALESCE( ( {$expr} ), '' )";
+			$fa  = array( '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' );
+			$ar  = array( '٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩' );
+			$en  = array( '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' );
+
+			foreach ( array( $fa, $ar ) as $digit_set ) {
+				foreach ( $digit_set as $index => $digit ) {
+					$sql = "REPLACE( {$sql}, '{$digit}', '{$en[ $index ]}' )";
+				}
+			}
+
+			foreach ( array( '+', ' ', '-', '(', ')', '.', '/', ',', "\xC2\xA0", "\xE2\x80\x8C", "\xE2\x80\x8E", "\xE2\x80\x8F" ) as $separator ) {
+				$sql = "REPLACE( {$sql}, '{$separator}', '' )";
+			}
+
+			return "REPLACE( REPLACE( REPLACE( {$sql}, CHAR(9), '' ), CHAR(10), '' ), CHAR(13), '' )";
+		}
+
+		/**
+		 * تبدیل alias ارقام به شمارهٔ canonical ایران (989xxxxxxxxx)، ورودی نامعتبر = خالی.
+		 *
+		 * @param string $expr alias SQL مانند `source.phone_digits`.
+		 * @return string عبارت SQL.
+		 */
+		protected static function phone_canonical_sql( $expr ) {
+			$number = (string) $expr;
+			$number = "CASE WHEN LEFT({$number}, 2) = '00' THEN SUBSTRING({$number}, 3) ELSE {$number} END";
+			$number = "CASE WHEN LEFT({$number}, 3) = '098' THEN SUBSTRING({$number}, 2) ELSE {$number} END";
+			$number = "CASE WHEN LEFT({$number}, 2) = '98' AND LENGTH({$number}) > 10 THEN SUBSTRING({$number}, 3) ELSE {$number} END";
+			$number = "CASE WHEN LEFT({$number}, 2) = '98' AND LENGTH({$number}) > 10 THEN SUBSTRING({$number}, 3) ELSE {$number} END";
+			$number = "CASE WHEN LEFT({$number}, 2) = '98' AND LENGTH({$number}) > 10 THEN SUBSTRING({$number}, 3) ELSE {$number} END";
+			$number = "CASE WHEN LEFT({$number}, 1) = '0' THEN SUBSTRING({$number}, 2) ELSE {$number} END";
+
+			return "CASE WHEN LENGTH({$number}) = 10 AND LEFT({$number}, 1) = '9' THEN CONCAT('98', {$number}) ELSE '' END";
+		}
 
 		/**
 		 * عبارت شمارهٔ موبایل صورتحساب در HPOS با سه منبع پشتیبان.

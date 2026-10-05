@@ -1,5 +1,5 @@
 /*!
- * خروجی گرفتن (TisaCase Exporter) — اسکریپت صفحهٔ مدیریت
+ * مرکز خروجی تیساکیس (TisaCase Exporter) — اسکریپت صفحهٔ مدیریت
  * بدون هیچ وابستگی بیرونی (بدون jQuery) و بدون مرحلهٔ Build.
  *
  * @package TisaCase_Exporter
@@ -16,6 +16,7 @@
 	var state = {
 		runId: '',
 		running: false,
+		cancelling: false,
 		done: false,
 		startedAt: 0,
 		payload: null,
@@ -424,7 +425,7 @@
 		}
 
 		if ( ! payload || ! payload.run_id ) {
-			node.textContent = cfg.l10n.deepInfo;
+			node.textContent = cfg.l10n.readyMeta;
 			return;
 		}
 
@@ -433,24 +434,59 @@
 	}
 
 	function applyPayload( payload ) {
-		state.payload = payload;
-		state.runId   = payload.run_id || '';
+		state.payload = payload || {};
+		state.runId   = state.payload.run_id || '';
+		state.done    = !! state.payload.done;
 
-		renderKpis( payload );
-		renderProgress( payload );
-		renderFiles( payload );
-		renderMeta( payload );
+		renderKpis( state.payload );
+		renderProgress( state.payload );
+		renderFiles( state.payload );
+		renderMeta( state.payload );
 
 		var box = $( '#tisa-exp-progress-box' );
 
 		if ( box ) {
 			box.hidden = false;
 		}
+
+		syncRunControls();
 	}
 
 	/* -----------------------------------------------------------------
 	 * اجرا
 	 * ----------------------------------------------------------------- */
+
+	function syncRunControls() {
+		var unfinished = !! state.runId && ! state.done;
+		var busy       = state.running || state.cancelling;
+		var start      = $( '#tisa-exp-start' );
+		var resume     = $( '#tisa-exp-continue' );
+		var preview    = $( '#tisa-exp-preview' );
+		var cancel     = $( '#tisa-exp-cancel' );
+
+		if ( start ) {
+			start.hidden = unfinished;
+			start.disabled = busy;
+			start.classList.toggle( 'tisa-btn--primary', ! unfinished );
+			start.classList.toggle( 'tisa-btn--secondary', unfinished );
+		}
+
+		if ( resume ) {
+			resume.hidden = ! unfinished || state.running;
+			resume.disabled = busy;
+			resume.classList.toggle( 'tisa-btn--primary', unfinished );
+			resume.classList.toggle( 'tisa-btn--secondary', ! unfinished );
+		}
+
+		if ( preview ) {
+			preview.disabled = busy;
+		}
+
+		if ( cancel ) {
+			cancel.hidden = ! unfinished;
+			cancel.disabled = !! state.cancelling;
+		}
+	}
 
 	function setRunning( running ) {
 		state.running = running;
@@ -458,17 +494,11 @@
 		var card = $( '#tisa-exp-card-run' );
 
 		if ( card ) {
-			card.setAttribute( 'aria-busy', running ? 'true' : 'false' );
-			card.classList.toggle( 'is-running', running );
+			card.setAttribute( 'aria-busy', ( running || state.cancelling ) ? 'true' : 'false' );
+			card.classList.toggle( 'is-running', running || state.cancelling );
 		}
 
-		[ '#tisa-exp-start', '#tisa-exp-preview', '#tisa-exp-continue' ].forEach( function ( selector ) {
-			var button = $( selector );
-
-			if ( button ) {
-				button.disabled = running;
-			}
-		} );
+		syncRunControls();
 
 		if ( running ) {
 			window.addEventListener( 'beforeunload', unloadGuard );
@@ -496,9 +526,10 @@
 			return;
 		}
 
-		setRunning( true );
-		state.stopped = false;
-		state.done    = false;
+		state.stopped   = false;
+		state.cancelling = false;
+		state.done      = false;
+		state.runId     = '';
 		state.startedAt = Date.now();
 		state.payload = {
 			run_id: '',
@@ -510,6 +541,7 @@
 			files: [],
 			done: false
 		};
+		setRunning( true );
 
 		showProgressBox();
 		renderKpis( state.payload );
@@ -537,12 +569,31 @@
 		}
 
 		post( cfg.actions.process, { run_id: state.runId } ).then( function ( data ) {
+			if ( state.stopped ) {
+				return;
+			}
+
 			if ( data.cancelled ) {
 				state.stopped = true;
-				setRunning( false );
-				state.history = Array.isArray( data.history ) ? data.history : [];
+				state.runId = '';
+				state.done = false;
+				state.payload = {
+					run_id: '',
+					processed: 0,
+					total: 0,
+					exported: 0,
+					skipped: 0,
+					duplicates: 0,
+					files: [],
+					done: false
+				};
+				state.history = Array.isArray( data.history ) ? data.history : state.history;
 				renderHistory();
-				renderProgress( state.payload || {}, cfg.l10n.cancelled, 'is-warn' );
+				renderKpis( state.payload );
+				renderFiles( state.payload );
+				renderProgress( state.payload, cfg.l10n.cancelled, 'is-warn' );
+				renderMeta( state.payload );
+				setRunning( false );
 				toast( cfg.l10n.cancelled, 'warn' );
 				return;
 			}
@@ -564,17 +615,14 @@
 
 			window.setTimeout( loop, 60 );
 		} ).catch( function ( error ) {
+			if ( state.stopped ) {
+				return;
+			}
+
 			state.stopped = true;
 			setRunning( false );
 			renderProgress( state.payload || {}, cfg.l10n.processError + ' ' + error.message, 'is-fail' );
 			toast( cfg.l10n.processError + ' ' + error.message, 'fail' );
-
-			// جلسه روی سرور باقی می‌ماند؛ «ادامه خروجی» فعال می‌شود.
-			var resume = $( '#tisa-exp-continue' );
-
-			if ( resume && state.runId ) {
-				resume.hidden = false;
-			}
 		} );
 	}
 
@@ -591,17 +639,20 @@
 	}
 
 	function cancel() {
-		if ( ! window.confirm( cfg.l10n.cancelConfirm ) ) {
+		if ( ! state.runId || ! window.confirm( cfg.l10n.cancelConfirm ) ) {
 			return;
 		}
 
 		state.stopped = true;
-		setRunning( false );
+		state.cancelling = true;
+		setRunning( state.running );
 
 		post( cfg.actions.cancel, { run_id: state.runId } ).then( function ( data ) {
-			state.history = Array.isArray( data.history ) ? data.history : [];
+			state.history = Array.isArray( data.history ) ? data.history : state.history;
 			renderHistory();
 
+			state.runId = '';
+			state.done = false;
 			state.payload = {
 				run_id: '',
 				processed: 0,
@@ -617,16 +668,12 @@
 			renderFiles( state.payload );
 			renderProgress( state.payload, cfg.l10n.cancelled, 'is-warn' );
 			renderMeta( state.payload );
-
-			var resumeButton = $( '#tisa-exp-continue' );
-
-			if ( resumeButton ) {
-				resumeButton.hidden = true;
-			}
-
-			state.runId = '';
+			state.cancelling = false;
+			setRunning( false );
 			toast( cfg.l10n.cancelled, 'warn' );
 		} ).catch( function ( error ) {
+			state.cancelling = false;
+			setRunning( false );
 			toast( error.message, 'fail' );
 		} );
 	}
@@ -1058,6 +1105,7 @@
 
 			if ( wrap ) {
 				wrap.classList.toggle( 'is-muted', all );
+				wrap.hidden = all;
 			}
 		} );
 	}
@@ -1148,20 +1196,6 @@
 				if ( card ) {
 					card.hidden = true;
 				}
-			} );
-		}
-
-		var statusButton = $( '#tisa-exp-status' );
-
-		if ( statusButton ) {
-			statusButton.addEventListener( 'click', function () {
-				if ( state.payload && state.payload.run_id ) {
-					applyPayload( state.payload );
-					toast( cfg.l10n.lastState, 'ok' );
-					return;
-				}
-
-				toast( cfg.l10n.noSession, 'warn' );
 			} );
 		}
 
@@ -1264,16 +1298,8 @@
 		renderMeta( cfg.initial || {} );
 
 		if ( cfg.initial && cfg.initial.run_id && ! cfg.initial.done ) {
-			state.runId    = cfg.initial.run_id;
 			state.startedAt = 0;
 			applyPayload( cfg.initial );
-
-			var resumeButton = $( '#tisa-exp-continue' );
-
-			if ( resumeButton ) {
-				resumeButton.hidden = false;
-			}
-
 			toast( cfg.l10n.resumed, 'warn' );
 			return;
 		}

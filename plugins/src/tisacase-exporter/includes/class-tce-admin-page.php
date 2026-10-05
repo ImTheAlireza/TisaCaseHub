@@ -1,6 +1,6 @@
 <?php
 /**
- * صفحهٔ «خروجی گرفتن»: سرصفحه، نوار بخش‌ها (هدر جدا)، فرم فیلتر/ستون/قالب،
+ * صفحهٔ «مرکز خروجی تیساکیس»: سرصفحه، نوار بخش‌ها، فرم فیلتر/ستون/قالب،
  * اجرا و پیشرفت، پیش‌نمایش و تاریخچه — همه بر اساس طرح هر بخش (Schema-driven)
  * ساخته می‌شود؛ افزودن بخش جدید هیچ تغییری در این فایل لازم ندارد.
  *
@@ -45,11 +45,18 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/></svg>
 					</div>
 					<div class="tisa-exp__hero-text">
-						<h1 class="tisa-exp__title"><?php esc_html_e( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN ); ?></h1>
-						<p class="tisa-exp__sub"><?php esc_html_e( 'شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — هر بخش جدا، با فیلتر، انتخاب ستون و پیش‌نمایش.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
+						<p class="tisa-exp__eyebrow"><?php esc_html_e( 'ابزار مدیریت داده‌های ووکامرس', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
+						<h1 class="tisa-exp__title"><?php esc_html_e( 'مرکز خروجی تیساکیس', TisaCase_Exporter::TEXT_DOMAIN ); ?></h1>
+						<p class="tisa-exp__sub"><?php esc_html_e( 'فیلتر کنید، ستون‌ها را بچینید و فایل آمادهٔ دانلود بسازید.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
 					</div>
-					<span class="tisa-exp__hero-pill"><?php echo esc_html( 'HPOS' === $storage ? 'HPOS' : 'Legacy' ); ?></span>
-					<span class="tisa-exp__hero-pill" dir="ltr">v<?php echo esc_html( TISA_EXPORTER_VERSION ); ?></span>
+					<div class="tisa-exp__hero-meta" role="group" aria-label="<?php esc_attr_e( 'اطلاعات نسخه و منبع داده', TisaCase_Exporter::TEXT_DOMAIN ); ?>">
+						<span class="tisa-exp__hero-pill tisa-exp__hero-pill--storage">
+							<span class="tisa-exp__hero-dot" aria-hidden="true"></span>
+							<span><?php esc_html_e( 'منبع داده', TisaCase_Exporter::TEXT_DOMAIN ); ?></span>
+							<strong><?php echo esc_html( 'HPOS' === $storage ? 'HPOS' : __( 'ذخیره‌سازی قدیمی', TisaCase_Exporter::TEXT_DOMAIN ) ); ?></strong>
+						</span>
+						<span class="tisa-exp__hero-pill tisa-exp__hero-pill--version" dir="ltr"><span>v</span><?php echo esc_html( TISA_EXPORTER_VERSION ); ?></span>
+					</div>
 				</header>
 
 				<?php TisaCase_Exporter_Modules::render_nav(); ?>
@@ -59,7 +66,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					<?php
 					self::render_filters_card( $section );
 					self::render_output_card( $section );
-					self::render_run_card( $section );
+					self::render_run_card();
 					self::render_diagnose_card();
 					self::render_preview_card();
 					self::render_history_card();
@@ -144,7 +151,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					<span class="tisa-exp__step" aria-hidden="true">۱</span>
 					<div>
 						<h2><?php esc_html_e( 'فیلترها', TisaCase_Exporter::TEXT_DOMAIN ); ?></h2>
-						<p><?php esc_html_e( 'خروجی فقط شامل ردیف‌هایی می‌شود که با این فیلترها بخوانند. خالی‌بودن یک فیلتر یعنی «همه».', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
+						<p><?php esc_html_e( 'خروجی فقط شامل ردیف‌های مطابق فیلترهاست؛ فیلترهای خالی یعنی همه، اما خالی‌کردن وضعیت سفارش یعنی هیچ وضعیتی انتخاب نشده است.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
 					</div>
 					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tisa-exp__reset" id="tisa-exp-reset"><?php esc_html_e( 'پاک‌کردن فیلترها', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
 				</div>
@@ -177,16 +184,20 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 			$default = isset( $field['default'] ) ? $field['default'] : '';
 			$field_attr = 'tisa-exp-field-' . $name;
 			?>
-			<div class="tisa-exp__field" data-filter="<?php echo esc_attr( $name ); ?>" data-type="<?php echo esc_attr( $type ); ?>">
-				<label class="tisa-label" for="<?php echo esc_attr( $field_attr ); ?>"><?php echo esc_html( $label ); ?></label>
-				<?php
+				<div class="tisa-exp__field tisa-exp__field--<?php echo esc_attr( $type ); ?>" data-filter="<?php echo esc_attr( $name ); ?>" data-type="<?php echo esc_attr( $type ); ?>">
+					<?php if ( 'multiselect' === $type ) : ?>
+						<span class="tisa-label" id="<?php echo esc_attr( $field_attr ); ?>-label"><?php echo esc_html( $label ); ?></span>
+					<?php else : ?>
+						<label class="tisa-label" for="<?php echo esc_attr( $field_attr ); ?>"><?php echo esc_html( $label ); ?></label>
+					<?php endif; ?>
+					<?php
 				switch ( $type ) {
 					case 'multiselect':
 						$options = isset( $field['options'] ) && is_array( $field['options'] ) ? $field['options'] : array();
 						$picked  = is_array( $default ) ? array_map( 'strval', $default ) : array();
 						$counts  = ( 'statuses' === $name ) ? self::status_counts() : array();
 						?>
-						<div class="tisa-exp__checks" role="group" aria-label="<?php echo esc_attr( $label ); ?>">
+						<div class="tisa-exp__checks" role="group" aria-labelledby="<?php echo esc_attr( $field_attr ); ?>-label">
 							<?php foreach ( $options as $value => $option_label ) : ?>
 								<label class="tisa-check tisa-exp__check">
 									<input type="checkbox" name="filters[<?php echo esc_attr( $name ); ?>][]" value="<?php echo esc_attr( $value ); ?>"<?php checked( in_array( (string) $value, $picked, true ) ); ?>>
@@ -331,26 +342,35 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 		}
 
 		/** کارت اجرا + پیشرفت. */
-		private static function render_run_card( array $section ) {
+		private static function render_run_card() {
 			?>
 			<section class="tisa-exp__card" id="tisa-exp-card-run" aria-busy="false">
 				<div class="tisa-exp__card-head">
 					<span class="tisa-exp__step" aria-hidden="true">۳</span>
 					<div>
-						<h2><?php esc_html_e( 'اجرای خروجی', TisaCase_Exporter::TEXT_DOMAIN ); ?></h2>
-						<p><?php echo esc_html( self::run_note( $section ) ); ?></p>
+						<h2><?php esc_html_e( 'ساخت فایل خروجی', TisaCase_Exporter::TEXT_DOMAIN ); ?></h2>
+						<p><?php echo esc_html( self::run_note() ); ?></p>
 					</div>
 				</div>
 				<div class="tisa-exp__card-body">
-					<div class="tisa-exp__between tisa-exp__run-row">
-						<div class="tisa-exp__actions">
-							<button type="button" class="tisa-btn tisa-btn--primary" id="tisa-exp-start"><?php esc_html_e( 'شروع خروجی جدید', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
-							<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-continue" hidden><?php esc_html_e( 'ادامه خروجی', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
-							<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-preview"><?php esc_html_e( 'پیش‌نمایش', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
-							<button type="button" class="tisa-btn tisa-btn--ghost" id="tisa-exp-status"><?php esc_html_e( 'آخرین وضعیت', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
-							<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger" id="tisa-exp-cancel"><?php esc_html_e( 'توقف و پاک‌سازی', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+					<div class="tisa-exp__run-launch">
+						<div class="tisa-exp__run-summary">
+							<span class="tisa-exp__run-icon" aria-hidden="true">
+								<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/></svg>
+							</span>
+							<span class="tisa-exp__run-copy">
+								<strong><?php esc_html_e( 'آمادهٔ ساخت فایل', TisaCase_Exporter::TEXT_DOMAIN ); ?></strong>
+								<span class="tisa-exp__meta" id="tisa-exp-meta"></span>
+							</span>
 						</div>
-						<span class="tisa-exp__meta" id="tisa-exp-meta"></span>
+						<div class="tisa-exp__run-actions">
+							<div class="tisa-exp__actions">
+								<button type="button" class="tisa-btn tisa-btn--primary" id="tisa-exp-start" aria-controls="tisa-exp-progress-box"><?php esc_html_e( 'ساخت فایل خروجی', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+								<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-continue" aria-controls="tisa-exp-progress-box" hidden><?php esc_html_e( 'ادامهٔ ساخت', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+								<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-preview" aria-controls="tisa-exp-card-preview"><?php esc_html_e( 'پیش‌نمایش نمونه', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+							</div>
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger" id="tisa-exp-cancel" hidden><?php esc_html_e( 'لغو اجرای جاری', TisaCase_Exporter::TEXT_DOMAIN ); ?></button>
+						</div>
 					</div>
 
 					<div class="tisa-exp__box" id="tisa-exp-progress-box" hidden>
@@ -508,16 +528,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 		}
 
 		/** توضیح روش اجرا برای هر بخش. */
-		private static function run_note( array $section ) {
-			$unit = isset( $section['unit'] ) ? (string) $section['unit'] : '';
-
-			return sprintf(
-				/* translators: 1: تعداد ردیف هر فایل، 2: تعداد ردیف هر گام، 3: واحد شمارش. */
-				__( 'پردازش گام‌به‌گام انجام می‌شود (هر گام %2$s ردیف) و فایل‌ها هر %1$s ردیف یک‌بار ساخته می‌شوند؛ توقف وسط کار مشکلی ندارد و بعداً ادامه می‌دهید. واحد شمارش: %3$s.', TisaCase_Exporter::TEXT_DOMAIN ),
-				number_format_i18n( TisaCase_Exporter::file_size() ),
-				number_format_i18n( TisaCase_Exporter::batch_size() ),
-				'' !== $unit ? $unit : __( 'ردیف', TisaCase_Exporter::TEXT_DOMAIN )
-			);
+		private static function run_note() {
+			return __( 'فایل خروجی با فیلترها و ستون‌های بالا ساخته می‌شود؛ پردازش‌های طولانی مرحله‌به‌مرحله‌اند و اجرای ناتمام قابل ادامه است.', TisaCase_Exporter::TEXT_DOMAIN );
 		}
 
 		/** متن راهنما. */
@@ -526,7 +538,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 
 			return sprintf(
 				/* translators: %s: نام بخش. */
-				__( 'بخش «%s» بدون خواندن کل داده در حافظه کار می‌کند: هر گام فقط یک Batch خوانده می‌شود، نتیجه در فایل موقت روی سرور نوشته می‌شود و در پایان به فایل‌های آمادهٔ دانلود تبدیل می‌شود. فایل‌ها داخل پوشهٔ اختصاصی و محافظت‌شدهٔ همین کاربر ساخته می‌شوند، با غیرفعال‌شدن افزونه یا بعد از ۲۴ ساعت خودکار پاک می‌شوند و خروجی گرفتن هیچ ردی روی سرعت سایت نمی‌گذارد.', TisaCase_Exporter::TEXT_DOMAIN ),
+				__( 'بخش «%s» بدون خواندن کل داده در حافظه کار می‌کند: هر گام فقط یک Batch خوانده می‌شود، نتیجه در فایل موقت روی سرور نوشته می‌شود و در پایان به فایل‌های آمادهٔ دانلود تبدیل می‌شود. فایل‌ها داخل پوشهٔ اختصاصی و محافظت‌شدهٔ همین کاربر ساخته می‌شوند و پس از ۲۴ ساعت خودکار پاک می‌شوند؛ خروجی گرفتن هیچ ردی روی سرعت سایت نمی‌گذارد.', TisaCase_Exporter::TEXT_DOMAIN ),
 				$title
 			);
 		}
@@ -552,14 +564,12 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 				'print'       => __( 'چاپ', TisaCase_Exporter::TEXT_DOMAIN ),
 				'rowCount'    => __( '%1 ردیف', TisaCase_Exporter::TEXT_DOMAIN ),
 				'numberUnit'  => __( 'شماره', TisaCase_Exporter::TEXT_DOMAIN ),
-				'noSession'   => __( 'خروجی فعالی وجود ندارد.', TisaCase_Exporter::TEXT_DOMAIN ),
-				'lastState'   => __( 'وضعیت جلسهٔ فعلی روی سرور نمایش داده شد.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'filesGone'   => __( 'فایل‌های این خروجی پاک شده‌اند.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'historyTitle' => __( 'خروجی', TisaCase_Exporter::TEXT_DOMAIN ),
 				'historyEmpty' => __( 'هنوز خروجی‌ای نگرفته‌اید؛ اولین خروجی که بسازید این‌جا نگه داشته می‌شود.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'reuse'       => __( 'اجرای مجدد با همین تنظیمات', TisaCase_Exporter::TEXT_DOMAIN ),
 				'clearConfirm' => __( 'همهٔ تاریخچه و فایل‌های باقی‌مانده پاک شود؟', TisaCase_Exporter::TEXT_DOMAIN ),
-				'cancelConfirm' => __( 'خروجی در حال اجرا متوقف و فایل‌های موقت پاک شوند؟', TisaCase_Exporter::TEXT_DOMAIN ),
+				'cancelConfirm' => __( 'اجرای ناتمام لغو و فایل‌های موقت پاک شوند؟', TisaCase_Exporter::TEXT_DOMAIN ),
 				'unloadMsg'   => __( 'خروجی در حال پردازش است؛ با بستن صفحه متوقف می‌شود (بعداً قابل ادامه است).', TisaCase_Exporter::TEXT_DOMAIN ),
 				'startError'  => __( 'شروع خروجی ناموفق بود:', TisaCase_Exporter::TEXT_DOMAIN ),
 				'processError' => __( 'خطا در پردازش:', TisaCase_Exporter::TEXT_DOMAIN ),
@@ -567,7 +577,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 				'previewError' => __( 'پیش‌نمایش ناموفق بود:', TisaCase_Exporter::TEXT_DOMAIN ),
 				'previewNote' => __( '%1 ردیف اول (از %2 ردیف) با همین ستون‌ها.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'previewEmpty' => __( 'با این فیلترها ردیفی پیدا نشد.', TisaCase_Exporter::TEXT_DOMAIN ),
-				'resumed'     => __( 'خروجی نیمه‌کاره پیدا شد؛ برای ادامه دکمهٔ «ادامه خروجی» را بزنید.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'resumed'     => __( 'یک اجرای ناتمام پیدا شد؛ برای تکمیل آن دکمهٔ «ادامهٔ ساخت» را بزنید.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'needColumns' => __( 'حداقل یک ستون انتخاب کنید.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'noStatus'    => __( 'هیچ وضعیتی انتخاب نشده است؛ با این حالت هیچ سفارشی خروجی نمی‌گیرد. «انتخاب همه» یا «هیچ‌کدام» را بررسی کنید.', TisaCase_Exporter::TEXT_DOMAIN ),
 				'exportedShort' => __( 'خروجی: %1', TisaCase_Exporter::TEXT_DOMAIN ),
@@ -577,7 +587,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 				'outputHint'  => __( 'خروجی: %1 ردیف در هر فایل، %2 ستون', TisaCase_Exporter::TEXT_DOMAIN ),
 				'filteredBy'  => __( 'فیلترها', TisaCase_Exporter::TEXT_DOMAIN ),
 				'columnsLabel' => __( 'ستون‌ها', TisaCase_Exporter::TEXT_DOMAIN ),
-				'deepInfo'    => __( 'داده‌ها روی سرور شما می‌مانند و هرگز جایی ارسال نمی‌شوند.', TisaCase_Exporter::TEXT_DOMAIN ),
+				'readyMeta'   => __( 'با فیلترها و ستون‌های انتخاب‌شدهٔ بالا ساخته می‌شود.', TisaCase_Exporter::TEXT_DOMAIN ),
 				/* عیب‌یابی شمارش */
 				'diagnose'    => __( 'بررسی شمارش', TisaCase_Exporter::TEXT_DOMAIN ),
 				'diagnoseBusy' => __( 'در حال بررسی…', TisaCase_Exporter::TEXT_DOMAIN ),

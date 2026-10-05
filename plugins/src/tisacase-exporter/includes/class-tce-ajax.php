@@ -68,8 +68,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 				'filters'       => $filters,
 				'summary'       => call_user_func( array( $class, 'filter_summary' ), $filters ),
 				'working_count' => 0,
+				'working_bytes' => 0,
 				'current_file'  => 1,
 				'current_count' => 0,
+				'current_bytes' => 0,
 				'files'         => array(),
 				'done'          => false,
 				'storage'       => call_user_func( array( $class, 'storage_label' ) ),
@@ -100,6 +102,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 			}
 
 			if ( ! empty( $state['done'] ) ) {
+				TisaCase_Exporter_Pipeline::cleanup_working( $state );
 				wp_send_json_success( self::response_payload( $state, true ) );
 			}
 
@@ -110,6 +113,12 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 
 			if ( ! TisaCase_Exporter_Session::lock_acquire( $state['run_id'] ) ) {
 				wp_send_json_error( array( 'message' => __( 'یک پردازش هم‌اکنون در تب دیگری در جریان است.', TisaCase_Exporter::TEXT_DOMAIN ) ), 409 );
+			}
+
+			$recovery = TisaCase_Exporter_Pipeline::reconcile_checkpoint( $state );
+			if ( is_wp_error( $recovery ) ) {
+				TisaCase_Exporter_Session::lock_release_if( $state['run_id'] );
+				wp_send_json_error( array( 'message' => $recovery->get_error_message() ), 500 );
 			}
 
 			if ( function_exists( 'set_time_limit' ) ) {
@@ -137,11 +146,15 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => __( 'خواندن داده‌ها ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) ), 500 );
 			}
 
-			$skip_when = isset( $module['skip_when'] ) ? (string) $module['skip_when'] : '';
-			$buffer    = array();
+			$skip_when          = isset( $module['skip_when'] ) ? (string) $module['skip_when'] : '';
+			$buffer             = array();
+			$use_page_processed = isset( $page['processed'] ) && is_numeric( $page['processed'] );
+			$batch_processed    = $use_page_processed ? max( 0, (int) $page['processed'] ) : 0;
 
 			foreach ( $page['rows'] as $row ) {
-				$state['processed']++;
+				if ( ! $use_page_processed ) {
+					$state['processed']++;
+				}
 
 				$tsv = TisaCase_Exporter_Format::row_to_tsv( $row, $state['columns'] );
 
@@ -169,6 +182,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 				}
 			}
 
+			if ( $use_page_processed ) {
+				$state['processed'] += $batch_processed;
+			}
+
 			if ( ! empty( $buffer ) ) {
 				$flush = ( '' !== (string) $state['dedup'] )
 					? TisaCase_Exporter_Pipeline::flush_working( $buffer, $state )
@@ -180,8 +197,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 						wp_send_json_success( array( 'cancelled' => true, 'history' => TisaCase_Exporter_History::for_display() ) );
 					}
 
-					// State ذخیره می‌شود تا «ادامه» از همین‌جا ممکن باشد.
-					TisaCase_Exporter_Session::save_state( $state );
+					// State قبلی را نگه می‌داریم؛ recovery tail نیمه‌نوشته را پیش از تکرار Batch برمی‌گرداند.
 					wp_send_json_error( array( 'message' => $flush->get_error_message() ), 500 );
 				}
 			}
@@ -234,6 +250,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Ajax' ) ) {
 				}
 				TisaCase_Exporter_Session::lock_release_if( $state['run_id'] );
 				wp_send_json_success( array( 'cancelled' => true, 'history' => TisaCase_Exporter_History::for_display() ) );
+			}
+
+			if ( ! empty( $state['done'] ) ) {
+				TisaCase_Exporter_Pipeline::cleanup_working( $state );
 			}
 
 			wp_send_json_success( self::response_payload( $state, ! empty( $state['done'] ) ) );

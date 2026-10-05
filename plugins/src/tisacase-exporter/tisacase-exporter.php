@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: TisaCase Exporter — خروجی گرفتن
+ * Plugin Name: TisaCase Exporter — مرکز خروجی تیساکیس
  * Plugin URI: https://tisacase.com
- * Description: مرکز خروجی گرفتن تیساکیس — پنج بخش (شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف) با فیلتر، انتخاب ستون، پیش‌نمایش ۲۵ ردیف، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری با حافظهٔ محدود، ادامه پس از قطعی، تاریخچهٔ اجراها و دستور WP-CLI.
- * Version: 2.1.2
+ * Description: مرکز خروجی تیساکیس برای ووکامرس — پنج بخش داده با فیلتر و انتخاب ستون، پیش‌نمایش اختیاری، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری، ادامهٔ اجرای ناتمام، تاریخچه و WP-CLI.
+ * Version: 2.1.5
  * Author: علیرضا شعبان زاده
  * Author URI: https://tisacase.com
  * Requires PHP: 7.4
@@ -13,7 +13,7 @@
  * Domain Path: /languages
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub: key=exporter; title="خروجی گرفتن"; icon=upload; group=orders; page=admin.php?page=tisacase-exporter; screen=woocommerce_page_tisacase-exporter; parent=woocommerce; slug=tisacase-exporter; desc="مرکز خروجی گرفتن تیساکیس — پنج بخش (شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف) با فیلتر، انتخاب ستون، پیش‌نمایش ۲۵ ردیف، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری با حافظهٔ محدود، ادامه پس از قطعی، تاریخچهٔ اجراها و دستور WP-CLI."
+ * TisaCase Hub: key=exporter; title="مرکز خروجی تیساکیس"; icon=upload; group=orders; page=admin.php?page=tisacase-exporter; screen=woocommerce_page_tisacase-exporter; parent=woocommerce; slug=tisacase-exporter; desc="پنج بخش دادهٔ ووکامرس با فیلتر و انتخاب ستون، پیش‌نمایش اختیاری، پنج قالب TXT/CSV/اکسل/JSON/PDF فارسی، حذف تکراری، ادامهٔ اجرای ناتمام و تاریخچهٔ خروجی."
  *
  * @package TisaCase_Exporter
  */
@@ -23,7 +23,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'TISA_EXPORTER_FILE', __FILE__ );
-define( 'TISA_EXPORTER_VERSION', '2.1.2' );
+define( 'TISA_EXPORTER_VERSION', '2.1.5' );
 define( 'TISA_EXPORTER_DIR', plugin_dir_path( __FILE__ ) );
 
 /*

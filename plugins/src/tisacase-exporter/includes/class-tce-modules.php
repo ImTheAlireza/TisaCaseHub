@@ -126,7 +126,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Modules' ) ) {
 			return (string) $keys[0];
 		}
 
-		/** آدرس یک بخش در صفحهٔ «خروجی گرفتن». */
+		/** آدرس یک بخش در صفحهٔ «مرکز خروجی تیساکیس». */
 		public static function url( $id ) {
 			return add_query_arg(
 				array(
@@ -178,19 +178,29 @@ if ( ! class_exists( 'TisaCase_Exporter_Modules' ) ) {
 			echo '</nav>';
 		}
 
-		/** هدر خود بخش (عنوان + توضیح + نشان آماده). */
+		/** هدر بخش جاری: آیکون، عنوان، توضیح و جایگاه آن در نوار ناوبری. */
 		public static function render_head( $section ) {
-			$title = isset( $section['title'] ) ? (string) $section['title'] : '';
-			$sub   = isset( $section['sub'] ) ? (string) $section['sub'] : '';
+			$title    = isset( $section['title'] ) ? (string) $section['title'] : '';
+			$sub      = isset( $section['sub'] ) ? (string) $section['sub'] : '';
+			$id       = isset( $section['id'] ) ? (string) $section['id'] : '';
+			$ids      = array_keys( self::all() );
+			$position = array_search( $id, $ids, true );
+			$position  = false === $position ? 1 : $position + 1;
+			$icon     = self::icon( $section ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- رشتهٔ ثابت داخلی.
 			?>
 			<div class="tisa-exp__section-head">
-				<div>
+				<div class="tisa-exp__section-icon" aria-hidden="true"><?php echo $icon; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></div>
+				<div class="tisa-exp__section-copy">
+					<p class="tisa-exp__section-eyebrow"><?php esc_html_e( 'بخش انتخاب‌شده', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
 					<h2 class="tisa-exp__section-title"><?php echo esc_html( $title ); ?></h2>
 					<?php if ( '' !== $sub ) : ?>
 						<p class="tisa-exp__section-sub"><?php echo esc_html( $sub ); ?></p>
 					<?php endif; ?>
 				</div>
-				<span class="tisa-badge tisa-badge--success"><?php esc_html_e( 'فعال', TisaCase_Exporter::TEXT_DOMAIN ); ?></span>
+				<span class="tisa-exp__section-step">
+					<strong dir="ltr"><?php echo esc_html( number_format_i18n( $position, 0 ) . ' / ' . number_format_i18n( count( $ids ), 0 ) ); ?></strong>
+					<span><?php esc_html_e( 'بخش', TisaCase_Exporter::TEXT_DOMAIN ); ?></span>
+				</span>
 			</div>
 			<?php
 		}

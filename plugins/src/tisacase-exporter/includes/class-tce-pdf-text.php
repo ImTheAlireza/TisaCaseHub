@@ -20,8 +20,9 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf_Text' ) ) {
 		/**
 		 * متن → گلیف‌های بصری (آمادهٔ نوشتن در PDF).
 		 *
-		 * ترتیب خروجی «بصری» است: ران‌های راست‌به‌چپ برای رسم چپ‌به‌راست برگردانده
-		 * می‌شوند، ولی ران‌های لاتین (ایمیل، شماره، کد) ترتیب خودشان را نگه می‌دارند.
+		 * ترتیب خروجی «بصری» است: هم ترتیب ران‌ها و هم گلیف‌های هر ران راست‌به‌چپ
+		 * برای PDF (که متن را چپ‌به‌راست می‌چیند) برگردانده می‌شوند؛ ران‌های لاتین
+		 * مثل ایمیل، شماره و کد ترتیب خودشان را نگه می‌دارند.
 		 *
 		 * @param string $text        متن خام.
 		 * @param array  $font        مشخصات قلم از TisaCase_Exporter_Pdf_Font_Data::FONTS.
@@ -43,15 +44,20 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf_Text' ) ) {
 			foreach ( $runs as $run ) {
 				$shaped = $run['rtl'] ? self::shape_rtl( $run['chars'], $font ) : self::plain( $run['chars'], $font );
 
+				if ( $run['rtl'] ) {
+					$shaped = self::visual_rtl( $shaped );
+				}
+
 				foreach ( $shaped as $glyph ) {
 					$glyphs[] = $glyph;
 				}
 			}
 
 			return array(
-				'glyphs' => $glyphs,
-				'rtl'    => $rtl,
-				'width'  => self::width( $glyphs, $font ),
+				'glyphs'      => $glyphs,
+				'rtl'         => $rtl,
+				'width'       => self::width( $glyphs, $font ),
+				'actual_text' => (string) $text,
 			);
 		}
 
@@ -209,6 +215,24 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf_Text' ) ) {
 			return in_array( $cp, array( 0x28, 0x29, 0x5B, 0x5D, 0x7B, 0x7D, 0x3C, 0x3E, 0x22, 0x27 ), true );
 		}
 
+		/** آینه‌کردن نشانه‌های جفت در یک ران راست‌به‌چپ. */
+		private static function mirror( $cp ) {
+			$pairs = array(
+				0x28 => 0x29,
+				0x29 => 0x28,
+				0x5B => 0x5D,
+				0x5D => 0x5B,
+				0x7B => 0x7D,
+				0x7D => 0x7B,
+				0x3C => 0x3E,
+				0x3E => 0x3C,
+				0xAB => 0xBB,
+				0xBB => 0xAB,
+			);
+
+			return isset( $pairs[ (int) $cp ] ) ? $pairs[ (int) $cp ] : (int) $cp;
+		}
+
 		/** نوع نخستین نویسهٔ غیرنشان بعد از $index (برای تشخیص پرانتزِ عدد). */
 		private static function next_kind( array $units, $index, array $font, $count ) {
 			for ( $i = $index + 1; $i < $count; $i++ ) {
@@ -352,6 +376,31 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf_Text' ) ) {
 			return $runs;
 		}
 
+		/** تبدیل ترتیب منطقی گلیف‌های RTL به ترتیب بصری برای موتور PDF. */
+		private static function visual_rtl( array $glyphs ) {
+			$clusters = array();
+
+			foreach ( $glyphs as $glyph ) {
+				// نشان‌های اعرابی را کنار حرف پایه نگه می‌داریم تا با برگرداندن متن جابه‌جا نشوند.
+				if ( ! empty( $glyph['mark'] ) && ! empty( $clusters ) ) {
+					$clusters[ count( $clusters ) - 1 ][] = $glyph;
+					continue;
+				}
+
+				$clusters[] = array( $glyph );
+			}
+
+			$out = array();
+
+			foreach ( array_reverse( $clusters ) as $cluster ) {
+				foreach ( $cluster as $glyph ) {
+					$out[] = $glyph;
+				}
+			}
+
+			return $out;
+		}
+
 		/* -----------------------------------------------------------------
 		 * شکل‌دهی
 		 * ----------------------------------------------------------------- */
@@ -439,7 +488,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf_Text' ) ) {
 				}
 
 				/* فاصله/نشانه/عددی که داخل ران راست‌به‌چپ افتاده است. */
-				$out[] = self::glyph( self::gid( $cp, $font ), $font );
+				$out[] = self::glyph( self::gid( self::mirror( $cp ), $font ), $font );
 				$join  = false;
 			}
 
