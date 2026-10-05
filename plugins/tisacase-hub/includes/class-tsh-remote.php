@@ -391,12 +391,12 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 				return array( 'repo' => $raw, 'branch' => 'main' );
 			}
 			$raw = preg_replace( '#^git@github\.com:#i', 'https://github.com/', $raw );
-			if ( ! preg_match( '#(?:https?://)?(?:www\.)?github\.com[/:]([^/\s]+)/([^/\s?#]+)#i', $raw, $m ) ) {
+			if ( ! preg_match( '~(?:https?://)?(?:www\.)?github\.com[/:]([^/\s]+)/([^/\s?\#]+)~i', $raw, $m ) ) {
 				return new WP_Error( 'tsh_url', __( 'این لینک گیت‌هاب نیست. مثل https://github.com/owner/repo بچسبانید.', 'tisacase-hub' ) );
 			}
 			$repo   = $m[1] . '/' . preg_replace( '/\.git$/', '', $m[2] );
 			$branch = 'main';
-			if ( preg_match( '#/(?:tree|blob|raw)/([^?#]+)#', $raw, $b ) ) {
+			if ( preg_match( '~/(?:tree|blob|raw)/([^?\#]+)~', $raw, $b ) ) {
 				$branch = trim( $b[1], '/' );
 			}
 			$branch = preg_replace( '#[^A-Za-z0-9._/-]#', '', (string) $branch );
@@ -531,58 +531,68 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 		self::allow();
 		$repo   = self::repo();
 		$branch = self::branch();
-		$enc  = rawurlencode( $branch );
-		$api  = 'https://api.github.com/repos/' . $repo . '/contents/plugins/dist?ref=' . $enc;
-		$body = self::get_text(
+		$enc    = rawurlencode( $branch );
+		$body   = self::get_text(
 			array(
-				$api,
+				'https://api.github.com/repos/' . $repo . '/contents/plugins/dist?ref=' . $enc,
 				'https://data.jsdelivr.com/v1/packages/gh/' . $repo . '@' . $enc . '/flat',
 			)
 		);
 
-		$names = array();
-		if ( is_wp_error( $body ) ) {
-			// آفلاین (نه GitHub و نه آینه پاسخ داد): فهرست باندل‌شده با خود هاب.
+		$names  = array();
+		$source = 'github';
+		$data   = is_wp_error( $body ) ? null : json_decode( $body, true );
+
+		// پیام خطای API (مثلاً «API rate limit exceeded») → سراغ کاوش مستقیم می‌رویم.
+		if ( is_array( $data ) && isset( $data['message'] ) && ! isset( $data[0] ) && empty( $data['files'] ) ) {
+			$data = null;
+		}
+
+		if ( is_array( $data ) ) {
+			if ( isset( $data['files'] ) && is_array( $data['files'] ) ) {
+				// ساختار jsDelivr: فایل‌ها زیر «files» با نامِ شلش‌دار.
+				foreach ( $data['files'] as $f ) {
+					if ( is_array( $f ) && ! empty( $f['name'] ) ) {
+						$names[] = ltrim( (string) $f['name'], '/' );
+					}
+				}
+			} else {
+				// ساختار GitHub API: لیست رکوردها.
+				foreach ( $data as $row ) {
+					if ( ! is_array( $row ) || empty( $row['name'] ) ) {
+						continue;
+					}
+					if ( ( isset( $row['type'] ) ? $row['type'] : 'file' ) !== 'file' ) {
+						continue;
+					}
+					$names[] = (string) $row['name'];
+				}
+			}
+		}
+
+		if ( empty( $names ) ) {
+			// فالبک بدون API: هر پوشهٔ شناخته‌شده را مستقیم روی همان شاخه HEAD می‌کنیم.
+			// (raw.githubusercontent سقف درخواست ندارد؛ روی هاست اشتراکی نجات‌دهنده است.)
+			$names  = self::probe_dist( $repo, $branch );
+			$source = 'probe';
+		}
+
+		if ( empty( $names ) ) {
+			// آفلاین کامل: فهرست باندل‌شده. `at = 0` تا UI بگوید «آفلاین» و دروغ نگوید.
 			$pack = self::bundled_catalog();
 			if ( is_wp_error( $pack ) ) {
-				return $body;
+				return is_wp_error( $body ) ? $body : new WP_Error( 'tsh_catalog', __( 'فهرست مخزن خوانده نشد.', 'tisacase-hub' ) );
 			}
 			$pack['repo']   = $repo;
 			$pack['branch'] = $branch;
+			$pack['at']     = 0;
+			$pack['source'] = 'bundle';
 			update_option( 'tisacase_hub_catalog', $pack, false );
 			return $pack;
 		}
 
-		$data = json_decode( $body, true );
-		if ( ! is_array( $data ) ) {
-			return new WP_Error( 'tsh_catalog', __( 'فهرست مخزن خوانده نشد.', 'tisacase-hub' ) );
-		}
-
-		if ( isset( $data['files'] ) && is_array( $data['files'] ) ) {
-			// ساختار jsDelivr: فایل‌ها زیر «files» با نامِ شلش‌دار.
-			foreach ( $data['files'] as $f ) {
-				if ( is_array( $f ) && ! empty( $f['name'] ) ) {
-					$names[] = ltrim( (string) $f['name'], '/' );
-				}
-			}
-		} else {
-			// ساختار GitHub API: لیست رکوردها.
-			if ( isset( $data['message'] ) && ! isset( $data[0] ) ) {
-				return new WP_Error( 'tsh_catalog', (string) $data['message'] );
-			}
-			foreach ( $data as $row ) {
-				if ( ! is_array( $row ) || empty( $row['name'] ) ) {
-					continue;
-				}
-				if ( ( isset( $row['type'] ) ? $row['type'] : 'file' ) !== 'file' ) {
-					continue;
-				}
-				$names[] = (string) $row['name'];
-			}
-		}
-
 		$items = array();
-		foreach ( $names as $name ) {
+		foreach ( array_values( array_unique( $names ) ) as $name ) {
 			if ( ! preg_match( '/^([a-zA-Z0-9._-]+)\.zip$/', (string) $name, $m ) ) {
 				continue;
 			}
@@ -600,7 +610,7 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 				'dir'    => $dir,
 				'cap'    => $meta['cap'],
 				'pages'  => $meta['pages'],
-				'source' => 'github',
+				'source' => $source,
 			);
 		}
 
@@ -614,9 +624,121 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 			'branch' => $branch,
 			'at'     => time(),
 			'items'  => $items,
+			'source' => $source,
 		);
 		update_option( 'tisacase_hub_catalog', $pack, false );
 		return $pack;
+	}
+
+	/**
+	 * فالبکِ بدون API: پوشه‌های شناخته‌شدهٔ هاب را در `plugins/dist` همان شاخه چک می‌کند.
+	 *
+	 * @param string $repo   owner/name.
+	 * @param string $branch شاخه.
+	 * @return array<int,string> نام زیپ‌های موجود.
+	 */
+	private static function probe_dist( $repo, $branch ) {
+		if ( ! class_exists( 'TSH_Registry' ) ) {
+			return array();
+		}
+		$out = array();
+		$i   = 0;
+		foreach ( TSH_Registry::known_dirs() as $dir => $has_zip ) {
+			if ( ! $has_zip || 'tisacase-hub' === $dir || ! preg_match( '/^[a-zA-Z0-9._-]+$/', (string) $dir ) ) {
+				continue;
+			}
+			if ( ++$i > 40 ) {
+				break;
+			}
+			$url = 'https://raw.githubusercontent.com/' . $repo . '/refs/heads/' . $branch . '/plugins/dist/' . rawurlencode( $dir ) . '.zip';
+			if ( self::head_ok( $url ) ) {
+				$out[] = $dir . '.zip';
+			}
+		}
+		return $out;
+	}
+
+	/**
+	 * وجود فایل روی مخزن را با HEAD می‌سنجد (بدون دانلود کل فایل، بدون سقف API).
+	 *
+	 * @param string $url آدرس.
+	 * @return bool
+	 */
+	private static function head_ok( $url ) {
+		self::allow();
+		$ua      = 'TisaCase-Hub/' . ( defined( 'TSH_VERSION' ) ? TSH_VERSION : '1' );
+		$blocked = defined( 'WP_HTTP_BLOCK_EXTERNAL' ) && WP_HTTP_BLOCK_EXTERNAL;
+
+		if ( ! $blocked && function_exists( 'wp_remote_head' ) ) {
+			$res = wp_remote_head(
+				$url,
+				array(
+					'timeout'     => 20,
+					'redirection' => 3,
+					'sslverify'   => true,
+					'headers'     => self::headers_for( $url ),
+				)
+			);
+			if ( ! is_wp_error( $res ) ) {
+				$code = (int) wp_remote_retrieve_response_code( $res );
+				if ( 200 === $code ) {
+					return true;
+				}
+				if ( in_array( $code, array( 404, 410 ), true ) ) {
+					return false;
+				}
+			}
+		}
+
+		$nobody = null;
+		if ( function_exists( 'curl_init' ) ) {
+			$ch = curl_init( $url );
+			if ( $ch ) {
+				curl_setopt_array(
+					$ch,
+					array(
+						CURLOPT_NOBODY         => true,
+						CURLOPT_FOLLOWLOCATION => true,
+						CURLOPT_MAXREDIRS      => 3,
+						CURLOPT_TIMEOUT        => 20,
+						CURLOPT_SSL_VERIFYPEER => true,
+						CURLOPT_USERAGENT      => $ua,
+						CURLOPT_HTTPHEADER     => array( 'Accept: application/zip,application/octet-stream,*/*' ),
+					)
+				);
+				curl_exec( $ch );
+				$nobody = (int) curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+				curl_close( $ch );
+			}
+		}
+		if ( 200 === $nobody ) {
+			return true;
+		}
+		if ( in_array( (int) $nobody, array( 404, 410 ), true ) ) {
+			return false;
+		}
+
+		// بعضی سرورها HEAD را دوست ندارند؛ با یک GET یک‌بایتی (Range) نهایی می‌کنیم.
+		if ( ! $blocked && ! in_array( (int) $nobody, array( 404, 410 ), true ) ) {
+			$res = wp_remote_get(
+				$url,
+				array(
+					'timeout'     => 20,
+					'redirection' => 3,
+					'sslverify'   => true,
+					'headers'     => array_merge(
+						self::headers_for( $url ),
+						array( 'Range' => 'bytes=0-0' )
+					),
+				)
+			);
+			if ( ! is_wp_error( $res ) ) {
+				$code = (int) wp_remote_retrieve_response_code( $res );
+				return in_array( $code, array( 200, 206 ), true );
+			}
+		}
+
+		return false;
 	}
 
 		public static function catalog() {
@@ -638,8 +760,14 @@ if ( ! class_exists( 'TSH_Remote' ) ) {
 
 		// مسیر سریع: آدرسِ کنوانسیونالِ فایل اصلی — بدون مصرف از limit API.
 		// (شاخه در مسیر به‌صورت خام می‌رود — همان فرمت download_url خود GitHub؛ در query-string آرم‌کد می‌شود.)
-		$raw_url = 'https://raw.githubusercontent.com/' . $repo . '/' . $branch . '/plugins/src/' . rawurlencode( $dir ) . '/' . rawurlencode( $dir ) . '.php';
-		$php     = self::get_text( array( $raw_url ) );
+		$src = 'plugins/src/' . rawurlencode( $dir ) . '/' . rawurlencode( $dir ) . '.php';
+		// مسیر صریح `refs/heads/` تا شاخه‌های شلش‌دار (مثل feature/foo) هم درست resolve شوند.
+		$php = self::get_text(
+			array(
+				'https://raw.githubusercontent.com/' . $repo . '/refs/heads/' . $branch . '/' . $src,
+				'https://raw.githubusercontent.com/' . $repo . '/' . $branch . '/' . $src,
+			)
+		);
 
 		// فالبک: فهرست‌گیری پوشه از API (برای ساختارهای غیرکنوانسیونال).
 		if ( is_wp_error( $php ) || false === strpos( (string) $php, 'Plugin Name:' ) ) {

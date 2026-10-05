@@ -517,11 +517,48 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 			return $items;
 		}
 
+		/**
+		 * پوشه‌هایی که هاب انتظار دارد در `plugins/dist` ببیند:
+		 * پیش‌فرض‌ها + آیتم‌های نصب‌شده + آیتم‌های کاتالوگِ ذخیره‌شده.
+		 *
+		 * برای فالبکِ «کاوش مستقیم زیپ‌ها» — وقتی سقف درخواست API گیت‌هاب پر است و
+		 * فهرست‌گیری API جواب نمی‌دهد.
+		 *
+		 * @return array<string,bool> نگاشت dir => آیا انتظار می‌رود زیپ داشته باشد؟
+		 */
+		public static function known_dirs() {
+			$out  = array();
+			$pack = class_exists( 'TSH_Remote' ) ? TSH_Remote::catalog() : array();
+			$sets = array(
+				self::defaults(),
+				isset( $pack['items'] ) && is_array( $pack['items'] ) ? $pack['items'] : array(),
+			);
+			foreach ( $sets as $set ) {
+				foreach ( (array) $set as $item ) {
+					if ( ! is_array( $item ) || empty( $item['dir'] ) ) {
+						continue;
+					}
+					$dir = (string) $item['dir'];
+					$has = ! ( isset( $item['zip'] ) && false === $item['zip'] );
+					// `zip => false` (بازنشسته) از هر منبع دیگری قوی‌تر است → AND.
+					$out[ $dir ] = isset( $out[ $dir ] ) ? ( $out[ $dir ] && $has ) : $has;
+				}
+			}
+			foreach ( self::plugins() as $basename => $data ) {
+				$dir = dirname( (string) $basename );
+				if ( '.' !== $dir && '' !== $dir && ! isset( $out[ $dir ] ) ) {
+					$out[ $dir ] = true;
+				}
+			}
+			return (array) apply_filters( 'tisacase_hub_known_dirs', $out );
+		}
+
 		public static function items( $refresh = false ) {
 			if ( null !== self::$items && ! $refresh ) {
 				return self::$items;
 			}
 			$items = self::discover( self::defaults() );
+			$items = self::merge_catalog( $items ); // آیتم‌های آمده از همگام‌سازی مخزن.
 			$items = apply_filters( self::FILTER, $items );
 			if ( ! is_array( $items ) ) {
 				$items = array();

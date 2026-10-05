@@ -987,12 +987,17 @@ if ( ! class_exists( 'TSH_Admin' ) ) {
 			if ( is_wp_error( $pack ) ) {
 				wp_send_json_error( array( 'msg' => $pack->get_error_message() ) );
 			}
-			TSH_Registry::items( true );
+			$items = TSH_Registry::items( true );
+			$src   = isset( $pack['source'] ) ? (string) $pack['source'] : '';
+			// «آنلاین» یعنی فهرست واقعاً از مخزن خوانده شده؛ نه فالبکِ فهرست همراه هاب.
+			$online = ( 'bundle' !== $src ) && ! empty( isset( $pack['at'] ) ? $pack['at'] : 0 );
 			wp_send_json_success(
 				array(
 					'count'   => isset( $pack['items'] ) ? count( $pack['items'] ) : 0,
+					'tools'   => is_array( $items ) ? count( $items ) : 0,
 					'branch'  => isset( $pack['branch'] ) ? (string) $pack['branch'] : '',
-					'offline' => empty( isset( $pack['at'] ) ? $pack['at'] : 0 ),
+					'source'  => $src,
+					'offline' => ! $online,
 				)
 			);
 		}
