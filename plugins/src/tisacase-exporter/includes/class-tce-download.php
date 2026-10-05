@@ -349,8 +349,23 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 				}
 			}
 
+			$summary = array();
+
+			if ( '' !== (string) $module && class_exists( 'TisaCase_Exporter_Modules' ) ) {
+				$item = TisaCase_Exporter_Modules::get( (string) $module );
+
+				if ( is_array( $item ) && ! empty( $item['class'] ) && method_exists( $item['class'], 'filter_summary' ) ) {
+					$state = TisaCase_Exporter_Session::get_state();
+
+					if ( ! empty( $state['filters'] ) && is_array( $state['filters'] ) ) {
+						$summary = call_user_func( array( $item['class'], 'filter_summary' ), $state['filters'] );
+					}
+				}
+			}
+
 			return array(
 				'title'   => $title,
+				'filters' => implode( ' · ', $summary ),
 				'site'    => function_exists( 'get_bloginfo' ) ? (string) get_bloginfo( 'name' ) : '',
 				'date'    => function_exists( 'date_i18n' ) ? (string) date_i18n( 'j F Y' ) : gmdate( 'Y-m-d' ),
 				'columns' => array_values( $columns ),

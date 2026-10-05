@@ -223,6 +223,8 @@ body.woocommerce_page_tisacase-exporter #wpcontent { background: var(--tisa-bg, 
 .tisa-exp__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--tisa-sp-4, 16px); }
 .tisa-exp__field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .tisa-exp__field .tisa-input, .tisa-exp__field .tisa-select, .tisa-exp__dedup .tisa-select { width: 100%; }
+.tisa-exp__field.is-muted { opacity: .5; }
+.tisa-exp__field.is-muted .tisa-input { background: var(--tisa-surface-3, #F6F5F1); cursor: not-allowed; }
 .tisa-exp__checks { display: flex; flex-wrap: wrap; gap: 6px; }
 .tisa-exp__check {
 	display: inline-flex; align-items: center; gap: 7px;

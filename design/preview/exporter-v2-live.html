@@ -97,7 +97,13 @@ body {
 				</div>
 				<div class="tisa-exp__card-body">
 					<div class="tisa-exp__fields">
-						<div class="tisa-exp__field" data-filter="date_from" data-type="date">
+						<div class="tisa-exp__field" data-filter="date_mode" data-type="select">
+								<label class="tisa-label">بازهٔ تاریخ</label>
+								<select class="tisa-select">
+									<option value="all">بدون محدودیت تاریخ (همه)</option>
+									<option value="range">فقط بازهٔ زیر</option>
+								</select>
+							</div><div class="tisa-exp__field" data-filter="date_from" data-type="date">
 							<label class="tisa-label" for="tisa-exp-field-date_from">از تاریخ</label>
 							<input class="tisa-input" id="tisa-exp-field-date_from" type="date" dir="ltr" name="filters[date_from]" value="">
 						</div>

@@ -494,6 +494,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 				'filesReady'  => __( 'فایل‌های آماده', TisaCase_Exporter::TEXT_DOMAIN ),
 				'download'    => __( 'دانلود فایل', TisaCase_Exporter::TEXT_DOMAIN ),
 				'downloadAll' => __( 'دانلود همه (ZIP)', TisaCase_Exporter::TEXT_DOMAIN ),
+				'print'       => __( 'چاپ', TisaCase_Exporter::TEXT_DOMAIN ),
 				'rowCount'    => __( '%1 ردیف', TisaCase_Exporter::TEXT_DOMAIN ),
 				'numberUnit'  => __( 'شماره', TisaCase_Exporter::TEXT_DOMAIN ),
 				'noSession'   => __( 'خروجی فعالی وجود ندارد.', TisaCase_Exporter::TEXT_DOMAIN ),

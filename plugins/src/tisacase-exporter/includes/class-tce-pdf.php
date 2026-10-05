@@ -30,7 +30,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 		private static $white       = array( 1.0, 1.0, 1.0 );
 
 		/** ارتفاع خط سطر جدول (pt) و حاشیه‌ها. */
-		private static $line_h = 12.9;
+		private static $line_h  = 12.9;
+		private static $head_lh = 11.6;
+		private static $size    = 8.4;
+		private static $head_size = 8.6;
 		private static $mx     = 32.0;
 		private static $mb     = 46.0;
 		private static $pad_x  = 5.0;
@@ -56,10 +59,15 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 		private static $page      = 0;
 		private static $page_top  = 0.0;
 		private static $page_head = 0.0;
+		private static $sampling  = false;
+		private static $sample    = array();
 		private static $open      = false;
 		private static $obj_pages   = 0;
 		private static $obj_catalog = 0;
 		private static $obj_info    = 0;
+
+		/** چند ردیف اول برای اندازه‌گیری عرض ستون‌ها نگه داشته می‌شود. */
+		const SAMPLE_ROWS = 40;
 
 		/** قلم‌ها موجودند؟ */
 		public static function supported() {
@@ -98,9 +106,9 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			self::$font_pt = isset( self::$fonts['regular']['spec'] ) ? self::$fonts['regular']['spec'] : array();
 
-			$defs  = isset( $meta['columns'] ) && is_array( $meta['columns'] ) ? $meta['columns'] : array();
-			$list  = self::label_list( $labels );
-			$wide  = count( $list ) > 1;
+			$defs = isset( $meta['columns'] ) && is_array( $meta['columns'] ) ? $meta['columns'] : array();
+			$list = self::label_list( $labels );
+			$wide = count( $list ) > 1;
 
 			/* جهت کاغذ باید *پیش از* محاسبهٔ ستون‌ها معلوم باشد؛ وگرنه عرض ستون‌ها
 			   با عرض اشتباه حساب می‌شود و متن بیرون صفحه می‌افتد. */
@@ -110,32 +118,67 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			self::$cols = self::columns( $list, $defs );
 
-			self::place_columns();
-			self::new_page();
+			/* عرض ستون‌ها از «خودِ داده» درمی‌آید نه از طول عنوان؛ پس چند ردیف اول
+			   را نگه می‌داریم تا ستون‌ها را اندازه‌گیری کنیم (class-tce-pdf::fit). */
+			self::$sampling = true;
+			self::$sample   = array();
 
 			unset( $keys );
 		}
 
-		/**
-		 * افزودن یک ردیف به جدول.
-		 *
-		 * ردیفی که بلندتر از یک صفحه باشد (متن چندخطی) به‌جای سرریز، بین صفحه‌ها
-		 * ادامه داده می‌شود؛ سرستون‌ها در صفحهٔ بعد تکرار می‌شوند.
-		 */
+		/** افزودن یک ردیف به جدول (تا کامل‌شدن نمونهٔ اندازه‌گیری، بافر می‌شود). */
 		public static function row( array $values ) {
 			if ( self::$degraded || null === self::$writer || empty( self::$cols ) ) {
 				return;
 			}
 
+			if ( self::$sampling ) {
+				self::$sample[] = $values;
+
+				if ( count( self::$sample ) >= self::SAMPLE_ROWS ) {
+					self::start_table();
+				}
+
+				return;
+			}
+
+			self::write_row( $values );
+		}
+
+		/** تعیین عرض ستون‌ها از روی نمونه، سپس نوشتن ردیف‌های بافرشده. */
+		private static function start_table() {
+			self::fit_columns( self::$sample );
+			self::place_columns();
+			self::new_page();
+
+			self::$sampling = false;
+			$buffered       = self::$sample;
+			self::$sample   = array();
+
+			foreach ( $buffered as $values ) {
+				self::write_row( $values );
+			}
+		}
+
+		/**
+		 * نوشتن واقعی یک ردیف.
+		 *
+		 * سقف خطِ هر ستون فقط در اندازه‌گیری عرض اثر دارد؛ خودِ داده هرگز بریده
+		 * نمی‌شود و ردیف بلندتر از یک صفحه به‌جای سرریز، بین صفحه‌ها ادامه می‌یابد.
+		 */
+		private static function write_row( array $values ) {
 			self::$rows++;
 			$lines = array();
 			$total = 0;
 
 			foreach ( self::$cols as $i => $col ) {
 				$text = isset( $values[ $i ] ) ? (string) $values[ $i ] : '';
-				$max  = ( $col['w'] - ( 2 * self::$pad_x ) ) / $col['size'];
+				$max  = ( $col['w'] - ( 2 * self::$pad_x ) ) / self::$size;
 				$item = TisaCase_Exporter_Pdf_Text::wrap( $text, $max, self::$font_pt, $col['rtl'] );
 
+				/* هیچ متنی کوتاه نمی‌شود: این خروجی برای چاپ و بایگانی است و نباید
+				   بخشی از نشانی/یادداشت از قلم بیفتد. سقف خط فقط برای «اندازه‌گیری
+				   عرض ستون» به کار می‌رود، نه برای بریدن داده. */
 				$lines[ $i ] = $item;
 				$total       = max( $total, count( $item ) );
 			}
@@ -162,8 +205,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$block = '';
 
 				foreach ( self::$cols as $i => $col ) {
-					$size = $col['size'];
-					$y    = $top - self::$pad_y - ( $size * 0.86 );
+					$y = $top - self::$pad_y - ( self::$size * 0.86 );
 
 					for ( $k = $drawn; $k < ( $drawn + $take ); $k++ ) {
 						$line = isset( $lines[ $i ][ $k ] ) ? (string) $lines[ $i ][ $k ] : '';
@@ -172,9 +214,9 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 							$layout = TisaCase_Exporter_Pdf_Text::layout( $line, self::$font_pt, $col['rtl'] );
 							$x      = ( 'left' === $col['align'] )
 								? ( $col['x'] + self::$pad_x )
-								: ( $col['x'] + $col['w'] - self::$pad_x - ( $layout['width'] * $size ) );
+								: ( $col['x'] + $col['w'] - self::$pad_x - ( $layout['width'] * self::$size ) );
 
-							$block .= self::inline_text( $x, $y, $layout['glyphs'], $size );
+							$block .= self::inline_text( $x, $y, $layout['glyphs'], self::$size );
 						}
 
 						$y -= self::$line_h;
@@ -211,6 +253,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				self::degraded_close();
 				self::$writer = null;
 				return;
+			}
+
+			if ( self::$sampling ) {
+				self::start_table(); // جدول بدون ردیف هم باید سرستون بگیرد.
 			}
 
 			self::end_page( true );
@@ -259,111 +305,268 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 			return $labels;
 		}
 
-		/** تعریف ستون‌ها: عرض، اندازه، تراز و جهت. */
+		/** تعریف ستون‌ها: اندازه، سقف خط، تراز و جهت (عرض در fit_columns می‌آید). */
 		private static function columns( array $labels, array $defs ) {
-			$bases = array(
-				'text'        => 18.0,
-				'code'        => 13.0,
-				'phone'       => 12.0,
-				'date'        => 11.0,
-				'money'       => 10.0,
-				'num'         => 8.0,
-				'status'      => 9.0,
-				'stock'       => 8.0,
-				'bool'        => 6.0,
-				'coupon_type' => 10.0,
+			$count = count( $labels );
+
+			self::$size      = self::table_size( $count );
+			self::$line_h    = self::$size * 1.55;
+			self::$head_lh   = self::$size * 1.42;
+			self::$head_size = self::$size * 1.04;
+
+			/* ستون‌های کوتاه (عدد، تاریخ، وضعیت…) نباید بشکنند؛ ستون‌های متنی
+			   حداکثر چند خط می‌گیرند تا ردیف‌ها کوتاه و جدول مرتب بماند. */
+			$caps = array(
+				'text'        => 3,
+				'code'        => 2,
+				'date'        => 1,
+				'phone'       => 1,
+				'num'         => 1,
+				'money'       => 1,
+				'status'      => 1,
+				'stock'       => 1,
+				'bool'        => 1,
+				'coupon_type' => 1,
+			);
+			$shares = array(
+				'text' => 0.42,
+				'code' => 0.30,
 			);
 
-			$count = count( $labels );
-			$cols  = array();
+			$cols = array();
 
 			foreach ( array_values( $labels ) as $i => $label ) {
 				$def  = isset( $defs[ $i ] ) && is_array( $defs[ $i ] ) ? $defs[ $i ] : array();
 				$type = isset( $def['type'] ) ? (string) $def['type'] : 'text';
-				$len  = function_exists( 'mb_strlen' ) ? (int) mb_strlen( (string) $label, 'UTF-8' ) : strlen( (string) $label );
-				$base = isset( $bases[ $type ] ) ? $bases[ $type ] : 12.0;
 				$rtl  = ! in_array( $type, array( 'num', 'money', 'date', 'phone', 'code', 'stock', 'coupon_type' ), true );
 
 				$cols[] = array(
-					'label'  => (string) $label,
-					'type'   => $type,
-					'size'   => ( 'phone' === $type ) ? 9.0 : ( ( 'text' === $type ) ? 8.4 : 8.8 ),
-					'rtl'    => $rtl,
-					'align'  => ( 1 === $count ) ? 'right' : ( $rtl ? 'right' : 'left' ),
-					'w'      => 0.0,
-					'x'      => self::$mx,
-					'slot'   => 0,
-					'weight' => max( 5.0, min( 30.0, ( $base * 0.55 ) + ( $len * 0.9 ) ) ),
+					'label'   => (string) $label,
+					'type'    => $type,
+					'rtl'     => $rtl,
+					'align'   => ( 1 === $count ) ? 'right' : ( $rtl ? 'right' : 'left' ),
+					'cap'     => isset( $caps[ $type ] ) ? $caps[ $type ] : 2,
+					'share'   => isset( $shares[ $type ] ) ? $shares[ $type ] : 0.24,
+					'need'    => 0.0,
+					'w'       => 0.0,
+					'x'       => self::$mx,
+					'slot'    => 0,
 				);
 			}
 
-			$weights = array();
-			$total   = self::$pwidth - ( 2 * self::$mx );
-
-			foreach ( $cols as $col ) {
-				$weights[] = $col['weight'];
-			}
-
-			$widths = self::distribute( $weights, $total, min( 44.0, $total / max( 1, $count ) ) );
+			$even = self::$content / max( 1, $count );
 
 			foreach ( $cols as $i => $col ) {
-				$cols[ $i ]['w'] = $widths[ $i ];
+				$head = TisaCase_Exporter_Pdf_Text::layout( (string) $col['label'], self::bold_spec(), $col['rtl'] );
+
+				$cols[ $i ]['need'] = max( ( $head['width'] * self::$head_size ) + ( 2 * self::$pad_x ) + 4, 34.0 );
+				$cols[ $i ]['min']  = $cols[ $i ]['need'];
+				$cols[ $i ]['max']  = max( 40.0, self::$content * (float) $col['share'] );
+				$cols[ $i ]['w']    = $even;
 			}
 
 			return $cols;
 		}
 
-		/** تقسیم عرض بین ستون‌ها با کمینهٔ عرض. */
-		private static function distribute( array $weights, $total, $min ) {
-			$sum = array_sum( $weights );
-			$out = array();
-
-			foreach ( $weights as $i => $weight ) {
-				$out[ $i ] = ( $sum > 0 ) ? ( $total * $weight / $sum ) : ( $total / max( 1, count( $weights ) ) );
+		/** اندازهٔ قلم جدول بر اساس تعداد ستون (جدول پهن‌تر = قلم کوچک‌تر). */
+		private static function table_size( $count ) {
+			if ( $count <= 1 ) {
+				return 9.6;
 			}
 
-			for ( $pass = 0; $pass < 8; $pass++ ) {
-				$deficit = 0.0;
-				$sum2    = 0.0;
-				$grow    = array();
+			if ( $count <= 3 ) {
+				return 9.2;
+			}
 
-				foreach ( $out as $i => $width ) {
-					if ( $width < $min ) {
-						$deficit  += $min - $width;
-						$out[ $i ] = $min;
-					} elseif ( $width > $min + 1.0 ) {
-						$grow[] = $i;
-						$sum2  += $width;
+			if ( $count <= 6 ) {
+				return 8.8;
+			}
+
+			if ( $count <= 9 ) {
+				return 8.2;
+			}
+
+			if ( $count <= 12 ) {
+				return 7.7;
+			}
+
+			return 7.2;
+		}
+
+		/**
+		 * عرض ستون‌ها را از روی «نمونهٔ داده» تعیین می‌کند.
+		 *
+		 * برای هر ستون پهن‌ترین مقدار نمونه (و عنوان) اندازه‌گیری می‌شود و بعد عرض
+		 * با یک تخصیص ساده (کفِ خوانا، سقفِ سهم، و پخش مانده به ستون‌های متنی) در
+		 * کل عرض صفحه جا داده می‌شود؛ ستون‌های عددی/تاریخ کفِ خودشان را می‌گیرند تا
+		 * هرگز روی ستون بغل نیفتند.
+		 */
+		private static function fit_columns( array $samples ) {
+			$count = count( self::$cols );
+
+			if ( 0 === $count ) {
+				return;
+			}
+
+			foreach ( self::$cols as $i => $col ) {
+				$single = (float) $col['need'];
+				$need   = (float) $col['need'];
+
+				foreach ( $samples as $values ) {
+					if ( ! isset( $values[ $i ] ) ) {
+						continue;
+					}
+
+					$text = trim( (string) $values[ $i ] );
+
+					if ( '' === $text ) {
+						continue;
+					}
+
+					$layout = TisaCase_Exporter_Pdf_Text::layout( $text, self::$font_pt, $col['rtl'] );
+
+					if ( $layout['width'] <= 0 ) {
+						continue;
+					}
+
+					$one = ( $layout['width'] * self::$size ) + ( 2 * self::$pad_x ) + 4;
+
+					if ( $one > $single ) {
+						$single = $one;
+					}
+
+					/* ستون‌های متنی مجازند چند خط شوند، پس با سقف خط تخفیف می‌خورند. */
+					$room = max( 1, (int) $col['cap'] );
+					$want = ( $layout['width'] * self::$size / $room ) + ( 2 * self::$pad_x ) + 4;
+
+					if ( $want > $need ) {
+						$need = $want;
 					}
 				}
 
-				if ( $deficit < 0.01 || empty( $grow ) || $sum2 <= 0 ) {
+				/* کف: ستون‌های تک‌خطی (عدد، تاریخ، موبایل…) باید در یک خط جا شوند. */
+				if ( (int) $col['cap'] <= 1 ) {
+					$need = max( $need, $single );
+					self::$cols[ $i ]['min'] = min( $single, (float) $col['max'] );
+				} else {
+					self::$cols[ $i ]['min'] = min( max( $need, self::$cols[ $i ]['min'] ), (float) $col['max'] );
+				}
+
+				self::$cols[ $i ]['need'] = $need;
+			}
+
+			$widths = self::allocate();
+
+			foreach ( self::$cols as $i => $col ) {
+				self::$cols[ $i ]['w'] = $widths[ $i ];
+			}
+		}
+
+		/**
+		 * پخش عرض کل بین ستون‌ها با کف و سقف هر ستون.
+		 *
+		 * @return array عرض هر ستون به ترتیب فهرست.
+		 */
+		private static function allocate() {
+			$total = self::$content;
+			$w     = array();
+			$min   = array();
+			$max   = array();
+
+			foreach ( self::$cols as $i => $col ) {
+				$min[ $i ] = (float) $col['min'];
+				$max[ $i ] = max( (float) $col['min'], (float) $col['max'] );
+				$w[ $i ]   = max( $min[ $i ], min( (float) $col['need'], $max[ $i ] ) );
+			}
+
+			for ( $pass = 0; $pass < 24; $pass++ ) {
+				$sum = array_sum( $w );
+
+				if ( abs( $sum - $total ) < 0.5 ) {
 					break;
 				}
 
-				foreach ( $grow as $i ) {
-					$out[ $i ] -= ( $deficit * $out[ $i ] / $sum2 );
+				if ( $sum > $total ) {
+					$room = 0.0;
+					$free = array();
+
+					foreach ( $w as $i => $value ) {
+						$slack = $value - $min[ $i ];
+
+						if ( $slack > 0.5 ) {
+							$free[ $i ] = $slack;
+							$room      += $slack;
+						}
+					}
+
+					if ( $room <= 0.01 ) {
+						break;
+					}
+
+					$extra = $sum - $total;
+
+					foreach ( $free as $i => $slack ) {
+						$w[ $i ] -= ( $extra * $slack / $room );
+					}
+
+					continue;
+				}
+
+				$room = 0.0;
+				$free = array();
+
+				foreach ( $w as $i => $value ) {
+					$slack = $max[ $i ] - $value;
+
+					if ( $slack > 0.5 ) {
+						$free[ $i ] = $slack;
+						$room      += $slack;
+					}
+				}
+
+				if ( $room <= 0.01 ) {
+					break;
+				}
+
+				$extra = $total - $sum;
+
+				foreach ( $free as $i => $slack ) {
+					$w[ $i ] += ( $extra * $slack / $room );
 				}
 			}
 
-			return $out;
+			foreach ( $w as $i => $value ) {
+				$w[ $i ] = max( 1.0, $value );
+			}
+
+			return $w;
 		}
 
 		/** جای‌گذاری افقی ستون‌ها (جدول راست‌به‌چپ: ستون اول سمت راست). */
 		private static function place_columns() {
 			$rtl   = self::table_rtl();
 			$count = count( self::$cols );
+			$width = array();
 
 			foreach ( self::$cols as $i => $col ) {
-				$slot = $rtl ? ( $count - 1 - $i ) : $i;
-				$pos  = self::$mx;
+				$slot           = $rtl ? ( $count - 1 - $i ) : $i;
+				$width[ $slot ] = (float) $col['w'];
+				self::$cols[ $i ]['slot'] = $slot;
+			}
 
-				for ( $j = 0; $j < $slot; $j++ ) {
-					$pos += self::$cols[ $j ]['w'];
+			ksort( $width );
+
+			$pos = self::$mx;
+
+			foreach ( $width as $slot => $col_w ) {
+				foreach ( self::$cols as $i => $col ) {
+					if ( $col['slot'] === $slot ) {
+						self::$cols[ $i ]['x'] = $pos;
+						break;
+					}
 				}
 
-				self::$cols[ $i ]['x']    = $pos;
-				self::$cols[ $i ]['slot'] = $slot;
+				$pos += $col_w;
 			}
 		}
 
@@ -418,19 +621,53 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			self::text( self::$mx + 9, $band_bottom + 12, $marklay['glyphs'], 8.6, true, self::$accent_soft );
 
-			$head_top    = $band_bottom - 5.0;
-			$head_h      = 16.0;
+			/* خط فیلترهای فعال: برای نسخهٔ چاپی معلوم باشد این برگه چیست. */
+			$filters = trim( (string) self::meta_value( 'filters' ) );
+
+			if ( '' !== $filters ) {
+				$flay = TisaCase_Exporter_Pdf_Text::layout( $filters, self::$font_pt, true );
+
+				if ( ( $flay['width'] * 7.0 ) < ( self::$content * 0.72 ) ) {
+					self::text( self::$mx + 9, $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft );
+				}
+			}
+
+			$head_top = $band_bottom - 5.0;
+
+			/* عنوان ستون‌ها هم می‌تواند دو خط شود (مثل «موبایل (989xxxxxxx)»)؛
+			   ارتفاع سرستون از تعداد خط‌های واقعی درمی‌آید. */
+			$head_lines = array();
+			$head_rows  = 1;
+
+			foreach ( self::$cols as $i => $col ) {
+				$max   = ( $col['w'] - ( 2 * self::$pad_x ) ) / self::$head_size;
+				$lines = TisaCase_Exporter_Pdf_Text::wrap( (string) $col['label'], $max, self::bold_spec(), $col['rtl'] );
+
+				if ( count( $lines ) > 2 ) {
+					$lines = array_slice( $lines, 0, 2 );
+				}
+
+				$head_lines[ $i ] = $lines;
+				$head_rows        = max( $head_rows, count( $lines ) );
+			}
+
+			$head_h      = ( $head_rows * self::$head_lh ) + 6.0;
 			$head_bottom = $head_top - $head_h;
 
 			self::rect( self::$mx, $head_bottom, self::$content, $head_h, self::$accent_soft, null );
 
-			foreach ( self::$cols as $col ) {
-				$lab = TisaCase_Exporter_Pdf_Text::layout( (string) $col['label'], self::bold_spec(), $col['rtl'] );
-				$lx  = ( 'left' === $col['align'] )
-					? ( $col['x'] + self::$pad_x )
-					: ( $col['x'] + $col['w'] - self::$pad_x - ( $lab['width'] * 8.0 ) );
+			foreach ( self::$cols as $i => $col ) {
+				$y = $head_top - 3.4 - ( self::$head_size * 0.86 );
 
-				self::text( $lx, $head_bottom + 4.6, $lab['glyphs'], 8.0, true, self::$accent_dark );
+				foreach ( $head_lines[ $i ] as $line ) {
+					$lab = TisaCase_Exporter_Pdf_Text::layout( $line, self::bold_spec(), $col['rtl'] );
+					$lx  = ( 'left' === $col['align'] )
+						? ( $col['x'] + self::$pad_x )
+						: ( $col['x'] + $col['w'] - self::$pad_x - ( $lab['width'] * self::$head_size ) );
+
+					self::text( $lx, $y, $lab['glyphs'], self::$head_size, true, self::$accent_dark );
+					$y -= self::$head_lh;
+				}
 			}
 
 			self::$page_top  = $head_bottom;
@@ -956,6 +1193,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 			self::$y        = 0.0;
 			self::$rows     = 0;
 			self::$page     = 0;
+			self::$sampling = false;
+			self::$sample   = array();
 			self::$open     = false;
 			self::$writer   = null;
 		}

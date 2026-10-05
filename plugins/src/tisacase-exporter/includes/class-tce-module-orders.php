@@ -57,6 +57,16 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Orders' ) ) {
 
 		public static function filters_schema() {
 			return array(
+				array(
+					'name'    => 'date_mode',
+					'type'    => 'select',
+					'label'   => __( 'بازهٔ تاریخ', TisaCase_Exporter::TEXT_DOMAIN ),
+					'options' => array(
+						'all'   => __( 'بدون محدودیت تاریخ (همه)', TisaCase_Exporter::TEXT_DOMAIN ),
+						'range' => __( 'فقط بازهٔ زیر', TisaCase_Exporter::TEXT_DOMAIN ),
+					),
+					'default' => 'all',
+				),
 				array( 'name' => 'date_from', 'type' => 'date', 'label' => __( 'از تاریخ', TisaCase_Exporter::TEXT_DOMAIN ) ),
 				array( 'name' => 'date_to', 'type' => 'date', 'label' => __( 'تا تاریخ', TisaCase_Exporter::TEXT_DOMAIN ) ),
 				array(

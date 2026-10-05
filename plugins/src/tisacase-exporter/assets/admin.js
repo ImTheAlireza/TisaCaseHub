@@ -711,6 +711,13 @@
 					return '<a class="tisa-btn tisa-btn--secondary tisa-btn--sm" href="' + esc( file.url ) + '" dir="ltr">' + esc( file.name ) + '</a>';
 				} ).join( '' );
 
+				/* فایل PDF را می‌توان بی‌واسطه در مرورگر باز و چاپ کرد. */
+				if ( String( entry.extension || '' ).toLowerCase() === 'pdf' ) {
+					actions += entry.files.map( function ( file ) {
+						return '<a class="tisa-btn tisa-btn--ghost tisa-btn--sm" href="' + esc( file.url ) + '" target="_blank" rel="noopener">' + esc( cfg.l10n.print || 'چاپ' ) + '</a>';
+					} ).join( '' );
+				}
+
 				if ( entry.zip_url ) {
 					actions += '<a class="tisa-btn tisa-btn--primary tisa-btn--sm" href="' + esc( entry.zip_url ) + '">' + esc( cfg.l10n.downloadAll ) + '</a>';
 				}
@@ -844,10 +851,40 @@
 		}
 
 		if ( format === 'pdf' ) {
-			parts.push( 'PDF با قلم فارسی جاسازی‌شده ساخته می‌شود؛ مناسب چاپ و ارسال. برای اکسل، CSV یا XLS را انتخاب کنید.' );
+			parts.push( 'PDF با قلم فارسی جاسازی‌شده ساخته می‌شود؛ از تاریخچه دکمهٔ «چاپ» دارد.' );
 		}
 
 		node.textContent = parts.join( ' · ' );
+	}
+
+	/* «بدون محدودیت تاریخ» فیلدهای بازه را خاموش می‌کند تا معلوم باشد تاریخی اعمال نمی‌شود. */
+	function syncDateMode() {
+		var select = $( '[data-filter="date_mode"] select' );
+
+		if ( ! select ) {
+			return;
+		}
+
+		var all = select.value === 'all' || select.value === '';
+
+		[ 'date_from', 'date_to' ].forEach( function ( name ) {
+			var wrap  = $( '[data-filter="' + name + '"]' );
+			var input = wrap ? wrap.querySelector( 'input' ) : null;
+
+			if ( ! input ) {
+				return;
+			}
+
+			input.disabled = all;
+
+			if ( all ) {
+				input.value = '';
+			}
+
+			if ( wrap ) {
+				wrap.classList.toggle( 'is-muted', all );
+			}
+		} );
 	}
 
 	function resetFilters() {
@@ -880,6 +917,7 @@
 			input.value = '';
 		} );
 
+		syncDateMode();
 		toast( 'فیلترها پاک شدند.', 'ok' );
 	}
 
@@ -1012,6 +1050,17 @@
 		$$( '[data-filter] input, [data-filter] select' ).forEach( function ( input ) {
 			input.addEventListener( 'change', updateOutputHint );
 		} );
+
+		var dateMode = $( '[data-filter="date_mode"] select' );
+
+		if ( dateMode ) {
+			dateMode.addEventListener( 'change', function () {
+				syncDateMode();
+				updateOutputHint();
+			} );
+		}
+
+		syncDateMode();
 
 		// انتخاب‌های قالبی (کارت‌های تیسا) و کلید یکتاسازی.
 		$$( 'input[name="format"]' ).forEach( function ( input ) {

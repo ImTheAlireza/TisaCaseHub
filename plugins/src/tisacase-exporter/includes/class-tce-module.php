@@ -289,6 +289,11 @@ if ( ! class_exists( 'TisaCase_Exporter_Module' ) ) {
 			$from = '';
 			$to   = '';
 
+			/* «بدون محدودیت تاریخ» یعنی هر ردیف، هرچند قدیمی؛ پس بازه نادیده می‌رود. */
+			if ( isset( $filters['date_mode'] ) && 'all' === $filters['date_mode'] ) {
+				return array( '', '' );
+			}
+
 			if ( ! empty( $filters['date_from'] ) ) {
 				$from = get_gmt_from_date( $filters['date_from'] . ' 00:00:00' );
 			}
