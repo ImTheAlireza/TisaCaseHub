@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>گزینهٔ ب — هر بخش یک صفحهٔ مستقل با هدر خودش · خروجی گرفتن v2.0.0</title>
+
+<link rel="stylesheet" href="../../plugins/tisacase-hub/assets/tisacase-ui.css">
+<link rel="stylesheet" href="../../plugins/src/tisacase-exporter/assets/admin.css">
+
+<style>
+/* ===== فقط برای این پیش‌نمایش (تصمیم‌گیری ساختار) — استایل واقعی افزونه نیست ===== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: #F0F0F1; color: #1F2A2E; font: 14px/1.8 "Vazirmatn", "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif; }
+.tisa-scope { background: #F4F2EC; }
+.demo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; background: #06302B; color: #BFE3DC; font-size: 12.5px; }
+.demo-bar b { color: #fff; }
+.demo-bar .note { margin-inline-start: auto; opacity: .85; }
+.demo-shell { display: flex; align-items: stretch; min-height: 100vh; }
+
+/* شبیه‌سازی منوی کناری وردپرس */
+.demo-menu { flex: 0 0 200px; background: #2C3338; color: #F0F0F1; padding: 8px 0 60px; font-size: 13px; }
+.demo-menu .demo-item { display: flex; align-items: center; gap: 9px; padding: 8px 14px; color: inherit; text-decoration: none; opacity: .78; }
+.demo-menu .demo-item:hover { opacity: 1; background: rgba(255,255,255,.05); }
+.demo-menu .demo-item.is-current { background: linear-gradient(90deg,#0A5F52,#0E7C6B); opacity: 1; font-weight: 700; }
+.demo-menu .demo-sub { padding-inline-start: 12px; }
+.demo-menu .demo-sub .demo-item { font-size: 12.5px; }
+.demo-menu .demo-section { margin: 10px 14px 4px; font-size: 11px; opacity: .5; }
+.demo-menu .demo-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+.demo-main { flex: 1 1 auto; min-width: 0; }
+.demo-wpcontent { padding: 0 20px 80px; }
+.wrap { margin: 10px 20px 0 2px; }
+.demo-crumbs { margin: 0 0 10px; font-size: 12.5px; color: #77828A; }
+.demo-crumbs b { color: #0A5F52; }
+.demo-hint { margin: 0 4px 18px; font-size: 12.5px; color: #77828A; }
+.demo-hint b { color: #0A5F52; }
+@media (max-width: 900px) { .demo-menu { display: none; } }
+</style>
+</head>
+<body class="woocommerce_page_tisacase-exporter tisa-scope">
+
+<div class="demo-bar">
+	<b>گزینهٔ ب</b>
+	<span>هر بخش، یک صفحهٔ مستقل در منو با هدر (عنوان) خودش</span>
+	<span class="note">پیش‌نمایش استاتیک · tisacase-exporter v2.0.0</span>
+</div>
+
+<div class="demo-shell">
+	<aside class="demo-menu">
+		<a class="demo-item" href="#">پیشخوان</a>
+		<a class="demo-item" href="#">نوشته‌ها</a>
+		<a class="demo-item" href="#">محصولات</a>
+		<a class="demo-item" href="#">ووکامرس</a>
+		<div class="demo-sub">
+			<a class="demo-item" href="#">سفارش‌ها</a>
+			<a class="demo-item" href="#">تنظیمات</a>
+			<span class="demo-section">خروجی گرفتن</span>
+			<a class="demo-item is-current" href="#"><span class="demo-dot"></span>شماره تماس‌ها</a>
+			<a class="demo-item" href="#"><span class="demo-dot"></span>سفارش‌ها</a>
+			<a class="demo-item" href="#"><span class="demo-dot"></span>مشتری‌ها</a>
+			<a class="demo-item" href="#"><span class="demo-dot"></span>محصول‌ها</a>
+			<a class="demo-item" href="#"><span class="demo-dot"></span>کدهای تخفیف</a>
+		</div>
+		<a class="demo-item" href="#">نمایش</a>
+		<a class="demo-item" href="#">افزونه‌ها</a>
+	</aside>
+
+	<main class="demo-main">
+		<div class="demo-wpcontent">
+			<div class="wrap tisa-wrap tisa-exp" dir="rtl">
+
+				<header class="tisa-exp__hero">
+					<div class="tisa-exp__hero-mark" aria-hidden="true">
+						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg>
+					</div>
+					<div class="tisa-exp__hero-text">
+						<h1 class="tisa-exp__title">خروجی شماره تماس‌ها</h1>
+						<p class="tisa-exp__sub">شماره تماس صورتحساب · فرمت 989xxxxxxxxx · هر فایل ۱۰٬۰۰۰ شماره</p>
+					</div>
+					<span class="tisa-exp__hero-pill">HPOS</span>
+					<span class="tisa-exp__hero-pill" dir="ltr">v2.0.0</span>
+				</header>
+
+				<p class="demo-crumbs">خروجی گرفتن › <b>شماره تماس‌ها</b> — هر بخش آدرس خودش را دارد: <span dir="ltr">admin.php?page=tisacase-exporter&amp;section=phones</span></p>
+
+				<section class="tisa-exp__card">
+					<div class="tisa-exp__card-head">
+						<span class="tisa-exp__dot" aria-hidden="true"></span>
+						<div>
+							<h2>ساخت خروجی</h2>
+							<p>همهٔ سفارش‌ها (به‌جز سطل زباله) خوانده می‌شود؛ بدون سرستون، فقط شماره.</p>
+						</div>
+					</div>
+					<div class="tisa-exp__card-body">
+						<div class="tisa-exp__between">
+							<label class="tisa-switch tisa-exp__switch">
+								<input type="checkbox" checked disabled>
+								<span class="tisa-switch__track" aria-hidden="true"></span>
+								<span>حذف شماره‌های تکراری <small>(هر شماره یک‌بار، مرتب‌شده)</small></span>
+							</label>
+							<div class="tisa-exp__actions">
+								<button type="button" class="tisa-btn tisa-btn--ghost">آخرین وضعیت</button>
+								<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger">توقف و پاک‌سازی</button>
+								<button type="button" class="tisa-btn tisa-btn--secondary">ادامه خروجی</button>
+								<button type="button" class="tisa-btn tisa-btn--primary">شروع خروجی جدید</button>
+							</div>
+						</div>
+						<div class="tisa-exp__box">
+							<div class="tisa-exp__kpis">
+								<div class="tisa-exp__kpi"><span>سفارش بررسی‌شده</span><b>۱۲٬۴۸۰</b><small>از ۱۲٬۴۸۰ · ۱۰۰٪</small></div>
+								<div class="tisa-exp__kpi is-ok"><span>شماره معتبر</span><b>۹٬۳۱۲</b></div>
+								<div class="tisa-exp__kpi"><span>بدون شماره معتبر</span><b>۳٬۱۶۸</b></div>
+								<div class="tisa-exp__kpi"><span>تکراری حذف‌شده</span><b>۱٬۲۴۵</b></div>
+							</div>
+							<div class="tisa-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+								<div class="tisa-progress__bar" style="width:100%;"></div>
+							</div>
+							<p class="tisa-progress-text" aria-live="polite"><strong class="is-ok">عملیات کامل شد — ۱ فایل آماده دانلود است.</strong></p>
+							<div class="tisa-exp__files">
+								<h2 class="tisa-exp__files-h">فایل‌های آماده</h2>
+								<div class="tisa-exp__files-list">
+									<div class="tisa-exp__file">
+										<span class="tisa-exp__file-n">۱</span>
+										<span class="tisa-exp__file-c">۹٬۳۱۲ شماره</span>
+										<a class="tisa-btn tisa-btn--secondary tisa-btn--sm" href="#">دانلود فایل</a>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</section>
+
+				<p class="demo-hint">هر بخش = یک صفحهٔ کامل با هدر خودش؛ منوی کناری وردپرس زیر «خروجی گرفتن» پنج زیرآیتم می‌گیرد و کارت هاب هم می‌تواند به هر بخش مستقیم لینک بدهد. <b>در این حالت هر بخش از صفحهٔ بعدی جدا باز می‌شود.</b></p>
+
+			</div>
+		</div>
+	</main>
+</div>
+</body>
+</html>

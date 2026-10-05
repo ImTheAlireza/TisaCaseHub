@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>گزینهٔ الف — بخش‌ها در «هدر جدا» (نوار ناوبری) · خروجی گرفتن v2.0.0</title>
+
+<link rel="stylesheet" href="../../plugins/tisacase-hub/assets/tisacase-ui.css">
+<link rel="stylesheet" href="../../plugins/src/tisacase-exporter/assets/admin.css">
+
+<style>
+/* ===== فقط برای این پیش‌نمایش (تصمیم‌گیری ساختار) — استایل واقعی افزونه نیست ===== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: #F0F0F1; color: #1F2A2E; font: 14px/1.8 "Vazirmatn", "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif; }
+.tisa-scope { background: #F4F2EC; }
+.demo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; background: #06302B; color: #BFE3DC; font-size: 12.5px; }
+.demo-bar b { color: #fff; }
+.demo-bar .note { margin-inline-start: auto; opacity: .85; }
+.demo-wpcontent { padding: 0 20px 80px; }
+.wrap { margin: 10px 20px 0 2px; }
+
+/* نوار بخش‌ها: کلاس‌های واقعی افزونه (tisa-exp__nav) از admin.css می‌آید */
+.demo-hint { margin: 0 4px 18px; font-size: 12.5px; color: #77828A; }
+.demo-hint b { color: #0A5F52; }
+.demo-phase { margin-inline-start: auto; }
+</style>
+</head>
+<body class="woocommerce_page_tisacase-exporter tisa-scope">
+
+<div class="demo-bar">
+	<b>گزینهٔ الف</b>
+	<span>بخش‌ها در «هدر جدا» — یک صفحه، یک نوار ناوبری مستقل بالای محتوا</span>
+	<span class="note">پیش‌نمایش استاتیک · tisacase-exporter v2.0.0</span>
+</div>
+
+<div class="demo-wpcontent">
+	<div class="wrap tisa-wrap tisa-exp" dir="rtl">
+
+		<header class="tisa-exp__hero">
+			<div class="tisa-exp__hero-mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/></svg>
+			</div>
+			<div class="tisa-exp__hero-text">
+				<h1 class="tisa-exp__title">خروجی گرفتن</h1>
+				<p class="tisa-exp__sub">شماره‌ها، سفارش‌ها، مشتری‌ها و محصول‌ها — CSV، اکسل یا TXT</p>
+			</div>
+			<span class="tisa-exp__hero-pill">HPOS</span>
+			<span class="tisa-exp__hero-pill" dir="ltr">v2.0.0</span>
+		</header>
+
+		<!-- ▼▼ همان «هدر جدا» برای بخش‌ها ▼▼ -->
+		<nav class="tisa-exp__nav" aria-label="بخش‌های خروجی">
+			<a href="#" class="is-current" aria-current="page">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg>
+				شماره تماس‌ها <span class="demo-count">۱۲٬۴۸۰ سفارش</span>
+			</a>
+			<a href="#" class="is-soon" title="در فاز ۱">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></svg>
+				سفارش‌ها
+			</a>
+			<a href="#" class="is-soon" title="در فاز ۲">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+				مشتری‌ها
+			</a>
+			<a href="#" class="is-soon" title="در فاز ۳">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg>
+				محصول‌ها
+			</a>
+			<a href="#" class="is-soon" title="در فاز ۳">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H4v8l9 9 8-8zM8 8h.01"/></svg>
+				کدهای تخفیف
+			</a>
+			<a href="#" class="is-soon demo-phase" title="افزودنی با فیلتر tisacase_exporter_modules">+ افزودنی</a>
+		</nav>
+		<p class="demo-hint">هر بخش یک صفحهٔ مستقل در همین قالب است؛ این نوار جای تب‌های داخل کارت را می‌گیرد و همیشه بالای محتوا می‌مانَد. <b>هیچ بخشی داخل کارت قاطی نمی‌شود.</b></p>
+
+		<div class="tisa-exp__section-head">
+			<div>
+				<h2 class="tisa-exp__section-title">شماره تماس‌ها</h2>
+				<p class="tisa-exp__section-sub">شماره تماس صورتحساب همهٔ سفارش‌ها، تبدیل‌شده به 989xxxxxxxxx — بدون سرستون و فقط شماره.</p>
+			</div>
+			<span class="tisa-badge tisa-badge--success">فعال</span>
+		</div>
+
+		<section class="tisa-exp__card">
+			<div class="tisa-exp__card-head">
+				<span class="tisa-exp__dot" aria-hidden="true"></span>
+				<div>
+					<h2>ساخت خروجی</h2>
+					<p>همهٔ سفارش‌ها (به‌جز سطل زباله) خوانده می‌شود؛ بدون سرستون، فقط شماره · هر فایل ۱۰٬۰۰۰ شماره · هر گام ۱٬۰۰۰ سفارش.</p>
+				</div>
+			</div>
+			<div class="tisa-exp__card-body">
+				<div class="tisa-exp__between">
+					<label class="tisa-switch tisa-exp__switch">
+						<input type="checkbox" checked disabled>
+						<span class="tisa-switch__track" aria-hidden="true"></span>
+						<span>حذف شماره‌های تکراری <small>(هر شماره یک‌بار، مرتب‌شده)</small></span>
+					</label>
+					<div class="tisa-exp__actions">
+						<button type="button" class="tisa-btn tisa-btn--ghost">آخرین وضعیت</button>
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger">توقف و پاک‌سازی</button>
+						<button type="button" class="tisa-btn tisa-btn--secondary">ادامه خروجی</button>
+						<button type="button" class="tisa-btn tisa-btn--primary">شروع خروجی جدید</button>
+					</div>
+				</div>
+
+				<div class="tisa-exp__box">
+					<div class="tisa-exp__kpis">
+						<div class="tisa-exp__kpi"><span>سفارش بررسی‌شده</span><b>۱۲٬۴۸۰</b><small>از ۱۲٬۴۸۰ · ۱۰۰٪</small></div>
+						<div class="tisa-exp__kpi is-ok"><span>شماره معتبر</span><b>۹٬۳۱۲</b></div>
+						<div class="tisa-exp__kpi"><span>بدون شماره معتبر</span><b>۳٬۱۶۸</b></div>
+						<div class="tisa-exp__kpi"><span>تکراری حذف‌شده</span><b>۱٬۲۴۵</b></div>
+					</div>
+					<div class="tisa-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">
+						<div class="tisa-progress__bar" style="width:100%;"></div>
+					</div>
+					<p class="tisa-progress-text" aria-live="polite"><strong class="is-ok">عملیات کامل شد — ۱ فایل آماده دانلود است.</strong></p>
+					<div class="tisa-exp__files">
+						<h2 class="tisa-exp__files-h">فایل‌های آماده</h2>
+						<div class="tisa-exp__files-list">
+							<div class="tisa-exp__file">
+								<span class="tisa-exp__file-n">۱</span>
+								<span class="tisa-exp__file-c">۹٬۳۱۲ شماره</span>
+								<a class="tisa-btn tisa-btn--secondary tisa-btn--sm" href="#">دانلود فایل</a>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<details class="tisa-exp__help" open>
+			<summary>بعداً داخل همین بخش چه چیزی اضافه می‌شود؟</summary>
+			<p>فیلتر بازهٔ تاریخ و وضعیت‌ها، انتخاب منبع شماره (صورتحساب/ارسال)، انتخاب ستون‌ها، پیش‌نمایش ۲۵ ردیف، فرمت دلخواه (TXT/CSV/اکسل)، قالب‌های آماده و تاریخچهٔ اجراها — همه در فازهای ۱ تا ۴، بدون تغییر در ساختار همین صفحه.</p>
+		</details>
+
+	</div>
+</div>
+</body>
+</html>

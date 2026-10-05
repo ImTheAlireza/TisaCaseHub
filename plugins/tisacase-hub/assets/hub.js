@@ -494,8 +494,13 @@
 				var msg = '';
 				if ( d.offline && i18n.syncedOkOffline ) {
 					msg = i18n.syncedOkOffline.replace( '%s', d.count || 0 );
+				} else if ( d.source === 'probe' && i18n.syncedOkProbe ) {
+					msg = i18n.syncedOkProbe.replace( '%s', d.count || 0 );
 				} else if ( i18n.syncedOk ) {
 					msg = i18n.syncedOk.replace( '%s', d.count || 0 );
+				}
+				if ( i18n.syncedTools && typeof d.tools === 'number' ) {
+					msg += ( msg ? ' ' : '' ) + i18n.syncedTools.replace( '%s', d.tools );
 				}
 				if ( i18n.syncedBranch && d.branch ) {
 					msg += ( msg ? ' ' : '' ) + i18n.syncedBranch.replace( '%s', d.branch );

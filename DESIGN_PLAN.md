@@ -175,7 +175,7 @@ add_filter( 'tisacase_hub_items', function ( $items ) {
 | `pm` | قیمت‌گذاری داینامیک | pricing | `admin.php?page=tisacase-pricing-manager` | الان زیر ووکامرس |
 | `package` | پکیج ویژه قاب | pricing | `admin.php?page=wcsp-settings` | داشبورد آماری |
 | `tracking` | آپلود کد رهگیری | orders | `admin.php?page=bulk-tracking-upload` | + آیتم دوم `admin.php?page=bwt-cleanup` |
-| `phones` | خروجی شماره تماس | orders | `admin.php?page=tisacase-order-phone-exporter` | خروجی PII |
+| `exporter` | خروجی گرفتن (شماره تماس، سفارش، مشتری، محصول) | orders | `admin.php?page=tisacase-exporter` | خروجی PII |
 
 (چون URLها متفاوت‌اند — بعضی `admin.php` بعضی `edit.php` — نمی‌شود آن‌ها را از روی الگو ساخت؛ پس فیلد `url` در registry الزامی است.)
 

@@ -12,7 +12,7 @@
 |---|--------|-------|-------------|---------|--------------|--------|
 | 1 | `bulk-product-cleaner` | 12.4.0 | حذف انبوه پیش‌نویس‌ها + تصاویر با بکاپ ۹۰ روزه | OOP، autoloader، ۸ کلاس | 11 / ~4900 | ⭐⭐⭐⭐⭐ |
 | 2 | `tisacase-bulk-price-manager` | 2.2.0 → **جایگزین: `tisacase-pricing` 1.0.0** | مدیریت گروهی قیمت عادی/فروش/عمده + لاگ + رول‌بک | OOP، ۶ کلاس + جدول اختصاصی | 13 / ~3800 | ⭐⭐⭐⭐⭐ |
-| 3 | `tisacase-order-phone-exporter` | 1.3.1 | خروجی موبایل سفارش‌ها در فایل‌های ۱۰هزارتایی | OOP، ۱۱ کلاس، استریم | 17 / ~1900 | ⭐⭐⭐⭐⭐ |
+| 3 | `tisacase-exporter` (قبلاً `tisacase-order-phone-exporter`) | **2.0.0** | خروجی گرفتن: شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها، کدهای تخفیف | OOP، رجیستری ماژول + موتور مشترک، ۱۹ کلاس، استریم | 25 / ~6700 | ⭐⭐⭐⭐⭐ |
 | 4 | `tisacase-product-description` | 1.4.1 | قوانین خودکار توضیحات (چاپی/قاب) + رول‌بک | OOP، ۴ کلاس | 8 / ~2900 | ⭐⭐⭐⭐⭐ |
 | 5 | `case-special-package` | 1.5.0 | «پکیج ویژه» روی قاب‌ها (قیمت به‌ازای هر عدد) + کلمات منفی وتوکننده | Singleton + Settings API، تک‌فایل | 5 / ~1445 | ⭐⭐⭐⭐ |
 | 6 | `tisacase-pricing-manager` | 1.1.0 → **جایگزین: `tisacase-pricing` 1.0.0** | قیمت‌گذاری داینامیک **بدون** بازنویسی دیتابیس | تک‌کلاس، تک‌فایل | 4 / ~920 | ⭐⭐⭐⭐ |
@@ -48,15 +48,21 @@
 - خروجی CSV با nonce جداگانه برای هر run (`ajax:380-396`)، پردازش صفحه‌ای ۵۰۰تایی.
 - **تنها پلاگینی که تست خودکار دارد**: `tests/run-tests.php` + `stubs.php` (بدون وردپرس، `php tests/run-tests.php`).
 
-### 3) TisaCase Order Phone Exporter — `tisacase_*`
-هدف: استخراج شماره موبایل همهٔ سفارش‌ها در فایل‌های اکسل ۱۰هزارتایی، بدون هدر، فرمت `989xxxxxxxxx`.
+### 3) TisaCase Exporter — «خروجی گرفتن» — `tisacase_exporter_*`
+> **هویت v2.0.0 (۱۴۰۵/۰۷):** پوشه/کلاس/اکشن‌ها `tisacase-exporter` / `TisaCase_Exporter_*` / `tisacase_export_*`، اسلاگ `admin.php?page=tisacase-exporter`، نسخهٔ **۲٫۰٫۰**. زیپ قدیمی از مخزن حذف و کارت هاب با کلید `exporter` جایگزین شد.
 
-- **کوئری خام فقط-خواندنی و سازگار با HPOS**: حالت HPOS از `wc_orders` + `wc_order_addresses`، حالت قدیم از `posts` + `MAX(pm.meta_value)` با `GROUP BY` (سازگار `ONLY_FULL_GROUP_BY`)؛ صفحه‌بندی با cursor (`id > %d`) نه OFFSET عمیق (`class-tisacase-queries.php`).
-- نرمال‌سازی شماره: ارقام فارسی/عربی، `0098`، `0989`، `09x`، `9xx` → `98` + ۱۰ رقم، وگرنه حذف (`class-tisacase-phone.php`).
-- Dedup با **مرتب‌سازی تکه‌ای خارجی** (سقف ۱۰۰هزار خط هر تکه) و بافر ۶۴KB → فشار حافظه کنترل‌شده (`class-tisacase-pipeline.php`).
-- امنیت خروجی: پوشهٔ خصوصی با نام **هش‌دار** (`sha256(user_id|wp_salt('auth'))`) + `.htaccess` deny + `index.html`؛ دانلود فقط از طریق لیست سفید `state['files']` + nonce + capability، و استریم SpreadsheetML 2003 بدون ZipArchive/PhpSpreadsheet (`class-tisacase-download.php`).
-- مدیریت جلسهٔ دقیق: `save_state_guarded()` نمی‌گذارد پاسخ دیرهنگام، جلسهٔ لغو‌شده یا run قدیمی را «احیا» کند؛ قفل ۲ دقیقه‌ای؛ sweep کرونی فایل‌های ۲۴ ساعته.
-- بارگذاری فقط در زمینه‌های لازم (admin/cron/CLI) — در بازدید عادی عملاً صفر هزینه.
+هدف: یک مرکز خروجی گرفتن با **پنج بخش** روی یک موتور مشترک — شماره‌ها (سازگاری مو‌به‌مو با ۱٫۵٫۰)، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف؛ هر بخش فیلتر، انتخاب ستون، قالب خروجی، پیش‌نمایش و KPI خودش را دارد.
+
+- **معماری ماژول + موتور:** قرارداد ماژول در `class-tce-module.php` (`id/meta/columns_schema/filters_schema/dedup_keys/count/fetch/normalize_filters/columns_def/…`) و رجیستری در `class-tce-modules.php` با فیلتر `tisacase_exporter_modules`؛ افزودن بخش جدید = یک فایل کلاس، بدون دست‌زدن به هسته. نوار ناوبری بخش‌ها (هدر جدا) + هدر مستقل هر بخش از رجیستری رندر می‌شود.
+- **پنج ماژول:** `module-phones` (تک‌ستونی `989xxxxxxxxx`، بدون سرستون — بایت‌به‌بایت مثل ۱٫۵٫۰)، `module-orders` (۱۶ ستون، مسیر HPOS/Legacy)، `module-customers` (تجمیع بر اساس موبایل صورتحساب، شامل مهمان؛ `min_orders`)، `module-products` (`wc_get_products` + «هر متغیر یک ردیف»)، `module-coupons` (نوع/اعتبار/usage/انقضا).
+- **قالب‌ها** (`class-tce-format.php`): TXT (بدون هدر) · CSV (BOM + `fputcsv`) · XLS (SpreadsheetML 2003) · JSON (کلید لاتین) — بدون هیچ کتابخانهٔ بیرونی. پارت‌های موقت همیشه TSV ذخیره می‌شوند و **تبدیل قالب در لحظهٔ دانلود استریم می‌شود**.
+- **Pipeline** (`class-tce-pipeline.php`): بافر ۶۴KB، پارت‌های ۱۰هزارتایی، و برای بخش‌های دارای کلید یکتاسازی، **مرتب‌سازی تکه‌ای خارجی** (سقف ۱۰۰هزار خط هر تکه) با ادغام K-way؛ کلید مرتب‌سازی از فیلتر خالی هم محافظت می‌شود.
+- **جلسه/قفل** (`class-tce-session.php`): State در Transient (TTL ۱۲ ساعت)، قفل ۲ دقیقه‌ای برای جلوگیری از دو تب همزمان، Tombstone لغو، و `save_state_guarded()` که نمی‌گذارد پاسخ دیرهنگام جلسهٔ لغوشده یا run قدیمی را احیا کند؛ در WP-CLI قفل غیرفعال است.
+- **تاریخچه** (`class-tce-history.php`): آخرین ۲۰ اجرا برای هر کاربر (آپشن `tisacase_exporter_history_<user>`)، وضعیت «فایل پاک شده» از وجود واقعی فایل تشخیص داده می‌شود، و «اجرای مجدد با همین تنظیمات» از همان رکورد.
+- **صفحهٔ مدیریت** (`class-tce-admin-page.php` + `assets/admin.js`): پنج کارت شماره‌دار (فیلتر / ستون و قالب / اجرا و پیشرفت / پیش‌نمایش ۲۵ ردیف / تاریخچه)، اعداد فارسی، تخمین زمان باقی‌مانده، KPI پویا از `meta()['kpi']`، اعلان شناور و بدون jQuery (fetch خام).
+- **امنیت فایل‌های خروجی:** پوشهٔ هر کاربر در `uploads/tisacase-private-exports/` با پیشوند هش کاربر + ۱۶ کاراکتر تصادفی `run_id`، `index.php` سکوت + `.htaccess` deny؛ دانلود فقط با nonce + `manage_woocommerce` + لیست سفید پارت‌ها (`part-\d{3,4}.tsv`) و `realpath` داخل پایه‌های مجاز؛ ZIP اختیاری (فقط اگر `ZipArchive` باشد) و پاک‌سازی ۲۴ ساعته با کرون ساعتی + پوشه‌های نسخهٔ ۱.x (`tisacase-private-phone-exports`).
+- **WP-CLI:** `wp tisacase export [<section>] [--format=…] [--columns=a,b] [--dedup[=key]] [--file=…] [--filter key=value]…` + alias قدیمی `wp tisacase export-phones` (پیش‌فرض خروجی `phones-989.txt`).
+- بارگذاری فقط در زمینه‌های لازم (admin/cron/CLI)؛ در بازدید عادی سایت عملاً صفر هزینه.
 
 ### 4) TisaCase Product Description — `TisaCase_Desc_*`
 هدف: همان اسنیپت Code Snippets در قالب افزونه استاندارد؛ توضیحات «مراجعه به TISACHAP.COM» برای SKUهای چاپی، «توجه قاب» برای محصولات دارای کلمهٔ قاب.
@@ -130,7 +136,7 @@
 | `wcsp_settings` | option | `case-special-package` | خودش |
 | `wp_tisacase_bpm_runs` / `wp_tisacase_bpm_log` | جدول | `tisacase-bulk-price-manager` | uninstall → DROP ✅ |
 | `uploads/bdc-backups/` | فایل | `bulk-product-cleaner` | بکاپ ۹۰ روزه |
-| `uploads/tisacase-private-phone-exports/` | فایل | `tisacase-order-phone-exporter` | sweep ۲۴ ساعته |
+| `uploads/tisacase-private-exports/` | فایل | `tisacase-exporter` | sweep ۲۴ ساعته |
 | `wcspb_latest_skus`, `tisa_update_*`, `tisacase_state_*`, `bdc_*` transients | transient | هر افزونه برای خودش | |
 
 کرون‌ها: `bdc_purge_expired_backups` (روزانه)، `tcbpm_process_scheduled_tick`، `tcbpm_daily_cleanup`، `tisacase_phone_export_sweep` (ساعتی). همه در uninstall مربوطه `wp_clear_scheduled_hook` می‌شوند **به‌جز** پلاگین‌های بدون uninstall.

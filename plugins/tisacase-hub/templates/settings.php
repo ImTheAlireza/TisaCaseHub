@@ -157,6 +157,32 @@ $tools   = admin_url( 'admin.php?page=' . TSH_SLUG );
 				<?php endif; ?>
 				— <a href="<?php echo esc_url( $tools ); ?>"><?php esc_html_e( 'اتصال و همگام‌سازی از صفحهٔ ابزارها', 'tisacase-hub' ); ?></a>
 			</p>
+			<?php
+			$cat     = class_exists( 'TSH_Remote' ) ? TSH_Remote::catalog() : array();
+			$cat_n   = isset( $cat['items'] ) && is_array( $cat['items'] ) ? count( $cat['items'] ) : 0;
+			$cat_at  = isset( $cat['at'] ) ? (int) $cat['at'] : 0;
+			$cat_src = isset( $cat['source'] ) ? (string) $cat['source'] : '';
+			$src_map = array(
+				'github' => __( 'فهرست GitHub', 'tisacase-hub' ),
+				'probe'  => __( 'کاوش مستقیم فایل‌های مخزن', 'tisacase-hub' ),
+				'bundle' => __( 'فهرست همراه هاب (آفلاین)', 'tisacase-hub' ),
+			);
+			?>
+			<p class="tisa-meta" style="margin:6px 0 0">
+				<?php if ( $cat_at > 0 ) : ?>
+					<?php
+					printf(
+						/* translators: 1: date/time, 2: item count, 3: source label */
+						esc_html__( 'آخرین همگام‌سازی: %1$s — %2$s افزونه از %3$s.', 'tisacase-hub' ),
+						esc_html( date_i18n( 'Y/m/d H:i', $cat_at ) ),
+						esc_html( TSH_View::num( $cat_n ) ),
+						esc_html( isset( $src_map[ $cat_src ] ) ? $src_map[ $cat_src ] : $cat_src )
+					);
+					?>
+				<?php else : ?>
+					<?php esc_html_e( 'هنوز همگام‌سازی نشده، یا سرور به مخزن دسترسی نداشته است.', 'tisacase-hub' ); ?>
+				<?php endif; ?>
+			</p>
 		</section>
 
 		<div class="tsh-set-save">

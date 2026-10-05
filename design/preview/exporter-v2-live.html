@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش زندهٔ UI — خروجی گرفتن v2.0.0</title>
+
+<!-- همان فایل‌های واقعی افزونه: زبان طراحی مشترک + استایل و اسکریپت افزونه -->
+<link id="hub-ui" rel="stylesheet" href="../../plugins/tisacase-hub/assets/tisacase-ui.css">
+<link rel="stylesheet" href="../../plugins/src/tisacase-exporter/assets/admin.css">
+
+<style>
+/* ===== فقط برای این پیش‌نمایش (شبیه‌سازی قالب پیشخوان وردپرس) — بخشی از افزونه نیست ===== */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+	background: #F0F0F1; color: #1F2A2E;
+	font: 14px/1.8 "Vazirmatn", "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+.demo-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 20px; background: #06302B; color: #BFE3DC; font-size: 12.5px; }
+.demo-bar b { color: #fff; }
+.demo-bar .note { margin-inline-start: auto; opacity: .85; }
+.demo-wpcontent { padding: 0 20px 90px; }
+.wrap { margin: 10px 20px 0 2px; }
+.tisa-scope { background: #F4F2EC; }
+.demo-hint { margin: 0 4px 18px; font-size: 12.5px; color: #77828A; }
+.demo-hint b { color: #0A5F52; }
+</style>
+</head>
+<body class="woocommerce_page_tisacase-exporter tisa-scope">
+
+<div class="demo-bar">
+	<b>پیش‌نمایش زنده</b>
+	<span>همین مارک‌آپ، CSS و JS واقعی افزونه — فقط درخواست‌های AJAX شبیه‌سازی شده‌اند</span>
+	<button type="button" id="demo-standalone" style="margin-inline-start:auto;padding:4px 12px;border:1px solid #2E6B60;border-radius:999px;background:transparent;color:#BFE3DC;font:inherit;font-size:12px;cursor:pointer;">حالت بدون هاب: خاموش</button>
+	<span class="note">tisacase-exporter v2.0.0</span>
+</div>
+
+<div class="demo-wpcontent">
+	<div class="wrap tisa-wrap tisa-exp" dir="rtl">
+
+		<header class="tisa-exp__hero">
+			<div class="tisa-exp__hero-mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/></svg>
+			</div>
+			<div class="tisa-exp__hero-text">
+				<h1 class="tisa-exp__title">خروجی گرفتن</h1>
+				<p class="tisa-exp__sub">شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — هر بخش جدا، با فیلتر، انتخاب ستون و پیش‌نمایش.</p>
+			</div>
+			<span class="tisa-exp__hero-pill">HPOS</span>
+			<span class="tisa-exp__hero-pill" dir="ltr">v2.0.0</span>
+		</header>
+
+		<nav class="tisa-exp__nav" aria-label="بخش‌های خروجی">
+			<a class="tisa-exp__nav-link is-current" href="#" aria-current="page">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg>
+				<span>شماره تماس‌ها</span>
+			</a>
+			<a class="tisa-exp__nav-link" href="#">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h8l4 4v14H6zM14 3v4h4M9 12h6M9 16h6"/></svg>
+				<span>سفارش‌ها</span>
+			</a>
+			<a class="tisa-exp__nav-link" href="#">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zM4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+				<span>مشتری‌ها</span>
+			</a>
+			<a class="tisa-exp__nav-link" href="#">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg>
+				<span>محصول‌ها</span>
+			</a>
+			<a class="tisa-exp__nav-link" href="#">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H4v8l9 9 8-8zM8 8h.01"/></svg>
+				<span>کدهای تخفیف</span>
+			</a>
+		</nav>
+
+		<div class="tisa-exp__section-head">
+			<div>
+				<h2 class="tisa-exp__section-title">شماره تماس‌ها</h2>
+				<p class="tisa-exp__section-sub">شماره تماس صورتحساب سفارش‌ها، تبدیل‌شده به 989xxxxxxxxx — بدون سرستون و فقط شماره.</p>
+			</div>
+			<span class="tisa-badge tisa-badge--success">فعال</span>
+		</div>
+		<p class="demo-hint">در پیش‌نمایش، دکمهٔ <b>«شروع خروجی جدید»</b> و <b>«پیش‌نمایش»</b> با دادهٔ ساختگی کار می‌کنند تا رفتار واقعی UI را ببینید.</p>
+
+		<div class="tisa-exp__stack">
+
+			<!-- ۱: فیلترها -->
+			<section class="tisa-exp__card" id="tisa-exp-card-filters">
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step" aria-hidden="true">۱</span>
+					<div>
+						<h2>فیلترها</h2>
+						<p>خروجی فقط شامل ردیف‌هایی می‌شود که با این فیلترها بخوانند. خالی‌بودن یک فیلتر یعنی «همه».</p>
+					</div>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tisa-exp__reset" id="tisa-exp-reset">پاک‌کردن فیلترها</button>
+				</div>
+				<div class="tisa-exp__card-body">
+					<div class="tisa-exp__fields">
+						<div class="tisa-exp__field" data-filter="date_mode" data-type="select">
+								<label class="tisa-label">بازهٔ تاریخ</label>
+								<select class="tisa-select">
+									<option value="all">بدون محدودیت تاریخ (همه)</option>
+									<option value="range">فقط بازهٔ زیر</option>
+								</select>
+							</div><div class="tisa-exp__field" data-filter="date_from" data-type="date">
+							<label class="tisa-label" for="tisa-exp-field-date_from">از تاریخ</label>
+							<input class="tisa-input" id="tisa-exp-field-date_from" type="date" dir="ltr" name="filters[date_from]" value="">
+						</div>
+						<div class="tisa-exp__field" data-filter="date_to" data-type="date">
+							<label class="tisa-label" for="tisa-exp-field-date_to">تا تاریخ</label>
+							<input class="tisa-input" id="tisa-exp-field-date_to" type="date" dir="ltr" name="filters[date_to]" value="">
+						</div>
+						<div class="tisa-exp__field" data-filter="statuses" data-type="multiselect">
+							<label class="tisa-label" for="tisa-exp-field-statuses">وضعیت سفارش</label>
+							<div class="tisa-exp__checks" role="group" aria-label="وضعیت سفارش">
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-pending" checked><span>در انتظار پرداخت</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-processing" checked><span>در حال انجام</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-on-hold" checked><span>در انتظار بررسی</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-completed" checked><span>تکمیل‌شده</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-cancelled" checked><span>لغو‌شده</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-refunded" checked><span>مرجوعی</span></label>
+								<label class="tisa-check tisa-exp__check"><input type="checkbox" name="filters[statuses][]" value="wc-failed" checked><span>ناموفق</span></label>
+							</div>
+							<div class="tisa-exp__field-actions">
+								<button type="button" class="tisa-btn tisa-btn--link tisa-exp__check-all" data-target="statuses" data-state="1">انتخاب همه</button>
+								<button type="button" class="tisa-btn tisa-btn--link tisa-exp__check-all" data-target="statuses" data-state="0">هیچ‌کدام</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			</section>
+
+			<!-- ۲: ستون‌ها و قالب -->
+			<section class="tisa-exp__card" id="tisa-exp-card-output">
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step" aria-hidden="true">۲</span>
+					<div>
+						<h2>ستون‌ها و قالب خروجی</h2>
+						<p>ستون‌هایی که لازم دارید را انتخاب کنید؛ بقیه وارد فایل نمی‌شوند.</p>
+					</div>
+					<div class="tisa-exp__head-actions">
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tisa-exp-cols-all">همه ستون‌ها</button>
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tisa-exp-cols-default">پیش‌فرض</button>
+					</div>
+				</div>
+				<div class="tisa-exp__card-body tisa-exp__card-body--wide">
+					<div class="tisa-exp__cols" role="group" aria-label="ستون‌های خروجی">
+						<label class="tisa-check tisa-exp__check" data-column="phone" data-default="1">
+							<input type="checkbox" name="columns[]" value="phone" checked>
+							<span>شماره موبایل</span>
+							<small dir="ltr">phone</small>
+						</label>
+					</div>
+
+					<div class="tisa-exp__format">
+						<h3 class="tisa-exp__sub-h">قالب فایل</h3>
+						<div class="tisa-exp__choices">
+							<label class="tisa-choice is-selected">
+								<input type="radio" name="format" value="txt" checked>
+								<span>
+									<span class="tisa-choice__title">متن ساده (TXT) <span class="tisa-badge tisa-badge--outline">پیشنهادی</span></span>
+									<span class="tisa-choice__desc">یک ردیف در هر خط، بدون سرستون — مناسب شماره‌ها و ابزارهای ارسال پیامک.</span>
+								</span>
+							</label>
+							<label class="tisa-choice">
+								<input type="radio" name="format" value="csv">
+								<span>
+									<span class="tisa-choice__title">CSV (اکسل/گوگل‌شیت)</span>
+									<span class="tisa-choice__desc">سرستون فارسی + BOM؛ بهترین گزینه برای اکسل و گوگل‌شیت.</span>
+								</span>
+							</label>
+							<label class="tisa-choice">
+								<input type="radio" name="format" value="xls">
+								<span>
+									<span class="tisa-choice__title">اکسل (XLS)</span>
+									<span class="tisa-choice__desc">فایل اکسل کلاسیک (SpreadsheetML) سازگار با نسخه‌های قدیمی آفیس.</span>
+								</span>
+							</label>
+							<label class="tisa-choice">
+								<input type="radio" name="format" value="pdf">
+								<span>
+									<span class="tisa-choice__title">PDF (چاپ و اشتراک‌گذاری)</span>
+									<span class="tisa-choice__desc">جدول راست‌به‌چپ با قلم فارسی جاسازی‌شده — مناسب چاپ، ارسال به مشتری و بایگانی.</span>
+								</span>
+							</label>
+							<label class="tisa-choice">
+								<input type="radio" name="format" value="json">
+								<span>
+									<span class="tisa-choice__title">JSON (مصرف ماشینی)</span>
+									<span class="tisa-choice__desc">آرایهٔ استاندارد JSON برای اتصال به نرم‌افزارهای دیگر.</span>
+								</span>
+							</label>
+						</div>
+					</div>
+
+					<div class="tisa-exp__dedup">
+						<h3 class="tisa-exp__sub-h">حذف تکراری‌ها</h3>
+						<div class="tisa-exp__dedup-row">
+							<select class="tisa-select" name="dedup" id="tisa-exp-dedup">
+								<option value="">بدون حذف تکراری — همهٔ ردیف‌ها</option>
+								<option value="phone" selected>هر شماره موبایل یک‌بار (مرتب‌شده بر اساس همان ستون)</option>
+							</select>
+							<p class="tisa-exp__hint">ترتیب ردیف‌ها بر اساس ستون کلید می‌شود و ردیف‌های تکراری دقیقاً یک‌بار می‌آیند؛ برای داده‌های زیاد این کار روی سرور و با حافظهٔ محدود انجام می‌شود.</p>
+						</div>
+					</div>
+
+					<p class="tisa-exp__hint" id="tisa-exp-output-hint"></p>
+				</div>
+			</section>
+
+			<!-- ۳: اجرا -->
+			<section class="tisa-exp__card" id="tisa-exp-card-run" aria-busy="false">
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step" aria-hidden="true">۳</span>
+					<div>
+						<h2>اجرای خروجی</h2>
+						<p>پردازش گام‌به‌گام انجام می‌شود (هر گام ۱٬۰۰۰ ردیف) و فایل‌ها هر ۱۰٬۰۰۰ ردیف یک‌بار ساخته می‌شوند؛ توقف وسط کار مشکلی ندارد و بعداً ادامه می‌دهید. واحد شمارش: شماره.</p>
+					</div>
+				</div>
+				<div class="tisa-exp__card-body">
+					<div class="tisa-exp__between tisa-exp__run-row">
+						<div class="tisa-exp__actions">
+							<button type="button" class="tisa-btn tisa-btn--primary" id="tisa-exp-start">شروع خروجی جدید</button>
+							<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-continue" hidden>ادامه خروجی</button>
+							<button type="button" class="tisa-btn tisa-btn--secondary" id="tisa-exp-preview">پیش‌نمایش</button>
+							<button type="button" class="tisa-btn tisa-btn--ghost" id="tisa-exp-status">آخرین وضعیت</button>
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger" id="tisa-exp-cancel">توقف و پاک‌سازی</button>
+						</div>
+						<span class="tisa-exp__meta" id="tisa-exp-meta"></span>
+					</div>
+
+					<div class="tisa-exp__box" id="tisa-exp-progress-box" hidden>
+						<div class="tisa-exp__kpis" id="tisa-exp-kpis"></div>
+						<div class="tisa-progress" id="tisa-exp-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+							<div class="tisa-progress__bar" id="tisa-exp-bar" style="width:0%"></div>
+						</div>
+						<p class="tisa-progress-text" id="tisa-exp-state" aria-live="polite"></p>
+						<div class="tisa-exp__files" id="tisa-exp-files"></div>
+					</div>
+				</div>
+			</section>
+
+			<!-- ۴: پیش‌نمایش -->
+			<section class="tisa-exp__card" id="tisa-exp-card-preview" hidden>
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step tisa-exp__step--soft" aria-hidden="true">۴</span>
+					<div>
+						<h2>پیش‌نمایش</h2>
+						<p id="tisa-exp-preview-note">چند ردیف اول با همین فیلترها و ستون‌ها؛ هیچ فایلی ساخته نمی‌شود.</p>
+					</div>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tisa-exp__reset" id="tisa-exp-preview-close">بستن</button>
+				</div>
+				<div class="tisa-exp__card-body tisa-exp__card-body--wide">
+					<div class="tisa-table-scroll">
+						<table class="tisa-table tisa-exp__preview-table">
+							<thead id="tisa-exp-preview-head"></thead>
+							<tbody id="tisa-exp-preview-body"></tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+
+			<!-- ۵: تاریخچه -->
+			<section class="tisa-exp__card" id="tisa-exp-card-history">
+				<div class="tisa-exp__card-head">
+					<span class="tisa-exp__step tisa-exp__step--soft" aria-hidden="true">۵</span>
+					<div>
+						<h2>تاریخچهٔ اجراها</h2>
+						<p>آخرین ۲۰ خروجی شما؛ فایل‌ها ۲۴ ساعت روی سرور می‌مانند و بعد خودکار پاک می‌شوند.</p>
+					</div>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tisa-exp__danger" id="tisa-exp-history-clear">پاک‌کردن تاریخچه</button>
+				</div>
+				<div class="tisa-exp__card-body" id="tisa-exp-history"></div>
+			</section>
+
+		</div>
+
+		<details class="tisa-exp__help">
+			<summary>این بخش چطور کار می‌کند؟</summary>
+			<p>بخش «شماره تماس‌ها» بدون خواندن کل داده در حافظه کار می‌کند: هر گام فقط یک Batch خوانده می‌شود، نتیجه در فایل موقت روی سرور نوشته می‌شود و در پایان به فایل‌های آمادهٔ دانلود تبدیل می‌شود. فایل‌ها داخل پوشهٔ اختصاصی و محافظت‌شدهٔ همین کاربر ساخته می‌شوند، با غیرفعال‌شدن افزونه یا بعد از ۲۴ ساعت خودکار پاک می‌شوند و خروجی گرفتن هیچ ردی روی سرعت سایت نمی‌گذارد.</p>
+		</details>
+	</div>
+</div>
+
+<div class="tisa-exp__toast" id="tisa-exp-toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+/* ===== پیکربندی شبیه‌سازی‌شدهٔ PHP (wp_localize_script) ===== */
+window.TisaExp = {
+	ajaxUrl: 'demo',
+	nonce: 'demo',
+	section: 'phones',
+	sectionTitle: 'شماره تماس‌ها',
+	actions: { start: 'start', process: 'process', cancel: 'cancel', preview: 'preview', history: 'history' },
+	batch: 1000,
+	fileSize: 10000,
+	previewRows: 25,
+	kpi: { processed: 'سفارش بررسی‌شده', exported: 'شماره یکتا', skipped: 'بدون شماره معتبر', duplicates: 'تکراری حذف‌شده' },
+	unit: 'شماره',
+	defaultColumns: ['phone'],
+	formats: { txt: 'متن ساده (TXT)', csv: 'CSV', xls: 'اکسل (XLS)', json: 'JSON' },
+	initial: {},
+	history: [],
+	storage: 'HPOS',
+	l10n: {
+		preparing: 'در حال آماده‌سازی خروجی...',
+		running: 'در حال پردازش...',
+		doneFiles: 'عملیات کامل شد — %1 فایل آماده دانلود است.',
+		doneEmpty: 'خروجی ساخته شد اما هیچ ردیفی با این فیلترها پیدا نشد.',
+		cancelled: 'خروجی لغو شد و فایل‌های موقت پاک شدند.',
+		queued: 'در صف پردازش...',
+		rowsPer: 'ردیف', of: 'از', percent: 'درصد',
+		timeSpent: 'زمان سپری‌شده: %1', eta: 'تخمین باقی‌مانده: %1', storage: 'محل ذخیره: %1',
+		filesReady: 'فایل‌های آماده', download: 'دانلود فایل', downloadAll: 'دانلود همه (ZIP)',
+		rowCount: '%1 ردیف', numberUnit: 'شماره',
+		noSession: 'خروجی فعالی وجود ندارد.', lastState: 'وضعیت جلسهٔ فعلی روی سرور نمایش داده شد.',
+		filesGone: 'فایل‌های این خروجی پاک شده‌اند.', historyTitle: 'خروجی',
+		historyEmpty: 'هنوز خروجی‌ای نگرفته‌اید؛ اولین خروجی که بسازید این‌جا نگه داشته می‌شود.',
+		reuse: 'اجرای مجدد با همین تنظیمات', clearConfirm: 'همهٔ تاریخچه و فایل‌های باقی‌مانده پاک شود؟',
+		cancelConfirm: 'خروجی در حال اجرا متوقف و فایل‌های موقت پاک شوند؟',
+		unloadMsg: 'خروجی در حال پردازش است؛ با بستن صفحه متوقف می‌شود (بعداً قابل ادامه است).',
+		startError: 'شروع خروجی ناموفق بود:', processError: 'خطا در پردازش:',
+		ajaxError: 'ارتباط با سرور برقرار نشد.', previewError: 'پیش‌نمایش ناموفق بود:',
+		previewNote: '%1 ردیف اول (از %2 ردیف) با همین ستون‌ها.', previewEmpty: 'با این فیلترها ردیفی پیدا نشد.',
+		resumed: 'خروجی نیمه‌کاره پیدا شد؛ برای ادامه دکمهٔ «ادامه خروجی» را بزنید.',
+		needColumns: 'حداقل یک ستون انتخاب کنید.', invalidDates: 'تاریخ «از» بعد از تاریخ «تا» است.',
+		outputHint: 'خروجی: %1 ردیف در هر فایل، %2 ستون', filteredBy: 'فیلترها', columnsLabel: 'ستون‌ها',
+		deepInfo: 'داده‌ها روی سرور شما می‌مانند و هرگز جایی ارسال نمی‌شوند.'
+	}
+};
+</script>
+
+<!-- همان اسکریپت واقعی افزونه -->
+<script src="../../plugins/src/tisacase-exporter/assets/admin.js"></script>
+
+<script>
+/* ===== شبیه‌ساز سرور: فقط برای این پیش‌نمایش ===== */
+(function () {
+	'use strict';
+
+	var TOTAL = 12480;
+	var calls = 0;
+	var step  = 1250;
+
+	function json( data ) {
+		return Promise.resolve( { json: function () { return Promise.resolve( { success: true, data: data } ); } } );
+	}
+
+	function payload( extra ) {
+		var base = {
+			run_id: 'demo-run',
+			module: 'phones',
+			processed: Math.min( calls * step, TOTAL ),
+			total: TOTAL,
+			exported: Math.min( Math.round( calls * step * 0.75 ), 9312 ),
+			skipped: Math.round( Math.min( calls * step, TOTAL ) * 0.25 ) - Math.round( Math.min( calls * step, TOTAL ) * 0.25 * 0.5 ),
+			duplicates: Math.min( calls * step, TOTAL ) - Math.round( Math.min( calls * step, TOTAL ) * 0.75 ),
+			dedup: 'phone',
+			format: 'txt',
+			done: false,
+			storage: 'HPOS',
+			columns: [ { key: 'phone', label: 'شماره موبایل', type: 'phone' } ],
+			files: [],
+			zip_url: ''
+		};
+
+		return Object.assign( base, extra || {} );
+	}
+
+	function finished() {
+		return payload( {
+			processed: TOTAL,
+			exported: 9312,
+			skipped: 3168,
+			duplicates: 1245,
+			done: true,
+			files: [
+				{ name: 'phones-2026-10-05-001.txt', count: 10000, url: '#' },
+				{ name: 'phones-2026-10-05-002.txt', count: 9312, url: '#' }
+			],
+			zip_url: '#',
+			history: [
+				{
+					run_id: 'demo-run', module: 'phones', module_title: 'شماره تماس‌ها', format: 'txt',
+					rows: 9312, dedup: 'phone', created_at: 0, created_fa: '۱۴۰۵/۰۷/۱۳ ۰۹:۲۴',
+					summary: [ 'از تاریخ: ۱۴۰۵/۰۱/۰۱', 'وضعیت سفارش: تکمیل‌شده، در حال انجام' ],
+					columns: [ { key: 'phone', label: 'شماره موبایل' } ],
+					filters: { date_from: '2026-03-21', date_to: '', statuses: [ 'wc-processing' ] },
+					files_exist: true, file_count: 2, rows_total: 19312,
+					files: [
+						{ name: 'phones-2026-10-05-001.txt', count: 10000, url: '#' },
+						{ name: 'phones-2026-10-05-002.txt', count: 9312, url: '#' }
+					],
+					zip_url: '#'
+				}
+			]
+		} );
+	}
+
+	window.fetch = function ( url, options ) {
+		var body = options && options.body;
+		var action = body && body.get ? body.get( 'action' ) : '';
+
+		if ( action === 'start' ) {
+			calls = 0;
+			return json( payload() );
+		}
+
+		if ( action === 'process' ) {
+			calls++;
+
+			if ( calls >= 10 ) {
+				return json( finished() );
+			}
+
+			return json( payload() );
+		}
+
+		if ( action === 'preview' ) {
+			var rows = [];
+
+			for ( var i = 0; i < 8; i++ ) {
+				rows.push( [ '9891200000' + ( 10 + i ) ] );
+			}
+
+			return json( { columns: [ 'شماره موبایل' ], keys: [ 'phone' ], rows: rows, total: TOTAL, preview: 25 } );
+		}
+
+		if ( action === 'cancel' || action === 'history' ) {
+			return json( { history: action === 'history' ? [] : ( finished().history || [] ) } );
+		}
+
+		return json( {} );
+	};
+
+	// تأییدهای مرورگر در پیش‌نمایش نمایش داده شوند (بدون تغییر در منطق افزونه).
+	window.confirm = function () { return true; };
+
+	// نمایش «حالت بدون هاب»: همان CSS افزونه با کلاس is-standalone و بدون tisacase-ui.css
+	var standalone = false;
+	var toggle = document.getElementById( 'demo-standalone' );
+	var hubLink = document.getElementById( 'hub-ui' );
+
+	if ( toggle ) {
+		toggle.addEventListener( 'click', function () {
+			standalone = ! standalone;
+			document.querySelector( '.tisa-exp' ).classList.toggle( 'is-standalone', standalone );
+			if ( hubLink ) {
+				hubLink.disabled = standalone;
+			}
+			toggle.textContent = 'حالت بدون هاب: ' + ( standalone ? 'روشن' : 'خاموش' );
+		} );
+	}
+}() );
+</script>
+
+</body>
+</html>

@@ -333,20 +333,20 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				),
 			);
 
-			$items['phones'] = array(
-				'title' => __( 'خروجی شماره تماس سفارش‌ها', 'tisacase-hub' ),
-				'desc'  => __( 'اکسل شماره تماس با فرمت 989xxxxxxxxx، بدون تکراری و با پاک‌سازی فایل موقت.', 'tisacase-hub' ),
+			$items['exporter'] = array(
+				'title' => __( 'خروجی گرفتن', 'tisacase-hub' ),
+				'desc'  => __( 'شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — با فیلتر، انتخاب ستون، پیش‌نمایش، پنج قالب خروجی (TXT/CSV/اکسل/JSON/PDF فارسی) و پاک‌سازی خودکار فایل موقت.', 'tisacase-hub' ),
 				'group' => 'orders',
-				'icon'  => 'phone',
-				'dir'   => 'tisacase-order-phone-exporter',
+				'icon'  => 'upload',
+				'dir'   => 'tisacase-exporter',
 				'cap'   => 'manage_woocommerce',
 				'pages' => array(
 					array(
 						'label'  => __( 'خروجی گرفتن', 'tisacase-hub' ),
-						'path'   => 'admin.php?page=tisacase-order-phone-exporter',
-						'screen' => 'woocommerce_page_tisacase-order-phone-exporter',
+						'path'   => 'admin.php?page=tisacase-exporter',
+						'screen' => 'woocommerce_page_tisacase-exporter',
 						'parent' => 'woocommerce',
-						'slug'   => 'tisacase-order-phone-exporter',
+						'slug'   => 'tisacase-exporter',
 					),
 				),
 			);
@@ -375,6 +375,16 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				}
 				$dir = dirname( $basename );
 				$key = isset( $parsed['key'] ) ? sanitize_key( $parsed['key'] ) : sanitize_key( str_replace( '/', '-', $dir ) );
+				// اگر همین پوشه از قبل در فهرست است (پیش‌فرض هاب با کلید دیگر)، کلیدِ همان
+				// آیتم را نگه می‌داریم تا یک افزونه دو کارت نشود.
+				if ( ! isset( $items[ $key ] ) ) {
+					foreach ( $items as $existing_key => $existing ) {
+						if ( isset( $existing['dir'] ) && $dir === $existing['dir'] ) {
+							$key = $existing_key;
+							break;
+						}
+					}
+				}
 				if ( 'yes' === ( isset( $parsed['self'] ) ? $parsed['self'] : '' ) ) {
 					continue; // خودِ هاب؛ در فهرست نمی‌آید.
 				}
@@ -400,9 +410,38 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				if ( ! empty( $parsed['screens'] ) ) {
 					$item['screens'] = array_map( 'sanitize_key', explode( ',', $parsed['screens'] ) );
 				}
-				$items[ $key ] = isset( $items[ $key ] ) ? array_merge( $items[ $key ], $item ) : $item;
+				$items[ $key ] = isset( $items[ $key ] ) ? self::merge_item( $items[ $key ], $item ) : $item;
 			}
 			return $items;
+		}
+
+		/**
+		 * ادغام آیتم کشف‌شده روی آیتم موجود.
+		 *
+		 * مقادیر هدر مقدم‌اند، ولی برگه‌ها **اجتماع** هر دو می‌شوند (بدون تکرار مسیر) تا
+		 * برگه‌های اضافیِ پیش‌فرض از دست نرود؛ برگهٔ خودِ هدر اول می‌آید تا دکمهٔ «باز کردن»
+		 * کارت به همان اشاره کند.
+		 *
+		 * @param array $base آیتم موجود.
+		 * @param array $new  آیتم تازه.
+		 * @return array
+		 */
+		private static function merge_item( $base, $new ) {
+			$merged = array_merge( (array) $base, (array) $new );
+			$pages  = array();
+			$all    = array_merge(
+				isset( $new['pages'] ) ? (array) $new['pages'] : array(),
+				isset( $base['pages'] ) ? (array) $base['pages'] : array()
+			);
+			foreach ( $all as $page ) {
+				$path = isset( $page['path'] ) ? (string) $page['path'] : '';
+				if ( '' === $path || isset( $pages[ $path ] ) ) {
+					continue;
+				}
+				$pages[ $path ] = $page;
+			}
+			$merged['pages'] = array_values( $pages );
+			return $merged;
 		}
 
 		/**
@@ -517,11 +556,232 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 			return $items;
 		}
 
+		/**
+		 * یکی‌کردن کارت‌های تکراری.
+		 *
+		 * دو حالت در دنیای واقعی دیده می‌شود:
+		 *  ۱) پوشه یکی است ولی کلید دو تاست — پیش‌فرض هاب (`bdc`) و کلیدِ برگرفته از
+		 *     هدر/نام پوشه (`bulk-product-cleaner`). هر دو به یک نصب اشاره می‌کنند.
+		 *  ۲) یک افزونه در دو پوشه نصب/کپی شده (هر دو فعال) با عنوان و برگهٔ یکسان.
+		 *
+		 * در هر دو حالت یکی می‌ماند؛ کلیدِ اولِ فهرست حفظ می‌شود تا سنجاق/مخفیِ کاربر
+		 * جابه‌جا نشود و پوشهٔ کنارگذاشته‌شده در `dupes` می‌نشیند (برای tooltip کارت).
+		 *
+		 * @param array $items آیتم‌های کلیددار.
+		 * @return array
+		 */
+		private static function dedupe( $items ) {
+			$items = self::merge_same_dir( $items );
+			$items = self::merge_same_identity( $items );
+			return $items;
+		}
+
+		/**
+		 * یکی‌کردن آیتم‌هایی که به یک پوشه اشاره می‌کنند.
+		 *
+		 * @param array $items آیتم‌ها.
+		 * @return array
+		 */
+		private static function merge_same_dir( $items ) {
+			$first = array();
+			$drop  = array();
+			foreach ( $items as $key => $item ) {
+				$dir = isset( $item['dir'] ) ? (string) $item['dir'] : '';
+				if ( '' === $dir ) {
+					continue;
+				}
+				if ( ! isset( $first[ $dir ] ) ) {
+					$first[ $dir ] = $key;
+					continue;
+				}
+				$keep = $first[ $dir ];
+				foreach ( array( 'title', 'desc', 'icon', 'group', 'cap' ) as $field ) {
+					if ( empty( $items[ $keep ][ $field ] ) && ! empty( $item[ $field ] ) ) {
+						$items[ $keep ][ $field ] = $item[ $field ];
+					}
+				}
+				if ( empty( $items[ $keep ]['pages'] ) && ! empty( $item['pages'] ) ) {
+					$items[ $keep ]['pages'] = $item['pages'];
+				}
+				if ( ! empty( $item['screens'] ) ) {
+					$items[ $keep ]['screens'] = array_values(
+						array_unique(
+							array_merge(
+								isset( $items[ $keep ]['screens'] ) ? (array) $items[ $keep ]['screens'] : array(),
+								(array) $item['screens']
+							)
+						)
+					);
+				}
+				$drop[] = $key;
+			}
+			foreach ( $drop as $key ) {
+				unset( $items[ $key ] );
+			}
+			return $items;
+		}
+
+		/**
+		 * امضای «همان افزونه»: برگهٔ اصلی + عنوان. اگر برگه‌ای ثبت نشده باشد امضا خالی است
+		 * و آیتم دست‌نخورده می‌ماند (نباید دو افزونهٔ بی‌برگه را اشتباهی یکی کرد).
+		 *
+		 * @param array $item آیتم.
+		 * @return string
+		 */
+		private static function identity( $item ) {
+			$slug = '';
+			foreach ( (array) ( isset( $item['pages'] ) ? $item['pages'] : array() ) as $page ) {
+				foreach ( array( 'slug', 'screen', 'path' ) as $field ) {
+					if ( ! empty( $page[ $field ] ) ) {
+						$slug = (string) $page[ $field ];
+						break 2;
+					}
+				}
+			}
+			$title = isset( $item['title'] ) ? trim( (string) $item['title'] ) : '';
+			if ( '' === $slug || '' === $title ) {
+				return '';
+			}
+			return $slug . '|' . $title;
+		}
+
+		/**
+		 * رتبهٔ نصب: فعال > نصب‌شده > نصب‌نشده.
+		 *
+		 * @param array $item آیتم.
+		 * @return int
+		 */
+		private static function install_rank( $item ) {
+			$dir = isset( $item['dir'] ) ? (string) $item['dir'] : '';
+			if ( '' === $dir ) {
+				return 0;
+			}
+			$basename = self::basename_for( $dir );
+			if ( ! $basename ) {
+				return 0;
+			}
+			if ( function_exists( 'is_plugin_active' ) && is_plugin_active( $basename ) ) {
+				return 2;
+			}
+			return 1;
+		}
+
+		/**
+		 * یکی‌کردن دو نصب/کپی هم‌نام که در دو پوشه‌اند.
+		 *
+		 * @param array $items آیتم‌ها.
+		 * @return array
+		 */
+		private static function merge_same_identity( $items ) {
+			$groups = array();
+			$dirs   = array();
+			foreach ( $items as $key => $item ) {
+				$sig = self::identity( $item );
+				if ( '' === $sig ) {
+					continue;
+				}
+				$groups[ $sig ][] = $key;
+				if ( ! empty( $item['dir'] ) ) {
+					$dirs[ $sig ][] = (string) $item['dir'];
+				}
+			}
+			$pick = array();
+			foreach ( $groups as $sig => $keys ) {
+				if ( count( $keys ) < 2 ) {
+					continue;
+				}
+				$win  = $keys[0];
+				$best = self::install_rank( $items[ $win ] );
+				foreach ( $keys as $key ) {
+					$rank = self::install_rank( $items[ $key ] );
+					if ( $rank > $best ) {
+						$win  = $key;
+						$best = $rank;
+					}
+				}
+				$pick[ $sig ] = $win;
+			}
+			if ( empty( $pick ) ) {
+				return $items;
+			}
+			$out  = array();
+			$done = array();
+			foreach ( $items as $key => $item ) {
+				$sig = self::identity( $item );
+				if ( '' === $sig || ! isset( $pick[ $sig ] ) ) {
+					$out[ $key ] = $item;
+					continue;
+				}
+				if ( ! empty( $done[ $sig ] ) ) {
+					continue;
+				}
+				$done[ $sig ] = true;
+				$data         = $items[ $pick[ $sig ] ];
+				$data['key']  = $key; // کلیدِ جایگاه اول می‌ماند.
+				foreach ( array( 'title', 'desc', 'icon', 'group', 'cap' ) as $field ) {
+					if ( empty( $data[ $field ] ) && ! empty( $item[ $field ] ) ) {
+						$data[ $field ] = $item[ $field ];
+					}
+				}
+				if ( empty( $data['pages'] ) && ! empty( $item['pages'] ) ) {
+					$data['pages'] = $item['pages'];
+				}
+				$extra = array();
+				foreach ( (array) $dirs[ $sig ] as $dir ) {
+					if ( $dir !== ( isset( $data['dir'] ) ? (string) $data['dir'] : '' ) ) {
+						$extra[] = $dir;
+					}
+				}
+				if ( $extra ) {
+					$data['dupes'] = array_values( array_unique( $extra ) );
+				}
+				$out[ $key ] = $data;
+			}
+			return $out;
+		}
+
+		/**
+		 * پوشه‌هایی که هاب انتظار دارد در `plugins/dist` ببیند:
+		 * پیش‌فرض‌ها + آیتم‌های نصب‌شده + آیتم‌های کاتالوگِ ذخیره‌شده.
+		 *
+		 * برای فالبکِ «کاوش مستقیم زیپ‌ها» — وقتی سقف درخواست API گیت‌هاب پر است و
+		 * فهرست‌گیری API جواب نمی‌دهد.
+		 *
+		 * @return array<string,bool> نگاشت dir => آیا انتظار می‌رود زیپ داشته باشد؟
+		 */
+		public static function known_dirs() {
+			$out  = array();
+			$pack = class_exists( 'TSH_Remote' ) ? TSH_Remote::catalog() : array();
+			$sets = array(
+				self::defaults(),
+				isset( $pack['items'] ) && is_array( $pack['items'] ) ? $pack['items'] : array(),
+			);
+			foreach ( $sets as $set ) {
+				foreach ( (array) $set as $item ) {
+					if ( ! is_array( $item ) || empty( $item['dir'] ) ) {
+						continue;
+					}
+					$dir = (string) $item['dir'];
+					$has = ! ( isset( $item['zip'] ) && false === $item['zip'] );
+					// `zip => false` (بازنشسته) از هر منبع دیگری قوی‌تر است → AND.
+					$out[ $dir ] = isset( $out[ $dir ] ) ? ( $out[ $dir ] && $has ) : $has;
+				}
+			}
+			foreach ( self::plugins() as $basename => $data ) {
+				$dir = dirname( (string) $basename );
+				if ( '.' !== $dir && '' !== $dir && ! isset( $out[ $dir ] ) ) {
+					$out[ $dir ] = true;
+				}
+			}
+			return (array) apply_filters( 'tisacase_hub_known_dirs', $out );
+		}
+
 		public static function items( $refresh = false ) {
 			if ( null !== self::$items && ! $refresh ) {
 				return self::$items;
 			}
 			$items = self::discover( self::defaults() );
+			$items = self::merge_catalog( $items ); // آیتم‌های آمده از همگام‌سازی مخزن.
 			$items = apply_filters( self::FILTER, $items );
 			if ( ! is_array( $items ) ) {
 				$items = array();
@@ -532,6 +792,7 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 					$items[ $key ]['pages'] = array();
 				}
 			}
+			$items = self::dedupe( $items );
 			self::$items = $items;
 			return self::$items;
 		}

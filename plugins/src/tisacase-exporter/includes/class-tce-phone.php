@@ -2,16 +2,16 @@
 /**
  * نرمال‌سازی شماره موبایل ایرانی به فرمت 989xxxxxxxxx.
  *
- * @package TisaCase_Order_Phone_Exporter
+ * @package TisaCase_Exporter
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'TisaCase_Phone_Exporter_Phone' ) ) {
+if ( ! class_exists( 'TisaCase_Exporter_Phone' ) ) {
 
-	final class TisaCase_Phone_Exporter_Phone {
+	final class TisaCase_Exporter_Phone {
 
 		/** تبدیل ارقام فارسی/عربی به لاتین. */
 		private static function normalize_digits( $value ) {

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش — خروجی شماره تماس سفارش‌ها v1.5.0</title>
+
+<!-- همان دو فایل CSS واقعی: لایهٔ طراحی هاب + استایل ادمین افزونه -->
+<link rel="stylesheet" href="../../plugins/tisacase-hub/assets/tisacase-ui.css">
+<link rel="stylesheet" href="../../plugins/src/tisacase-exporter/assets/admin.css">
+
+<style>
+/* فقط پوستهٔ شبیه‌سازی‌شدهٔ پیشخوان وردپرس برای این پیش‌نمایش */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+	background: #F0F0F1;
+	color: #1F2A2E;
+	font: 14px/1.8 "Vazirmatn", "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+.demo-bar {
+	display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+	padding: 8px 20px; background: #06302B; color: #BFE3DC; font-size: 12.5px;
+}
+.demo-bar b { color: #fff; }
+.demo-bar span.note { margin-inline-start: auto; opacity: .85; }
+.demo-note {
+	max-width: 1120px; margin: 18px auto 0; padding: 10px 16px;
+	border: 1px dashed #C9DCD7; border-radius: 14px; background: #fff;
+	font-size: 12.5px; color: #77828A;
+}
+.demo-note b { color: #0A5F52; }
+/* شبیه‌سازی wp-admin: همین دو قاعده در وردپرس واقعی وجود دارند */
+#wpcontent { padding-left: 20px; background: #F0F0F1; min-height: 70vh; }
+.wrap { margin: 10px 20px 0 2px; }
+</style>
+</head>
+<body class="woocommerce_page_tisacase-exporter tisa-scope">
+
+<div class="demo-bar">
+	<b>پیش‌نمایش استاتیک</b>
+	<span>خروجی شماره تماس سفارش‌ها — نسخهٔ ۱٫۵٫۰</span>
+	<span class="note">همان مارک‌آپ PHP افزونه، بدون وردپرس؛ دکمه‌ها کار نمی‌کنند</span>
+</div>
+
+<div class="demo-note">
+	<b>وضعیت پایه (Baseline):</b> این صفحه دقیقاً همان چیزی است که امروز ساخته می‌شود — سر سبز با نشان HPOS/نسخه،
+	کارت «ساخت خروجی»، چهار KPI، نوار پیشرفت و فهرست فایل‌های نهایی. این فایل فقط مرجع بصری برای گفت‌وگوی تغییرات است.
+</div>
+
+<div id="wpcontent">
+	<div class="wrap tisa-wrap tisa-exp" dir="rtl">
+
+		<header class="tisa-exp__hero">
+			<div class="tisa-exp__hero-mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18h2"/></svg>
+			</div>
+			<div class="tisa-exp__hero-text">
+				<h1 class="tisa-exp__title">خروجی شماره تماس سفارش‌ها</h1>
+				<p class="tisa-exp__sub">فرمت 989xxxxxxxxx · هر فایل ۱۰٬۰۰۰ شماره · هر گام ۱٬۰۰۰ سفارش</p>
+			</div>
+			<span class="tisa-exp__hero-pill">HPOS</span>
+			<span class="tisa-exp__hero-pill" dir="ltr">v1.5.0</span>
+		</header>
+
+		<section class="tisa-exp__card">
+			<div class="tisa-exp__card-head">
+				<span class="tisa-exp__dot" aria-hidden="true"></span>
+				<div>
+					<h2>ساخت خروجی</h2>
+					<p>همهٔ سفارش‌ها (به‌جز سطل زباله) خوانده می‌شود؛ فایل‌ها بدون سرستون، فقط شماره.</p>
+				</div>
+			</div>
+			<div class="tisa-exp__card-body">
+				<div class="tisa-exp__between">
+					<label class="tisa-switch tisa-exp__switch">
+						<input type="checkbox" checked disabled>
+						<span class="tisa-switch__track" aria-hidden="true"></span>
+						<span>حذف شماره‌های تکراری <small>(هر شماره یک‌بار، مرتب‌شده)</small></span>
+					</label>
+
+					<div class="tisa-exp__actions">
+						<button type="button" class="tisa-btn tisa-btn--ghost">آخرین وضعیت</button>
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger" style="display:none;">توقف و پاک‌سازی</button>
+						<button type="button" class="tisa-btn tisa-btn--secondary" style="display:none;">ادامه خروجی</button>
+						<button type="button" class="tisa-btn tisa-btn--primary">شروع خروجی جدید</button>
+					</div>
+				</div>
+
+				<div class="tisa-exp__box">
+					<div class="tisa-exp__kpis">
+						<div class="tisa-exp__kpi"><span>سفارش بررسی‌شده</span><b>۱۲٬۴۸۰</b><small>از ۱۲٬۴۸۰ · ۱۰۰٪</small></div>
+						<div class="tisa-exp__kpi is-ok"><span>شماره معتبر</span><b>۹٬۳۱۲</b></div>
+						<div class="tisa-exp__kpi"><span>بدون شماره معتبر</span><b>۳٬۱۶۸</b></div>
+						<div class="tisa-exp__kpi"><span>تکراری حذف‌شده</span><b>۱٬۲۴۵</b></div>
+					</div>
+
+					<div class="tisa-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+						<div class="tisa-progress__bar" style="width:100%;"></div>
+					</div>
+					<p class="tisa-progress-text" aria-live="polite"><strong class="is-ok">عملیات کامل شد — ۱ فایل آماده دانلود است.</strong></p>
+
+					<div class="tisa-exp__files">
+						<h2 class="tisa-exp__files-h">فایل‌های آماده</h2>
+						<div class="tisa-exp__files-list">
+							<div class="tisa-exp__file">
+								<span class="tisa-exp__file-n">۱</span>
+								<span class="tisa-exp__file-c">۹٬۳۱۲ شماره</span>
+								<a class="tisa-btn tisa-btn--secondary tisa-btn--sm" href="#">دانلود فایل</a>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<details class="tisa-exp__help">
+			<summary>چه چیزی خروجی گرفته می‌شود؟</summary>
+			<p>شماره تماس صورتحساب همهٔ وضعیت‌های ووکامرس (رسیده، در حال انجام، تکمیل‌شده، لغوشده، ناموفق، مرجوعی و…) به 989xxxxxxxxx تبدیل می‌شود؛ سطل زباله شامل نیست. با «حذف تکراری‌ها» هر شماره یک‌بار و مرتب می‌آید. فایل‌ها تا ۲۴ ساعت روی سرور می‌مانند و بعد خودکار پاک می‌شوند.</p>
+		</details>
+
+		<h2 class="tisa-exp__files-h" style="margin-top:36px;">نمونهٔ حالت دوم: توقف در میانهٔ کار (برای بررسی استایل خطا)</h2>
+
+		<section class="tisa-exp__card">
+			<div class="tisa-exp__card-body">
+				<div class="tisa-exp__between">
+					<label class="tisa-switch tisa-exp__switch">
+						<input type="checkbox" checked disabled>
+						<span class="tisa-switch__track" aria-hidden="true"></span>
+						<span>حذف شماره‌های تکراری</span>
+					</label>
+					<div class="tisa-exp__actions">
+						<button type="button" class="tisa-btn tisa-btn--ghost">آخرین وضعیت</button>
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-exp__danger">توقف و پاک‌سازی</button>
+						<button type="button" class="tisa-btn tisa-btn--secondary">ادامه خروجی</button>
+						<button type="button" class="tisa-btn tisa-btn--primary" disabled>شروع خروجی جدید</button>
+					</div>
+				</div>
+				<div class="tisa-exp__box">
+					<div class="tisa-exp__kpis">
+						<div class="tisa-exp__kpi"><span>سفارش بررسی‌شده</span><b>۵٬۰۰۰</b><small>از ۱۲٬۴۸۰ · ۴۰٪</small></div>
+						<div class="tisa-exp__kpi is-ok"><span>شماره معتبر</span><b>۳٬۶۴۰</b></div>
+						<div class="tisa-exp__kpi"><span>بدون شماره معتبر</span><b>۱٬۳۶۰</b></div>
+						<div class="tisa-exp__kpi"><span>تکراری حذف‌شده</span><b>—</b></div>
+					</div>
+					<div class="tisa-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+						<div class="tisa-progress__bar" style="width:40%;"></div>
+					</div>
+					<p class="tisa-progress-text"><strong class="is-warn">خروجی نیمه‌کاره است؛ برای ادامه دکمه «ادامه خروجی» را بزنید.</strong></p>
+					<pre class="tisa-log tisa-exp__err">یک پردازش هم‌اکنون در تب دیگری در جریان است.
+HTTP: 409 Conflict
+{"success":false,"data":{"message":"یک پردازش هم‌اکنون در تب دیگری در جریان است."}}</pre>
+				</div>
+			</div>
+		</section>
+
+	</div>
+</div>
+</body>
+</html>

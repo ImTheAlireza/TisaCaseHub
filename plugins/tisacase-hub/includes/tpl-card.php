@@ -84,7 +84,10 @@ if ( ! function_exists( 'tsh_card' ) ) {
 							<span class="tsh-state is-warn"><i></i><?php esc_html_e( 'نصب نیست', 'tisacase-hub' ); ?></span>
 						<?php endif; ?>
 						<?php if ( ! empty( $item['version'] ) ) : ?>
-							<span class="tsh-ver" dir="ltr"><?php echo esc_html( $item['version'] ); ?></span>
+							<span class="tsh-ver" dir="ltr"<?php echo ! empty( $item['dupes'] ) ? ' title="' . esc_attr( sprintf( /* translators: %s: folder names */ __( 'نسخهٔ دیگری از همین افزونه هم نصب است: %s', 'tisacase-hub' ), implode( '، ', (array) $item['dupes'] ) ) ) . '"' : ''; ?>><?php echo esc_html( $item['version'] ); ?></span>
+						<?php endif; ?>
+						<?php if ( ! empty( $item['dupes'] ) ) : ?>
+							<span class="tsh-ver" dir="ltr" title="<?php echo esc_attr( sprintf( /* translators: %s: folder names */ __( 'نسخهٔ دیگری از همین افزونه هم نصب است: %s', 'tisacase-hub' ), implode( '، ', (array) $item['dupes'] ) ) ); ?>">×<?php echo esc_html( TSH_View::num( count( (array) $item['dupes'] ) ) ); ?></span>
 						<?php endif; ?>
 					</span>
 				</div>

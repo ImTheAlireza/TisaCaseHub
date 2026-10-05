@@ -256,6 +256,8 @@ if ( ! class_exists( 'TSH_UI' ) ) {
 						'match'      => __( 'نتیجه', 'tisacase-hub' ),
 						'syncedOk'   => __( 'فهرست مخزن همگام شد (%s افزونه).', 'tisacase-hub' ),
 						'syncedOkOffline' => __( 'دسترسی به مخزن نبود؛ فهرست همراه خودِ هاب استفاده شد (%s افزونه).', 'tisacase-hub' ),
+						'syncedOkProbe' => __( 'سقف API گیت‌هاب اجازه نداد؛ فهرست با بررسی مستقیم فایل‌های مخزن ساخته شد (%s افزونه).', 'tisacase-hub' ),
+						'syncedTools' => __( 'ابزارهای صفحه: %s.', 'tisacase-hub' ),
 						'syncedBranch' => __( 'شاخه: %s', 'tisacase-hub' ),
 						'syncReloading' => __( 'صفحه تازه می‌شود…', 'tisacase-hub' ),
 					),
