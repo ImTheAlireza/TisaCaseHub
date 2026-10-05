@@ -18,7 +18,7 @@
 | # | افزونه | حجم کار | آنچه امروز هست | هدف |
 |---|---|---|---|---|
 | ۱ | `wc-sku-prefix-bar` | خیلی کم | `assets/bar.css` · ۱۵ hex · ۲ `radius` هاردکد · ۱ inline | نوار SKU روی لیست محصولات: ارتفاع/گوشه/رنگ از توکن؛ حالت کم‌فضا؛ سازگاری با ستون‌های ووکامرس |
-| ۲ | `tisacase-order-phone-exporter` | کم | بدون فایل CSS · ۸ hex · **۱۳ `style="`** در PHP | همهٔ استایل‌های inline → کلاس؛ فرم خروجی و جدول پیش‌نمایش با `.tisa-form/.tisa-table` |
+| ۲ | `tisacase-exporter` (قبلاً `tisacase-order-phone-exporter`) | کم | بدون فایل CSS · ۸ hex · **۱۳ `style="`** در PHP | همهٔ استایل‌های inline → کلاس؛ فرم خروجی و جدول پیش‌نمایش با `.tisa-form/.tisa-table` |
 | ۳ | `tisa-product-importer` | کم‌متوسط | بدون فایل CSS · ۸ hex · ۸ inline | صفحهٔ آپلود + لاگ پیشرفت: `.tisa-codebox` برای لاگ، `.tisa-progress`، کارت نتیجه |
 | ۴ | `tisacase-pricing-manager` | متوسط | ۱ فایل CSS · ۱۴ hex · ۲ radius | جدول قانون‌ها: `.tisa-table` + سطرهای متناوب + ستون‌های عددی با قرارداد §۸ |
 | ۵ | `case-special-package` | متوسط | ۱ CSS · **۶۴ hex** · **۲۱ radius** · **۱ فایل CDN قلم** | حذف `fonts.googleapis.com` (F5)، توکنی‌شدن تنظیمات و فرم استثناها |
@@ -57,7 +57,7 @@ python3 tools/ui-audit.py plugins/src/<dir>      # همهٔ چک‌های پای
 | # | افزونه | حالت |
 |---|---|---|
 | ۱ | `wc-sku-prefix-bar` ۱٫۵٫۰ | ✅ بازطراحی شد → `plugins/dist/wc-sku-prefix-bar.zip` |
-| ۲ | `tisacase-order-phone-exporter` | ⏳ بعدی (منتظر تأیید الگو) |
+| ۲ | `tisacase-exporter` | ✅ انجام شد (UI در ۱٫۵٫۰ · `ui-audit` پاک) — تغییر هویت به v2.0.0 و افزودن بخش‌ها طبق `EXPORTER_PROPOSAL.md` |
 | ۳–۹ | بقیه | ⏸ |
 
 **الگویی که روی ۱ تثبیت شد (ملاک هشت تای بعد):**

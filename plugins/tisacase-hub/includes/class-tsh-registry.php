@@ -333,20 +333,20 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 				),
 			);
 
-			$items['phones'] = array(
-				'title' => __( 'خروجی شماره تماس سفارش‌ها', 'tisacase-hub' ),
-				'desc'  => __( 'اکسل شماره تماس با فرمت 989xxxxxxxxx، بدون تکراری و با پاک‌سازی فایل موقت.', 'tisacase-hub' ),
+			$items['exporter'] = array(
+				'title' => __( 'خروجی گرفتن', 'tisacase-hub' ),
+				'desc'  => __( 'شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — با فیلتر، انتخاب ستون، پیش‌نمایش، چهار قالب خروجی و پاک‌سازی خودکار فایل موقت.', 'tisacase-hub' ),
 				'group' => 'orders',
-				'icon'  => 'phone',
-				'dir'   => 'tisacase-order-phone-exporter',
+				'icon'  => 'upload',
+				'dir'   => 'tisacase-exporter',
 				'cap'   => 'manage_woocommerce',
 				'pages' => array(
 					array(
 						'label'  => __( 'خروجی گرفتن', 'tisacase-hub' ),
-						'path'   => 'admin.php?page=tisacase-order-phone-exporter',
-						'screen' => 'woocommerce_page_tisacase-order-phone-exporter',
+						'path'   => 'admin.php?page=tisacase-exporter',
+						'screen' => 'woocommerce_page_tisacase-exporter',
 						'parent' => 'woocommerce',
-						'slug'   => 'tisacase-order-phone-exporter',
+						'slug'   => 'tisacase-exporter',
 					),
 				),
 			);

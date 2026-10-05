@@ -2,30 +2,30 @@
 /**
  * مدیریت جلسه: State (در Transient)، قفل همزمانی، پرچم لغو (Tombstone) و پاک‌سازی جلسه.
  *
- * @package TisaCase_Order_Phone_Exporter
+ * @package TisaCase_Exporter
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
+if ( ! class_exists( 'TisaCase_Exporter_Session' ) ) {
 
-	final class TisaCase_Phone_Exporter_Session {
+	final class TisaCase_Exporter_Session {
 
 		/** بررسی دسترسی و وجود ووکامرس (برای همه اندپوینت‌های AJAX). */
 		public static function ensure_access() {
 			if ( ! current_user_can( 'manage_woocommerce' ) ) {
-				wp_send_json_error( array( 'message' => __( 'دسترسی غیرمجاز است.', TisaCase_Phone_Exporter::TEXT_DOMAIN ) ), 403 );
+				wp_send_json_error( array( 'message' => __( 'دسترسی غیرمجاز است.', TisaCase_Exporter::TEXT_DOMAIN ) ), 403 );
 			}
 
 			if ( ! class_exists( 'WooCommerce' ) ) {
-				wp_send_json_error( array( 'message' => __( 'ووکامرس فعال نیست.', TisaCase_Phone_Exporter::TEXT_DOMAIN ) ), 400 );
+				wp_send_json_error( array( 'message' => __( 'ووکامرس فعال نیست.', TisaCase_Exporter::TEXT_DOMAIN ) ), 400 );
 			}
 		}
 
 		private static function state_key() {
-			return 'tisacase_state_' . get_current_user_id();
+			return 'tisacase_exporter_state_' . get_current_user_id();
 		}
 
 		public static function get_state() {
@@ -35,20 +35,18 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 
 		/** ذخیره بی‌قیدوشرط (فقط برای شروع جلسه جدید که State تازه است). */
 		public static function save_state( $state ) {
-			set_transient( self::state_key(), $state, TisaCase_Phone_Exporter::STATE_TTL );
+			set_transient( self::state_key(), $state, TisaCase_Exporter::STATE_TTL );
 		}
 
 		/**
 		 * ذخیره محافظت‌شده: فقط وقتی مجاز است که جلسه هنوز لغو نشده باشد و State فعلی
-		 * هنوز متعلق به همین run_id باشد. این متد مانع «زنده‌شدن دوباره» (Resurrection)
-		 * یک جلسه لغوشده توسط پاسخ‌های قدیمی/در حال اجرا می‌شود.
+		 * هنوز متعلق به همین run_id باشد. مانع «زنده‌شدن دوباره» یک جلسهٔ لغوشده است.
 		 *
 		 * @return bool آیا ذخیره انجام شد؟
 		 */
 		public static function save_state_guarded( $state ) {
 			$run_id = isset( $state['run_id'] ) ? $state['run_id'] : '';
 
-			// جلسه لغو شده؛ هیچ پاسخی نباید آن را بازنویسی/احیا کند.
 			if ( '' !== $run_id && self::cancel_requested( $run_id ) ) {
 				return false;
 			}
@@ -58,7 +56,7 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 				return false; // جلسه جدیدتری State را به دست گرفته است.
 			}
 
-			set_transient( self::state_key(), $state, TisaCase_Phone_Exporter::STATE_TTL );
+			set_transient( self::state_key(), $state, TisaCase_Exporter::STATE_TTL );
 			return true;
 		}
 
@@ -67,23 +65,20 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 		}
 
 		private static function lock_key() {
-			return 'tisacase_lock_' . get_current_user_id();
+			return 'tisacase_exporter_lock_' . get_current_user_id();
 		}
 
-		/** آیا قفل این کاربر گرفته شده؟ (هر مقداری) */
+		/** آیا قفل این کاربر گرفته شده؟ */
 		public static function lock_exists() {
 			return (bool) get_transient( self::lock_key() );
 		}
 
-		/**
-		 * گرفتن/تمدید قفل پردازش برای جلوگیری از اجرای همزمان دو تب.
-		 * مقدار قفل = run_id جلسه؛ اگر قفلِ دیگری (یا متعلق به اجرای متفاوت) باشد false برمی‌گردد.
-		 */
+		/** گرفتن/تمدید قفل پردازش برای جلوگیری از اجرای همزمان دو تب. */
 		public static function lock_acquire( $run_id ) {
 			$current = get_transient( self::lock_key() );
 
 			if ( $current === $run_id ) {
-				set_transient( self::lock_key(), $run_id, TisaCase_Phone_Exporter::LOCK_TTL );
+				set_transient( self::lock_key(), $run_id, TisaCase_Exporter::LOCK_TTL );
 				return true;
 			}
 
@@ -91,17 +86,18 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 				return false;
 			}
 
-			set_transient( self::lock_key(), $run_id, TisaCase_Phone_Exporter::LOCK_TTL );
+			set_transient( self::lock_key(), $run_id, TisaCase_Exporter::LOCK_TTL );
 			return true;
 		}
 
-		/**
-		 * فقط تمدید قفلِ خودمان — هرگز قفل آزادشده را دوباره نمی‌گیرد.
-		 * (برای فراخوانی از داخل پردازش‌های طولانی؛ اگر لغو شده باشد قفل را بازپس نمی‌گیرد.)
-		 */
+		/** فقط تمدید قفلِ خودمان — هرگز قفل آزادشده را دوباره نمی‌گیرد. */
 		public static function lock_refresh( $run_id ) {
+			if ( defined( 'WP_CLI' ) && WP_CLI ) {
+				return true; // در خط فرمان پردازش تک‌فرآیندی است و قفلی لازم نیست.
+			}
+
 			if ( get_transient( self::lock_key() ) === $run_id ) {
-				set_transient( self::lock_key(), $run_id, TisaCase_Phone_Exporter::LOCK_TTL );
+				set_transient( self::lock_key(), $run_id, TisaCase_Exporter::LOCK_TTL );
 				return true;
 			}
 
@@ -112,7 +108,7 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 			delete_transient( self::lock_key() );
 		}
 
-		/** آزادکردن قفل فقط اگر هنوز متعلق به همین run_id باشد (حذف امن، بدون قفل جلسه جدید). */
+		/** آزادکردن قفل فقط اگر هنوز متعلق به همین run_id باشد. */
 		public static function lock_release_if( $run_id ) {
 			if ( get_transient( self::lock_key() ) === $run_id ) {
 				delete_transient( self::lock_key() );
@@ -120,7 +116,7 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 		}
 
 		private static function cancel_key( $run_id ) {
-			return 'tisacase_cancel_' . $run_id;
+			return 'tisacase_exporter_cancel_' . $run_id;
 		}
 
 		/** آیا لغو این جلسه درخواست شده؟ */
@@ -144,12 +140,11 @@ if ( ! class_exists( 'TisaCase_Phone_Exporter_Session' ) ) {
 
 		/**
 		 * پاک‌سازی کامل یک جلسه: فایل‌ها + State + قفل.
-		 * پرچم لغو (Tombstone) عمداً حذف نمی‌شود تا هر درخواستِ قدیمیِ هنوز در حال اجرا،
-		 * در اولین ایستگاه خودش متوقف شود و نتواند State را دوباره احیا کند.
+		 * پرچم لغو عمداً می‌ماند تا درخواست قدیمیِ در حال اجرا نتواند State را احیا کند.
 		 */
 		public static function cleanup_session( $state ) {
 			if ( is_array( $state ) && ! empty( $state['dir'] ) && is_string( $state['dir'] ) ) {
-				TisaCase_Phone_Exporter_Storage::delete_directory( $state['dir'] );
+				TisaCase_Exporter_Storage::delete_directory( $state['dir'] );
 			}
 			self::delete_state();
 			self::lock_release();

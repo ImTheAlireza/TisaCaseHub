@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ساختار «بخش‌ها» در خروجی گرفتن v2.0.0 — دو گزینه</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body { background: #F4F2EC; color: #1F2A2E; font: 14px/1.8 "Vazirmatn", "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 26px 22px 80px; }
+h1 { margin: 0 0 6px; font-size: 22px; font-weight: 800; }
+p.lead { margin: 0 0 22px; color: #77828A; font-size: 13px; }
+.opt { margin: 0 0 34px; border: 1px solid #E3E1DA; border-radius: 18px; background: #fff; overflow: hidden; }
+.opt > header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid #E3E1DA; background: #FAFAF8; }
+.opt h2 { margin: 0; font-size: 15px; font-weight: 800; }
+.opt .tag { padding: 3px 10px; border-radius: 999px; background: #E8F0EE; color: #0A5F52; font-size: 11.5px; font-weight: 700; }
+.opt .why { margin-inline-start: auto; color: #77828A; font-size: 12.5px; }
+.opt iframe { display: block; width: 100%; border: 0; background: #F4F2EC; }
+.opt.a iframe { height: 1180px; }
+.opt.b iframe { height: 1180px; }
+.note { padding: 14px 18px; border-radius: 14px; background: #fff; border: 1px dashed #C9DCD7; color: #77828A; font-size: 12.5px; }
+.note b { color: #0A5F52; }
+</style>
+</head>
+<body>
+<div class="wrap">
+	<h1>«خروجی گرفتن» v2.0.0 — بخش‌ها کجا بنشینند؟</h1>
+	<p class="lead">هر دو نمونه با همان CSS واقعی (هاب + افزونه) ساخته شده‌اند؛ فقط ساختار «بخش‌ها» فرق دارد. هر دو گزینه رفتار امروزِ بخش شماره تماس‌ها را دست‌نخورده نگه می‌دارند.</p>
+	<p class="note" style="margin:-10px 0 22px;border-style:solid;border-color:#0E7C6B;background:#F2FBF8;">
+		<b>▶ پیش‌نمایش زندهٔ UI نهایی (v2.0.0):</b>
+		همین مارک‌آپ، CSS و JS واقعی افزونه با دادهٔ ساختگی —
+		<a href="./exporter-v2-live.html" target="_blank" rel="noopener" style="color:#0A5F52;font-weight:700;text-decoration:underline;">باز کردن پیش‌نمایش زنده</a>
+		(فیلتر، انتخاب ستون، قالب، پیشرفت، پیش‌نمایش ۲۵ ردیف و تاریخچه).
+	</p>
+	<p class="note" style="margin:-10px 0 22px;"><b>وضعیت:</b> گزینهٔ الف در کد پیاده شد (نسخهٔ ۲٫۰٫۰ · رجیستری بخش‌ها + نوار ناوبری «هدر جدا»). گزینهٔ ب همچنان قابل انتخاب است و چون بخش‌ها از رجیستری می‌آیند، تبدیلش کار کوچکی است.</p>
+
+	<section class="opt a">
+		<header>
+			<span class="tag">گزینهٔ الف</span>
+			<h2>بخش‌ها در یک «هدر جدای» نوار ناوبری</h2>
+			<span class="why">یک صفحه · جابه‌جایی بین بخش‌ها بدون بارگذاری مجدد</span>
+		</header>
+		<iframe src="./exporter-v2-nav.html" title="گزینهٔ الف — نوار ناوبری بخش‌ها" loading="lazy"></iframe>
+	</section>
+
+	<section class="opt b">
+		<header>
+			<span class="tag">گزینهٔ ب</span>
+			<h2>هر بخش، یک صفحهٔ مستقل با هدر خودش</h2>
+			<span class="why">آدرس مستقل برای هر بخش · منوی کناری زیر «خروجی گرفتن»</span>
+		</header>
+		<iframe src="./exporter-v2-pages.html" title="گزینهٔ ب — صفحهٔ مستقل هر بخش" loading="lazy"></iframe>
+	</section>
+
+	<div class="note">
+		<b>تفاوت عملی:</b> در «الف» کاربر بین بخش‌ها جابه‌جا می‌شود و وضعیت اجرای در حال انجام یک بخش دیده می‌شود؛ در «ب» هر بخش آدرس و هدر مستقل دارد و از کارت هاب می‌شود مستقیم به هر بخش لینک داد.
+		هر دو با موتور فعلی سازگارند و هر دو «بخش‌ها را جدا از هم» نگه می‌دارند.
+	</div>
+</div>
+</body>
+</html>
