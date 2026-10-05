@@ -171,28 +171,42 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 
 			if ( self::hpos_enabled() ) {
 				$params    = array();
-				list( $where, $having ) = self::sql_parts( $filters, $params );
-				if ( '' !== $having ) {
-					$params[] = (int) $filters['min_orders'];
-				}
+				list( $where ) = self::sql_parts( $filters, $params );
+				$digits    = self::phone_digits_sql( self::phone_expr() );
+				$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
 
-				$phone = self::phone_expr();
-
-				$sql = "SELECT COUNT(*) FROM ( SELECT {$phone} AS phone FROM {$wpdb->prefix}wc_orders o"
+				$sql = 'SELECT COUNT(*) FROM ('
+					. ' SELECT normalized.phone FROM ('
+					. ' SELECT raw.order_id, ' . $canonical . ' AS phone'
+					. " FROM ( SELECT o.id AS order_id, {$digits} AS phone_digits"
+					. " FROM {$wpdb->prefix}wc_orders o"
 					. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
-					. " WHERE o.type = 'shop_order' AND {$phone} <> ''" . $where
-					. ' GROUP BY phone' . $having . ' ) AS grouped';
+					. " WHERE o.type = 'shop_order'" . $where . ' ) AS raw'
+					. " ) AS normalized WHERE normalized.phone <> ''"
+					. ' GROUP BY normalized.phone'
+					. ( ! empty( $filters['min_orders'] ) ? ' HAVING COUNT(DISTINCT normalized.order_id) >= %d' : '' )
+					. ' ) AS grouped';
 			} else {
 				$params    = array();
-				list( $where, $having ) = self::sql_parts_legacy( $filters, $params );
-				if ( '' !== $having ) {
-					$params[] = (int) $filters['min_orders'];
-				}
+				list( $where ) = self::sql_parts_legacy( $filters, $params );
+				$digits    = self::phone_digits_sql( 'pm.meta_value' );
+				$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
 
-				$sql = "SELECT COUNT(*) FROM ( SELECT pm.meta_value AS phone FROM {$wpdb->posts} p"
+				$sql = 'SELECT COUNT(*) FROM ('
+					. ' SELECT normalized.phone FROM ('
+					. ' SELECT raw.order_id, ' . $canonical . ' AS phone'
+					. " FROM ( SELECT p.ID AS order_id, {$digits} AS phone_digits"
+					. " FROM {$wpdb->posts} p"
 					. " INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_billing_phone' AND pm.meta_value <> ''"
-					. " WHERE p.post_type = 'shop_order'" . $where
-					. ' GROUP BY pm.meta_value' . $having . ' ) AS grouped';
+					. " WHERE p.post_type = 'shop_order'" . $where . ' ) AS raw'
+					. " ) AS normalized WHERE normalized.phone <> ''"
+					. ' GROUP BY normalized.phone'
+					. ( ! empty( $filters['min_orders'] ) ? ' HAVING COUNT(DISTINCT normalized.order_id) >= %d' : '' )
+					. ' ) AS grouped';
+			}
+
+			if ( ! empty( $filters['min_orders'] ) ) {
+				$params[] = (int) $filters['min_orders'];
 			}
 
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery,WordPress.DB.DirectDatabaseQuery.NoCaching,WordPress.DB.PreparedSQL.NotPrepared
@@ -209,41 +223,43 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 			global $wpdb;
 
 			$params    = array();
-			list( $where, $having ) = self::sql_parts( $filters, $params );
+			list( $where ) = self::sql_parts( $filters, $params );
 
-			$phone = self::phone_expr();
-			$first = self::name_part_expr( 'first_name', '_billing_first_name' );
-			$last  = self::name_part_expr( 'last_name', '_billing_last_name' );
+			$phone     = self::phone_expr();
+			$digits    = self::phone_digits_sql( $phone );
+			$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
+			$first     = self::name_part_expr( 'first_name', '_billing_first_name' );
+			$last      = self::name_part_expr( 'last_name', '_billing_last_name' );
 
-			// پارامترها به ترتیب متن SQL: statuses… سپس cursor در HAVING و LIMIT.
-			$sql = "SELECT {$phone} AS phone,"
-				. " MAX(CONCAT_WS(' ', {$first}, {$last})) AS name,"
-				. ' MAX(a.email) AS email,'
-				. ' COUNT(DISTINCT o.id) AS orders_count,'
-				. ' SUM(o.total_amount) AS total_spent,'
-				. ' MAX(o.date_created_gmt) AS last_order,'
-				. ' MIN(o.date_created_gmt) AS first_order,'
-				. ' MAX(a.city) AS city, MAX(a.state) AS state, MAX(a.company) AS company'
+			$raw_sql = "SELECT o.id AS order_id, {$digits} AS phone_digits,"
+				. " {$first} AS first_name, {$last} AS last_name,"
+				. ' a.email AS email, o.total_amount AS total_spent, o.date_created_gmt AS order_date,'
+				. ' a.city AS city, a.state AS state, a.company AS company'
 				. " FROM {$wpdb->prefix}wc_orders o"
 				. " LEFT JOIN {$wpdb->prefix}wc_order_addresses a ON a.order_id = o.id AND a.address_type = 'billing'"
-				. " WHERE o.type = 'shop_order' AND {$phone} <> ''" . $where
-				. ' GROUP BY phone';
+				. " WHERE o.type = 'shop_order'" . $where;
 
-			// cursor + min_orders در HAVING (ترتیب: ابتدا شرط cursor، بعد min_orders اگر باشد).
-			$having_sql    = ' HAVING phone > %s';
+			$normalized_sql = 'SELECT raw.order_id, ' . $canonical . ' AS phone,'
+				. " CONCAT_WS(' ', raw.first_name, raw.last_name) AS name, raw.email, raw.total_spent, raw.order_date,"
+				. ' raw.city, raw.state, raw.company'
+				. ' FROM (' . $raw_sql . ') AS raw';
+
+			$sql = 'SELECT source.phone AS phone, MAX(source.name) AS name, MAX(source.email) AS email,'
+				. ' COUNT(DISTINCT source.order_id) AS orders_count, SUM(source.total_spent) AS total_spent,'
+				. ' MAX(source.order_date) AS last_order, MIN(source.order_date) AS first_order,'
+				. ' MAX(source.city) AS city, MAX(source.state) AS state, MAX(source.company) AS company'
+				. ' FROM (' . $normalized_sql . ') AS source'
+				. " WHERE source.phone <> '' GROUP BY source.phone";
+
+			$having_sql    = ' HAVING source.phone > %s';
 			$having_params = array( (string) $cursor );
 
 			if ( ! empty( $filters['min_orders'] ) ) {
-				$having_sql     .= ' AND COUNT(DISTINCT o.id) >= %d';
+				$having_sql     .= ' AND COUNT(DISTINCT source.order_id) >= %d';
 				$having_params[] = (int) $filters['min_orders'];
 			}
 
-			/*
-			 * ترتیب باید روی «همان عبارت گروه‌بندی» باشد (alias `phone`)؛ `a.phone` هم در
-			 * MySQL سخت‌گیر (ONLY_FULL_GROUP_BY) خطا می‌دهد و هم وقتی داده از متا می‌آید NULL
-			 * است و صفحه‌بندی را خراب می‌کند (ردیف‌های ازدست‌رفته/تکراری).
-			 */
-			$sql .= $having_sql . ' ORDER BY phone ASC LIMIT %d';
+			$sql .= $having_sql . ' ORDER BY source.phone ASC LIMIT %d';
 
 			$all_params = array_merge( $params, $having_params, array( (int) $limit ) );
 
@@ -257,15 +273,15 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 			global $wpdb;
 
 			$params    = array();
-			list( $where, $having ) = self::sql_parts_legacy( $filters, $params );
+			list( $where ) = self::sql_parts_legacy( $filters, $params );
 
-			$sql = "SELECT pm.meta_value AS phone,"
-				. " MAX(CONCAT_WS(' ', fn.meta_value, ln.meta_value)) AS name,"
-				. ' MAX(em.meta_value) AS email,'
-				. ' COUNT(DISTINCT p.ID) AS orders_count,'
-				. " SUM(CAST(COALESCE(tt.meta_value, '0') AS DECIMAL(20,6))) AS total_spent,"
-				. ' MAX(p.post_date_gmt) AS last_order, MIN(p.post_date_gmt) AS first_order,'
-				. ' MAX(ci.meta_value) AS city, MAX(st.meta_value) AS state, MAX(co.meta_value) AS company'
+			$digits    = self::phone_digits_sql( 'pm.meta_value' );
+			$canonical = self::phone_canonical_sql( 'raw.phone_digits' );
+
+			$raw_sql = "SELECT p.ID AS order_id, {$digits} AS phone_digits,"
+				. ' fn.meta_value AS first_name, ln.meta_value AS last_name, em.meta_value AS email,'
+				. ' tt.meta_value AS raw_total, p.post_date_gmt AS order_date,'
+				. ' ci.meta_value AS city, st.meta_value AS state, co.meta_value AS company'
 				. " FROM {$wpdb->posts} p"
 				. " INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_billing_phone' AND pm.meta_value <> ''"
 				. " LEFT JOIN {$wpdb->postmeta} tt ON tt.post_id = p.ID AND tt.meta_key = '_order_total'"
@@ -275,18 +291,30 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Customers' ) ) {
 				. " LEFT JOIN {$wpdb->postmeta} ci ON ci.post_id = p.ID AND ci.meta_key = '_billing_city'"
 				. " LEFT JOIN {$wpdb->postmeta} st ON st.post_id = p.ID AND st.meta_key = '_billing_state'"
 				. " LEFT JOIN {$wpdb->postmeta} co ON co.post_id = p.ID AND co.meta_key = '_billing_company'"
-				. " WHERE p.post_type = 'shop_order'" . $where
-				. ' GROUP BY pm.meta_value';
+				. " WHERE p.post_type = 'shop_order'" . $where;
 
-			$having_sql    = ' HAVING pm.meta_value > %s';
+			$normalized_sql = 'SELECT raw.order_id, ' . $canonical . ' AS phone,'
+				. " CONCAT_WS(' ', raw.first_name, raw.last_name) AS name, raw.email, raw.raw_total, raw.order_date,"
+				. ' raw.city, raw.state, raw.company'
+				. ' FROM (' . $raw_sql . ') AS raw';
+
+			$sql = 'SELECT source.phone AS phone, MAX(source.name) AS name, MAX(source.email) AS email,'
+				. ' COUNT(DISTINCT source.order_id) AS orders_count,'
+				. " SUM(CAST(COALESCE(source.raw_total, '0') AS DECIMAL(20,6))) AS total_spent,"
+				. ' MAX(source.order_date) AS last_order, MIN(source.order_date) AS first_order,'
+				. ' MAX(source.city) AS city, MAX(source.state) AS state, MAX(source.company) AS company'
+				. ' FROM (' . $normalized_sql . ') AS source'
+				. " WHERE source.phone <> '' GROUP BY source.phone";
+
+			$having_sql    = ' HAVING source.phone > %s';
 			$having_params = array( (string) $cursor );
 
 			if ( ! empty( $filters['min_orders'] ) ) {
-				$having_sql     .= ' AND COUNT(DISTINCT p.ID) >= %d';
+				$having_sql     .= ' AND COUNT(DISTINCT source.order_id) >= %d';
 				$having_params[] = (int) $filters['min_orders'];
 			}
 
-			$sql .= $having_sql . ' ORDER BY pm.meta_value ASC LIMIT %d';
+			$sql .= $having_sql . ' ORDER BY source.phone ASC LIMIT %d';
 
 			$all_params = array_merge( $params, $having_params, array( (int) $limit ) );
 

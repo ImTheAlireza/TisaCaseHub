@@ -45,11 +45,18 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 						<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4M7 9l5-5 5 5M4 17v3h16v-3"/></svg>
 					</div>
 					<div class="tisa-exp__hero-text">
+						<p class="tisa-exp__eyebrow"><?php esc_html_e( 'ابزار مدیریت داده‌های ووکامرس', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
 						<h1 class="tisa-exp__title"><?php esc_html_e( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN ); ?></h1>
-						<p class="tisa-exp__sub"><?php esc_html_e( 'شماره‌ها، سفارش‌ها، مشتری‌ها، محصول‌ها و کدهای تخفیف — هر بخش جدا، با فیلتر، انتخاب ستون و پیش‌نمایش.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
+						<p class="tisa-exp__sub"><?php esc_html_e( 'فیلتر کنید، ستون‌ها را بچینید و فایل آمادهٔ دانلود بسازید.', TisaCase_Exporter::TEXT_DOMAIN ); ?></p>
 					</div>
-					<span class="tisa-exp__hero-pill"><?php echo esc_html( 'HPOS' === $storage ? 'HPOS' : 'Legacy' ); ?></span>
-					<span class="tisa-exp__hero-pill" dir="ltr">v<?php echo esc_html( TISA_EXPORTER_VERSION ); ?></span>
+					<div class="tisa-exp__hero-meta" role="group" aria-label="<?php esc_attr_e( 'اطلاعات نسخه و منبع داده', TisaCase_Exporter::TEXT_DOMAIN ); ?>">
+						<span class="tisa-exp__hero-pill tisa-exp__hero-pill--storage">
+							<span class="tisa-exp__hero-dot" aria-hidden="true"></span>
+							<span><?php esc_html_e( 'منبع داده', TisaCase_Exporter::TEXT_DOMAIN ); ?></span>
+							<strong><?php echo esc_html( 'HPOS' === $storage ? 'HPOS' : __( 'ذخیره‌سازی قدیمی', TisaCase_Exporter::TEXT_DOMAIN ) ); ?></strong>
+						</span>
+						<span class="tisa-exp__hero-pill tisa-exp__hero-pill--version" dir="ltr"><span>v</span><?php echo esc_html( TISA_EXPORTER_VERSION ); ?></span>
+					</div>
 				</header>
 
 				<?php TisaCase_Exporter_Modules::render_nav(); ?>

@@ -163,51 +163,57 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Products' ) ) {
 
 			$page     = max( 1, (int) $cursor );
 			$products = wc_get_products( self::query_args( $filters, $limit, $page ) );
-			$rows     = array();
-			$each     = ! empty( $filters['each_variation'] );
+			$rows      = array();
+			$processed = 0;
+			$each      = ! empty( $filters['each_variation'] );
 
 			foreach ( (array) $products as $product ) {
 				if ( ! is_object( $product ) || ! method_exists( $product, 'get_id' ) ) {
 					continue;
 				}
 
-				$rows[] = self::product_row( $product, false );
+				$processed++;
+				$rows[] = self::product_row( $product, false, $columns );
 
 				if ( $each && $product->is_type( 'variable' ) ) {
 					foreach ( (array) $product->get_children() as $child_id ) {
 						$child = wc_get_product( $child_id );
 						if ( is_object( $child ) ) {
-							$rows[] = self::product_row( $child, true );
+							$rows[] = self::product_row( $child, true, $columns );
 						}
 					}
 				}
 			}
 
 			return array(
-				'rows'   => $rows,
-				'cursor' => $page + 1,
-				'done'   => count( (array) $products ) < (int) $limit,
+				'rows'      => $rows,
+				'processed' => $processed, // تعداد محصول‌های والد؛ هر variation فقط یک ردیف خروجی اضافه می‌کند.
+				'cursor'    => $page + 1,
+				'done'      => count( (array) $products ) < (int) $limit,
 			);
 		}
 
-		/** یک ردیف محصول/متغیر. */
-		private static function product_row( $product, $is_variation ) {
+		/** یک ردیف محصول/متغیر؛ فیلدهای پرهزینه فقط وقتی ستونشان انتخاب شده محاسبه می‌شوند. */
+		private static function product_row( $product, $is_variation, array $columns = array() ) {
 			$parent_id = $is_variation ? (int) $product->get_parent_id() : 0;
+			$want      = static function ( $key ) use ( $columns ) {
+				return empty( $columns ) || in_array( $key, $columns, true );
+			};
 
 			return array(
-				'product_id'   => (int) $product->get_id(),
-				'name'         => $product->get_name(),
-				'parent_id'    => $parent_id,
-				'sku'          => $product->get_sku(),
-				'type'         => self::type_label( $product->get_type() ),
-				'price'        => $product->get_price(),
+				'product_id'    => (int) $product->get_id(),
+				'name'          => $product->get_name(),
+				'parent_id'     => $parent_id,
+				'sku'           => $product->get_sku(),
+				'type'          => self::type_label( $product->get_type() ),
+				'price'         => $product->get_price(),
 				'regular_price' => $product->get_regular_price(),
-				'sale_price'   => $product->get_sale_price(),
-				'stock'        => null === $product->get_stock_quantity() ? '' : $product->get_stock_quantity(),
-				'stock_status' => $product->get_stock_status(),
-				'categories'   => self::categories_label( $product ),
-				'date_created' => self::gmt_date( $product->get_date_created() ),
-				'attributes'   => self::attributes_label( $product ),
+				'sale_price'    => $product->get_sale_price(),
+				'stock'         => null === $product->get_stock_quantity() ? '' : $product->get_stock_quantity(),
+				'stock_status'  => $product->get_stock_status(),
+				'categories'    => $want( 'categories' ) ? self::categories_label( $product ) : '',
+				'date_created'  => self::gmt_date( $product->get_date_created() ),
+				'attributes'    => $want( 'attributes' ) ? self::attributes_label( $product ) : '',
 			);
 		}
 
@@ -243,29 +249,82 @@ if ( ! class_exists( 'TisaCase_Exporter_Module_Products' ) ) {
 			return self::gmt_string( $date );
 		}
 
-		/** خلاصهٔ ویژگی‌ها: «رنگ: قرمز، سایز: XL». */
+		/** خلاصهٔ ویژگی‌های محصول یا ردیف متغیر: «رنگ: قرمز، سایز: XL». */
 		private static function attributes_label( $product ) {
 			$out = array();
 
-			foreach ( (array) $product->get_attributes() as $attribute ) {
-				if ( ! is_object( $attribute ) || ! method_exists( $attribute, 'get_name' ) ) {
+			foreach ( (array) $product->get_attributes() as $key => $attribute ) {
+				if ( is_object( $attribute ) && method_exists( $attribute, 'get_name' ) ) {
+					$attribute_name = (string) $attribute->get_name();
+					$name           = function_exists( 'wc_attribute_label' ) ? wc_attribute_label( $attribute_name ) : $attribute_name;
+					$value          = '';
+
+					if ( method_exists( $attribute, 'is_taxonomy' ) && $attribute->is_taxonomy() && method_exists( $attribute, 'get_options' ) && function_exists( 'wc_get_product_terms' ) ) {
+						$terms = wc_get_product_terms( $product->get_id(), $attribute_name, array( 'fields' => 'names' ) );
+						$value = is_array( $terms ) ? implode( '، ', $terms ) : '';
+					} elseif ( method_exists( $attribute, 'get_options' ) ) {
+						$value = implode( '، ', array_map( 'strval', (array) $attribute->get_options() ) );
+					}
+				} elseif ( is_string( $key ) && is_scalar( $attribute ) ) {
+					// WC_Product_Variation::get_attributes() بر خلاف محصول والد، مقدارهای scalar برمی‌گرداند.
+					$attribute_name = preg_replace( '/^attribute_/', '', $key );
+					$name           = function_exists( 'wc_attribute_label' ) ? wc_attribute_label( $attribute_name ) : $attribute_name;
+					$value          = self::variation_attribute_value( $product, $attribute_name, (string) $attribute );
+				} else {
 					continue;
 				}
 
-				$name = wc_attribute_label( $attribute->get_name() );
-				$value = '';
+				$label = trim( (string) $name );
+				$value = trim( (string) $value );
 
-				if ( method_exists( $attribute, 'is_taxonomy' ) && $attribute->is_taxonomy() && method_exists( $attribute, 'get_options' ) ) {
-					$terms = wc_get_product_terms( $product->get_id(), $attribute->get_name(), array( 'fields' => 'names' ) );
-					$value = implode( '، ', (array) $terms );
-				} elseif ( method_exists( $attribute, 'get_options' ) ) {
-					$value = implode( '، ', array_map( 'strval', (array) $attribute->get_options() ) );
+				if ( '' !== $label && '' !== $value ) {
+					$out[] = $label . ': ' . $value;
 				}
-
-				$out[] = trim( $name . ': ' . $value );
 			}
 
-			return implode( ' | ', array_filter( $out ) );
+			return implode( ' | ', $out );
+		}
+
+		/** تبدیل مقدار variation به برچسب term یا گزینهٔ محصول والد. */
+		private static function variation_attribute_value( $product, $attribute_name, $value ) {
+			if ( 0 === strpos( $attribute_name, 'pa_' ) && function_exists( 'get_term_by' ) ) {
+				$term = get_term_by( 'slug', $value, $attribute_name );
+
+				if ( ! $term && preg_match( '/^\\d+$/', $value ) ) {
+					$term = get_term_by( 'id', (int) $value, $attribute_name );
+				}
+
+				if ( is_object( $term ) && isset( $term->name ) ) {
+					return (string) $term->name;
+				}
+			}
+
+			if ( method_exists( $product, 'get_parent_id' ) && function_exists( 'wc_get_product' ) ) {
+				$parent = wc_get_product( $product->get_parent_id() );
+
+				if ( is_object( $parent ) && method_exists( $parent, 'get_attributes' ) ) {
+					foreach ( (array) $parent->get_attributes() as $parent_attribute ) {
+						if ( ! is_object( $parent_attribute ) || ! method_exists( $parent_attribute, 'get_name' ) || ! method_exists( $parent_attribute, 'get_options' ) ) {
+							continue;
+						}
+
+						if ( (string) $parent_attribute->get_name() !== (string) $attribute_name ) {
+							continue;
+						}
+
+						foreach ( (array) $parent_attribute->get_options() as $option ) {
+							$option = (string) $option;
+							$slug   = function_exists( 'sanitize_title' ) ? sanitize_title( $option ) : strtolower( $option );
+
+							if ( $option === $value || $slug === $value ) {
+								return $option;
+							}
+						}
+					}
+				}
+			}
+
+			return $value;
 		}
 	}
 }

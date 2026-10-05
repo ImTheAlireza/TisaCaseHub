@@ -51,6 +51,8 @@ const includes = [
   'class-tce-module-customers.php',
   'class-tce-module-products.php',
   'class-tce-module-coupons.php',
+  'class-tce-storage.php',
+  'class-tce-pipeline.php',
   'class-tce-modules.php',
   'class-tce-diagnostics.php',
 ];
@@ -90,6 +92,15 @@ function get_date_from_gmt($gmt, $fmt = 'Y-m-d H:i') {
 function wc_get_price_decimals() { return 0; }
 function wc_get_order_status_name($s) { return (string) $s; }
 function wc_get_coupon_types() { return array('percent' => 'درصدی', 'fixed_cart' => 'مبلغ ثابت'); }
+function wc_attribute_label($name) { $map = array('pa_color' => 'رنگ', 'size' => 'سایز'); return isset($map[$name]) ? $map[$name] : (string) $name; }
+function get_term_by($field, $value, $taxonomy) { return ('slug' === $field && 'red' === $value && 'pa_color' === $taxonomy) ? (object) array('name' => 'قرمز') : false; }
+function sanitize_title($value) { return strtolower(trim((string) $value)); }
+function wc_get_product($id) {
+	$id = (int) $id;
+	if (isset($GLOBALS['FAKE_PRODUCTS_BY_ID'][$id])) { return $GLOBALS['FAKE_PRODUCTS_BY_ID'][$id]; }
+	return isset($GLOBALS['FAKE_PRODUCT_PARENT']) ? $GLOBALS['FAKE_PRODUCT_PARENT'] : false;
+}
+function wc_get_products($args) { return isset($GLOBALS['FAKE_WC_PRODUCTS']) ? $GLOBALS['FAKE_WC_PRODUCTS'] : array(); }
 function wc_get_order_statuses() {
 	return array(
 		'wc-pending'    => 'در انتظار پرداخت',
@@ -102,8 +113,51 @@ function wc_get_order_statuses() {
 	);
 }
 function get_option($k, $d = false) { return $d; }
+function trailingslashit($p) { return rtrim((string) $p, '/') . '/'; }
+function wp_upload_dir() { return array('basedir' => $GLOBALS['UPLOAD_BASE'], 'error' => ''); }
+function get_temp_dir() { return '/tmp'; }
+function is_multisite() { return ! empty($GLOBALS['IS_MULTISITE']); }
+function get_current_blog_id() { return (int) $GLOBALS['BLOG_ID']; }
 
-class TisaCase_Exporter { const TEXT_DOMAIN = 'tisacase-exporter'; }
+class TisaCase_Exporter { const TEXT_DOMAIN = 'tisacase-exporter'; const BASE_DIR_NAME = 'tisacase-private-exports'; const LEGACY_DIR_NAME = 'tisacase-private-phone-exports'; const PART_PREFIX = 'part-'; const WORKING_FILE = 'working.tsv'; }
+class WP_Error {
+	private $code; private $message;
+	public function __construct($code = '', $message = '') { $this->code = $code; $this->message = $message; }
+	public function get_error_message() { return $this->message; }
+	public function get_error_code() { return $this->code; }
+}
+class FakeTceProductAttribute {
+	private $name; private $options;
+	public function __construct($name, $options) { $this->name = $name; $this->options = $options; }
+	public function get_name() { return $this->name; }
+	public function get_options() { return $this->options; }
+}
+class FakeTceProductParent { public function get_attributes() { return array(new FakeTceProductAttribute('size', array('Small', 'Medium'))); } }
+class FakeTceVariation {
+	public function get_attributes() { return array('attribute_pa_color' => 'red', 'attribute_size' => 'medium'); }
+	public function get_parent_id() { return 44; }
+}
+class FakeTceWooProduct {
+	private $id; private $type; private $children; private $parent;
+	public function __construct($id, $type = 'simple', $children = array(), $parent = 0) { $this->id = $id; $this->type = $type; $this->children = $children; $this->parent = $parent; }
+	public function get_id() { return $this->id; }
+	public function get_parent_id() { return $this->parent; }
+	public function get_name() { return 'محصول'; }
+	public function get_sku() { return 'SKU-' . $this->id; }
+	public function get_type() { return $this->type; }
+	public function get_price() { return '10'; }
+	public function get_regular_price() { return '10'; }
+	public function get_sale_price() { return ''; }
+	public function get_stock_quantity() { return null; }
+	public function get_stock_status() { return 'instock'; }
+	public function get_date_created() { return null; }
+	public function get_attributes() { return array(); }
+	public function is_type($type) { return $this->type === $type; }
+	public function get_children() { return $this->children; }
+}
+$GLOBALS['FAKE_PRODUCT_PARENT'] = new FakeTceProductParent();
+$GLOBALS['FAKE_PRODUCTS_BY_ID'] = array();
+$GLOBALS['FAKE_WC_PRODUCTS'] = array();
 
 /* سوئیچ HPOS/Legacy (همان چیزی که ووکامرس فراهم می‌کند). */
 eval('namespace Automattic\\WooCommerce\\Utilities; class OrderUtil { public static function custom_orders_table_usage_is_enabled() { return ! empty($GLOBALS["HPOS_MODE"]); } }');
@@ -112,6 +166,9 @@ eval('namespace Automattic\\WooCommerce\\Utilities; class OrderUtil { public sta
 $GLOBALS['SQL_LOG']      = array();
 $GLOBALS['LEGACY_TOTAL'] = 150;    // کل سفارش‌های جدول قدیمی (برای تست مقایسهٔ منابع)
 $GLOBALS['HPOS_MODE']    = true;   // منبع فعال: HPOS
+$GLOBALS['IS_MULTISITE'] = false;
+$GLOBALS['BLOG_ID']      = 1;
+$GLOBALS['UPLOAD_BASE']  = '/uploads';
 
 function fake_placeholder_count_old($sql) {
 	return (int) preg_match_all('/%[sdf]/', $sql);
@@ -417,14 +474,105 @@ $needle = 'wc_order_addresses a ON a.order_id';
 check(false !== strpos($fetch_sql, $needle), 'خروجی سفارش‌ها شماره را از جدول آدرس‌ها می‌خواند');
 check(substr_count($fetch_sql, 'postmeta') >= 1, 'خروجی سفارش‌ها پشتیبان متای قدیمی را دارد');
 
-/* ---------- ۱۲) کوئری مشتری‌ها در حالت سخت‌گیر MySQL هم اجرا می‌شود ---------- */
+/* ---------- ۱۲) مشتری‌ها بر شمارهٔ canonical گروه‌بندی و صفحه‌بندی می‌شوند ---------- */
+$GLOBALS['SQL_LOG'] = array();
+TisaCase_Exporter_Module_Customers::count($ranged);
+$cust_count = last_sql();
+check($cust_count['placeholders'] === count($cust_count['params']), 'شمارش مشتری canonical با همهٔ فیلترها پارامتر درست دارد');
+check(false !== strpos($cust_count['sql'], 'GROUP BY normalized.phone'), 'شمارش مشتری‌ها بر شمارهٔ canonical گروه‌بندی می‌شود');
+check(false !== strpos($cust_count['sql'], "LEFT("), 'شماره‌های +98/0098 در SQL به قالب یکسان می‌رسند');
+
 $GLOBALS['SQL_LOG'] = array();
 TisaCase_Exporter_Module_Customers::fetch($ranged, 0, 100, array('phone', 'orders_count'));
-$cust_sql = $GLOBALS['SQL_LOG'][ count($GLOBALS['SQL_LOG']) - 1 ]['sql'];
+$cust_sql = last_sql();
+check($cust_sql['placeholders'] === count($cust_sql['params']), 'واکشی مشتری canonical با cursor و limit پارامتر درست دارد');
+check(false !== strpos($cust_sql['sql'], 'GROUP BY source.phone'), 'واکشی مشتری‌ها روی شمارهٔ canonical گروه‌بندی می‌شود');
+check(false !== strpos($cust_sql['sql'], 'ORDER BY source.phone ASC'), 'صفحه‌بندی روی همان کلید canonical مرتب می‌شود');
+check(false === strpos($cust_sql['sql'], 'GROUP BY pm.meta_value'), 'شماره‌های خام دیگر گروه‌های جدا نمی‌سازند');
+check(false !== strpos($cust_sql['sql'], 'postmeta'), 'شمارهٔ مشتری پشتیبان متای قدیمی را دارد');
 
-check(false !== strpos($cust_sql, 'ORDER BY phone ASC'), 'ترتیب مشتری‌ها روی همان عبارت گروه‌بندی است (سازگار با ONLY_FULL_GROUP_BY)');
-check(false === strpos($cust_sql, 'ORDER BY a.phone'), 'ترتیب مشتری‌ها دیگر روی ستون تک‌منبعی نیست');
-check(false !== strpos($cust_sql, 'postmeta'), 'شمارهٔ مشتری پشتیبان متای قدیمی را دارد');
+$GLOBALS['HPOS_MODE'] = false;
+$GLOBALS['SQL_LOG'] = array();
+TisaCase_Exporter_Module_Customers::count($ranged);
+$legacy_customer_count = last_sql();
+check($legacy_customer_count['placeholders'] === count($legacy_customer_count['params']), 'شمارش Legacy مشتری canonical پارامتر درست دارد');
+check(false !== strpos($legacy_customer_count['sql'], 'GROUP BY normalized.phone'), 'Legacy هم بر شمارهٔ canonical گروه‌بندی می‌شود');
+$GLOBALS['SQL_LOG'] = array();
+TisaCase_Exporter_Module_Customers::fetch($ranged, '', 100, array('phone', 'orders_count'));
+$legacy_customer_fetch = last_sql();
+check($legacy_customer_fetch['placeholders'] === count($legacy_customer_fetch['params']), 'واکشی Legacy مشتری canonical پارامتر درست دارد');
+check(false !== strpos($legacy_customer_fetch['sql'], 'ORDER BY source.phone ASC'), 'Legacy هم با cursor canonical صفحه‌بندی می‌شود');
+$GLOBALS['HPOS_MODE'] = true;
+
+$GLOBALS['SQL_LOG'] = array();
+TisaCase_Exporter_Module_Orders::phone_stats($ranged);
+$phone_stats_sql = last_sql();
+check($phone_stats_sql['placeholders'] === count($phone_stats_sql['params']), 'آمار شمارهٔ موبایل با پارامترهای فیلتر سازگار است');
+check(false !== strpos($phone_stats_sql['sql'], 'COUNT(DISTINCT CASE WHEN source.phone <>'), 'آمار شمارهٔ یکتا هم از شمارهٔ canonical استفاده می‌کند');
+
+/* ---------- ۱۳) ویژگی‌های متغیر از مقدارهای scalar ووکامرس هم خوانده می‌شوند ---------- */
+$attribute_method = new ReflectionMethod('TisaCase_Exporter_Module_Products', 'attributes_label');
+$attribute_method->setAccessible(true);
+$variation_label = $attribute_method->invoke(null, new FakeTceVariation());
+check('رنگ: قرمز | سایز: Medium' === $variation_label, 'ویژگی variationهای taxonomy و سفارشی با برچسب درست خروجی می‌شوند');
+
+$variable_parent = new FakeTceWooProduct(100, 'variable', array(201, 202));
+$GLOBALS['FAKE_PRODUCTS_BY_ID'] = array(
+	201 => new FakeTceWooProduct(201, 'variation', array(), 100),
+	202 => new FakeTceWooProduct(202, 'variation', array(), 100),
+);
+$GLOBALS['FAKE_WC_PRODUCTS'] = array($variable_parent);
+$product_page = TisaCase_Exporter_Module_Products::fetch(
+	array('pstatus' => 'all', 'ptype' => 'all', 'stock' => 'all', 'category' => '', 'each_variation' => true),
+	1,
+	100,
+	array('product_id', 'name')
+);
+check(1 === $product_page['processed'] && 3 === count($product_page['rows']), 'پیشرفت محصول‌ها بر محصول والد می‌ماند و variationها فقط ردیف خروجی اضافه می‌کنند');
+$GLOBALS['FAKE_WC_PRODUCTS'] = array();
+$GLOBALS['FAKE_PRODUCTS_BY_ID'] = array();
+
+/* ---------- ۱۴) مسیر موقت و Uninstall در Multisite محدود به سایت جاری است ---------- */
+$GLOBALS['IS_MULTISITE'] = true;
+$GLOBALS['BLOG_ID'] = 7;
+$GLOBALS['UPLOAD_BASE'] = '/uploads/sites/7';
+$multi_bases = TisaCase_Exporter_Storage::base_dirs();
+$multi_legacy = TisaCase_Exporter_Storage::legacy_dirs();
+check('/tmp/tisacase-private-exports/site-7' === end($multi_bases), 'مسیر fallback موقت سایت ۷ جدا است');
+check(! in_array('/tmp/tisacase-private-phone-exports', $multi_legacy, true), 'Uninstall سایت، ریشهٔ موقت مشترک Legacy را حذف نمی‌کند');
+$GLOBALS['BLOG_ID'] = 8;
+$multi8_bases = TisaCase_Exporter_Storage::base_dirs();
+check('/tmp/tisacase-private-exports/site-8' === end($multi8_bases), 'سایت ۸ مسیر موقت مستقل دارد');
+$GLOBALS['IS_MULTISITE'] = false;
+$GLOBALS['UPLOAD_BASE'] = '/uploads';
+$single_bases = TisaCase_Exporter_Storage::base_dirs();
+check('/tmp/tisacase-private-exports' === end($single_bases), 'نصب تک‌سایته مسیر فعلی tmp را حفظ می‌کند');
+check(in_array('/tmp/tisacase-private-phone-exports', TisaCase_Exporter_Storage::legacy_dirs(), true), 'پاک‌سازی Legacy تک‌سایته همچنان فعال است');
+
+/* ---------- ۱۵) بازیابی Batch بدون تکرار ردیف ---------- */
+$normal_dir = '/scratch/tce-normal';
+@mkdir($normal_dir, 0777, true);
+file_put_contents($normal_dir . '/part-001.tsv', 'ok!UNCOMMITTED');
+file_put_contents($normal_dir . '/part-002.tsv', 'orphan');
+$normal_state = array(
+	'dir' => $normal_dir, 'dedup' => '', 'current_file' => 2, 'current_bytes' => 0,
+	'files' => array(array('internal' => 'part-001.tsv', 'count' => 1, 'bytes' => 3)),
+);
+$normal_recovery = TisaCase_Exporter_Pipeline::reconcile_checkpoint($normal_state);
+check(true === $normal_recovery && 'ok!' === file_get_contents($normal_dir . '/part-001.tsv') && ! file_exists($normal_dir . '/part-002.tsv'), 'tail ناتمام و پارت یتیم قبل از تکرار Batch حذف می‌شوند');
+
+$dedup_dir = '/scratch/tce-dedup';
+@mkdir($dedup_dir, 0777, true);
+$committed_working = "sku-1\\trow-1";
+file_put_contents($dedup_dir . '/working.tsv', $committed_working . "\\nUNCOMMITTED");
+$dedup_state = array('dir' => $dedup_dir, 'dedup' => 'sku', 'working_bytes' => strlen($committed_working));
+$dedup_recovery = TisaCase_Exporter_Pipeline::reconcile_checkpoint($dedup_state);
+check(true === $dedup_recovery && $committed_working === file_get_contents($dedup_dir . '/working.tsv'), 'tail فایل یکتاسازی به آخرین checkpoint برمی‌گردد');
+
+$missing_state = array('dir' => '/scratch/tce-missing', 'dedup' => 'sku', 'working_bytes' => 4);
+@mkdir($missing_state['dir'], 0777, true);
+$missing_recovery = TisaCase_Exporter_Pipeline::reconcile_checkpoint($missing_state);
+check($missing_recovery instanceof WP_Error, 'اگر دادهٔ commit‌شده از دست رفته باشد Batch بی‌صدا ادامه نمی‌یابد');
 
 echo "\\n";
 if (empty($fails)) {

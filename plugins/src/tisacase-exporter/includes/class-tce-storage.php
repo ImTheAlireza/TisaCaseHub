@@ -14,22 +14,43 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 
 	final class TisaCase_Exporter_Storage {
 
+		/** آیا این اجرا مربوط به وردپرس چندسایته است؟ */
+		private static function is_multisite_installation() {
+			return function_exists( 'is_multisite' ) && is_multisite();
+		}
+
+		/** شناسهٔ سایت جاری؛ در وردپرس تک‌سایته ۱. */
+		private static function site_id() {
+			return function_exists( 'get_current_blog_id' ) ? max( 1, (int) get_current_blog_id() ) : 1;
+		}
+
+		/** مسیر tmp مخصوص سایت جاری؛ نصب تک‌سایته همان مسیر قدیمی را حفظ می‌کند. */
+		private static function temp_site_base( $dirname ) {
+			$base = trailingslashit( get_temp_dir() ) . $dirname;
+
+			if ( self::is_multisite_installation() ) {
+				$base = trailingslashit( $base ) . 'site-' . self::site_id();
+			}
+
+			return $base;
+		}
+
 		/** همه مسیرهای پایه ممکن (uploads + tmp؛ برای اسکن/پاک‌سازی کرونی). */
 		public static function base_dirs() {
-			$dirs = array();
-
+			$dirs    = array();
 			$uploads = wp_upload_dir();
+
 			if ( empty( $uploads['error'] ) ) {
 				$dirs[] = trailingslashit( $uploads['basedir'] ) . TisaCase_Exporter::BASE_DIR_NAME;
 			}
 
-			// Fallback و محل نسخه‌های قبلی؛ اسکن کرون اینجا را هم پاک‌سازی می‌کند.
-			$dirs[] = trailingslashit( get_temp_dir() ) . TisaCase_Exporter::BASE_DIR_NAME;
+			// در Multisite، fallback مشترک در زیرپوشهٔ سایت جاری قرار می‌گیرد.
+			$dirs[] = self::temp_site_base( TisaCase_Exporter::BASE_DIR_NAME );
 
 			return $dirs;
 		}
 
-		/** مسیرهای نسخهٔ ۱.x که باید پاک‌سازی شوند (مهاجرت). */
+		/** مسیرهای نسخهٔ ۱.x که با اطمینان می‌توان اسکن/پاک‌سازی کرد. */
 		public static function legacy_dirs() {
 			$dirs    = array();
 			$uploads = wp_upload_dir();
@@ -38,7 +59,14 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				$dirs[] = trailingslashit( $uploads['basedir'] ) . TisaCase_Exporter::LEGACY_DIR_NAME;
 			}
 
-			$dirs[] = trailingslashit( get_temp_dir() ) . TisaCase_Exporter::LEGACY_DIR_NAME;
+			/*
+			 * مسیر قدیمی tmp در Multisite بین سایت‌ها مشترک بود؛ هیچ سایتِ منفردی
+			 * حق sweep/uninstall کردن ریشهٔ آن را ندارد. شاخه‌های قدیمیِ uploads
+			 * همچنان مخصوص سایت جاری‌اند و قابل پاک‌سازی هستند.
+			 */
+			if ( ! self::is_multisite_installation() ) {
+				$dirs[] = trailingslashit( get_temp_dir() ) . TisaCase_Exporter::LEGACY_DIR_NAME;
+			}
 
 			return $dirs;
 		}
@@ -57,7 +85,20 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 
 		/** پیشوند پوشه‌های همین کاربر (برای پاک‌سازی جلسه‌های قبلی). */
 		private static function user_prefix_value() {
+			return 'u' . substr( hash( 'sha256', self::site_id() . '|' . get_current_user_id() . '|' . wp_salt( 'auth' ) ), 0, 8 );
+		}
+
+		/** پیشوند تولیدشده پیش از جداسازی Multisite (فقط برای دانلود تاریخچهٔ قدیمی). */
+		private static function legacy_user_prefix_value() {
 			return 'u' . substr( hash( 'sha256', get_current_user_id() . '|' . wp_salt( 'auth' ) ), 0, 8 );
+		}
+
+		/** نام شاخهٔ قدیمی فقط وقتی متعلق به کاربر جاری باشد قابل استفاده است. */
+		private static function is_legacy_user_dir_name( $name ) {
+			$prefix = self::legacy_user_prefix_value();
+			$name   = (string) $name;
+
+			return $name === $prefix || 0 === strpos( $name, $prefix . '-' );
 		}
 
 		/**
@@ -120,7 +161,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 
 		/** حذف بازگشتی یک دایرکتوری (مقاوم نسبت به Symlink). */
 		public static function delete_directory( $dir ) {
-			if ( ! is_string( $dir ) || '' === $dir || ! is_dir( $dir ) ) {
+			if ( ! is_string( $dir ) || '' === $dir || ! is_dir( $dir ) || is_link( $dir ) ) {
 				return;
 			}
 
@@ -275,7 +316,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				$map['uploads'] = trailingslashit( $uploads['basedir'] ) . TisaCase_Exporter::BASE_DIR_NAME;
 			}
 
-			$map['tmp'] = trailingslashit( get_temp_dir() ) . TisaCase_Exporter::BASE_DIR_NAME;
+			$map['tmp'] = self::temp_site_base( TisaCase_Exporter::BASE_DIR_NAME );
 
 			$legacy_uploads = wp_upload_dir();
 			if ( empty( $legacy_uploads['error'] ) ) {
@@ -318,7 +359,25 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				return '';
 			}
 
-			return trailingslashit( $map[ $label ] ) . $name;
+			$path = trailingslashit( $map[ $label ] ) . $name;
+
+			if ( self::is_multisite_installation() && self::is_legacy_user_dir_name( $name ) ) {
+				// دانلود تاریخچهٔ قدیمی را حفظ می‌کنیم، اما فقط برای پوشهٔ خودِ کاربر.
+				if ( 'tmp' === $label && ! is_dir( $path ) ) {
+					$old_base = trailingslashit( get_temp_dir() ) . TisaCase_Exporter::BASE_DIR_NAME;
+					$old_path = trailingslashit( $old_base ) . $name;
+
+					if ( is_dir( $old_path ) ) {
+						return $old_path;
+					}
+				}
+
+				if ( 'legacy-tmp' === $label && is_dir( $path ) ) {
+					return $path;
+				}
+			}
+
+			return $path;
 		}
 
 		/** آیا مسیر داده‌شده داخل یکی از پوشه‌های مجاز است؟ (برای دانلود) */
@@ -329,6 +388,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				return false;
 			}
 
+			$real_norm = wp_normalize_path( $real );
+
 			foreach ( array_merge( self::base_dirs(), self::legacy_dirs() ) as $base ) {
 				$base_real = realpath( $base );
 
@@ -337,10 +398,24 @@ if ( ! class_exists( 'TisaCase_Exporter_Storage' ) ) {
 				}
 
 				$base_real = trailingslashit( wp_normalize_path( $base_real ) );
-				$real_norm = wp_normalize_path( $real );
 
 				if ( 0 === strpos( trailingslashit( $real_norm ), $base_real ) && $real_norm !== rtrim( $base_real, '/' ) ) {
 					return true;
+				}
+			}
+
+			if ( self::is_multisite_installation() && self::is_legacy_user_dir_name( basename( $real_norm ) ) ) {
+				$shared_roots = array(
+					trailingslashit( get_temp_dir() ) . TisaCase_Exporter::BASE_DIR_NAME,
+					trailingslashit( get_temp_dir() ) . TisaCase_Exporter::LEGACY_DIR_NAME,
+				);
+
+				foreach ( $shared_roots as $root ) {
+					$root_real = realpath( $root );
+
+					if ( false !== $root_real && dirname( $real_norm ) === wp_normalize_path( $root_real ) ) {
+						return true;
+					}
 				}
 			}
 

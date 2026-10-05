@@ -90,7 +90,28 @@ foreach (array('class-tce-format.php','class-tce-phone.php','class-tce-pdf-font-
 $fails = array();
 function check($cond, $label) { global $fails; echo ($cond ? "  ok   " : "  FAIL ") . $label . "\\n"; if (!$cond) { $fails[] = $label; } }
 
-/* ---------- ۱) سهولت دسترسی: قالب ثبت شده؟ ---------- */
+/* ---------- ۱) قالب و نرمال‌سازی موبایل ---------- */
+$phone_cases = array(
+	'09121234567'            => '989121234567',
+	'9121234567'             => '989121234567',
+	'989121234567'           => '989121234567',
+	'+98 912 123 4567'       => '989121234567',
+	'0098 912-123-4567'      => '989121234567',
+	'+98 98 912 123 4567'    => '989121234567',
+	'+98 98 98 912 123 4567' => '989121234567',
+	'۰۹۱۲۱۲۳۴۵۶۷'            => '989121234567',
+	'٠٩١٢١٢٣٤٥٦٧'            => '989121234567',
+);
+foreach ($phone_cases as $raw => $expected) {
+	check($expected === TisaCase_Exporter_Phone::normalize_phone($raw), 'شمارهٔ موبایل به قالب canonical می‌رسد: ' . $raw);
+}
+check('' === TisaCase_Exporter_Format::value('02112345678', 'phone'), 'شمارهٔ نامعتبر به‌صورت خام وارد خروجی نمی‌شود');
+$broken_code = TisaCase_Exporter_Format::value("ABC\tDEF\nGHI", 'code');
+check(false === strpos($broken_code, "\t") && false === strpos($broken_code, "\n"), 'فیلد code نمی‌تواند مرز ردیف TSV را بشکند');
+$layout_font = TisaCase_Exporter_Pdf_Font_Data::FONTS['regular'];
+check('سلام دنیا' === TisaCase_Exporter_Pdf_Text::layout('سلام دنیا', $layout_font, true)['actual_text'], 'نسخهٔ منطقی متن فارسی برای ActualText حفظ می‌شود');
+
+/* ---------- قالب PDF ثبت شده است ---------- */
 $formats = TisaCase_Exporter_Format::formats();
 check(isset($formats['pdf']), 'قالب pdf در formats() هست');
 check('pdf' === TisaCase_Exporter_Format::ext('pdf'), 'پسوند pdf');

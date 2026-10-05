@@ -32,6 +32,123 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 			return trailingslashit( $state['dir'] ) . TisaCase_Exporter::WORKING_FILE;
 		}
 
+		/**
+		 * بازگرداندن فایل‌ها به آخرین checkpoint ثبت‌شده در State.
+		 * اگر درخواست پس از append فایل و قبل از ذخیرهٔ State متوقف شده باشد،
+		 * tail نوشته‌نشده حذف می‌شود تا اجرای دوبارهٔ همان Batch ردیف تکراری نسازد.
+		 *
+		 * @param array $state State ذخیره‌شده.
+		 * @return true|WP_Error
+		 */
+		public static function reconcile_checkpoint( array $state ) {
+			if ( empty( $state['dir'] ) || ! is_dir( $state['dir'] ) ) {
+				return new WP_Error( 'checkpoint_dir', __( 'پوشهٔ جلسه برای بازیابی پیدا نشد.', TisaCase_Exporter::TEXT_DOMAIN ) );
+			}
+
+			// جلسه‌های ساخته‌شده با نسخهٔ پیشین offset ندارند؛ فایل‌هایشان را دست‌نخورده می‌گذاریم.
+			if ( ! array_key_exists( 'current_bytes', $state ) && ! array_key_exists( 'working_bytes', $state ) ) {
+				return true;
+			}
+
+			if ( ! empty( $state['dedup'] ) ) {
+				$path     = self::working_path( $state );
+				$expected = isset( $state['working_bytes'] ) ? max( 0, (int) $state['working_bytes'] ) : 0;
+
+				if ( $expected > 0 && ! is_file( $path ) ) {
+					return new WP_Error( 'checkpoint_missing', __( 'فایل موقت یکتاسازی ناقص است؛ برای جلوگیری از خروجی نادرست، این جلسه ادامه داده نشد.', TisaCase_Exporter::TEXT_DOMAIN ) );
+				}
+
+				if ( file_exists( $path ) && ! self::truncate_file( $path, $expected ) ) {
+					return new WP_Error( 'checkpoint_restore', __( 'بازیابی فایل موقت خروجی ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) );
+				}
+
+				return true;
+			}
+
+			$expected = array();
+
+			foreach ( (array) ( isset( $state['files'] ) ? $state['files'] : array() ) as $file ) {
+				if ( empty( $file['internal'] ) || ! isset( $file['bytes'] ) ) {
+					// State قدیمی را تخریب نکن؛ از این به بعد نوشته‌ها offset خواهند داشت.
+					return true;
+				}
+
+				$name = basename( (string) $file['internal'] );
+				if ( 0 !== strpos( $name, TisaCase_Exporter::PART_PREFIX ) || '.tsv' !== substr( $name, -4 ) ) {
+					continue;
+				}
+
+				$expected[ trailingslashit( $state['dir'] ) . $name ] = max( 0, (int) $file['bytes'] );
+			}
+
+			$part_number = isset( $state['current_file'] ) ? max( 1, (int) $state['current_file'] ) : 1;
+			$current     = self::part_path( $state, $part_number );
+			$expected[ $current ] = isset( $state['current_bytes'] ) ? max( 0, (int) $state['current_bytes'] ) : 0;
+
+			foreach ( $expected as $path => $bytes ) {
+				if ( $bytes > 0 && ! is_file( $path ) ) {
+					return new WP_Error( 'checkpoint_missing', __( 'بخشی از فایل خروجی از دست رفته است؛ برای جلوگیری از خروجی ناقص، این جلسه ادامه داده نشد.', TisaCase_Exporter::TEXT_DOMAIN ) );
+				}
+
+				if ( file_exists( $path ) && ! self::truncate_file( $path, $bytes ) ) {
+					return new WP_Error( 'checkpoint_restore', __( 'بازیابی فایل خروجی ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) );
+				}
+			}
+
+			foreach ( (array) glob( trailingslashit( $state['dir'] ) . TisaCase_Exporter::PART_PREFIX . '*.tsv' ) as $path ) {
+				if ( ! isset( $expected[ $path ] ) ) {
+					@unlink( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				}
+			}
+
+			return true;
+		}
+
+		/** کوتاه‌کردن/حذف tail ناتمام. */
+		private static function truncate_file( $path, $bytes ) {
+			$bytes = max( 0, (int) $bytes );
+
+			if ( ! is_file( $path ) ) {
+				return 0 === $bytes;
+			}
+
+			clearstatcache( true, $path );
+			$size = (int) filesize( $path );
+
+			if ( $size < $bytes ) {
+				return false;
+			}
+
+			if ( $size === $bytes ) {
+				return true;
+			}
+
+			if ( 0 === $bytes ) {
+				return @unlink( $path ) || ! file_exists( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+
+			$handle = @fopen( $path, 'c+b' );
+			if ( ! $handle ) {
+				return false;
+			}
+
+			$ok = ftruncate( $handle, $bytes );
+			fflush( $handle );
+			fclose( $handle );
+			clearstatcache( true, $path );
+
+			return $ok && (int) filesize( $path ) === $bytes;
+		}
+
+		/** پس از ذخیرهٔ State نهایی، فایل کاری دیگر برای recovery لازم نیست. */
+		public static function cleanup_working( array $state ) {
+			$path = self::working_path( $state );
+
+			if ( is_file( $path ) ) {
+				@unlink( $path ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			}
+		}
+
 		/** ثبت پارت کامل‌شده در State (ایدمپوتنت). */
 		public static function mark_part_complete( &$state, $part_number, $count ) {
 			$internal = self::part_name( $part_number );
@@ -42,10 +159,14 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 				}
 			}
 
+			$path = self::part_path( $state, $part_number );
+			clearstatcache( true, $path );
+
 			$state['files'][] = array(
 				'internal' => $internal,
 				'name'     => self::download_name( $state, $part_number ),
 				'count'    => (int) $count,
+				'bytes'    => is_file( $path ) ? (int) filesize( $path ) : 0,
 			);
 		}
 
@@ -79,6 +200,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 					self::mark_part_complete( $state, $part, $file_size );
 					$state['current_file']  = $part + 1;
 					$state['current_count'] = 0;
+					$state['current_bytes'] = 0;
 					continue;
 				}
 
@@ -86,19 +208,28 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 				$take   = array_slice( $buffer, 0, $space );
 				$buffer = array_slice( $buffer, $space );
 
-				$path   = self::part_path( $state, $part );
-				$prefix = ( $count > 0 ) ? "\n" : '';
+				$path = self::part_path( $state, $part );
 
-				if ( false === @file_put_contents( $path, $prefix . implode( "\n", $take ), FILE_APPEND | LOCK_EX ) ) {
+				if ( ! isset( $state['current_bytes'] ) ) {
+					clearstatcache( true, $path );
+					$state['current_bytes'] = is_file( $path ) ? (int) filesize( $path ) : 0;
+				}
+
+				$payload = ( $count > 0 ? "\n" : '' ) . implode( "\n", $take );
+				$written = @file_put_contents( $path, $payload, FILE_APPEND | LOCK_EX );
+
+				if ( false === $written || (int) $written !== strlen( $payload ) ) {
 					return new WP_Error( 'write_failed', __( 'نوشتن فایل موقت روی سرور ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) );
 				}
 
-				$state['current_count'] += count( $take );
+				$state['current_bytes'] = (int) $state['current_bytes'] + (int) $written;
+				$state['current_count'] = $count + count( $take );
 
 				if ( (int) $state['current_count'] >= $file_size ) {
 					self::mark_part_complete( $state, $part, $file_size );
 					$state['current_file']  = $part + 1;
 					$state['current_count'] = 0;
+					$state['current_bytes'] = 0;
 				}
 			}
 
@@ -111,15 +242,23 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 				return true;
 			}
 
-			$path   = self::working_path( $state );
-			$done   = isset( $state['working_count'] ) ? (int) $state['working_count'] : 0;
-			$prefix = ( $done > 0 ) ? "\n" : '';
+			$path = self::working_path( $state );
+			$done = isset( $state['working_count'] ) ? (int) $state['working_count'] : 0;
 
-			if ( false === @file_put_contents( $path, $prefix . implode( "\n", $lines ), FILE_APPEND | LOCK_EX ) ) {
+			if ( ! isset( $state['working_bytes'] ) ) {
+				clearstatcache( true, $path );
+				$state['working_bytes'] = is_file( $path ) ? (int) filesize( $path ) : 0;
+			}
+
+			$payload = ( $done > 0 ? "\n" : '' ) . implode( "\n", $lines );
+			$written = @file_put_contents( $path, $payload, FILE_APPEND | LOCK_EX );
+
+			if ( false === $written || (int) $written !== strlen( $payload ) ) {
 				return new WP_Error( 'write_failed', __( 'نوشتن فایل موقت روی سرور ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) );
 			}
 
 			$state['working_count'] = $done + count( $lines );
+			$state['working_bytes'] = (int) $state['working_bytes'] + (int) $written;
 
 			return true;
 		}
@@ -312,8 +451,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Pipeline' ) ) {
 				return $error;
 			}
 
-			@unlink( $working );
-
+			/* فایل کاری تا ثبت State نهایی نگه داشته می‌شود؛ اگر درخواست در این فاصله
+			   متوقف شود، Finalize دوباره از دادهٔ کامل و تأییدشده ساخته می‌شود. */
 			$before                = (int) $state['exported'];
 			$state['exported']     = $unique;
 			$state['duplicates']   = max( 0, $before - $unique );

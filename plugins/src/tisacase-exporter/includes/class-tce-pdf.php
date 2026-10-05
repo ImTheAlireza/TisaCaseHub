@@ -216,7 +216,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 								? ( $col['x'] + self::$pad_x )
 								: ( $col['x'] + $col['w'] - self::$pad_x - ( $layout['width'] * self::$size ) );
 
-							$block .= self::inline_text( $x, $y, $layout['glyphs'], self::$size );
+							$block .= self::inline_text( $x, $y, $layout['glyphs'], self::$size, $layout['actual_text'] );
 						}
 
 						$y -= self::$line_h;
@@ -225,7 +225,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 				if ( '' !== $block ) {
 					self::$buf .= sprintf(
-						"q %.3F %.3F %.3F rg BT %sET Q\n",
+						"q %.3F %.3F %.3F rg %sQ\n",
 						self::$ink[0],
 						self::$ink[1],
 						self::$ink[2],
@@ -602,7 +602,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 			$size    = 12.5;
 			$x_title = self::$mx + self::$content - 9 - ( $layout['width'] * $size );
 
-			self::text( $x_title, $band_bottom + 17.5, $layout['glyphs'], $size, true, self::$white );
+			self::text( $x_title, $band_bottom + 17.5, $layout['glyphs'], $size, true, self::$white, $layout['actual_text'] );
 
 			$sub    = trim( (string) self::meta_value( 'site' ) . ' · ' . (string) self::meta_value( 'date' ) );
 			$sublay = TisaCase_Exporter_Pdf_Text::layout( $sub, self::$font_pt, true );
@@ -613,13 +613,14 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$sublay['glyphs'],
 				7.4,
 				false,
-				self::$accent_soft
+				self::$accent_soft,
+				$sublay['actual_text']
 			);
 
 			$mark    = __( 'خروجی گرفتن', TisaCase_Exporter::TEXT_DOMAIN );
 			$marklay = TisaCase_Exporter_Pdf_Text::layout( $mark, self::bold_spec(), true );
 
-			self::text( self::$mx + 9, $band_bottom + 12, $marklay['glyphs'], 8.6, true, self::$accent_soft );
+			self::text( self::$mx + 9, $band_bottom + 12, $marklay['glyphs'], 8.6, true, self::$accent_soft, $marklay['actual_text'] );
 
 			/* خط فیلترهای فعال: برای نسخهٔ چاپی معلوم باشد این برگه چیست. */
 			$filters = trim( (string) self::meta_value( 'filters' ) );
@@ -628,7 +629,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$flay = TisaCase_Exporter_Pdf_Text::layout( $filters, self::$font_pt, true );
 
 				if ( ( $flay['width'] * 7.0 ) < ( self::$content * 0.72 ) ) {
-					self::text( self::$mx + 9, $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft );
+					self::text( self::$mx + 9, $band_bottom + 4.2, $flay['glyphs'], 7.0, false, self::$accent_soft, $flay['actual_text'] );
 				}
 			}
 
@@ -665,7 +666,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 						? ( $col['x'] + self::$pad_x )
 						: ( $col['x'] + $col['w'] - self::$pad_x - ( $lab['width'] * self::$head_size ) );
 
-					self::text( $lx, $y, $lab['glyphs'], self::$head_size, true, self::$accent_dark );
+					self::text( $lx, $y, $lab['glyphs'], self::$head_size, true, self::$accent_dark, $lab['actual_text'] );
 					$y -= self::$head_lh;
 				}
 			}
@@ -738,7 +739,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			$lay = TisaCase_Exporter_Pdf_Text::layout( implode( ' · ', $items ), self::$font_pt, true );
 
-			self::text( self::$mx + self::$content - ( $lay['width'] * 7.2 ), $y + 2.5, $lay['glyphs'], 7.2, false, self::$muted );
+			self::text( self::$mx + self::$content - ( $lay['width'] * 7.2 ), $y + 2.5, $lay['glyphs'], 7.2, false, self::$muted, $lay['actual_text'] );
 
 			$page_label = sprintf(
 				/* translators: %s: شمارهٔ صفحه */
@@ -756,7 +757,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 
 			$play = TisaCase_Exporter_Pdf_Text::layout( $page_label, self::$font_pt, true );
 
-			self::text( self::$mx, $y + 2.5, $play['glyphs'], 7.2, false, self::$muted );
+			self::text( self::$mx, $y + 2.5, $play['glyphs'], 7.2, false, self::$muted, $play['actual_text'] );
 		}
 
 		/* -----------------------------------------------------------------
@@ -985,8 +986,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 		 * واژه‌های روی صفحه
 		 * ----------------------------------------------------------------- */
 
-		/** نوشتن گلیف‌ها با موقعیت، اندازه و رنگ. */
-		private static function text( $x, $y, array $glyphs, $size, $bold, array $rgb ) {
+		/** نوشتن گلیف‌ها با موقعیت، اندازه، رنگ و متن منطقی برای کپی/جست‌وجو. */
+		private static function text( $x, $y, array $glyphs, $size, $bold, array $rgb, $actual_text = '' ) {
 			$hex = '';
 
 			foreach ( $glyphs as $glyph ) {
@@ -999,23 +1000,27 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				return;
 			}
 
-			$res = ( $bold && ! empty( self::$fonts['bold']['res'] ) ) ? self::$fonts['bold']['res'] : self::$fonts['regular']['res'];
+			$res         = ( $bold && ! empty( self::$fonts['bold']['res'] ) ) ? self::$fonts['bold']['res'] : self::$fonts['regular']['res'];
+			$mark_start = '' !== (string) $actual_text ? '/Span << /ActualText <' . self::text_hex( $actual_text ) . '> >> BDC ' : '';
+			$mark_end   = '' !== $mark_start ? ' EMC' : '';
 
 			self::$buf .= sprintf(
-				"q %.3F %.3F %.3F rg BT /%s %.2F Tf 1 0 0 1 %.2F %.2F Tm <%s> Tj ET Q\n",
+				"q %.3F %.3F %.3F rg %sBT /%s %.2F Tf 1 0 0 1 %.2F %.2F Tm <%s> Tj ET%s Q\n",
 				$rgb[0],
 				$rgb[1],
 				$rgb[2],
+				$mark_start,
 				$res,
 				$size,
 				$x,
 				$y,
-				$hex
+				$hex,
+				$mark_end
 			);
 		}
 
-		/** یک قطعهٔ متن بدون بلوک BT/ET (برای دسته‌کردن متن یک ردیف). */
-		private static function inline_text( $x, $y, array $glyphs, $size ) {
+		/** یک قطعهٔ متن مستقل در ردیف، با ActualText برای استخراج درست فارسی. */
+		private static function inline_text( $x, $y, array $glyphs, $size, $actual_text = '' ) {
 			$hex = '';
 
 			foreach ( $glyphs as $glyph ) {
@@ -1028,14 +1033,17 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				return '';
 			}
 
-			return sprintf(
-				'/%s %.2F Tf 1 0 0 1 %.2F %.2F Tm <%s> Tj ',
+			$mark_start = '' !== (string) $actual_text ? '/Span << /ActualText <' . self::text_hex( $actual_text ) . '> >> BDC ' : '';
+			$mark_end   = '' !== $mark_start ? ' EMC' : '';
+
+			return $mark_start . sprintf(
+				'BT /%s %.2F Tf 1 0 0 1 %.2F %.2F Tm <%s> Tj ET',
 				self::$fonts['regular']['res'],
 				$size,
 				$x,
 				$y,
 				$hex
-			);
+			) . $mark_end . ' ';
 		}
 
 		/** مستطیل پر. */
@@ -1107,8 +1115,16 @@ if ( ! class_exists( 'TisaCase_Exporter_Pdf' ) ) {
 				$units = preg_split( '//u', $text, -1, PREG_SPLIT_NO_EMPTY );
 
 				foreach ( (array) $units as $unit ) {
-					$cp     = self::cp( $unit );
-					$utf16 .= chr( ( $cp >> 8 ) & 0xFF ) . chr( $cp & 0xFF );
+					$cp = self::cp( $unit );
+
+					if ( $cp > 0xFFFF ) {
+						$cp -= 0x10000;
+						$high   = 0xD800 | ( $cp >> 10 );
+						$low    = 0xDC00 | ( $cp & 0x3FF );
+					$utf16 .= chr( ( $high >> 8 ) & 0xFF ) . chr( $high & 0xFF ) . chr( ( $low >> 8 ) & 0xFF ) . chr( $low & 0xFF );
+					} else {
+						$utf16 .= chr( ( $cp >> 8 ) & 0xFF ) . chr( $cp & 0xFF );
+					}
 				}
 			}
 
