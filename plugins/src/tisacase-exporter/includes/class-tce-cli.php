@@ -2,7 +2,7 @@
 /**
  * دستورهای WP-CLI:
  *
- *   wp tisacase export [<section>] [--format=txt|csv|xls|json] [--columns=a,b]
+ *   wp tisacase export [<section>] [--format=txt|csv|xls|json|pdf] [--columns=a,b]
  *                      [--dedup[=key]] [--file=<path>|-] [--filter key=value]...
  *   wp tisacase export-phones   (نام قدیمی، معادل wp tisacase export phones)
  *
@@ -82,6 +82,19 @@ if ( ! class_exists( 'TisaCase_Exporter_Cli' ) ) {
 				\WP_CLI::error( sprintf( 'Cannot open output for writing: %s', $target ) );
 				return;
 			}
+
+			TisaCase_Exporter_Format::stream_open(
+				$format,
+				$labels,
+				$cols,
+				$handle,
+				array(
+					'title'   => isset( $module['label'] ) ? (string) $module['label'] : '',
+					'site'    => (string) get_bloginfo( 'name' ),
+					'date'    => (string) date_i18n( 'j F Y' ),
+					'columns' => array_values( $defs ),
+				)
+			);
 
 			\WP_CLI::log( sprintf( 'Exporting "%s" as %s%s...', $section, strtoupper( $format ), '' !== $dedup ? sprintf( ' (dedup by %s)', $dedup ) : '' ) );
 

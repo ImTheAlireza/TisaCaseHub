@@ -443,6 +443,8 @@ if ( ! class_exists( 'TisaCase_Exporter_Admin_Page' ) ) {
 					return __( 'سرستون فارسی + BOM؛ بهترین گزینه برای اکسل و گوگل‌شیت.', TisaCase_Exporter::TEXT_DOMAIN );
 				case 'xls':
 					return __( 'فایل اکسل کلاسیک (SpreadsheetML) سازگار با نسخه‌های قدیمی آفیس.', TisaCase_Exporter::TEXT_DOMAIN );
+				case 'pdf':
+					return __( 'جدول راست‌به‌چپ با قلم فارسی جاسازی‌شده — مناسب چاپ، ارسال به مشتری و بایگانی.', TisaCase_Exporter::TEXT_DOMAIN );
 				case 'json':
 					return __( 'آرایهٔ استاندارد JSON برای اتصال به نرم‌افزارهای دیگر.', TisaCase_Exporter::TEXT_DOMAIN );
 			}

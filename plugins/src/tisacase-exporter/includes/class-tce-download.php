@@ -47,7 +47,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 				self::fail( __( 'فایل خروجی روی سرور موجود نیست (احتمالاً به‌صورت خودکار پاک شده است).', TisaCase_Exporter::TEXT_DOMAIN ) );
 			}
 
-			self::stream_file( $path, $file['name'], $run['format'], $run['columns'] );
+			self::stream_file( $path, $file['name'], $run['format'], $run['columns'], isset( $run['module'] ) ? (string) $run['module'] : '' );
 		}
 
 		/** دانلود همهٔ پارت‌های یک اجرا در یک فایل ZIP. */
@@ -96,7 +96,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 			}
 
 			foreach ( $existing as $item ) {
-				$converted = self::convert_tsv_to_format( $item['path'], $run['format'], $run['columns'] );
+				$converted = self::convert_tsv_to_format( $item['path'], $run['format'], $run['columns'], isset( $run['module'] ) ? (string) $run['module'] : '' );
 
 				if ( is_wp_error( $converted ) ) {
 					continue;
@@ -231,7 +231,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 		 * @param string $format  قالب.
 		 * @param array  $columns تعریف ستون‌ها (label/key/type).
 		 */
-		private static function stream_file( $path, $name, $format, array $columns ) {
+		private static function stream_file( $path, $name, $format, array $columns, $module = '' ) {
 			$in = @fopen( $path, 'rb' );
 
 			if ( ! $in ) {
@@ -257,7 +257,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 			header( 'Content-Disposition: attachment; filename="' . self::safe_name( $name ) . '"' );
 			header( 'X-Content-Type-Options: nosniff' );
 
-			TisaCase_Exporter_Format::stream_open( $format, $labels, $keys );
+			TisaCase_Exporter_Format::stream_open( $format, $labels, $keys, null, self::pdf_meta( $module, $columns ) );
 
 			while ( false !== ( $line = fgets( $in, 1048576 ) ) ) {
 				$line = rtrim( $line, "\r\n" );
@@ -279,7 +279,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 		 *
 		 * @return string|WP_Error مسیر فایل موقت.
 		 */
-		private static function convert_tsv_to_format( $path, $format, array $columns ) {
+		private static function convert_tsv_to_format( $path, $format, array $columns, $module = '' ) {
 			$in = @fopen( $path, 'rb' );
 
 			if ( ! $in ) {
@@ -313,7 +313,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 				return new WP_Error( 'temp_failed', __( 'ساخت فایل موقت ناموفق بود.', TisaCase_Exporter::TEXT_DOMAIN ) );
 			}
 
-			TisaCase_Exporter_Format::stream_open( $format, $labels, $keys, $out );
+			TisaCase_Exporter_Format::stream_open( $format, $labels, $keys, $out, self::pdf_meta( $module, $columns ) );
 
 			while ( false !== ( $line = fgets( $in, 1048576 ) ) ) {
 				$line = rtrim( $line, "\r\n" );
@@ -329,6 +329,32 @@ if ( ! class_exists( 'TisaCase_Exporter_Download' ) ) {
 			TisaCase_Exporter_Format::stream_close();
 
 			return $target;
+		}
+
+		/**
+		 * فرادادهٔ قالب PDF: عنوان بخش، نام سایت، تاریخ و تعریف ستون‌ها.
+		 *
+		 * @param string $module  شناسهٔ بخش (مثلاً customers).
+		 * @param array  $columns تعریف ستون‌های همان اجرا.
+		 * @return array
+		 */
+		private static function pdf_meta( $module, array $columns ) {
+			$title = '';
+
+			if ( '' !== (string) $module && class_exists( 'TisaCase_Exporter_Modules' ) ) {
+				$item = TisaCase_Exporter_Modules::get( (string) $module );
+
+				if ( is_array( $item ) && ! empty( $item['label'] ) ) {
+					$title = (string) $item['label'];
+				}
+			}
+
+			return array(
+				'title'   => $title,
+				'site'    => function_exists( 'get_bloginfo' ) ? (string) get_bloginfo( 'name' ) : '',
+				'date'    => function_exists( 'date_i18n' ) ? (string) date_i18n( 'j F Y' ) : gmdate( 'Y-m-d' ),
+				'columns' => array_values( $columns ),
+			);
 		}
 
 		/** نام فایل امن برای هدر Content-Disposition (ASCII + UTF-8). */

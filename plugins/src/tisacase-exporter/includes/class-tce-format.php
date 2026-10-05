@@ -1,7 +1,7 @@
 <?php
 /**
  * قالب‌های خروجی: تبدیل مقدار، ساخت خط TSV داخلی و استریم فایل نهایی
- * (TXT · CSV · XLS یعنی SpreadsheetML 2003 · JSON) — بدون هیچ کتابخانهٔ بیرونی.
+ * (TXT · CSV · XLS یعنی SpreadsheetML 2003 · JSON · PDF) — بدون هیچ کتابخانهٔ بیرونی.
  *
  * @package TisaCase_Exporter
  */
@@ -21,6 +21,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 				'csv'  => __( 'CSV (اکسل/گوگل‌شیت)', TisaCase_Exporter::TEXT_DOMAIN ),
 				'xls'  => __( 'اکسل (XLS)', TisaCase_Exporter::TEXT_DOMAIN ),
 				'json' => __( 'JSON (مصرف ماشینی)', TisaCase_Exporter::TEXT_DOMAIN ),
+				'pdf'  => __( 'PDF (چاپ و اشتراک‌گذاری)', TisaCase_Exporter::TEXT_DOMAIN ),
 			);
 		}
 
@@ -32,7 +33,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 
 		/** پسوند فایل. */
 		public static function ext( $format ) {
-			$map = array( 'txt' => 'txt', 'csv' => 'csv', 'xls' => 'xls', 'json' => 'json' );
+			$map = array( 'txt' => 'txt', 'csv' => 'csv', 'xls' => 'xls', 'json' => 'json', 'pdf' => 'pdf' );
 			return isset( $map[ $format ] ) ? $map[ $format ] : 'txt';
 		}
 
@@ -158,14 +159,16 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 		/**
 		 * شروع استریم فایل نهایی.
 		 *
-		 * @param string   $format txt|csv|xls|json
-		 * @param array    $labels برچسب ستون‌ها (هدر CSV/XLS).
+		 * @param string   $format txt|csv|xls|json|pdf
+		 * @param array    $labels برچسب ستون‌ها (هدر CSV/XLS/PDF).
 		 * @param array    $keys   کلید لاتین ستون‌ها (کلید شیء در JSON).
 		 * @param resource $handle مقصد (اختیاری؛ پیش‌فرض خروجی استاندارد).
+		 * @param array    $meta   فراداده (عنوان بخش، سایت، تاریخ — برای PDF).
 		 */
-		public static function stream_open( $format, array $labels, array $keys = array(), $handle = null ) {
+		public static function stream_open( $format, array $labels, array $keys = array(), $handle = null, array $meta = array() ) {
 			self::$format = self::is_valid( $format ) ? $format : 'csv';
 			self::$keys   = array_values( array_map( 'strval', $keys ) );
+			self::$meta   = $meta;
 			self::$json_first = true;
 			self::$out    = is_resource( $handle ) ? $handle : null;
 
@@ -194,6 +197,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 
 				case 'json':
 					self::write( '[' );
+					break;
+
+				case 'pdf':
+					TisaCase_Exporter_Pdf::open( self::stdout(), $labels, self::$keys, self::$meta );
 					break;
 
 				default: // txt — بدون هدر (سازگاری کامل با خروجی نسخهٔ ۱.x).
@@ -225,6 +232,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 					self::write( '<Row>' . $cells . '</Row>' );
 					break;
 
+				case 'pdf':
+					TisaCase_Exporter_Pdf::row( $values );
+					break;
+
 				case 'json':
 					$assoc = array();
 					foreach ( $values as $i => $value ) {
@@ -251,6 +262,10 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 
 				case 'json':
 					self::write( ']' );
+					break;
+
+				case 'pdf':
+					TisaCase_Exporter_Pdf::close();
 					break;
 
 				default:
@@ -297,6 +312,7 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 				'csv'  => 'text/csv; charset=UTF-8',
 				'xls'  => 'application/vnd.ms-excel; charset=UTF-8',
 				'json' => 'application/json; charset=UTF-8',
+				'pdf'  => 'application/pdf',
 			);
 
 			return isset( $map[ $format ] ) ? $map[ $format ] : 'text/plain; charset=UTF-8';
@@ -311,6 +327,9 @@ if ( ! class_exists( 'TisaCase_Exporter_Format' ) ) {
 
 		/** کلیدهای JSON. */
 		private static $keys = array();
+
+		/** فرادادهٔ خروجی (عنوان بخش، سایت…). */
+		private static $meta = array();
 
 		/** مقصد جاری (null = خروجی استاندارد). */
 		private static $out = null;
