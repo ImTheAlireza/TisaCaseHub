@@ -513,7 +513,42 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		}
 
 		public static function ajax_search_products() {
-			$term  = self::ajax_term();
+			$term = self::ajax_term();
+			global $wpdb;
+			$ids = array();
+
+			// ۱) شناسهٔ مستقیم.
+			if ( is_numeric( $term ) ) {
+				$pid = absint( $term );
+				if ( $pid && 'product' === get_post_type( $pid ) ) {
+					$ids[] = $pid;
+				}
+			}
+
+			// ۲) SKU — چه روی خود محصول، چه روی یکی از واریشن‌ها (→ والد).
+			$sku_post_ids = $wpdb->get_col(
+				$wpdb->prepare(
+					"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sku' AND meta_value LIKE %s LIMIT 60",
+					'%' . $wpdb->esc_like( $term ) . '%'
+				)
+			);
+			foreach ( (array) $sku_post_ids as $sid ) {
+				$sid = absint( $sid );
+				if ( ! $sid ) {
+					continue;
+				}
+				$pt = get_post_type( $sid );
+				if ( 'product_variation' === $pt ) {
+					$parent = absint( wp_get_post_parent_id( $sid ) );
+					if ( $parent ) {
+						$ids[] = $parent;
+					}
+				} elseif ( 'product' === $pt ) {
+					$ids[] = $sid;
+				}
+			}
+
+			// ۳) جستجوی عنوان.
 			$query = new WP_Query(
 				array(
 					'post_type'              => 'product',
@@ -524,19 +559,28 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 					'orderby'                => 'relevance',
 					'order'                  => 'DESC',
 					'no_found_rows'          => true,
-					'update_post_meta_cache' => false,
 					'update_post_term_cache' => false,
 				)
 			);
+			foreach ( (array) $query->posts as $qid ) {
+				$ids[] = absint( $qid );
+			}
+
+			$ids   = array_values( array_unique( array_filter( $ids ) ) );
+			$ids   = array_slice( $ids, 0, 30 );
 			$items = array();
-			foreach ( $query->posts as $id ) {
-				$product = wc_get_product( $id );
+			foreach ( $ids as $id ) {
+				if ( ! in_array( get_post_status( $id ), array( 'publish', 'draft', 'private', 'pending' ), true ) ) {
+					continue;
+				}
+				$product = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
 				if ( $product ) {
 					$items[] = array(
-						'id'   => (int) $id,
-						'name' => $product->get_name(),
-						'sku'  => $product->get_sku(),
-						'type' => $product->get_type(),
+						'id'       => (int) $id,
+						'name'     => $product->get_name(),
+						'sku'      => (string) $product->get_sku(),
+						'type'     => (string) $product->get_type(),
+						'edit_url' => (string) get_edit_post_link( $id, '' ),
 					);
 				}
 			}
@@ -558,10 +602,13 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			$items = array();
 			if ( ! is_wp_error( $terms ) ) {
 				foreach ( $terms as $item ) {
-					$items[] = array(
-						'id'    => (int) $item->term_id,
-						'name'  => $item->name,
-						'count' => (int) $item->count,
+					$edit_url = get_edit_term_link( (int) $item->term_id, 'product_cat' );
+					$items[]  = array(
+						'id'       => (int) $item->term_id,
+						'name'     => $item->name,
+						'path'     => TCP_Admin::cat_label( $item ),
+						'count'    => (int) $item->count,
+						'edit_url' => is_wp_error( $edit_url ) ? '' : (string) $edit_url,
 					);
 				}
 			}

@@ -1,56 +1,346 @@
 /**
- * TisaCase Pricing — تب قوانین داینامیک: جستجوی محصول/دسته و افزودن ردیف قانون.
+ * TisaCase Pricing — تب قوانین داینامیک.
+ * جستجوی چندانتخابی محصول/دسته، لیست کارتی قوانین و ویرایش با مودال.
  */
+/* global TCP_RULES, jQuery */
 (function ($) {
     'use strict';
 
     const cfg = window.TCP_RULES || {};
+    const modes = cfg.modes || { none: 'بدون رند', round: 'رند به ۸', jitter: 'تخفیف متغیر (رند به ۸)' };
+    const typeLabels = cfg.productTypes || {};
+    const defaults = cfg.defaults || { increase: 10, sale: 10, mode: 'round' };
+    const minChars = parseInt(cfg.minChars || 2, 10);
+
+    const GROUPS = {
+        product: {
+            group: 'products',
+            list: '#tcp-product-rules',
+            empty: '#tcp-product-empty',
+            count: '#tcp-product-count',
+            filter: '#tcp-product-filter',
+            search: '#tcp-product-search',
+            results: '#tcp-product-results',
+            action: cfg.productAct,
+            modalKind: 'محصول'
+        },
+        category: {
+            group: 'categories',
+            list: '#tcp-category-rules',
+            empty: '#tcp-category-empty',
+            count: '#tcp-category-count',
+            filter: '#tcp-category-filter',
+            search: '#tcp-category-search',
+            results: '#tcp-category-results',
+            action: cfg.catAct,
+            modalKind: 'دسته‌بندی'
+        }
+    };
+
+    // انتخاب‌های داخل دراپ‌داون هر گروه: id -> آیتم.
+    const selection = { product: new Map(), category: new Map() };
+    // آخرین نتایج هر گروه برای رندر مجدد (بعد از افزودن، تیک «در لیست»).
+    const lastResults = { product: [], category: [] };
     const debounceTimers = {};
 
-    function escapeText(value) {
+    /* ---------------- ابزار ---------------- */
+
+    function esc(value) {
         return $('<div>').text(value == null ? '' : String(value)).html();
     }
 
-    function renderResults($box, items, type) {
+    function faNum(value) {
+        const n = Number(value);
+        if (!isFinite(n)) return String(value == null ? '' : value);
+        try {
+            return n.toLocaleString('fa-IR');
+        } catch (e) {
+            return String(n);
+        }
+    }
+
+    function pct(value) {
+        const n = parseFloat(value);
+        return String(isFinite(n) ? n : 0);
+    }
+
+    function modeLabel(mode) {
+        return modes[mode] || mode || '';
+    }
+
+    function typeLabel(type) {
+        return typeLabels[type] || type || '';
+    }
+
+    /** خواندن همهٔ فیلدهای یک کارت از inputهای مخفی. */
+    function readRule($li) {
+        const get = (f) => ($li.find('input[data-f="' + f + '"]').val() || '');
+        return {
+            increase: get('increase'),
+            sale: get('sale'),
+            mode: get('mode') || 'round',
+            from: get('from'),
+            to: get('to'),
+            min: get('min'),
+            max: get('max'),
+            enabled: get('enabled') === '1',
+            exclude: get('exclude') === '1'
+        };
+    }
+
+    /** خلاصهٔ نمایشی قانون — آینهٔ همان منطق PHP در views/rules.php. */
+    function summarize(rule) {
+        if (rule.exclude) {
+            return { text: 'استثنا — از همهٔ قوانین (حتی سراسری) خارج است', sub: '' };
+        }
+        const parts = ['↑ ' + pct(rule.increase) + '٪'];
+        parts.push(parseFloat(rule.sale) > 0 ? 'فروش ویژه ' + pct(rule.sale) + '٪' : 'بدون فروش ویژه');
+        parts.push(modeLabel(rule.mode));
+        const subs = [];
+        if (rule.from || rule.to) {
+            subs.push('بازه: ' + (rule.from || '…') + ' تا ' + (rule.to || '…'));
+        }
+        const hasMin = rule.min !== '' && Number(rule.min) > 0;
+        const hasMax = rule.max !== '' && Number(rule.max) > 0;
+        if (hasMin || hasMax) {
+            subs.push('کف/سقف: ' + (hasMin ? faNum(rule.min) : '…') + ' تا ' + (hasMax ? faNum(rule.max) : '…'));
+        }
+        return { text: parts.join(' · '), sub: subs.join(' · ') };
+    }
+
+    function flash($el) {
+        $el.addClass('tcp-flash');
+        setTimeout(function () { $el.removeClass('tcp-flash'); }, 950);
+    }
+
+    /* ---------------- شمارنده و حالت خالی ---------------- */
+
+    function refreshGroup(type) {
+        const g = GROUPS[type];
+        const $items = $(g.list).children('li');
+        const n = $items.length;
+        let e = 0;
+        $items.each(function () {
+            if ($(this).find('input[data-f="exclude"]').val() === '1') e++;
+        });
+        let text = faNum(n) + ' مورد';
+        if (e) text += ' · ' + faNum(e) + ' استثنا';
+        $(g.count).text(text);
+        $(g.empty).toggle(!n);
+    }
+
+    function refreshAll() {
+        refreshGroup('product');
+        refreshGroup('category');
+    }
+
+    /** به‌روزرسانی بج‌ها و خلاصهٔ یک کارت از روی مقادیر مخفی. */
+    function refreshItem($li) {
+        const rule = readRule($li);
+        const sum = summarize(rule);
+
+        const $status = $li.find('.tcp-status');
+        $status
+            .text(rule.enabled ? 'فعال' : 'غیرفعال')
+            .toggleClass('tcp-st-done', rule.enabled)
+            .toggleClass('tcp-st-cancelled', !rule.enabled);
+        $li.find('.tcp-exbadge').toggle(rule.exclude);
+        $li.find('.tcp-ex-summary').text(sum.text);
+        const $sub = $li.find('.tcp-ex-sub');
+        $sub.text(sum.sub).toggle(sum.sub !== '');
+
+        $li.toggleClass('is-excluded', rule.exclude);
+        $li.toggleClass('is-off', !rule.enabled);
+        $li.find('.tcp-quick-enabled').prop('checked', rule.enabled);
+        $li.find('.tcp-quick-exclude').prop('checked', rule.exclude);
+    }
+
+    /* ---------------- ساخت کارت ---------------- */
+
+    function chipsHtml(type, item) {
+        if (type === 'product') {
+            let out = '';
+            if (item.sku) {
+                out += '<code class="tcp-sku" dir="ltr" title="SKU">' + esc(item.sku) + '</code>';
+            } else {
+                out += '<code class="tcp-sku tcp-sku--empty" title="SKU ثبت نشده">بدون SKU</code>';
+            }
+            out += '<span class="tcp-ex-id tisa-code">#' + esc(item.id) + '</span>';
+            if (item.type) out += '<span>' + esc(typeLabel(item.type)) + '</span>';
+            return out;
+        }
+        let out = '<span class="tcp-ex-id tisa-code">#' + esc(item.id) + '</span>';
+        if (typeof item.count !== 'undefined') {
+            out += '<span>' + esc(faNum(item.count) + ' محصول') + '</span>';
+        }
+        if (item.path && item.path !== item.name) {
+            out += '<span class="tcp-ex-path">' + esc(item.path) + '</span>';
+        }
+        return out;
+    }
+
+    function searchKey(type, item) {
+        const raw = type === 'product'
+            ? (item.name + ' ' + (item.sku || '') + ' ' + item.id)
+            : (item.name + ' ' + (item.path || '') + ' ' + item.id);
+        return String(raw).toLowerCase();
+    }
+
+    function addRuleItem(type, item, rule) {
+        const g = GROUPS[type];
+        const $list = $(g.list);
+        const id = parseInt(item.id, 10);
+
+        const $dup = $list.children('li[data-rule-id="' + id + '"]');
+        if ($dup.length) {
+            flash($dup);
+            return 'dup';
+        }
+
+        const n = g.group + '[' + id + ']';
+        const sum = summarize(rule);
+        const editUrl = item.edit_url || item.editUrl || '';
+        const title = editUrl
+            ? '<a class="tcp-ex-name" href="' + esc(editUrl) + '" target="_blank" rel="noopener" title="باز کردن صفحهٔ ویرایش در تب جدید">' + esc(item.name) + '</a>'
+            : '<span class="tcp-ex-name">' + esc(item.name) + '</span>';
+
+        const hidden = (f, v) => '<input type="hidden" data-f="' + f + '" name="' + n + '[' + f + ']" value="' + esc(v) + '">';
+        const html =
+            '<div class="tcp-ex-main">' +
+                '<div class="tcp-ex-title">' + title +
+                    '<span class="tcp-badge tcp-status ' + (rule.enabled ? 'tcp-st-done' : 'tcp-st-cancelled') + '">' + (rule.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
+                    '<span class="tcp-badge tcp-exbadge tcp-cp-expired"' + (rule.exclude ? '' : ' style="display:none"') + '>استثنا</span>' +
+                '</div>' +
+                '<div class="tcp-ex-meta">' + chipsHtml(type, item) + '</div>' +
+                '<div class="tcp-ex-summary">' + esc(sum.text) + '</div>' +
+                '<div class="tcp-ex-sub"' + (sum.sub ? '' : ' style="display:none"') + '>' + esc(sum.sub) + '</div>' +
+            '</div>' +
+            '<div class="tcp-ex-side">' +
+                '<div class="tcp-ex-flags">' +
+                    '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled"' + (rule.enabled ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>' +
+                    '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-exclude"' + (rule.exclude ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>' +
+                '</div>' +
+                '<div class="tcp-ex-actions">' +
+                    '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>' +
+                    '<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule">حذف</button>' +
+                '</div>' +
+            '</div>' +
+            '<input type="hidden" name="' + n + '[exists]" value="1">' +
+            hidden('increase', rule.increase) + hidden('sale', rule.sale) + hidden('mode', rule.mode) +
+            hidden('from', rule.from) + hidden('to', rule.to) +
+            hidden('min', rule.min) + hidden('max', rule.max) +
+            hidden('enabled', rule.enabled ? '1' : '0') + hidden('exclude', rule.exclude ? '1' : '0');
+
+        const $li = $('<li>', {
+            'class': 'tcp-ex-item' + (rule.exclude ? ' is-excluded' : '') + (rule.enabled ? '' : ' is-off'),
+            'data-rule-id': id
+        });
+        $li.attr('data-search', searchKey(type, item));
+        $li.html(html);
+        $list.append($li);
+        flash($li);
+        refreshGroup(type);
+        applyFilter(type);
+        return 'added';
+    }
+
+    function defaultRule(asExclude) {
+        return {
+            increase: defaults.increase,
+            sale: defaults.sale,
+            mode: defaults.mode || 'round',
+            from: '',
+            to: '',
+            min: '',
+            max: '',
+            enabled: true,
+            exclude: !!asExclude
+        };
+    }
+
+    /* ---------------- جستجوی چندانتخابی ---------------- */
+
+    function inList(type, id) {
+        return $(GROUPS[type].list).children('li[data-rule-id="' + id + '"]').length > 0;
+    }
+
+    function resultMeta(type, item) {
+        if (type === 'product') {
+            const bits = ['#' + item.id];
+            if (item.sku) bits.push('SKU: ' + item.sku);
+            if (item.type) bits.push(typeLabel(item.type));
+            return bits.join(' · ');
+        }
+        const bits = ['#' + item.id];
+        if (typeof item.count !== 'undefined') bits.push(faNum(item.count) + ' محصول');
+        if (item.path && item.path !== item.name) bits.push(item.path);
+        return bits.join(' · ');
+    }
+
+    function renderResults(type) {
+        const g = GROUPS[type];
+        const $box = $(g.results);
+        const items = lastResults[type];
         $box.empty();
 
-        if (!items || !items.length) {
+        if (!items.length) {
             $box.append($('<div class="tcp-search-empty">').text('موردی پیدا نشد.')).show();
             return;
         }
 
         items.forEach(function (item) {
-            let meta = '#' + item.id;
-            if (type === 'product') {
-                if (item.sku) meta += ' · SKU: ' + item.sku;
-                if (item.type) meta += ' · ' + item.type;
-            } else if (typeof item.count !== 'undefined') {
-                meta += ' · ' + item.count + ' محصول';
+            const id = parseInt(item.id, 10);
+            const added = inList(type, id);
+            const checked = selection[type].has(id);
+
+            const $label = $('<label class="tcp-search-check">').toggleClass('is-added', added);
+            const $cb = $('<input type="checkbox">')
+                .attr('data-id', id)
+                .prop('checked', checked)
+                .prop('disabled', added);
+            const $txt = $('<span class="tcp-search-text">');
+            $txt.append($('<strong>').text(item.name));
+            $txt.append($('<small>').text(resultMeta(type, item)));
+            $label.append($cb).append($txt);
+            if (added) {
+                $label.append($('<span class="tcp-added-tag">').text('در لیست'));
             }
-
-            const $row = $('<button type="button" class="tcp-search-item">')
-                .attr('data-id', item.id)
-                .attr('data-name', item.name)
-                .attr('data-type', type);
-
-            $row.append($('<strong>').text(item.name));
-            $row.append($('<small>').text(meta));
-            $box.append($row);
+            $box.append($label);
         });
 
+        // نوار ثابت پایین: شمارش + دکمه‌ها.
+        const $foot = $('<div class="tcp-search-foot">');
+        $foot.append($('<span class="tcp-search-count">').text('۰ انتخاب شده'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-all>').text('انتخاب همه'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--ghost" data-tcp-clear>').text('پاک کردن'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--primary" data-tcp-add>').text('افزودن'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-add-ex>').text('افزودن به‌عنوان استثنا'));
+        $box.append($foot);
+
+        updateFoot(type);
         $box.show();
     }
 
-    function search($input, $results, action, type) {
+    function updateFoot(type) {
+        const g = GROUPS[type];
+        const $box = $(g.results);
+        const n = selection[type].size;
+        $box.find('.tcp-search-count').text(faNum(n) + ' انتخاب شده');
+        $box.find('[data-tcp-add]').text(n ? 'افزودن ' + faNum(n) + ' مورد' : 'افزودن').prop('disabled', !n);
+        $box.find('[data-tcp-add-ex]').prop('disabled', !n);
+    }
+
+    function doSearch(type) {
+        const g = GROUPS[type];
+        const $input = $(g.search);
+        const $results = $(g.results);
         const term = ($input.val() || '').trim();
-        const minChars = parseInt(cfg.minChars || 2, 10);
 
         if (term.length < minChars) {
-            // به‌جای سکوت (که «منو باز نمی‌شود / چیزی نیست» به نظر می‌رسد) علت را نشان بده.
             if (!term.length) {
                 $results.empty().hide();
             } else {
-                $results.html('<div class="tcp-search-empty">' + escapeText('حداقل ' + minChars + ' حرف بنویس…') + '</div>').show();
+                $results.html('<div class="tcp-search-empty">' + esc('حداقل ' + minChars + ' حرف بنویس…') + '</div>').show();
             }
             return;
         }
@@ -58,7 +348,7 @@
         $results.html('<div class="tcp-search-loading">در حال جستجو...</div>').show();
 
         $.post(cfg.ajaxUrl, {
-            action: action,
+            action: g.action,
             nonce: cfg.nonce,
             term: term
         }).done(function (response) {
@@ -66,79 +356,170 @@
                 $results.html('<div class="tcp-search-empty">خطا در جستجو.</div>').show();
                 return;
             }
-            renderResults($results, response.data || [], type);
+            // انتخاب‌های قبلی که دیگر در نتایج نیستند حفظ می‌شوند؛ فقط همین نتایج رندر می‌شود.
+            lastResults[type] = response.data || [];
+            renderResults(type);
         }).fail(function () {
             $results.html('<div class="tcp-search-empty">ارتباط با سرور برقرار نشد.</div>').show();
         });
     }
 
-    function bindSearch(inputSelector, resultSelector, action, type) {
-        const $input = $(inputSelector);
-        const $results = $(resultSelector);
+    function bindSearch(type) {
+        const g = GROUPS[type];
+        const $input = $(g.search);
 
         $input.on('input', function () {
             clearTimeout(debounceTimers[type]);
-            debounceTimers[type] = setTimeout(function () {
-                search($input, $results, action, type);
-            }, 300);
+            debounceTimers[type] = setTimeout(function () { doSearch(type); }, 300);
         });
 
         $input.on('focus', function () {
-            if (($input.val() || '').trim().length >= parseInt(cfg.minChars || 2, 10)) {
-                search($input, $results, action, type);
+            if (($input.val() || '').trim().length >= minChars) {
+                if (lastResults[type].length) renderResults(type);
+                else doSearch(type);
+            }
+        });
+
+        // اینتر داخل جستجو نباید فرم ذخیره را سابمیت کند.
+        $input.on('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                clearTimeout(debounceTimers[type]);
+                doSearch(type);
             }
         });
     }
 
-    function addRule(type, id, name) {
-        const group = type === 'product' ? 'products' : 'categories';
-        const target = type === 'product' ? '#tcp-product-rules' : '#tcp-category-rules';
-        const $target = $(target);
-
-        if ($target.find('tr[data-rule-id="' + id + '"]').length) {
-            $target.find('tr[data-rule-id="' + id + '"]').addClass('tcp-flash');
-            setTimeout(function () {
-                $target.find('tr[data-rule-id="' + id + '"]').removeClass('tcp-flash');
-            }, 900);
-            return;
-        }
-
-        const safeName = escapeText(name);
-        const n = group + '[' + id + ']';
-        const modes = cfg.modes || { none: 'بدون رند', round: 'رند به ۸', jitter: 'تخفیف متغیر (رند به ۸)' };
-        let modeOpts = '';
-        Object.keys(modes).forEach(function (k) {
-            modeOpts += '<option value="' + k + '"' + (k === 'round' ? ' selected' : '') + '>' + escapeText(modes[k]) + '</option>';
+    /** افزودن همهٔ انتخاب‌شده‌ها به لیست. */
+    function addSelected(type, asExclude) {
+        let added = 0, dup = 0;
+        selection[type].forEach(function (item) {
+            const res = addRuleItem(type, item, defaultRule(asExclude));
+            if (res === 'added') added++;
+            else dup++;
         });
-        const toggle = function (field, label, cls, checked) {
-            return '<input type="hidden" name="' + n + '[' + field + ']" value="0">' +
-                '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="' + cls + '" name="' + n + '[' + field + ']" value="1"' + (checked ? ' checked' : '') + '>' +
-                '<span class="tisa-switch__track" aria-hidden="true"></span><span>' + label + '</span></label>';
-        };
-        const row = [
-            '<tr data-rule-id="', id, '">',
-            '<td class="tcp-rule-name"><strong>', safeName, '</strong><small class="tisa-code">#', id, '</small>',
-            '<input type="hidden" name="', n, '[exists]" value="1"></td>',
-            '<td class="tcp-rule-num"><input class="tisa-input tisa-input--number" type="number" min="0" max="500" step="0.1" name="', n, '[increase]" value="10"></td>',
-            '<td class="tcp-rule-num"><input class="tisa-input tisa-input--number" type="number" min="0" max="99.9" step="0.1" name="', n, '[sale]" value="10"></td>',
-            '<td><select class="tisa-input tisa-input--sm tcp-mode" name="', n, '[mode]">', modeOpts, '</select></td>',
-            '<td class="tcp-rule-dates"><input type="date" class="tisa-input tisa-input--sm" name="', n, '[from]" title="از تاریخ">',
-            '<input type="date" class="tisa-input tisa-input--sm" name="', n, '[to]" title="تا تاریخ"></td>',
-            '<td class="tcp-rule-limits"><input type="number" class="tisa-input tisa-input--sm" min="0" step="1000" name="', n, '[min]" placeholder="کف">',
-            '<input type="number" class="tisa-input tisa-input--sm" min="0" step="1000" name="', n, '[max]" placeholder="سقف"></td>',
-            '<td class="tcp-rule-flags">', toggle('enabled', 'فعال', '', true), toggle('exclude', 'استثنا', 'tcp-exclude', false), '</td>',
-            '<td><button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-remove-rule">حذف</button></td>',
-            '</tr>'
-        ].join('');
-
-        $target.append(row);
+        selection[type].clear();
+        // نتایج را تازه کن تا «در لیست»ها به‌روز شوند.
+        if ($(GROUPS[type].results).is(':visible') && lastResults[type].length) {
+            renderResults(type);
+        } else {
+            $(GROUPS[type].results).empty().hide();
+        }
+        return { added: added, dup: dup };
     }
 
-    // اتصال پس از آماده‌شدن DOM: اگر افزونه‌های ادغام/بهینه‌سازی اسکریپت را جلوتر اجرا کنند،
-    // باکس جستجو بدون شنونده می‌ماند و «باز نمی‌شود». روی DOM-ready مطمئن است.
+    /* ---------------- فیلتر داخل لیست ---------------- */
+
+    function applyFilter(type) {
+        const g = GROUPS[type];
+        const q = ($(g.filter).val() || '').trim().toLowerCase();
+        $(g.list).children('li').each(function () {
+            const key = ($(this).attr('data-search') || '');
+            $(this).toggle(!q || key.indexOf(q) !== -1);
+        });
+    }
+
+    /* ---------------- مودال ویرایش ---------------- */
+
+    const $modal = $('#tcp-rule-modal');
+    let modalTarget = null; // { type, id }
+
+    function modalRule() {
+        return {
+            increase: $('#tcp-m-increase').val() || '0',
+            sale: $('#tcp-m-sale').val() || '0',
+            mode: $('#tcp-m-mode').val() || 'round',
+            from: $('#tcp-m-from').val() || '',
+            to: $('#tcp-m-to').val() || '',
+            min: $('#tcp-m-min').val() || '',
+            max: $('#tcp-m-max').val() || '',
+            enabled: $('#tcp-m-enabled').is(':checked'),
+            exclude: $('#tcp-m-exclude').is(':checked')
+        };
+    }
+
+    function updateModalHint() {
+        const sum = summarize(modalRule());
+        $('#tcp-modal-hint').text(sum.text + (sum.sub ? ' — ' + sum.sub : ''));
+    }
+
+    function openModal(type, id) {
+        const $li = $(GROUPS[type].list).children('li[data-rule-id="' + id + '"]');
+        if (!$li.length) return;
+        const rule = readRule($li);
+
+        modalTarget = { type: type, id: id };
+        $('#tcp-m-increase').val(rule.increase);
+        $('#tcp-m-sale').val(rule.sale);
+        $('#tcp-m-mode').val(rule.mode);
+        $('#tcp-m-from').val(rule.from);
+        $('#tcp-m-to').val(rule.to);
+        $('#tcp-m-min').val(rule.min);
+        $('#tcp-m-max').val(rule.max);
+        $('#tcp-m-enabled').prop('checked', rule.enabled);
+        $('#tcp-m-exclude').prop('checked', rule.exclude);
+
+        const name = $li.find('.tcp-ex-name').first().text();
+        $('#tcp-modal-title').text('ویرایش قانون ' + GROUPS[type].modalKind);
+        $('#tcp-modal-sub').text(name + ' — #' + id);
+        updateModalHint();
+
+        $modal().prop('hidden', false);
+        document.body.classList.add('tcp-modal-open');
+        setTimeout(function () { $('#tcp-m-increase').trigger('focus').trigger('select'); }, 30);
+    }
+
+    function closeModal() {
+        $modal().prop('hidden', true);
+        document.body.classList.remove('tcp-modal-open');
+        modalTarget = null;
+    }
+
+    function modalOpen() {
+        return !$modal().prop('hidden');
+    }
+
+    function saveModal() {
+        if (!modalTarget) return;
+        const $li = $(GROUPS[modalTarget.type].list).children('li[data-rule-id="' + modalTarget.id + '"]');
+        if (!$li.length) {
+            closeModal();
+            return;
+        }
+        let rule = modalRule();
+
+        // اعتبارسنجی سبک در همان مودال (سرور هم normalize می‌کند).
+        let inc = Math.max(0, Math.min(500, parseFloat(rule.increase) || 0));
+        let sale = Math.max(0, Math.min(99.9, parseFloat(rule.sale) || 0));
+        rule.increase = String(inc);
+        rule.sale = String(sale);
+        if (!modes[rule.mode]) rule.mode = 'round';
+        if (rule.min !== '' && !(Number(rule.min) > 0)) rule.min = '';
+        if (rule.max !== '' && !(Number(rule.max) > 0)) rule.max = '';
+        if (rule.min !== '' && rule.max !== '' && Number(rule.min) > Number(rule.max)) rule.max = '';
+
+        $li.find('input[data-f="increase"]').val(rule.increase);
+        $li.find('input[data-f="sale"]').val(rule.sale);
+        $li.find('input[data-f="mode"]').val(rule.mode);
+        $li.find('input[data-f="from"]').val(rule.from);
+        $li.find('input[data-f="to"]').val(rule.to);
+        $li.find('input[data-f="min"]').val(rule.min);
+        $li.find('input[data-f="max"]').val(rule.max);
+        $li.find('input[data-f="enabled"]').val(rule.enabled ? '1' : '0');
+        $li.find('input[data-f="exclude"]').val(rule.exclude ? '1' : '0');
+
+        refreshItem($li);
+        refreshGroup(modalTarget.type);
+        closeModal();
+        flash($li);
+    }
+
+    /* ---------------- اتصال رویدادها ---------------- */
+
     function bindAll() {
-        bindSearch('#tcp-product-search', '#tcp-product-results', cfg.productAct, 'product');
-        bindSearch('#tcp-category-search', '#tcp-category-results', cfg.catAct, 'category');
+        bindSearch('product');
+        bindSearch('category');
+        refreshAll();
     }
 
     if (document.readyState === 'loading') {
@@ -147,24 +528,100 @@
         bindAll();
     }
 
-    $(document).on('click', '.tcp-search-item', function () {
-        const $item = $(this);
-        addRule($item.data('type'), parseInt($item.data('id'), 10), $item.data('name'));
-        $item.closest('.tcp-search-results').empty().hide();
+    // تیک‌زدن داخل نتایج.
+    $(document).on('change', '.tcp-search-check input', function () {
+        const $box = $(this).closest('.tcp-search-results');
+        const type = $box.is(GROUPS.product.results) ? 'product' : 'category';
+        const id = parseInt($(this).attr('data-id'), 10);
+        if (this.checked) {
+            const found = lastResults[type].find(function (it) { return parseInt(it.id, 10) === id; });
+            if (found) selection[type].set(id, found);
+        } else {
+            selection[type].delete(id);
+        }
+        updateFoot(type);
     });
 
-    $(document).on('change', '.tcp-exclude', function () {
-        const $tr = $(this).closest('tr');
-        $tr.toggleClass('is-excluded', this.checked);
+    // دکمه‌های نوار نتایج.
+    $(document).on('click', '[data-tcp-add], [data-tcp-add-ex]', function () {
+        const $box = $(this).closest('.tcp-search-results');
+        const type = $box.is(GROUPS.product.results) ? 'product' : 'category';
+        addSelected(type, $(this).is('[data-tcp-add-ex]'));
+    });
+
+    $(document).on('click', '[data-tcp-all]', function () {
+        const $box = $(this).closest('.tcp-search-results');
+        const type = $box.is(GROUPS.product.results) ? 'product' : 'category';
+        lastResults[type].forEach(function (item) {
+            const id = parseInt(item.id, 10);
+            if (!inList(type, id)) selection[type].set(id, item);
+        });
+        renderResults(type);
+    });
+
+    $(document).on('click', '[data-tcp-clear]', function () {
+        const $box = $(this).closest('.tcp-search-results');
+        const type = $box.is(GROUPS.product.results) ? 'product' : 'category';
+        selection[type].clear();
+        renderResults(type);
+    });
+
+    // ویرایش / حذف کارت.
+    $(document).on('click', '.tcp-edit-rule', function () {
+        const $li = $(this).closest('li[data-rule-id]');
+        const $list = $(this).closest('ul');
+        const type = $list.is(GROUPS.product.list) ? 'product' : 'category';
+        openModal(type, parseInt($li.attr('data-rule-id'), 10));
     });
 
     $(document).on('click', '.tcp-remove-rule', function () {
-        $(this).closest('tr').remove();
+        const $li = $(this).closest('li[data-rule-id]');
+        const $list = $(this).closest('ul');
+        const type = $list.is(GROUPS.product.list) ? 'product' : 'category';
+        $li.remove();
+        refreshGroup(type);
     });
 
+    // سوییچ‌های سریع روی کارت.
+    $(document).on('change', '.tcp-quick-enabled, .tcp-quick-exclude', function () {
+        const $li = $(this).closest('li[data-rule-id]');
+        const $list = $(this).closest('ul');
+        const type = $list.is(GROUPS.product.list) ? 'product' : 'category';
+        $li.find('input[data-f="enabled"]').val($li.find('.tcp-quick-enabled').is(':checked') ? '1' : '0');
+        $li.find('input[data-f="exclude"]').val($li.find('.tcp-quick-exclude').is(':checked') ? '1' : '0');
+        refreshItem($li);
+        refreshGroup(type);
+    });
+
+    // فیلتر داخل لیست.
+    $(document).on('input', '#tcp-product-filter', function () { applyFilter('product'); });
+    $(document).on('input', '#tcp-category-filter', function () { applyFilter('category'); });
+    $(document).on('keydown', '#tcp-product-filter, #tcp-category-filter', function (e) {
+        if (e.key === 'Enter') e.preventDefault();
+    });
+
+    // مودال.
+    $(document).on('click', '#tcp-modal-save', saveModal);
+    $(document).on('click', '[data-tcp-close]', closeModal);
+    $(document).on('input change', '#tcp-m-increase, #tcp-m-sale, #tcp-m-mode, #tcp-m-from, #tcp-m-to, #tcp-m-min, #tcp-m-max, #tcp-m-enabled, #tcp-m-exclude', updateModalHint);
+    $(document).on('keydown', function (e) {
+        if (e.key === 'Escape' && !$modal.prop('hidden')) closeModal();
+        if (e.key === 'Enter' && !$modal.prop('hidden') && !$(e.target).is('textarea')) {
+            // اینتر داخل مودال = ذخیره (به‌جای سابمیت فرم اصلی).
+            e.preventDefault();
+            saveModal();
+        }
+    });
+
+    // بستن دراپ‌داون با کلیک بیرون.
     $(document).on('click', function (event) {
         if (!$(event.target).closest('.tcp-search-box').length) {
             $('.tcp-search-results').hide();
         }
+    });
+
+    // جلوگیری از سابمیت تصادفی فرم با اینتر در جستجوها.
+    $(document).on('keydown', '#tcp-rules-form input[type="search"]', function (e) {
+        if (e.key === 'Enter') e.preventDefault();
     });
 })(jQuery);

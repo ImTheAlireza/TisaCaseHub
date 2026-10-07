@@ -163,12 +163,18 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 					'tcp-rules',
 					'TCP_RULES',
 					array(
-						'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
-						'nonce'      => wp_create_nonce( TCP_Rules::SEARCH_NONCE ),
-						'minChars'   => 2,
-						'productAct' => TCP_Rules::AJAX_PRODUCTS,
-						'catAct'     => TCP_Rules::AJAX_CATS,
-						'modes'      => TCP_Rules::modes(),
+						'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+						'nonce'        => wp_create_nonce( TCP_Rules::SEARCH_NONCE ),
+						'minChars'     => 2,
+						'productAct'   => TCP_Rules::AJAX_PRODUCTS,
+						'catAct'       => TCP_Rules::AJAX_CATS,
+						'modes'        => TCP_Rules::modes(),
+						'productTypes' => self::product_types(),
+						'defaults'     => array(
+							'increase' => 10,
+							'sale'     => 10,
+							'mode'     => 'round',
+						),
 					)
 				);
 				return;
