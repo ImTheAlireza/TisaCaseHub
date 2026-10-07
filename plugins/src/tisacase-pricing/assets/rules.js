@@ -46,7 +46,16 @@
     const selection = { product: new Map(), category: new Map() };
     // آخرین نتایج هر گروه برای رندر مجدد (بعد از افزودن، تیک «در لیست»).
     const lastResults = { product: [], category: [] };
+    // وضعیت صفحه‌بندی جستجو: نتیجه‌ها صفحه‌به‌صفحه (۱۰۰ مورد) اضافه می‌شوند.
+    const searchState = { product: blankSearch(), category: blankSearch() };
+    // شمارهٔ آخرین درخواست هر گروه؛ پاسخ درخواست قدیمی نادیده گرفته می‌شود.
+    const searchGen = { product: 0, category: 0 };
+    const searchXhr = { product: null, category: null };
     const debounceTimers = {};
+
+    function blankSearch() {
+        return { term: '', page: 0, pages: 0, total: 0, perPage: 0 };
+    }
 
     /* ---------------- ابزار ---------------- */
 
@@ -295,16 +304,55 @@
         return bits.join(' · ');
     }
 
+    /** پاسخ جستجو را به شکل یکسان درمی‌آورد (نسخهٔ قدیمی فقط آرایهٔ آیتم‌ها بود). */
+    function normalizeResults(raw) {
+        if (Array.isArray(raw)) {
+            return { items: raw, total: raw.length, page: 1, pages: raw.length ? 1 : 0, perPage: 0 };
+        }
+        const d = raw || {};
+        const items = Array.isArray(d.items) ? d.items : [];
+        const total = Number(d.total || 0);
+        const pages = Number(d.pages || 0);
+        return {
+            items: items,
+            total: total || items.length,
+            page: Math.max(1, Number(d.page || 1)),
+            pages: pages || (items.length ? 1 : 0),
+            perPage: Number(d.per_page || 0)
+        };
+    }
+
+    /** افزودن صفحهٔ بعدی به نتایج قبلی بدون آیتم تکراری. */
+    function mergeItems(existing, incoming) {
+        const seen = {};
+        const out = [];
+        existing.concat(incoming).forEach(function (item) {
+            const id = parseInt(item.id, 10);
+            if (!id || seen[id]) return;
+            seen[id] = true;
+            out.push(item);
+        });
+        return out;
+    }
+
     function renderResults(type) {
         const g = GROUPS[type];
         const $box = $(g.results);
         const items = lastResults[type];
+        const st = searchState[type];
         $box.empty();
 
         if (!items.length) {
             $box.append($('<div class="tcp-search-empty">').text('موردی پیدا نشد.')).show();
             return;
         }
+
+        // سرصفحهٔ چسبان: چند مورد در کل سایت پیدا شد و چند مورد تا الآن بارگذاری شده است.
+        let headText = faNum(st.total) + ' مورد پیدا شد';
+        if (st.total > items.length) {
+            headText += ' — ' + faNum(items.length) + ' مورد بارگذاری شده';
+        }
+        $box.append($('<div class="tcp-search-head">').text(headText));
 
         items.forEach(function (item) {
             const id = parseInt(item.id, 10);
@@ -340,10 +388,19 @@
         // نوار ثابت پایین: شمارش + دکمه‌ها.
         const $foot = $('<div class="tcp-search-foot">');
         $foot.append($('<span class="tcp-search-count">').text('۰ انتخاب شده'));
-        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-all>').text('انتخاب همه'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-all>')
+            .text('انتخاب همه')
+            .attr('title', 'همهٔ موارد بارگذاری‌شده در این فهرست انتخاب می‌شوند'));
         $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--ghost" data-tcp-clear>').text('پاک کردن'));
         $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--primary" data-tcp-add>').text('افزودن'));
         $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-add-ex>').text('افزودن به‌عنوان استثنا'));
+        // بقیهٔ نتایج: فهرست دیگر به ۳۰ مورد ختم نمی‌شود.
+        if (st.pages > st.page) {
+            const rest = Math.max(0, st.total - items.length);
+            const next = st.perPage ? Math.min(st.perPage, rest) : rest;
+            $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-more>')
+                .text('نمایش ' + faNum(next) + ' مورد بعدی'));
+        }
         $box.append($foot);
 
         updateFoot(type);
@@ -359,36 +416,69 @@
         $box.find('[data-tcp-add-ex]').prop('disabled', !n);
     }
 
-    function doSearch(type) {
+    /**
+     * جستجو در کل کاتالوگ؛ page>1 نتایج صفحهٔ بعدی را به فهرست اضافه می‌کند.
+     */
+    function doSearch(type, page) {
         const g = GROUPS[type];
         const $input = $(g.search);
         const $results = $(g.results);
-        const term = ($input.val() || '').trim();
+        const want = Math.max(1, parseInt(page, 10) || 1);
+        const term = want > 1 ? searchState[type].term : ($input.val() || '').trim();
 
-        if (term.length < minChars) {
-            if (!term.length) {
-                $results.empty().hide();
-            } else {
-                $results.html('<div class="tcp-search-empty">' + esc('حداقل ' + minChars + ' حرف بنویس…') + '</div>').show();
+        if (want > 1 && !term) return;
+
+        if (want === 1) {
+            searchState[type] = blankSearch();
+            if (term.length < minChars) {
+                searchGen[type]++;
+                if (searchXhr[type]) { searchXhr[type].abort(); searchXhr[type] = null; }
+                lastResults[type] = [];
+                if (!term.length) {
+                    $results.empty().hide();
+                } else {
+                    $results.html('<div class="tcp-search-empty">' + esc('حداقل ' + minChars + ' حرف بنویس…') + '</div>').show();
+                }
+                return;
             }
-            return;
         }
 
-        $results.html('<div class="tcp-search-loading">در حال جستجو...</div>').show();
+        const requestId = ++searchGen[type];
+        if (searchXhr[type]) { searchXhr[type].abort(); searchXhr[type] = null; }
 
-        $.post(cfg.ajaxUrl, {
+        if (want === 1) {
+            $results.html('<div class="tcp-search-loading">در حال جستجو...</div>').show();
+        } else {
+            $results.find('[data-tcp-more]').prop('disabled', true).text('در حال بارگذاری…');
+        }
+
+        searchXhr[type] = $.post(cfg.ajaxUrl, {
             action: g.action,
             nonce: cfg.nonce,
-            term: term
+            term: term,
+            page: want
         }).done(function (response) {
+            if (requestId !== searchGen[type]) return;
             if (!response || !response.success) {
                 $results.html('<div class="tcp-search-empty">خطا در جستجو.</div>').show();
                 return;
             }
-            lastResults[type] = response.data || [];
+            const data = normalizeResults(response.data);
+            searchState[type] = {
+                term: term,
+                page: data.page,
+                pages: data.pages,
+                total: data.total,
+                perPage: data.perPage
+            };
+            lastResults[type] = want > 1 ? mergeItems(lastResults[type], data.items) : data.items;
             renderResults(type);
-        }).fail(function () {
+        }).fail(function (xhr, status) {
+            // پاسخ درخواستی که با جستجوی تازه‌تر باطل شده نادیده گرفته می‌شود.
+            if ('abort' === status || requestId !== searchGen[type]) return;
             $results.html('<div class="tcp-search-empty">ارتباط با سرور برقرار نشد.</div>').show();
+        }).always(function () {
+            if (requestId === searchGen[type]) { searchXhr[type] = null; }
         });
     }
 
@@ -398,13 +488,13 @@
 
         $input.on('input', function () {
             clearTimeout(debounceTimers[type]);
-            debounceTimers[type] = setTimeout(function () { doSearch(type); }, 300);
+            debounceTimers[type] = setTimeout(function () { doSearch(type, 1); }, 300);
         });
 
         $input.on('focus', function () {
             if (($input.val() || '').trim().length >= minChars) {
                 if (lastResults[type].length) renderResults(type);
-                else doSearch(type);
+                else doSearch(type, 1);
             }
         });
 
@@ -413,7 +503,7 @@
             if (e.key === 'Enter') {
                 e.preventDefault();
                 clearTimeout(debounceTimers[type]);
-                doSearch(type);
+                doSearch(type, 1);
             }
         });
     }
@@ -616,6 +706,15 @@
         const type = groupOf($(this));
         selection[type].clear();
         renderResults(type);
+    });
+
+    // صفحهٔ بعدی نتایج جستجو.
+    $(document).on('click', '[data-tcp-more]', function () {
+        const type = groupOf($(this));
+        const st = searchState[type];
+        if (st.pages > st.page) {
+            doSearch(type, st.page + 1);
+        }
     });
 
     // ویرایش / حذف سطر.

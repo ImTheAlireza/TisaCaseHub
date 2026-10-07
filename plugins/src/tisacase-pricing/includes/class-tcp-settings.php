@@ -26,6 +26,8 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 		const AJAX_SEARCH             = 'tcp_search_wholesale_products';
 		const AJAX_PRODUCT_NAME_SEARCH = 'tcp_search_products_by_name';
 		const AJAX_PRODUCT_SKU_SEARCH  = 'tcp_search_products_by_sku';
+		/** جستجوی سراسری محصول (نام/توضیح/SKU/شناسه) با صفحه‌بندی — برای محصولات مستثنا. */
+		const AJAX_PRODUCT_ANY_SEARCH  = 'tcp_search_products';
 
 		const CRON_TICK  = 'tcp_process_scheduled_tick';
 		const CRON_CLEAN = 'tcp_daily_cleanup';
@@ -74,6 +76,7 @@ if ( ! class_exists( 'TCP_Settings' ) ) {
 			add_action( 'wp_ajax_' . self::AJAX_SEARCH, array( 'TCP_Ajax', 'ajax_search_wholesale_products' ) );
 			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_NAME_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_name' ) );
 			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_SKU_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_by_sku' ) );
+			add_action( 'wp_ajax_' . self::AJAX_PRODUCT_ANY_SEARCH, array( 'TCP_Ajax', 'ajax_search_products_any' ) );
 			add_action( 'init', array( 'TCP_DB', 'maybe_install' ), 5 );
 		add_action( 'admin_init', array( 'TCP_DB', 'maybe_install' ) );
 			add_action( 'admin_init', array( 'TCP_Admin', 'handle_settings_post' ) );

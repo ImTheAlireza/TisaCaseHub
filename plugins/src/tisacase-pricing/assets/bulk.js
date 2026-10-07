@@ -294,6 +294,58 @@
 			$('#tcp-exclusion-badge').text(label);
 		}
 
+		/**
+		 * جستجوی «محصولات مستثنا» با صفحه‌بندی روی جستجوی سراسری افزونه.
+		 * جستجوی خودِ ووکامرس (woocommerce_json_search_products) حداکثر ۳۰ نتیجه می‌دهد و
+		 * صفحهٔ بعدی ندارد؛ این‌جا کل کاتالوگ با نام/توضیح/SKU/شناسه و ۱۰۰ نتیجه در هر
+		 * صفحه جستجو می‌شود و با اسکرول، موارد بعدی بارگذاری می‌شوند.
+		 */
+		function initExcludedProductsSearch() {
+			var $select = $('#tcp-excluded-products');
+			if (!$select.length || typeof $.fn.select2 !== 'function') { return; }
+			$select.select2({
+				multiple: true,
+				allowClear: true,
+				placeholder: $select.attr('data-placeholder') || 'نام، SKU یا شناسهٔ محصول را جستجو کن…',
+				minimumInputLength: 2,
+				language: {
+					inputTooShort: function () { return 'برای جستجو حداقل ۲ حرف بنویس…'; },
+					noResults: function () { return 'موردی با این عبارت پیدا نشد.'; },
+					searching: function () { return 'در حال جستجو در کل سایت…'; },
+					errorLoading: function () { return 'نتایج بارگذاری نشد؛ دوباره تلاش کن.'; }
+				},
+				ajax: {
+					url: D.ajax,
+					dataType: 'json',
+					type: 'POST',
+					delay: 250,
+					cache: false,
+					data: function (params) {
+						return {
+							action: A.anySearch,
+							nonce: D.nonce,
+							term: params.term || '',
+							page: params.page || 1
+						};
+					},
+					processResults: function (response, params) {
+						var data = (response && response.data) ? response.data : {};
+						var items = (data.items || []).map(function (item) {
+							var text = String(item.name || ('محصول #' + item.id));
+							if (item.sku) { text += ' — SKU: ' + item.sku; }
+							return { id: parseInt(item.id, 10), text: text + ' — #' + item.id };
+						});
+						var page = Number(data.page || (params && params.page) || 1);
+						var pages = Number(data.pages || 0);
+						return {
+							results: items,
+							pagination: { more: pages > page }
+						};
+					}
+				}
+			});
+		}
+
 		function renderSelectedProducts() {
 			var state = productSelection();
 			var $body = $('#tcp-selected-products tbody').empty();
@@ -1253,6 +1305,7 @@
 		updateExclusionCount();
 		$('#tcp-children-warning').toggle($('#tcp-children').is(':checked'));
 		if (!(D.limits && D.limits.scheduledEnabled)) { $('#tcp-schedule').hide(); }
+		initExcludedProductsSearch();
 		$(document.body).trigger('wc-enhanced-select-init');
 	}
 

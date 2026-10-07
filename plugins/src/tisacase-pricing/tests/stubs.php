@@ -135,6 +135,11 @@ class TCP_Test_WPDB {
 		return $query;
 	}
 
+	/** همان رفتار wpdb::esc_like — خنثی‌سازی نویسه‌های ویژهٔ LIKE. */
+	public function esc_like( $text ) {
+		return addcslashes( (string) $text, '_%\\' );
+	}
+
 	public function get_col( $query ) {
 		if ( false !== strpos( $query, 'SELECT ID FROM' ) && preg_match( '/post_parent = ([0-9]+)/', $query, $m ) ) {
 			$parent = absint( $m[1] );

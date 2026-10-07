@@ -512,95 +512,42 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			return $term;
 		}
 
+		/**
+		 * جستجوی محصول در کل کاتالوگ (نام/توضیح/SKU/شناسه) با صفحه‌بندی.
+		 * خروجی: items/total/page/pages/per_page — فهرست دیگر به ۳۰ مورد ختم نمی‌شود.
+		 */
 		public static function ajax_search_products() {
 			$term = self::ajax_term();
-			global $wpdb;
-			$ids = array();
-
-			// ۱) شناسهٔ مستقیم.
-			if ( is_numeric( $term ) ) {
-				$pid = absint( $term );
-				if ( $pid && 'product' === get_post_type( $pid ) ) {
-					$ids[] = $pid;
-				}
-			}
-
-			// ۲) SKU — چه روی خود محصول، چه روی یکی از واریشن‌ها (→ والد).
-			$sku_post_ids = $wpdb->get_col(
-				$wpdb->prepare(
-					"SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_sku' AND meta_value LIKE %s LIMIT 60",
-					'%' . $wpdb->esc_like( $term ) . '%'
+			$page = isset( $_POST['page'] ) ? absint( wp_unslash( $_POST['page'] ) ) : 1;
+			wp_send_json_success(
+				TCP_Ops::search_products(
+					$term,
+					array(
+						'page'     => $page,
+						'per_page' => TCP_Ops::SEARCH_PER_PAGE,
+					)
 				)
 			);
-			foreach ( (array) $sku_post_ids as $sid ) {
-				$sid = absint( $sid );
-				if ( ! $sid ) {
-					continue;
-				}
-				$pt = get_post_type( $sid );
-				if ( 'product_variation' === $pt ) {
-					$parent = absint( wp_get_post_parent_id( $sid ) );
-					if ( $parent ) {
-						$ids[] = $parent;
-					}
-				} elseif ( 'product' === $pt ) {
-					$ids[] = $sid;
-				}
-			}
-
-			// ۳) جستجوی عنوان.
-			$query = new WP_Query(
-				array(
-					'post_type'              => 'product',
-					'post_status'            => array( 'publish', 'draft', 'private', 'pending' ),
-					'posts_per_page'         => 20,
-					's'                      => $term,
-					'fields'                 => 'ids',
-					'orderby'                => 'relevance',
-					'order'                  => 'DESC',
-					'no_found_rows'          => true,
-					'update_post_term_cache' => false,
-				)
-			);
-			foreach ( (array) $query->posts as $qid ) {
-				$ids[] = absint( $qid );
-			}
-
-			$ids   = array_values( array_unique( array_filter( $ids ) ) );
-			$ids   = array_slice( $ids, 0, 30 );
-			$items = array();
-			foreach ( $ids as $id ) {
-				if ( ! in_array( get_post_status( $id ), array( 'publish', 'draft', 'private', 'pending' ), true ) ) {
-					continue;
-				}
-				$product = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
-				if ( $product ) {
-					$img_id    = absint( $product->get_image_id() );
-					$items[] = array(
-						'id'        => (int) $id,
-						'name'      => $product->get_name(),
-						'sku'       => (string) $product->get_sku(),
-						'type'      => (string) $product->get_type(),
-						'image_url' => $img_id ? (string) wp_get_attachment_image_url( $img_id, 'thumbnail' ) : '',
-						'edit_url'  => (string) get_edit_post_link( $id, '' ),
-					);
-				}
-			}
-			wp_send_json_success( $items );
 		}
 
+		/** جستجوی دسته‌بندی با صفحه‌بندی؛ کل دسته‌های سایت قابل رسیدن هستند. */
 		public static function ajax_search_categories() {
-			$term  = self::ajax_term();
-			$terms = get_terms(
-				array(
-					'taxonomy'   => 'product_cat',
-					'hide_empty' => false,
-					'name__like' => $term,
-					'number'     => 20,
-					'orderby'    => 'name',
-					'order'      => 'ASC',
-				)
+			$term = self::ajax_term();
+			$page = isset( $_POST['page'] ) ? max( 1, absint( wp_unslash( $_POST['page'] ) ) ) : 1;
+			$args = array(
+				'taxonomy'   => 'product_cat',
+				'hide_empty' => false,
+				'name__like' => $term,
+				'number'     => TCP_Ops::SEARCH_PER_PAGE,
+				'offset'     => ( $page - 1 ) * TCP_Ops::SEARCH_PER_PAGE,
+				'orderby'    => 'name',
+				'order'      => 'ASC',
 			);
+
+			$terms = get_terms( $args );
+			$count = get_terms( array_merge( $args, array( 'fields' => 'count', 'number' => 0, 'offset' => 0 ) ) );
+			$total = is_wp_error( $count ) ? 0 : (int) $count;
+
 			$items = array();
 			if ( ! is_wp_error( $terms ) ) {
 				foreach ( $terms as $item ) {
@@ -614,7 +561,19 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 					);
 				}
 			}
-			wp_send_json_success( $items );
+
+			// اگر شمارش کل خطا داد، حداقل به اندازهٔ همین صفحه نتیجه گزارش شود.
+			$total  = max( $total, count( $items ) );
+			$paging = TCP_Ops::search_paging( $page, $total, TCP_Ops::SEARCH_PER_PAGE );
+			wp_send_json_success(
+				array(
+					'items'    => $items,
+					'total'    => $total,
+					'page'     => $paging['page'],
+					'pages'    => $paging['pages'],
+					'per_page' => TCP_Ops::SEARCH_PER_PAGE,
+				)
+			);
 		}
 	}
 }
