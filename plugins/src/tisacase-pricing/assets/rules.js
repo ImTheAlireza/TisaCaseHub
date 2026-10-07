@@ -316,6 +316,8 @@
                 .attr('data-id', id)
                 .prop('checked', checked)
                 .prop('disabled', added);
+            $label.append($cb);
+            $label.toggleClass('is-checked', checked && !added);
             if (type === 'product') {
                 if (item.image_url) {
                     $label.append($('<img class="tcp-rule-thumb tcp-rule-thumb--xs" alt="">').attr('src', item.image_url).attr('loading', 'lazy'));
@@ -424,6 +426,10 @@
             if (res === 'added') added++;
             else dup++;
         });
+        if (added) {
+            const $scroll = $(GROUPS[type].list).closest('.tcp-rule-table-scroll');
+            $scroll.scrollTop($scroll.prop('scrollHeight'));
+        }
         selection[type].clear();
         // نتایج را تازه کن تا «در لیست»ها به‌روز شوند.
         if ($(GROUPS[type].results).is(':visible') && lastResults[type].length) {
@@ -563,10 +569,25 @@
         return 'category';
     }
 
+    // کلیک روی سطر نتیجه: تاگل قطعی چک‌باکس، مستقل از رفتار پیش‌فرض لیبل.
+    $(document).on('click', '.tcp-search-check', function (e) {
+        if ($(e.target).is('input')) {
+            return; // کلیک مستقیم روی چک‌باکس: رفتار بومی مرورگر کافی است.
+        }
+        e.preventDefault();
+        const $cbx = $(this).find('input');
+        if (!$cbx.length || $cbx.prop('disabled')) {
+            return;
+        }
+        $cbx.prop('checked', !$cbx.prop('checked')).trigger('change');
+    });
+
     // تیک‌زدن داخل نتایج.
     $(document).on('change', '.tcp-search-check input', function () {
-        const type = groupOf($(this));
-        const id = parseInt($(this).attr('data-id'), 10);
+        const $cbx = $(this);
+        $cbx.closest('.tcp-search-check').toggleClass('is-checked', $cbx.is(':checked'));
+        const type = groupOf($cbx);
+        const id = parseInt($cbx.attr('data-id'), 10);
         if (this.checked) {
             const found = lastResults[type].find(function (it) { return parseInt(it.id, 10) === id; });
             if (found) selection[type].set(id, found);

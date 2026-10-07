@@ -411,12 +411,14 @@ body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp
 	font: inherit; text-align: right; cursor: pointer;
 }
 .tcp-search-check:hover { background: var(--tisa-primary-tint, #F2FBF8); }
-.tcp-search-check input { flex: 0 0 auto; margin: 0; accent-color: var(--tisa-primary, #0E7C6B); }
+.tcp-search-check input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: var(--tisa-primary, #0E7C6B); cursor: pointer; }
 .tcp-search-check .tcp-search-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tcp-search-check strong { font-weight: 600; }
 .tcp-search-check small { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
 .tcp-search-check.is-added { opacity: .6; cursor: default; }
 .tcp-search-check.is-added:hover { background: transparent; }
+.tcp-search-check.is-checked { background: var(--tisa-primary-soft, #E8F0EE); }
+.tcp-search-check.is-checked:hover { background: var(--tisa-primary-soft, #E8F0EE); }
 .tcp-added-tag {
 	flex: 0 0 auto; align-self: center;
 	padding: 2px 9px; border-radius: var(--tisa-r-pill, 999px);
@@ -465,8 +467,6 @@ body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp
 .tcp-rule-table .tcp-col-rule { width: auto; }
 .tcp-rule-table .tcp-col-flags { width: 118px; white-space: nowrap; }
 .tcp-rule-table .tcp-col-actions { width: 172px; white-space: nowrap; }
-.tcp-rule-row.is-excluded td { background: #FFFCF3; }
-.tcp-rule-row.is-excluded:hover td { background: #FFF6E0; }
 .tcp-rule-row.is-excluded .tcp-cell-identity { box-shadow: inset -3px 0 0 var(--tisa-warning, #C79A2E); }
 .tcp-rule-row.is-off .tcp-rule-identity, .tcp-rule-row.is-off .tcp-cell-rule { opacity: .55; }
 
@@ -504,7 +504,6 @@ a.tcp-rule-name::after { content: "↗"; display: inline-block; margin-inline-st
 /* سلول قانون */
 .tcp-cell-rule { min-width: 220px; }
 .tcp-rule-sum { font-size: var(--tisa-fs-control, 13px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
-.tcp-rule-row.is-excluded .tcp-rule-sum { color: var(--tisa-warning-ink, #8A6116); font-weight: 600; }
 .tcp-rule-sub { margin-top: 3px; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
 
 /* سلول وضعیت و عملیات */
