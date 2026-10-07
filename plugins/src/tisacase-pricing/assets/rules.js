@@ -155,10 +155,10 @@
             .text(rule.enabled ? 'فعال' : 'غیرفعال')
             .toggleClass('tcp-st-done', rule.enabled)
             .toggleClass('tcp-st-cancelled', !rule.enabled);
-        $tr.find('.tcp-exbadge').toggle(rule.exclude);
+        $tr.find('.tcp-exbadge').toggleClass('tcp-hidden', !rule.exclude);
         $tr.find('.tcp-rule-sum').text(sum.text);
         const $sub = $tr.find('.tcp-rule-sub');
-        $sub.text(sum.sub).toggle(sum.sub !== '');
+        $sub.text(sum.sub).toggleClass('tcp-hidden', sum.sub === '');
 
         $tr.toggleClass('is-excluded', rule.exclude);
         $tr.toggleClass('is-off', !rule.enabled);
@@ -230,11 +230,11 @@
             '<td class="tcp-cell-identity"><div class="tcp-rule-identity">' + thumbHtml(type, item) +
                 '<div class="tcp-rule-idmain"><div class="tcp-rule-title">' + title +
                     '<span class="tcp-badge tcp-status ' + (rule.enabled ? 'tcp-st-done' : 'tcp-st-cancelled') + '">' + (rule.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
-                    '<span class="tcp-badge tcp-exbadge tcp-cp-expired"' + (rule.exclude ? '' : ' style="display:none"') + '>استثنا</span>' +
+                    '<span class="tcp-badge tcp-exbadge tcp-cp-expired' + (rule.exclude ? '' : ' tcp-hidden') + '">استثنا</span>' +
                 '</div><div class="tcp-rule-chips">' + chipsHtml(type, item) + '</div></div>' +
             '</div></td>' +
             '<td class="tcp-cell-rule"><div class="tcp-rule-sum">' + esc(sum.text) + '</div>' +
-                '<div class="tcp-rule-sub"' + (sum.sub ? '' : ' style="display:none"') + '>' + esc(sum.sub) + '</div></td>' +
+                '<div class="tcp-rule-sub' + (sum.sub ? '' : ' tcp-hidden') + '">' + esc(sum.sub) + '</div></td>' +
             '<td class="tcp-cell-flags">' +
                 '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled"' + (rule.enabled ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>' +
                 '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-exclude"' + (rule.exclude ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>' +
@@ -633,12 +633,34 @@
 
     // سوییچ‌های سریع روی سطر.
     $(document).on('change', '.tcp-quick-enabled, .tcp-quick-exclude', function () {
+        // موقعیت اسکرول صفحه و جدول قبل از تغییر DOM؛ هر جابه‌جایی ناخواسته برگردانده می‌شود.
+        const winY = window.pageYOffset || document.documentElement.scrollTop || 0;
+        const $scrolls = $('.tcp-rule-table-scroll');
+        const tops = $scrolls.map(function () { return $(this).scrollTop(); }).get();
+        const restoreScroll = function () {
+            try {
+                if ((window.pageYOffset || document.documentElement.scrollTop || 0) !== winY) {
+                    window.scrollTo(0, winY);
+                }
+                $scrolls.each(function (i) {
+                    if ($(this).scrollTop() !== tops[i]) {
+                        $(this).scrollTop(tops[i]);
+                    }
+                });
+            } catch (e) { /* ignore */ }
+        };
         const $tr = $(this).closest(ROW_SEL);
         const type = groupOf($(this));
         $tr.find('input[data-f="enabled"]').val($tr.find('.tcp-quick-enabled').is(':checked') ? '1' : '0');
         $tr.find('input[data-f="exclude"]').val($tr.find('.tcp-quick-exclude').is(':checked') ? '1' : '0');
         refreshRow($tr);
         refreshGroup(type);
+        restoreScroll();
+        if (window.requestAnimationFrame) {
+            window.requestAnimationFrame(restoreScroll);
+        } else {
+            setTimeout(restoreScroll, 0);
+        }
     });
 
     // فیلتر داخل لیست.

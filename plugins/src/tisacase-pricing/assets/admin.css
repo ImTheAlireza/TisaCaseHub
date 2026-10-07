@@ -290,7 +290,6 @@ html[dir="ltr"] .tcp-toggle input:checked + .tisa-switch__track::after { transfo
 .tcp-rules-table .tcp-mode { min-width: 150px; }
 .tcp-rule-flags { white-space: nowrap; }
 .tcp-rule-flags label { display: flex; }
-tr.is-excluded td:not(.tcp-rule-name):not(.tcp-rule-flags):not(:last-child) { opacity: .35; }
 .tcp-stack { display: flex; flex-direction: column; gap: 6px; font-size: var(--tisa-fs-meta, 12px); font-weight: 600; color: var(--tisa-muted, #77828A); }
 
 @media (max-width: 782px) {
@@ -467,8 +466,8 @@ body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp
 .tcp-rule-table .tcp-col-rule { width: auto; }
 .tcp-rule-table .tcp-col-flags { width: 118px; white-space: nowrap; }
 .tcp-rule-table .tcp-col-actions { width: 172px; white-space: nowrap; }
-.tcp-rule-row.is-excluded .tcp-cell-identity { box-shadow: inset -3px 0 0 var(--tisa-warning, #C79A2E); }
-.tcp-rule-row.is-off .tcp-rule-identity, .tcp-rule-row.is-off .tcp-cell-rule { opacity: .55; }
+.tcp-hidden { visibility: hidden; }
+.tcp-rule-row.is-off:not(.is-excluded) .tcp-rule-identity, .tcp-rule-row.is-off:not(.is-excluded) .tcp-cell-rule { opacity: .55; }
 
 /* سلول هویت: عکس + نام + چیپ‌ها */
 .tcp-rule-identity { display: flex; align-items: center; gap: 12px; min-width: 240px; }

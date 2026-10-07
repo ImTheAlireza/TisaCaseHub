@@ -81,7 +81,7 @@ $tcp_identity_cell = static function ( $info ) {
 					<span class="tcp-rule-name"><?php echo esc_html( $info['name'] ); ?></span>
 				<?php endif; ?>
 				<span class="tcp-badge tcp-status <?php echo $info['enabled'] ? 'tcp-st-done' : 'tcp-st-cancelled'; ?>"><?php echo $info['enabled'] ? 'فعال' : 'غیرفعال'; ?></span>
-				<span class="tcp-badge tcp-exbadge tcp-cp-expired"<?php echo $info['excluded'] ? '' : ' style="display:none"'; ?>>استثنا</span>
+				<span class="tcp-badge tcp-exbadge tcp-cp-expired<?php echo $info['excluded'] ? '' : ' tcp-hidden'; ?>">استثنا</span>
 			</div>
 			<div class="tcp-rule-chips"><?php echo $info['chips']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- چیپ‌ها پایین همین فایل با esc ساخته شده‌اند. ?></div>
 		</div>
@@ -127,11 +127,7 @@ $tcp_rule_row = static function ( $type, $id, $rule, $info ) use ( $tcp_identity
 		</td>
 		<td class="tcp-cell-rule">
 			<div class="tcp-rule-sum"><?php echo esc_html( $info['summary'] ); ?></div>
-			<?php if ( '' !== $info['sub'] ) : ?>
-				<div class="tcp-rule-sub"><?php echo esc_html( $info['sub'] ); ?></div>
-			<?php else : ?>
-				<div class="tcp-rule-sub" style="display:none"></div>
-			<?php endif; ?>
+			<div class="tcp-rule-sub<?php echo '' !== $info['sub'] ? '' : ' tcp-hidden'; ?>"><?php echo esc_html( $info['sub'] ); ?></div>
 		</td>
 		<td class="tcp-cell-flags">
 			<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled" <?php checked( $enabled, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>
