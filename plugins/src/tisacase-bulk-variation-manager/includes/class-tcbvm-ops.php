@@ -237,6 +237,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 
 			$inserted = wp_insert_term( $name, $taxonomy, $args );
 			if ( ! is_wp_error( $inserted ) && isset( $inserted['term_id'] ) ) {
+				self::clear_term_map_cache( $taxonomy );
 				return get_term( (int) $inserted['term_id'], $taxonomy );
 			}
 
@@ -376,28 +377,83 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			return hash( 'sha256', serialize( $normalized ) );
 		}
 
-		private static function find_existing_term_for_value( $value, $taxonomy ) {
-			$term = get_term_by( 'name', (string) $value, $taxonomy );
-			if ( $term && ! is_wp_error( $term ) ) {
-				return $term;
+		/**
+		 * کش درون‌درخواستی نگاشت ترم‌های هر تاکسونومی؛ جلوی اسکن تکراری کل
+		 * تاکسونومی برای هر مقدار در هر محصول را می‌گیرد.
+		 *
+		 * @var array
+		 */
+		private static $term_map_cache = array();
+
+		/**
+		 * ساخت یک‌بارهٔ نگاشت نام/نرمال/اسلاگ به اسلاگ برای یک تاکسونومی.
+		 */
+		private static function get_taxonomy_term_map( $taxonomy ) {
+			$taxonomy = (string) $taxonomy;
+			if ( isset( self::$term_map_cache[ $taxonomy ] ) ) {
+				return self::$term_map_cache[ $taxonomy ];
 			}
-			$slug = sanitize_title( (string) $value );
-			if ( '' !== $slug ) {
-				$term = get_term_by( 'slug', $slug, $taxonomy );
-				if ( $term && ! is_wp_error( $term ) ) {
-					return $term;
-				}
-			}
-			$normalized = TCBVM_DB::normalize_persian( (string) $value );
-			$terms      = get_terms( array( 'taxonomy' => $taxonomy, 'hide_empty' => false ) );
-			if ( ! is_wp_error( $terms ) && is_array( $terms ) ) {
-				foreach ( $terms as $candidate ) {
-					if ( TCBVM_DB::normalize_persian( (string) $candidate->name ) === $normalized ) {
-						return $candidate;
+			$map = array( 'by_name' => array(), 'by_norm' => array(), 'by_slug' => array() );
+			if ( '' !== $taxonomy && taxonomy_exists( $taxonomy ) ) {
+				$terms = get_terms( array( 'taxonomy' => $taxonomy, 'hide_empty' => false ) );
+				if ( ! is_wp_error( $terms ) && is_array( $terms ) ) {
+					foreach ( $terms as $term ) {
+						if ( ! is_object( $term ) || ! isset( $term->slug ) ) {
+							continue;
+						}
+						$slug = (string) $term->slug;
+						$name = isset( $term->name ) ? (string) $term->name : '';
+						if ( '' !== $name && ! isset( $map['by_name'][ $name ] ) ) {
+							$map['by_name'][ $name ] = $slug;
+						}
+						$norm = TCBVM_DB::normalize_persian( $name );
+						if ( '' !== $norm && ! isset( $map['by_norm'][ $norm ] ) ) {
+							$map['by_norm'][ $norm ] = $slug;
+						}
+						if ( '' !== $slug && ! isset( $map['by_slug'][ $slug ] ) ) {
+							$map['by_slug'][ $slug ] = $slug;
+						}
 					}
 				}
 			}
-			return false;
+			self::$term_map_cache[ $taxonomy ] = $map;
+			return $map;
+		}
+
+		/**
+		 * پاک‌سازی کش نگاشت ترم‌ها (پس از ساخت ترم تازه).
+		 */
+		public static function clear_term_map_cache( $taxonomy = null ) {
+			if ( null === $taxonomy ) {
+				self::$term_map_cache = array();
+			} else {
+				unset( self::$term_map_cache[ (string) $taxonomy ] );
+			}
+		}
+
+		private static function find_existing_term_for_value( $value, $taxonomy ) {
+			$value    = (string) $value;
+			$taxonomy = (string) $taxonomy;
+			if ( '' === $value || '' === $taxonomy || ! taxonomy_exists( $taxonomy ) ) {
+				return false;
+			}
+			// همان اولویت قبلی: ۱) نام دقیق، ۲) اسلاگ، ۳) نام نرمال‌شده — ولی با یک مپ آماده.
+			$map = self::get_taxonomy_term_map( $taxonomy );
+			if ( isset( $map['by_name'][ $value ] ) ) {
+				$slug = $map['by_name'][ $value ];
+			} else {
+				$slug_key = sanitize_title( $value );
+				if ( '' !== $slug_key && isset( $map['by_slug'][ $slug_key ] ) ) {
+					$slug = $map['by_slug'][ $slug_key ];
+				} else {
+					$norm = TCBVM_DB::normalize_persian( $value );
+					if ( '' === $norm || ! isset( $map['by_norm'][ $norm ] ) ) {
+						return false;
+					}
+					$slug = $map['by_norm'][ $norm ];
+				}
+			}
+			return (object) array( 'slug' => $slug, 'name' => $value );
 		}
 
 		private static function comparison_values( array $values, $is_taxonomy, $taxonomy, $allow_missing_terms = false ) {
@@ -430,21 +486,33 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			return array_values( array_unique( array_filter( $matrix_values, 'strlen' ) ) );
 		}
 
-		private static function count_missing_combinations( $product, array $matrix ) {
+		private static function count_missing_combinations( $product, array $matrix, $preloaded_attrs = null ) {
 			$candidate_count = self::cartesian_product_count( $matrix, self::MAX_VARIATIONS_PER_PRODUCT );
 			if ( $candidate_count > self::MAX_VARIATIONS_PER_PRODUCT ) {
 				return array( 'count' => 0, 'error' => sprintf( 'تعداد ترکیب‌ها از سقف %d بیشتر است.', self::MAX_VARIATIONS_PER_PRODUCT ) );
 			}
 			$combinations = self::cartesian_product( $matrix );
 			$keys         = array_keys( $matrix );
-			$existing     = array();
+			$existing       = array();
+			$children_attrs = null;
 			if ( $product && $product->is_type( 'variable' ) ) {
-				foreach ( (array) $product->get_children() as $child_id ) {
-					$child = wc_get_product( $child_id );
-					if ( ! $child || ! $child->is_type( 'variation' ) || absint( $child->get_parent_id() ) !== absint( $product->get_id() ) ) {
-						continue;
+				if ( is_array( $preloaded_attrs ) ) {
+					// نگاشت گروهی ازپیش‌خوانده‌شده: vid => ویژگی‌ها (بدون لود آبجکت).
+					$children_attrs = $preloaded_attrs;
+				} else {
+					$children_attrs = array();
+					foreach ( (array) $product->get_children() as $child_id ) {
+						$child = wc_get_product( $child_id );
+						if ( ! $child || ! $child->is_type( 'variation' ) || absint( $child->get_parent_id() ) !== absint( $product->get_id() ) ) {
+							continue;
+						}
+						$children_attrs[ $child_id ] = (array) $child->get_attributes();
 					}
-					$attributes = (array) $child->get_attributes();
+				}
+			}
+			if ( is_array( $children_attrs ) ) {
+				foreach ( $children_attrs as $child_id => $attributes ) {
+					$attributes = (array) $attributes;
 					foreach ( $keys as $key ) {
 						$value = self::find_variation_attribute_value( $attributes, $key );
 						if ( ! empty( $value['ambiguous'] ) || empty( $value['found'] ) || '' === (string) $value['value'] ) {
@@ -471,17 +539,23 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			return array( 'count' => count( $missing ), 'error' => '' );
 		}
 
-		private static function count_matching_variations( $product, $target_key, array $comparison_values ) {
+		private static function count_matching_variations( $product, $target_key, array $comparison_values, $preloaded_attrs = null ) {
 			if ( ! $product || ! $product->is_type( 'variable' ) || empty( $comparison_values ) ) {
 				return array( 'count' => 0, 'ambiguous' => false );
 			}
-			$count = 0;
-			foreach ( (array) $product->get_children() as $variation_id ) {
-				$variation = wc_get_product( $variation_id );
-				if ( ! $variation || ! $variation->is_type( 'variation' ) || absint( $variation->get_parent_id() ) !== absint( $product->get_id() ) ) {
-					continue;
+			$children_attrs = is_array( $preloaded_attrs ) ? $preloaded_attrs : array();
+			if ( ! is_array( $preloaded_attrs ) ) {
+				foreach ( (array) $product->get_children() as $variation_id ) {
+					$variation = wc_get_product( $variation_id );
+					if ( ! $variation || ! $variation->is_type( 'variation' ) || absint( $variation->get_parent_id() ) !== absint( $product->get_id() ) ) {
+						continue;
+					}
+					$children_attrs[ $variation_id ] = (array) $variation->get_attributes();
 				}
-				$value = self::find_variation_attribute_value( (array) $variation->get_attributes(), $target_key );
+			}
+			$count = 0;
+			foreach ( $children_attrs as $variation_id => $variation_attributes ) {
+				$value = self::find_variation_attribute_value( (array) $variation_attributes, $target_key );
 				if ( ! empty( $value['ambiguous'] ) ) {
 					return array( 'count' => $count, 'ambiguous' => true );
 				}
@@ -828,7 +902,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		 * @param bool   $combine_other ترکیب با سایر ویژگی‌های متغیر.
 		 * @return array داده‌های پیش‌نمایش.
 		 */
-		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL ) {
+		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL, $offset = 0, $limit = 0 ) {
 			self::ensure_all_attribute_taxonomies_registered();
 			$operation_mode = self::sanitize_operation_mode( $operation_mode );
 
@@ -853,7 +927,25 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$max_samples           = 25;
 			$max_issue_ids         = 100;
 
-			foreach ( $product_ids as $pid ) {
+			// نرمال‌سازی و صفحه‌بندی؛ سپس پرایم کش و پیش‌خوانی گروهی variationها
+			// تا به‌جای هزاران لود تکی، فقط چند کوئری گروهی اجرا شود.
+			$product_ids = array_values( array_unique( array_filter( array_map( 'absint', $product_ids ) ) ) );
+			$page_total  = count( $product_ids );
+			$offset      = max( 0, absint( $offset ) );
+			$limit       = absint( $limit );
+			$page_ids    = $limit > 0 ? array_slice( $product_ids, $offset, $limit ) : array_slice( $product_ids, $offset );
+			$page_count  = count( $page_ids );
+			if ( function_exists( '_prime_post_caches' ) && ! empty( $page_ids ) ) {
+				_prime_post_caches( $page_ids );
+			}
+			$bulk_maps = array();
+			foreach ( array_chunk( $page_ids, 100 ) as $prefetch_chunk ) {
+				foreach ( TCBVM_DB::get_variations_bulk( $prefetch_chunk ) as $bulk_pid => $bulk_entry ) {
+					$bulk_maps[ $bulk_pid ] = $bulk_entry;
+				}
+			}
+
+			foreach ( $page_ids as $pid ) {
 				$product_id = absint( $pid );
 				$product    = $product_id ? wc_get_product( $product_id ) : false;
 				if ( ! $product ) {
@@ -878,7 +970,9 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				}
 
 				$preflight_error = '';
-				$old_count       = $product->is_type( 'variable' ) ? count( $product->get_children() ) : 0;
+				$preloaded_entry = isset( $bulk_maps[ $product_id ] ) ? $bulk_maps[ $product_id ] : null;
+				$preloaded_attrs = is_array( $preloaded_entry ) && isset( $preloaded_entry['attrs'] ) ? $preloaded_entry['attrs'] : null;
+				$old_count       = is_array( $preloaded_entry ) && $product->is_type( 'variable' ) ? count( $preloaded_entry['children'] ) : ( $product->is_type( 'variable' ) ? count( $product->get_children() ) : 0 );
 				$total_old      += $old_count;
 				$target_info     = self::resolve_product_target_attribute( $product, $attr_name, false );
 				$target_key      = $target_info['name'];
@@ -889,7 +983,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						$remove_error = 'ویژگی هدف روی محصول تکراری است.';
 					} else {
 						$comparison_values = self::comparison_values( $clean_vals, ! empty( $target_info['is_taxonomy'] ), $target_key, false );
-						$match_result      = self::count_matching_variations( $product, $target_key, $comparison_values );
+						$match_result      = self::count_matching_variations( $product, $target_key, $comparison_values, $preloaded_attrs );
 						if ( ! empty( $match_result['ambiguous'] ) ) {
 							$remove_error = 'مقدار ویژگی هدف در یکی از variationها مبهم است.';
 						} else {
@@ -1014,7 +1108,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						foreach ( $other_matrix as $matrix_key => $matrix_values ) {
 							$add_matrix[ $matrix_key ] = $matrix_values;
 						}
-						$missing_result = self::count_missing_combinations( $product, $add_matrix );
+						$missing_result = self::count_missing_combinations( $product, $add_matrix, $preloaded_attrs );
 						if ( '' !== $missing_result['error'] ) {
 							$preflight_error = $missing_result['error'];
 							$preflight_error_count++;
@@ -1053,7 +1147,10 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			}
 
 			return array(
-				'total_products'             => count( $product_ids ),
+				'total_products'             => $page_count,
+				'page_offset'                => $offset,
+				'page_count'                 => $page_count,
+				'page_total'                 => $page_total,
 				'operation_mode'             => $operation_mode,
 				'operation_mode_label'       => self::operation_mode_label( $operation_mode ),
 				'attr_name'                  => $attr_name,

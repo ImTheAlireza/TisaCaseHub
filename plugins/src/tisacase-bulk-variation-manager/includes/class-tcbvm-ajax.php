@@ -32,6 +32,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			add_action( 'wp_ajax_tcbvm_search_single_products', array( __CLASS__, 'ajax_search_single_products' ) );
 			add_action( 'wp_ajax_tcbvm_get_attributes', array( __CLASS__, 'ajax_get_attributes' ) );
 			add_action( 'wp_ajax_tcbvm_preview', array( __CLASS__, 'ajax_preview' ) );
+			add_action( 'wp_ajax_tcbvm_preview_page', array( __CLASS__, 'ajax_preview_page' ) );
 			add_action( 'wp_ajax_tcbvm_start_run', array( __CLASS__, 'ajax_start_run' ) );
 			add_action( 'wp_ajax_tcbvm_execute_batch', array( __CLASS__, 'ajax_execute_batch' ) );
 			add_action( 'wp_ajax_tcbvm_finish_run', array( __CLASS__, 'ajax_finish_run' ) );
@@ -259,6 +260,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 		 */
 		public static function ajax_preview() {
 			self::check_auth();
+			self::prepare_runtime();
 
 			$product_ids    = isset( $_POST['product_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['product_ids'] ) ) ) ) : array();
 			$attr_name      = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
@@ -281,7 +283,64 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'وارد کردن قیمت متغیرها الزامی است.' ) );
 			}
 
-			$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode );
+			try {
+				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode );
+			} catch ( \Throwable $e ) {
+				self::send_error_json( array(
+					'message' => 'خطا در محاسبه پیش‌نمایش: ' . $e->getMessage(),
+					'fatal'   => true,
+				) );
+			}
+
+			self::clean_output();
+			self::$responded = true;
+			wp_send_json_success( $preview );
+		}
+
+		/**
+		 * پیش‌نمایش صفحه‌بندی‌شده: یک برش از محصولات (offset/limit) با همان ساختار خروجی.
+		 * فرانت‌اند برای انتخاب‌های بزرگ، صفحه‌به‌صفحه صدا می‌زند و جمع می‌بندد تا هیچ
+		 * درخواستی به سقف زمان/حافظهٔ سرور نرسد.
+		 */
+		public static function ajax_preview_page() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$product_ids    = isset( $_POST['product_ids'] ) ? array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['product_ids'] ) ) ) ) : array();
+			$attr_name      = isset( $_POST['attr_name'] ) ? sanitize_text_field( wp_unslash( $_POST['attr_name'] ) ) : 'مدل گوشی';
+			$new_values     = isset( $_POST['new_values'] ) ? (array) $_POST['new_values'] : array();
+			$price          = isset( $_POST['price'] ) ? sanitize_text_field( wp_unslash( $_POST['price'] ) ) : '';
+			$sale_price     = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
+			$combine_other  = ! empty( $_POST['combine_other'] );
+			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
+			$offset         = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
+			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 50;
+			$limit          = min( max( $limit, 1 ), 200 );
+
+			if ( empty( $product_ids ) ) {
+				wp_send_json_error( array( 'message' => 'لطفاً ابتدا حداقل یک محصول را انتخاب کنید.' ) );
+			}
+
+			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
+			if ( empty( $clean_values ) ) {
+				wp_send_json_error( array( 'message' => 'لطفاً حداقل یک مقدار ویژگی وارد کنید.' ) );
+			}
+
+			if ( TCBVM_OPS::MODE_REMOVE_VALUES !== $operation_mode && '' === trim( $price ) ) {
+				wp_send_json_error( array( 'message' => 'وارد کردن قیمت متغیرها الزامی است.' ) );
+			}
+
+			try {
+				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode, $offset, $limit );
+			} catch ( \Throwable $e ) {
+				self::send_error_json( array(
+					'message' => 'خطا در محاسبه پیش‌نمایش: ' . $e->getMessage(),
+					'fatal'   => true,
+				) );
+			}
+
+			self::clean_output();
+			self::$responded = true;
 			wp_send_json_success( $preview );
 		}
 
