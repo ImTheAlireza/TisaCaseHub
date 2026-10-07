@@ -575,12 +575,14 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				}
 				$product = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
 				if ( $product ) {
+					$img_id    = absint( $product->get_image_id() );
 					$items[] = array(
-						'id'       => (int) $id,
-						'name'     => $product->get_name(),
-						'sku'      => (string) $product->get_sku(),
-						'type'     => (string) $product->get_type(),
-						'edit_url' => (string) get_edit_post_link( $id, '' ),
+						'id'        => (int) $id,
+						'name'      => $product->get_name(),
+						'sku'       => (string) $product->get_sku(),
+						'type'      => (string) $product->get_type(),
+						'image_url' => $img_id ? (string) wp_get_attachment_image_url( $img_id, 'thumbnail' ) : '',
+						'edit_url'  => (string) get_edit_post_link( $id, '' ),
 					);
 				}
 			}

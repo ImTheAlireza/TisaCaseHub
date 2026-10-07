@@ -140,6 +140,17 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 			return 'woocommerce_admin_styles';
 		}
 
+		/**
+		 * ورژن asset از روی زمان تغییر فایل، تا با هر ویرایش — حتی بدون تغییر نسخهٔ
+		 * افزونه — کش مرورگر و افزونه‌های بهینه‌ساز خودکار بشکند. (قبلاً فقط
+		 * TCP_VERSION بود و با کشِ سرسخت، CSS/JS قدیمی زیر PHP تازه می‌ماند.)
+		 */
+		private static function asset_ver( $rel ) {
+			$file = TCP_DIR . ltrim( $rel, '/' );
+			$mt   = @filemtime( $file );
+			return $mt ? TCP_VERSION . '.' . (int) $mt : TCP_VERSION;
+		}
+
 		public static function assets() {
 			if ( ! self::is_our_screen() ) {
 				return;
@@ -155,10 +166,10 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 				}
 			}
 
-			wp_enqueue_style( 'tcp-admin', TCP_URL . 'assets/admin.css', $deps, TCP_VERSION );
+			wp_enqueue_style( 'tcp-admin', TCP_URL . 'assets/admin.css', $deps, self::asset_ver( 'assets/admin.css' ) );
 
 			if ( 'rules' === $tab ) {
-				wp_enqueue_script( 'tcp-rules', TCP_URL . 'assets/rules.js', array( 'jquery' ), TCP_VERSION, true );
+				wp_enqueue_script( 'tcp-rules', TCP_URL . 'assets/rules.js', array( 'jquery' ), self::asset_ver( 'assets/rules.js' ), true );
 				wp_localize_script(
 					'tcp-rules',
 					'TCP_RULES',
@@ -181,12 +192,12 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 			}
 
 			if ( 'coupons' === $tab ) {
-				wp_enqueue_script( 'tcp-coupons', TCP_URL . 'assets/coupons.js', array( 'jquery' ), TCP_VERSION, true );
+				wp_enqueue_script( 'tcp-coupons', TCP_URL . 'assets/coupons.js', array( 'jquery' ), self::asset_ver( 'assets/coupons.js' ), true );
 				wp_localize_script( 'tcp-coupons', 'TCP_COUPONS', array( 'currency' => function_exists( 'get_woocommerce_currency_symbol' ) ? get_woocommerce_currency_symbol() : '' ) );
 				return;
 			}
 
-			wp_enqueue_script( 'tcp-bulk', TCP_URL . 'assets/bulk.js', array( 'jquery' ), TCP_VERSION, true );
+			wp_enqueue_script( 'tcp-bulk', TCP_URL . 'assets/bulk.js', array( 'jquery' ), self::asset_ver( 'assets/bulk.js' ), true );
 			wp_localize_script( 'tcp-bulk', 'TCP_BULK', self::bulk_data( $tab ) );
 		}
 

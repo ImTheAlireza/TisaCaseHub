@@ -34,10 +34,10 @@ $tcp_mode_select = static function ( $name, $value, $class = 'tisa-input', $id =
 	<?php
 };
 
-/** خلاصهٔ یک‌خطی قانون برای نمایش در کارت. */
+/** خلاصهٔ یک‌خطی قانون برای نمایش در سطر. */
 $tcp_rule_summary = static function ( $rule ) use ( $tcp_modes ) {
 	if ( ! empty( $rule['exclude'] ) ) {
-		return 'استثنا — از همهٔ قوانین (حتی سراسری) خارج است';
+		return 'از همهٔ قوانین (حتی سراسری) خارج است';
 	}
 	$parts   = array();
 	$parts[] = '↑ ' . $rule['increase'] . '٪';
@@ -62,66 +62,96 @@ $tcp_rule_sub = static function ( $rule ) {
 	return implode( ' · ', $parts );
 };
 
+/** سلول هویت: عکس + نام (لینک ویرایش) + بج‌ها + چیپ‌ها. */
+$tcp_identity_cell = static function ( $info ) {
+	?>
+	<div class="tcp-rule-identity">
+		<?php if ( ! empty( $info['image'] ) ) : ?>
+			<img class="tcp-rule-thumb" src="<?php echo esc_url( $info['image'] ); ?>" alt="" loading="lazy">
+		<?php elseif ( ! empty( $info['icon'] ) ) : ?>
+			<span class="tcp-rule-thumb tcp-rule-thumb--icon" aria-hidden="true"><span class="dashicons <?php echo esc_attr( $info['icon'] ); ?>"></span></span>
+		<?php else : ?>
+			<span class="tcp-rule-thumb tcp-rule-thumb--empty" aria-hidden="true">□</span>
+		<?php endif; ?>
+		<div class="tcp-rule-idmain">
+			<div class="tcp-rule-title">
+				<?php if ( ! empty( $info['edit_url'] ) ) : ?>
+					<a class="tcp-rule-name" href="<?php echo esc_url( $info['edit_url'] ); ?>" target="_blank" rel="noopener" title="باز کردن صفحهٔ ویرایش در تب جدید"><?php echo esc_html( $info['name'] ); ?></a>
+				<?php else : ?>
+					<span class="tcp-rule-name"><?php echo esc_html( $info['name'] ); ?></span>
+				<?php endif; ?>
+				<span class="tcp-badge tcp-status <?php echo $info['enabled'] ? 'tcp-st-done' : 'tcp-st-cancelled'; ?>"><?php echo $info['enabled'] ? 'فعال' : 'غیرفعال'; ?></span>
+				<span class="tcp-badge tcp-exbadge tcp-cp-expired"<?php echo $info['excluded'] ? '' : ' style="display:none"'; ?>>استثنا</span>
+			</div>
+			<div class="tcp-rule-chips"><?php echo $info['chips']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- چیپ‌ها پایین همین فایل با esc ساخته شده‌اند. ?></div>
+		</div>
+	</div>
+	<?php
+};
+
 /**
- * یک کارت قانون (محصول یا دسته).
+ * یک سطر قانون (محصول یا دسته).
  *
  * @param string $type  products|categories.
  * @param int    $id    شناسه.
  * @param array  $rule  قانون نرمال‌شده.
- * @param array  $info  name, edit_url, chips (HTML آماده), search (رشتهٔ جستجوی داخل لیست).
+ * @param array  $info  name, edit_url, image/icon, chips, summary, sub, search.
  */
-$tcp_ex_item = static function ( $type, $id, $rule, $info ) {
-	$id   = absint( $id );
-	$n    = esc_attr( $type ) . '[' . $id . ']';
-	$name = isset( $info['name'] ) ? $info['name'] : '';
+$tcp_rule_row = static function ( $type, $id, $rule, $info ) use ( $tcp_identity_cell ) {
+	$id       = absint( $id );
+	$n        = esc_attr( $type ) . '[' . $id . ']';
+	$name     = isset( $info['name'] ) ? $info['name'] : '';
 	if ( '' === $name ) {
 		return;
 	}
 	$excluded = ! empty( $rule['exclude'] );
 	$enabled  = ! empty( $rule['enabled'] );
-	$cls      = 'tcp-ex-item' . ( $excluded ? ' is-excluded' : '' ) . ( $enabled ? '' : ' is-off' );
-	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $n از absint/رشتهٔ ثابت ساخته شده؛ chips/summary جداگانه escape می‌شوند.
+	$cls      = 'tcp-rule-row' . ( $excluded ? ' is-excluded' : '' ) . ( $enabled ? '' : ' is-off' );
+	// phpcs:disable WordPress.Security.EscapeOutput.OutputNotEscaped -- $n از absint/رشتهٔ ثابت ساخته شده.
 	?>
-	<li class="<?php echo esc_attr( $cls ); ?>" data-rule-id="<?php echo esc_attr( $id ); ?>" data-search="<?php echo esc_attr( isset( $info['search'] ) ? $info['search'] : '' ); ?>">
-		<div class="tcp-ex-main">
-			<div class="tcp-ex-title">
-				<?php if ( ! empty( $info['edit_url'] ) ) : ?>
-					<a class="tcp-ex-name" href="<?php echo esc_url( $info['edit_url'] ); ?>" target="_blank" rel="noopener" title="باز کردن صفحهٔ ویرایش در تب جدید"><?php echo esc_html( $name ); ?></a>
-				<?php else : ?>
-					<span class="tcp-ex-name"><?php echo esc_html( $name ); ?></span>
-				<?php endif; ?>
-				<span class="tcp-badge tcp-status <?php echo $enabled ? 'tcp-st-done' : 'tcp-st-cancelled'; ?>"><?php echo $enabled ? 'فعال' : 'غیرفعال'; ?></span>
-				<span class="tcp-badge tcp-exbadge tcp-cp-expired"<?php echo $excluded ? '' : ' style="display:none"'; ?>>استثنا</span>
-			</div>
-			<div class="tcp-ex-meta"><?php echo $info['chips']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- چیپ‌ها پایین همین فایل با esc ساخته شده‌اند. ?></div>
-			<div class="tcp-ex-summary"><?php echo esc_html( $info['summary'] ); ?></div>
+	<tr class="<?php echo esc_attr( $cls ); ?>" data-rule-id="<?php echo esc_attr( $id ); ?>" data-search="<?php echo esc_attr( isset( $info['search'] ) ? $info['search'] : '' ); ?>">
+		<td class="tcp-cell-identity">
+			<?php
+			$tcp_identity_cell(
+				array(
+					'name'     => $name,
+					'edit_url' => isset( $info['edit_url'] ) ? $info['edit_url'] : '',
+					'image'    => isset( $info['image'] ) ? $info['image'] : '',
+					'icon'     => isset( $info['icon'] ) ? $info['icon'] : '',
+					'chips'    => $info['chips'],
+					'enabled'  => $enabled,
+					'excluded' => $excluded,
+				)
+			);
+			?>
+		</td>
+		<td class="tcp-cell-rule">
+			<div class="tcp-rule-sum"><?php echo esc_html( $info['summary'] ); ?></div>
 			<?php if ( '' !== $info['sub'] ) : ?>
-				<div class="tcp-ex-sub"><?php echo esc_html( $info['sub'] ); ?></div>
+				<div class="tcp-rule-sub"><?php echo esc_html( $info['sub'] ); ?></div>
 			<?php else : ?>
-				<div class="tcp-ex-sub" style="display:none"></div>
+				<div class="tcp-rule-sub" style="display:none"></div>
 			<?php endif; ?>
-		</div>
-		<div class="tcp-ex-side">
-			<div class="tcp-ex-flags">
-				<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled" <?php checked( $enabled, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>
-				<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-exclude" <?php checked( $excluded, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>
-			</div>
-			<div class="tcp-ex-actions">
-				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
-				<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule">حذف</button>
-			</div>
-		</div>
-		<input type="hidden" name="<?php echo $n; ?>[exists]" value="1">
-		<input type="hidden" data-f="increase" name="<?php echo $n; ?>[increase]" value="<?php echo esc_attr( $rule['increase'] ); ?>">
-		<input type="hidden" data-f="sale" name="<?php echo $n; ?>[sale]" value="<?php echo esc_attr( $rule['sale'] ); ?>">
-		<input type="hidden" data-f="mode" name="<?php echo $n; ?>[mode]" value="<?php echo esc_attr( $rule['mode'] ); ?>">
-		<input type="hidden" data-f="from" name="<?php echo $n; ?>[from]" value="<?php echo esc_attr( $rule['from'] ); ?>">
-		<input type="hidden" data-f="to" name="<?php echo $n; ?>[to]" value="<?php echo esc_attr( $rule['to'] ); ?>">
-		<input type="hidden" data-f="min" name="<?php echo $n; ?>[min]" value="<?php echo esc_attr( $rule['min'] ? $rule['min'] : '' ); ?>">
-		<input type="hidden" data-f="max" name="<?php echo $n; ?>[max]" value="<?php echo esc_attr( $rule['max'] ? $rule['max'] : '' ); ?>">
-		<input type="hidden" data-f="enabled" name="<?php echo $n; ?>[enabled]" value="<?php echo $enabled ? '1' : '0'; ?>">
-		<input type="hidden" data-f="exclude" name="<?php echo $n; ?>[exclude]" value="<?php echo $excluded ? '1' : '0'; ?>">
-	</li>
+		</td>
+		<td class="tcp-cell-flags">
+			<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled" <?php checked( $enabled, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>
+			<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-exclude" <?php checked( $excluded, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>
+		</td>
+		<td class="tcp-cell-actions">
+			<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
+			<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule" aria-label="حذف قانون <?php echo esc_attr( $name ); ?>">حذف</button>
+			<input type="hidden" name="<?php echo $n; ?>[exists]" value="1">
+			<input type="hidden" data-f="increase" name="<?php echo $n; ?>[increase]" value="<?php echo esc_attr( $rule['increase'] ); ?>">
+			<input type="hidden" data-f="sale" name="<?php echo $n; ?>[sale]" value="<?php echo esc_attr( $rule['sale'] ); ?>">
+			<input type="hidden" data-f="mode" name="<?php echo $n; ?>[mode]" value="<?php echo esc_attr( $rule['mode'] ); ?>">
+			<input type="hidden" data-f="from" name="<?php echo $n; ?>[from]" value="<?php echo esc_attr( $rule['from'] ); ?>">
+			<input type="hidden" data-f="to" name="<?php echo $n; ?>[to]" value="<?php echo esc_attr( $rule['to'] ); ?>">
+			<input type="hidden" data-f="min" name="<?php echo $n; ?>[min]" value="<?php echo esc_attr( $rule['min'] ? $rule['min'] : '' ); ?>">
+			<input type="hidden" data-f="max" name="<?php echo $n; ?>[max]" value="<?php echo esc_attr( $rule['max'] ? $rule['max'] : '' ); ?>">
+			<input type="hidden" data-f="enabled" name="<?php echo $n; ?>[enabled]" value="<?php echo $enabled ? '1' : '0'; ?>">
+			<input type="hidden" data-f="exclude" name="<?php echo $n; ?>[exclude]" value="<?php echo $excluded ? '1' : '0'; ?>">
+		</td>
+	</tr>
 	<?php
 	// phpcs:enable
 };
@@ -152,7 +182,7 @@ $tcp_cat_chips = static function ( $id, $count, $path, $name ) {
 	return $out;
 };
 
-/** شمارش اولیه برای بج هر گروه. */
+/** شمارش برای بج هر گروه. */
 $tcp_count_text = static function ( $rules ) {
 	$n = count( $rules );
 	$e = 0;
@@ -172,6 +202,36 @@ $tcp_count_text = static function ( $rules ) {
 <p class="tcp-lead">قیمت‌ها هنگام نمایش محاسبه می‌شوند؛ چیزی در دیتابیس نوشته نمی‌شود. محصولی که فروش ویژهٔ واقعی دارد، و قیمت همکاری، دست‌نخورده می‌مانند. اولویت: <strong>محصول ← دسته‌بندی ← سراسری</strong>.</p>
 
 <div class="tcp-alert tcp-alert--warn">برای افزایش دائمی (مثلاً ۱۰٪ روی قیمت خودِ هر متغیر، نوشته‌شده در دیتابیس) از تب <a href="<?php echo esc_url( TCP_Admin::url( 'bulk', array( 'target' => 'all' ) ) ); ?>">تغییر گروهی قیمت</a> و حالت «همهٔ محصولات سایت» استفاده کن. اگر این قانون روشن بماند و قیمت دیتابیس را هم بالا ببری، مشتری هر دو افزایش را با هم می‌بیند.</div>
+
+<div class="tcp-alert tcp-alert--danger" id="tcp-stale-assets" style="display:none" role="alert"><strong>فایل‌های <span id="tcp-stale-what">جاوااسکریپت</span> این صفحه قدیمی کش شده‌اند</strong> و ظاهر/رفتار تب درست کار نمی‌کند. یک‌بار صفحه را با <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd> (در مک: <kbd>Cmd</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>) تازه‌سازی کن؛ اگر درست نشد، کش افزونهٔ بهینه‌ساز/کش سایت را پاک کن.</div>
+<span id="tcp-css-probe" class="tcp-css-probe" aria-hidden="true"></span>
+<script>
+/* آشکارساز asset کش‌شده: rules.js تازه پرچم می‌گذارد، CSS تازه روی probe متغیر می‌گذارد. */
+(function () {
+	function tcpStaleCheck() {
+		var okJs = !!window.__tcpRulesV2;
+		var okCss = false;
+		try {
+			var probe = document.getElementById('tcp-css-probe');
+			okCss = !!probe && 'rules-v2' === String(window.getComputedStyle(probe).getPropertyValue('--tcp-probe') || '').trim().replace(/["']/g, '');
+		} catch (e) { okCss = false; }
+		if (okJs && okCss) { return; }
+		var n = document.getElementById('tcp-stale-assets');
+		if (!n) { return; }
+		var parts = [];
+		if (!okJs) { parts.push('جاوااسکریپت'); }
+		if (!okCss) { parts.push('استایل'); }
+		var what = document.getElementById('tcp-stale-what');
+		if (what) { what.textContent = parts.join(' و '); }
+		n.style.display = '';
+	}
+	if ('complete' === document.readyState) {
+		window.setTimeout(tcpStaleCheck, 900);
+	} else {
+		window.addEventListener('load', function () { window.setTimeout(tcpStaleCheck, 900); });
+	}
+})();
+</script>
 
 <details class="tcp-help">
 	<summary>هر تخفیف چطور محاسبه می‌شود؟</summary>
@@ -234,39 +294,52 @@ $tcp_count_text = static function ( $rules ) {
 				<span class="tcp-selection-badge" id="tcp-product-count"><?php echo esc_html( $tcp_count_text( $tcp_rules['products'] ) ); ?></span>
 				<input type="search" class="tisa-input tisa-input--sm tcp-ex-filter" id="tcp-product-filter" placeholder="جستجو در همین لیست (نام / SKU / شناسه)…" autocomplete="off" aria-label="جستجو در لیست محصولات">
 			</div>
-			<ul class="tcp-ex-list" id="tcp-product-rules">
-				<?php
-				foreach ( $tcp_rules['products'] as $id => $rule ) {
-					$id      = absint( $id );
-					$product = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
-					if ( $product ) {
-						$pname = $product->get_name();
-						$psku  = (string) $product->get_sku();
-						$ptype = (string) $product->get_type();
-					} else {
-						$pname = get_the_title( $id );
-						$psku  = (string) get_post_meta( $id, '_sku', true );
-						$ptype = '';
-					}
-					if ( '' === $pname ) {
-						continue;
-					}
-					$tcp_ex_item(
-						'products',
-						$id,
-						$rule,
-						array(
-							'name'    => $pname,
-							'edit_url' => get_edit_post_link( $id, '' ),
-							'chips'   => $tcp_product_chips( $id, $psku, $ptype ),
-							'summary' => $tcp_rule_summary( $rule ),
-							'sub'     => $tcp_rule_sub( $rule ),
-							'search'  => function_exists( 'mb_strtolower' ) ? mb_strtolower( $pname . ' ' . $psku . ' ' . $id, 'UTF-8' ) : strtolower( $pname . ' ' . $psku . ' ' . $id ),
-						)
-					);
-				}
-				?>
-			</ul>
+			<div class="tcp-rule-table-scroll"<?php echo empty( $tcp_rules['products'] ) ? ' style="display:none"' : ''; ?>>
+				<table class="tcp-rule-table">
+					<thead><tr>
+						<th class="tcp-col-identity">محصول</th>
+						<th class="tcp-col-rule">قانون</th>
+						<th class="tcp-col-flags">وضعیت</th>
+						<th class="tcp-col-actions">عملیات</th>
+					</tr></thead>
+					<tbody id="tcp-product-rules">
+						<?php
+						foreach ( $tcp_rules['products'] as $id => $rule ) {
+							$id      = absint( $id );
+							$product = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
+							if ( $product ) {
+								$pname  = $product->get_name();
+								$psku   = (string) $product->get_sku();
+								$ptype  = (string) $product->get_type();
+								$img_id = absint( $product->get_image_id() );
+							} else {
+								$pname  = get_the_title( $id );
+								$psku   = (string) get_post_meta( $id, '_sku', true );
+								$ptype  = '';
+								$img_id = absint( get_post_meta( $id, '_thumbnail_id', true ) );
+							}
+							if ( '' === $pname ) {
+								continue;
+							}
+							$tcp_rule_row(
+								'products',
+								$id,
+								$rule,
+								array(
+									'name'     => $pname,
+									'edit_url' => get_edit_post_link( $id, '' ),
+									'image'    => $img_id ? wp_get_attachment_image_url( $img_id, 'thumbnail' ) : '',
+									'chips'    => $tcp_product_chips( $id, $psku, $ptype ),
+									'summary'  => $tcp_rule_summary( $rule ),
+									'sub'      => $tcp_rule_sub( $rule ),
+									'search'   => function_exists( 'mb_strtolower' ) ? mb_strtolower( $pname . ' ' . $psku . ' ' . $id, 'UTF-8' ) : strtolower( $pname . ' ' . $psku . ' ' . $id ),
+								)
+							);
+						}
+						?>
+					</tbody>
+				</table>
+			</div>
 			<div class="tcp-product-empty" id="tcp-product-empty"<?php echo empty( $tcp_rules['products'] ) ? '' : ' style="display:none"'; ?>>هنوز محصولی اضافه نشده است؛ از جستجوی بالا چند محصول را انتخاب و یک‌باره اضافه کن.</div>
 		</div>
 	</section>
@@ -285,32 +358,43 @@ $tcp_count_text = static function ( $rules ) {
 				<span class="tcp-selection-badge" id="tcp-category-count"><?php echo esc_html( $tcp_count_text( $tcp_rules['categories'] ) ); ?></span>
 				<input type="search" class="tisa-input tisa-input--sm tcp-ex-filter" id="tcp-category-filter" placeholder="جستجو در همین لیست…" autocomplete="off" aria-label="جستجو در لیست دسته‌بندی‌ها">
 			</div>
-			<ul class="tcp-ex-list" id="tcp-category-rules">
-				<?php
-				foreach ( $tcp_rules['categories'] as $id => $rule ) {
-					$id   = absint( $id );
-					$term = get_term( $id, 'product_cat' );
-					if ( ! $term || is_wp_error( $term ) ) {
-						continue;
-					}
-					$path     = TCP_Admin::cat_label( $term );
-					$edit_url = get_edit_term_link( $id, 'product_cat' );
-					$tcp_ex_item(
-						'categories',
-						$id,
-						$rule,
-						array(
-							'name'    => $term->name,
-							'edit_url' => is_wp_error( $edit_url ) ? '' : $edit_url,
-							'chips'   => $tcp_cat_chips( $id, (int) $term->count, $path, $term->name ),
-							'summary' => $tcp_rule_summary( $rule ),
-							'sub'     => $tcp_rule_sub( $rule ),
-							'search'  => function_exists( 'mb_strtolower' ) ? mb_strtolower( $term->name . ' ' . $path . ' ' . $id, 'UTF-8' ) : strtolower( $term->name . ' ' . $path . ' ' . $id ),
-						)
-					);
-				}
-				?>
-			</ul>
+			<div class="tcp-rule-table-scroll"<?php echo empty( $tcp_rules['categories'] ) ? ' style="display:none"' : ''; ?>>
+				<table class="tcp-rule-table">
+					<thead><tr>
+						<th class="tcp-col-identity">دسته‌بندی</th>
+						<th class="tcp-col-rule">قانون</th>
+						<th class="tcp-col-flags">وضعیت</th>
+						<th class="tcp-col-actions">عملیات</th>
+					</tr></thead>
+					<tbody id="tcp-category-rules">
+						<?php
+						foreach ( $tcp_rules['categories'] as $id => $rule ) {
+							$id   = absint( $id );
+							$term = get_term( $id, 'product_cat' );
+							if ( ! $term || is_wp_error( $term ) ) {
+								continue;
+							}
+							$path     = TCP_Admin::cat_label( $term );
+							$edit_url = get_edit_term_link( $id, 'product_cat' );
+							$tcp_rule_row(
+								'categories',
+								$id,
+								$rule,
+								array(
+									'name'     => $term->name,
+									'edit_url' => is_wp_error( $edit_url ) ? '' : $edit_url,
+									'icon'     => 'dashicons-category',
+									'chips'    => $tcp_cat_chips( $id, (int) $term->count, $path, $term->name ),
+									'summary'  => $tcp_rule_summary( $rule ),
+									'sub'      => $tcp_rule_sub( $rule ),
+									'search'   => function_exists( 'mb_strtolower' ) ? mb_strtolower( $term->name . ' ' . $path . ' ' . $id, 'UTF-8' ) : strtolower( $term->name . ' ' . $path . ' ' . $id ),
+								)
+							);
+						}
+						?>
+					</tbody>
+				</table>
+			</div>
 			<div class="tcp-product-empty" id="tcp-category-empty"<?php echo empty( $tcp_rules['categories'] ) ? '' : ' style="display:none"'; ?>>هنوز دسته‌ای اضافه نشده است؛ از جستجوی بالا چند دسته را انتخاب و یک‌باره اضافه کن.</div>
 		</div>
 	</section>
@@ -335,9 +419,12 @@ $tcp_count_text = static function ( $rules ) {
 	<div class="tcp-modal__backdrop" data-tcp-close></div>
 	<div class="tcp-modal__box" role="dialog" aria-modal="true" aria-labelledby="tcp-modal-title">
 		<div class="tcp-modal__head">
-			<div>
-				<h3 id="tcp-modal-title">ویرایش قانون</h3>
-				<p id="tcp-modal-sub"></p>
+			<div class="tcp-modal__titlewrap">
+				<span class="tcp-modal__icon" aria-hidden="true"><span class="dashicons dashicons-edit"></span></span>
+				<div>
+					<h3 id="tcp-modal-title">ویرایش قانون</h3>
+					<p id="tcp-modal-sub"></p>
+				</div>
 			</div>
 			<button type="button" class="tcp-modal__x" data-tcp-close aria-label="بستن">×</button>
 		</div>

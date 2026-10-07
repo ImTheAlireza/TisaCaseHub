@@ -395,18 +395,23 @@ tr.is-excluded td:not(.tcp-rule-name):not(.tcp-rule-flags):not(:last-child) { op
 	.tcp-tab, #tcp-bar { transition: none; }
 }
 body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px) var(--tisa-sp-4, 16px); }
-
-/* ---------- قوانین داینامیک: جستجوی چندانتخابی + لیست کارتی + مودال ---------- */
+/* ---------- قوانین داینامیک: جستجوی چندانتخابی + جدول قوانین + مودال ---------- */
+.tcp-css-probe { --tcp-probe: rules-v2; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+#tcp-stale-assets kbd {
+	display: inline-block; padding: 1px 7px; border: 1px solid var(--tisa-border-strong, #C9C6BD);
+	border-bottom-width: 2px; border-radius: 6px; background: var(--tisa-surface, #fff);
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); font-size: 11px;
+}
 .tcp-search-box--multi { max-width: 760px; }
 .tcp-search-check {
-	display: flex; align-items: flex-start; gap: 10px;
-	width: 100%; margin: 0; padding: 10px 12px;
+	display: flex; align-items: center; gap: 10px;
+	width: 100%; margin: 0; padding: 9px 12px;
 	border: 0; border-bottom: 1px solid var(--tisa-border, #E3E1DA);
 	background: transparent; color: var(--tisa-ink, #1F2A2E);
 	font: inherit; text-align: right; cursor: pointer;
 }
 .tcp-search-check:hover { background: var(--tisa-primary-tint, #F2FBF8); }
-.tcp-search-check input { flex: 0 0 auto; margin-top: 4px; accent-color: var(--tisa-primary, #0E7C6B); }
+.tcp-search-check input { flex: 0 0 auto; margin: 0; accent-color: var(--tisa-primary, #0E7C6B); }
 .tcp-search-check .tcp-search-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .tcp-search-check strong { font-weight: 600; }
 .tcp-search-check small { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
@@ -429,62 +434,106 @@ body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp
 .tcp-search-foot .tisa-btn--sm { min-height: 30px; }
 .tcp-search-foot .tisa-btn:disabled { opacity: .5; cursor: not-allowed; }
 
-/* نوار بالای لیست: شمارنده + فیلتر */
+/* نوار بالای جدول: شمارنده + فیلتر */
 .tcp-ex-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; }
 .tcp-ex-toolbar .tcp-ex-filter { flex: 1 1 auto; max-width: 340px; }
 .tcp-ex-toolbar .tcp-selection-badge { flex: 0 0 auto; }
 
-/* کارت‌های قانون */
-.tcp-ex-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-.tcp-ex-item {
-	display: flex; gap: 14px; align-items: flex-start;
-	padding: 14px 16px;
-	border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r, 14px);
+/* جدول قوانین — هم‌خانوادهٔ جدول انتخاب محصول تب «تغییر گروهی» */
+.tcp-rule-table-scroll {
+	max-height: 460px; overflow: auto;
+	border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px);
 	background: var(--tisa-surface, #fff);
-	transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.tcp-ex-item:hover { border-color: var(--tisa-border-strong, #C9C6BD); box-shadow: 0 2px 10px rgba(31, 42, 46, .06); }
-.tcp-ex-item.is-excluded { background: #FFFCF3; border-color: #E7D9AC; }
-.tcp-ex-item.is-excluded:hover { border-color: var(--tisa-warning, #C79A2E); }
-.tcp-ex-item.is-off .tcp-ex-main { opacity: .62; }
-.tcp-ex-main { flex: 1 1 auto; min-width: 0; }
-.tcp-ex-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.tcp-ex-name { font-size: 14px; font-weight: 800; color: var(--tisa-primary-ink, #0A5F52); text-decoration: none; }
-a.tcp-ex-name:hover { text-decoration: underline; }
-a.tcp-ex-name::after { content: "↗"; display: inline-block; margin-inline-start: 4px; font-size: 11px; opacity: .45; }
-.tcp-ex-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 7px; color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
+.tcp-rule-table { width: 100%; min-width: 840px; margin: 0; border-collapse: separate; border-spacing: 0; background: var(--tisa-surface, #fff); }
+.tcp-rule-table thead th {
+	position: sticky; top: 0; z-index: 2;
+	padding: 11px 14px;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-ink, #1F2A2E); font-size: var(--tisa-fs-meta, 12px); font-weight: 700;
+	text-align: right; white-space: nowrap;
+}
+.tcp-rule-table tbody td {
+	padding: 11px 14px;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	vertical-align: middle;
+}
+.tcp-rule-table tbody tr:last-child td { border-bottom: 0; }
+.tcp-rule-table tbody tr:hover td { background: var(--tisa-surface-2, #FAFAF8); }
+.tcp-rule-table .tcp-col-identity { width: 40%; }
+.tcp-rule-table .tcp-col-rule { width: auto; }
+.tcp-rule-table .tcp-col-flags { width: 118px; white-space: nowrap; }
+.tcp-rule-table .tcp-col-actions { width: 172px; white-space: nowrap; }
+.tcp-rule-row.is-excluded td { background: #FFFCF3; }
+.tcp-rule-row.is-excluded:hover td { background: #FFF6E0; }
+.tcp-rule-row.is-excluded .tcp-cell-identity { box-shadow: inset -3px 0 0 var(--tisa-warning, #C79A2E); }
+.tcp-rule-row.is-off .tcp-rule-identity, .tcp-rule-row.is-off .tcp-cell-rule { opacity: .55; }
+
+/* سلول هویت: عکس + نام + چیپ‌ها */
+.tcp-rule-identity { display: flex; align-items: center; gap: 12px; min-width: 240px; }
+.tcp-rule-thumb {
+	display: block; flex: 0 0 42px; width: 42px; height: 42px; object-fit: cover;
+	border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-xs, 8px);
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+.tcp-rule-thumb--empty { display: grid; place-items: center; color: var(--tisa-muted, #77828A); font-size: 22px; }
+.tcp-rule-thumb--icon {
+	display: grid; place-items: center;
+	border-color: transparent; background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52);
+}
+.tcp-rule-thumb--icon .dashicons { font-size: 22px; width: 22px; height: 22px; }
+.tcp-rule-thumb--xs { flex-basis: 32px; width: 32px; height: 32px; border-radius: 7px; font-size: 17px; }
+.tcp-rule-thumb--xs .dashicons { font-size: 17px; width: 17px; height: 17px; }
+.tcp-rule-idmain { flex: 1 1 auto; min-width: 0; }
+.tcp-rule-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.tcp-rule-name { font-size: 13.5px; font-weight: 800; color: var(--tisa-primary-ink, #0A5F52); text-decoration: none; }
+a.tcp-rule-name:hover { text-decoration: underline; }
+a.tcp-rule-name::after { content: "↗"; display: inline-block; margin-inline-start: 3px; font-size: 10px; opacity: .45; }
+.tcp-rule-chips { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 5px; color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
 .tcp-sku {
 	padding: 2px 8px; border-radius: var(--tisa-r-xs, 6px);
 	background: var(--tisa-surface-3, #F6F5F1); color: var(--tisa-ink-soft, #45555C);
 	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); font-size: var(--tisa-fs-tiny, 11px);
-	direction: ltr; unicode-bidi: embed;
+	direction: ltr; unicode-bidi: embed; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .tcp-sku--empty { background: transparent; border: 1px dashed var(--tisa-border-strong, #C9C6BD); color: var(--tisa-muted, #77828A); font-family: inherit; }
 .tcp-ex-id { font-size: var(--tisa-fs-tiny, 11px); }
-.tcp-ex-path { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcp-ex-summary { margin-top: 9px; font-size: var(--tisa-fs-control, 13px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
-.tcp-ex-item.is-excluded .tcp-ex-summary { color: var(--tisa-warning-ink, #8A6116); }
-.tcp-ex-sub { margin-top: 3px; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
-.tcp-ex-side { flex: 0 0 auto; display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
-.tcp-ex-flags { display: flex; gap: 14px; }
-.tcp-ex-flags .tcp-toggle { margin: 0; }
-.tcp-ex-actions { display: flex; gap: 6px; }
+.tcp-ex-path { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* سلول قانون */
+.tcp-cell-rule { min-width: 220px; }
+.tcp-rule-sum { font-size: var(--tisa-fs-control, 13px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
+.tcp-rule-row.is-excluded .tcp-rule-sum { color: var(--tisa-warning-ink, #8A6116); font-weight: 600; }
+.tcp-rule-sub { margin-top: 3px; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
+
+/* سلول وضعیت و عملیات */
+.tcp-cell-flags label.tcp-toggle { display: flex; margin: 3px 0; }
+.tcp-cell-actions .tisa-btn { margin: 1px 0; }
 
 /* مودال ویرایش قانون */
 .tcp-modal[hidden] { display: none; }
 .tcp-modal { position: fixed; inset: 0; z-index: 100000; display: flex; align-items: flex-start; justify-content: center; padding: 7vh 16px 16px; }
-.tcp-modal__backdrop { position: absolute; inset: 0; background: rgba(31, 42, 46, .52); }
+.tcp-modal__backdrop { position: absolute; inset: 0; background: rgba(31, 42, 46, .52); animation: tcpFade .18s ease; }
 .tcp-modal__box {
 	position: relative; width: 100%; max-width: 640px; max-height: 86vh; overflow: auto;
 	border-radius: var(--tisa-r-lg, 18px); background: var(--tisa-surface, #fff);
 	box-shadow: var(--tisa-shadow-lg, 0 20px 60px rgba(31, 42, 46, .25));
+	animation: tcpPop .2s ease;
 }
-.tcp-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 22px 0; }
-.tcp-modal__head h3 { margin: 0; font-size: var(--tisa-fs-h3, 16px); font-weight: 800; color: var(--tisa-ink, #1F2A2E); }
-.tcp-modal__head p { margin: 4px 0 0; color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12.5px); }
+@keyframes tcpFade { from { opacity: 0; } }
+@keyframes tcpPop { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+.tcp-modal__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 20px 22px 14px; border-bottom: 1px solid var(--tisa-border, #E3E1DA); }
+.tcp-modal__titlewrap { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.tcp-modal__icon {
+	flex: 0 0 auto; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px;
+	background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52);
+}
+.tcp-modal__head h3 { margin: 1px 0 0; font-size: var(--tisa-fs-h3, 16px); font-weight: 800; color: var(--tisa-ink, #1F2A2E); }
+.tcp-modal__head p { margin: 3px 0 0; color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12.5px); }
 .tcp-modal__x { flex: 0 0 auto; border: 0; border-radius: 8px; background: transparent; color: var(--tisa-muted, #77828A); font-size: 24px; line-height: 1; padding: 2px 10px; cursor: pointer; }
 .tcp-modal__x:hover { background: var(--tisa-surface-3, #EFEBE1); color: var(--tisa-ink, #1F2A2E); }
-.tcp-modal__body { padding: 14px 22px 4px; }
+.tcp-modal__body { padding: 16px 22px 4px; }
 .tcp-modal__grid { display: grid; gap: 12px; margin-bottom: 14px; }
 .tcp-modal__grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .tcp-modal__grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -493,12 +542,10 @@ a.tcp-ex-name::after { content: "↗"; display: inline-block; margin-inline-star
 .tcp-modal__switches { display: flex; gap: 28px; flex-wrap: wrap; padding: 2px 0 4px; }
 .tcp-modal__switches .tcp-toggle { margin: 0; }
 .tcp-modal__hint { margin: 10px 0 6px; padding: 10px 12px; border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface-2, #FAFAF8); color: var(--tisa-ink-soft, #45555C); font-size: var(--tisa-fs-control, 13px); }
-.tcp-modal__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 22px 20px; }
+.tcp-modal__foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px 20px; border-top: 1px solid var(--tisa-border, #E3E1DA); margin-top: 10px; background: var(--tisa-surface-2, #FAFAF8); border-radius: 0 0 var(--tisa-r-lg, 18px) var(--tisa-r-lg, 18px); }
 body.tcp-modal-open { overflow: hidden; }
 
 @media (max-width: 700px) {
-	.tcp-ex-item { flex-direction: column; }
-	.tcp-ex-side { width: 100%; flex-direction: row; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 	.tcp-modal__grid--3 { grid-template-columns: 1fr 1fr; }
 }
 @media (max-width: 480px) {
@@ -506,4 +553,7 @@ body.tcp-modal-open { overflow: hidden; }
 	.tcp-ex-toolbar { flex-direction: column; align-items: stretch; }
 	.tcp-ex-toolbar .tcp-ex-filter { max-width: none; }
 	.tcp-ex-toolbar .tcp-selection-badge { align-self: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+	.tcp-modal__backdrop, .tcp-modal__box { animation: none; }
 }
