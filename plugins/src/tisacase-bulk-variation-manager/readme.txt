@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 2.1.2
+Stable tag: 2.1.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce -> Products -> TisaCase Variation Manager, or via TisaCase Hub menu.
 
 == Changelog ==
+
+= 2.1.3 =
+* بهینه‌سازی اساسی پیش‌نمایش برای فروشگاه‌های بزرگ: خواندن گروهی variationها با چند کوئری به‌جای هزاران لود تکی آبجکت، کش یک‌بارهٔ ترم‌های ویژگی و پرایم کش محصولات.
+* پیش‌نمایش صفحه‌بندی‌شده با نمایش پیشرفت برای انتخاب‌های بالای ۵۰ محصول؛ دیگر روی صدها محصول خطای «خطا در ارتباط با سرور» رخ نمی‌دهد.
+* افزایش سقف حافظه/زمان اجرا و بازگرداندن خطای تمیز در مسیر پیش‌نمایش.
 
 = 2.1.2 =
 * بازطراحی هدر و منوی اصلی با تب‌های قرصیِ پرکنتراست، چینش چندردیفه در صفحه‌های باریک، حالت فعال مشخص و فوکوس قابل‌مشاهده؛ هماهنگ با سایر صفحات مدیریتی TisaCase.

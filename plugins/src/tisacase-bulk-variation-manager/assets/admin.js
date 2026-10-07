@@ -694,34 +694,14 @@
 				const combineOther = operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
 
 				const $btn = $(this);
-				$btn.prop('disabled', true).addClass('is-busy');
-
-				$.ajax({
-					url: tcbvmData.ajaxUrl,
-					type: 'POST',
-					data: {
-						action: 'tcbvm_preview',
-						nonce: tcbvmData.nonce,
-						product_ids: pids,
-						attr_name: attrName,
-						new_values: models,
-						price: price,
-						sale_price: salePrice,
-						combine_other: combineOther,
-						operation_mode: operationMode
-					},
-					success: function(resp) {
-						$btn.prop('disabled', false).removeClass('is-busy');
-						if (resp.success && resp.data) {
-							self.renderPreview(resp.data);
-						} else {
-							alert(resp.data && resp.data.message ? resp.data.message : 'خطا در محاسبه پیش‌نمایش.');
-						}
-					},
-					error: function() {
-						$btn.prop('disabled', false).removeClass('is-busy');
-						alert('خطا در ارتباط با سرور.');
-					}
+				self.runPreview($btn, {
+					product_ids: pids,
+					attr_name: attrName,
+					new_values: models,
+					price: price,
+					sale_price: salePrice,
+					combine_other: combineOther,
+					operation_mode: operationMode
 				});
 			});
 
@@ -782,6 +762,139 @@
 			self.log('⚠ درخواست لغو توسط کاربر ثبت شد؛ پس از اتمام بستهٔ جاری عملیات متوقف می‌شود.', 'error');
 		});
 	},
+
+		/**
+		 * اجرای پیش‌نمایش: تکی برای انتخاب‌های کوچک، صفحه‌بندی‌شده با پیشرفت برای بزرگ‌ها.
+		 */
+		runPreview: function($btn, params) {
+			const self = this;
+			const PREVIEW_PAGE_SIZE = 50;
+			const pids = params.product_ids || [];
+
+			$btn.prop('disabled', true).addClass('is-busy');
+
+			if (pids.length <= PREVIEW_PAGE_SIZE) {
+				$.ajax({
+					url: tcbvmData.ajaxUrl,
+					type: 'POST',
+					data: $.extend({ action: 'tcbvm_preview', nonce: tcbvmData.nonce }, params),
+					success: function(resp) {
+						$btn.prop('disabled', false).removeClass('is-busy');
+						if (resp.success && resp.data) {
+							self.renderPreview(resp.data);
+						} else {
+							alert(resp.data && resp.data.message ? resp.data.message : 'خطا در محاسبه پیش‌نمایش.');
+						}
+					},
+					error: function() {
+						$btn.prop('disabled', false).removeClass('is-busy');
+						alert('خطا در ارتباط با سرور.');
+					}
+				});
+				return;
+			}
+
+			self.runPagedPreview($btn, params, PREVIEW_PAGE_SIZE);
+		},
+
+		/**
+		 * پیش‌نمایش صفحه‌به‌صفحه با نمایش پیشرفت؛ جمع‌بندی نهایی عین خروجی تکی است.
+		 */
+		runPagedPreview: function($btn, params, pageSize) {
+			const self = this;
+			const pids = params.product_ids || [];
+			const total = pids.length;
+			const $label = $btn.find('span').first();
+			const originalLabel = $label.length ? $label.text() : '';
+
+			const merged = {
+				total_products: total,
+				operation_mode: params.operation_mode || 'replace_all',
+				operation_mode_label: '',
+				attr_name: params.attr_name,
+				new_values: [],
+				new_values_count: 0,
+				price: 0,
+				sale_price: null,
+				total_old_vars: 0,
+				total_new_vars: 0,
+				total_remove_vars: 0,
+				total_new_vars_capped: false,
+				preflight_error_count: 0,
+				over_limit_count: 0,
+				preview_issues: [],
+				preview_issues_truncated: false,
+				samples: [],
+				combine_other: !!params.combine_other
+			};
+
+			let offset = 0;
+			let failed = false;
+
+			const finish = function() {
+				$btn.prop('disabled', false).removeClass('is-busy');
+				if ($label.length) $label.text(originalLabel);
+				if (!failed) {
+					merged.samples = merged.samples.slice(0, 25);
+					merged.preview_issues = merged.preview_issues.slice(0, 100);
+					self.renderPreview(merged);
+				}
+			};
+
+			const fail = function(message) {
+				failed = true;
+				$btn.prop('disabled', false).removeClass('is-busy');
+				if ($label.length) $label.text(originalLabel);
+				alert(message || 'خطا در ارتباط با سرور.');
+			};
+
+			const fetchPage = function() {
+				if ($label.length) {
+					$label.text('در حال محاسبه پیش‌نمایش… ' + self.toPersianDigits(Math.min(offset, total)) + ' از ' + self.toPersianDigits(total));
+				}
+				$.ajax({
+					url: tcbvmData.ajaxUrl,
+					type: 'POST',
+					data: $.extend({ action: 'tcbvm_preview_page', nonce: tcbvmData.nonce, offset: offset, limit: pageSize }, params),
+					success: function(resp) {
+						if (!resp.success || !resp.data) {
+							fail(resp.data && resp.data.message ? resp.data.message : 'خطا در محاسبه پیش‌نمایش.');
+							return;
+						}
+						const d = resp.data;
+						if (offset === 0) {
+							merged.operation_mode_label = d.operation_mode_label || merged.operation_mode_label;
+							merged.new_values = d.new_values || [];
+							merged.new_values_count = Number(d.new_values_count || 0);
+							merged.price = Number(d.price || 0);
+							merged.sale_price = (d.sale_price === null || typeof d.sale_price === 'undefined') ? null : Number(d.sale_price);
+						}
+						merged.total_old_vars += Number(d.total_old_vars || 0);
+						merged.total_new_vars += Number(d.total_new_vars || 0);
+						merged.total_remove_vars += Number(d.total_remove_vars || 0);
+						if (d.total_new_vars_capped) merged.total_new_vars_capped = true;
+						merged.preflight_error_count += Number(d.preflight_error_count || 0);
+						merged.over_limit_count += Number(d.over_limit_count || 0);
+						if (Array.isArray(d.preview_issues)) merged.preview_issues = merged.preview_issues.concat(d.preview_issues);
+						if (d.preview_issues_truncated) merged.preview_issues_truncated = true;
+						if (Array.isArray(d.samples)) merged.samples = merged.samples.concat(d.samples);
+
+						offset += Number(d.page_count || 0) > 0 ? Number(d.page_count) : pageSize;
+						if (offset < total) {
+							fetchPage();
+						} else {
+							if (merged.preview_issues.length > 100) merged.preview_issues_truncated = true;
+							finish();
+						}
+					},
+					error: function() {
+						fail('خطا در ارتباط با سرور.');
+					}
+				});
+			};
+
+			fetchPage();
+		},
 
 		/**
 		 * رندر کارت پیش‌نمایش

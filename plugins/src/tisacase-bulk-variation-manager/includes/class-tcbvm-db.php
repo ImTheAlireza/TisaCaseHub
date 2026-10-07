@@ -670,6 +670,91 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 		}
 
 		/**
+		 * خواندن گروهی variationها و ویژگی‌هایشان برای چند محصول با حداقل کوئری.
+		 *
+		 * خروجی دقیقاً معادل حلقهٔ «get_children + wc_get_product + get_attributes» است،
+		 * با این تفاوت که به‌جای هزاران لود آبجکت، فقط کوئری‌های گروهی اجرا می‌شود؛
+		 * همین باعث می‌شود پیش‌نمایش روی صدها محصول هم در چند ثانیه تمام شود.
+		 * کلید ویژگی‌ها بدون پیشوند attribute_ و مقادیر خالی («هر مقدار») حفظ می‌شوند؛
+		 * فیلتر وضعیت هم عین get_children ووکامرس است (فقط publish و private).
+		 *
+		 * @param array $product_ids شناسه‌های محصول والد.
+		 * @return array نگاشت pid => array( 'children' => [vid...], 'attrs' => [vid => [key => value]] ).
+		 */
+		public static function get_variations_bulk( array $product_ids ) {
+			global $wpdb;
+			$map         = array();
+			$product_ids = array_values( array_unique( array_filter( array_map( 'absint', $product_ids ) ) ) );
+			if ( empty( $product_ids ) ) {
+				return $map;
+			}
+			foreach ( $product_ids as $pid ) {
+				$map[ $pid ] = array( 'children' => array(), 'attrs' => array() );
+			}
+
+			// ۱) شناسهٔ variationهای هر محصول.
+			$variation_ids = array();
+			foreach ( array_chunk( $product_ids, 400 ) as $chunk ) {
+				$ph = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$rows = (array) $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT ID, post_parent FROM {$wpdb->posts} WHERE post_type = 'product_variation' AND post_status IN ('publish','private') AND post_parent IN ($ph) ORDER BY post_parent ASC, menu_order ASC, ID ASC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+						$chunk
+					)
+				);
+				foreach ( $rows as $row ) {
+					$vid = (int) $row->ID;
+					$pid = (int) $row->post_parent;
+					if ( isset( $map[ $pid ] ) ) {
+						$map[ $pid ]['children'][]    = $vid;
+						$map[ $pid ]['attrs'][ $vid ] = array();
+						$variation_ids[]              = $vid;
+					}
+				}
+			}
+
+			// ۲) متاهای attribute_* همهٔ variationها در چند کوئری گروهی.
+			$variation_ids = array_values( array_unique( $variation_ids ) );
+			if ( empty( $variation_ids ) ) {
+				return $map;
+			}
+			$parent_of = array();
+			foreach ( $map as $pid => $entry ) {
+				foreach ( $entry['children'] as $vid ) {
+					$parent_of[ $vid ] = $pid;
+				}
+			}
+			foreach ( array_chunk( $variation_ids, 2000 ) as $vchunk ) {
+				$ph = implode( ',', array_fill( 0, count( $vchunk ), '%d' ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$rows = (array) $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE post_id IN ($ph) AND meta_key LIKE 'attribute\\_%' ORDER BY meta_id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+						$vchunk
+					)
+				);
+				foreach ( $rows as $row ) {
+					$vid = (int) $row->post_id;
+					if ( ! isset( $parent_of[ $vid ] ) ) {
+						continue;
+					}
+					$key = substr( (string) $row->meta_key, 10 ); // حذف پیشوند attribute_
+					if ( '' === $key ) {
+						continue;
+					}
+					$pid = $parent_of[ $vid ];
+					// اگر کلید تکراری بود، قدیمی‌ترین سطر معیار است؛ مشابه get_post_meta تکی.
+					if ( ! array_key_exists( $key, $map[ $pid ]['attrs'][ $vid ] ) ) {
+						$map[ $pid ]['attrs'][ $vid ][ $key ] = isset( $row->meta_value ) ? (string) $row->meta_value : '';
+					}
+				}
+			}
+
+			return $map;
+		}
+
+		/**
 		 * دریافت لیست تمام تاکسونومی‌های ویژگی عمومی ووکامرس (مثل pa_model).
 		 */
 		public static function get_attribute_taxonomies() {
