@@ -26,6 +26,12 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 		const MAX_EXCLUDED_PRODUCTS   = 500;
 		const MAX_EXCLUDED_CATEGORIES = 100;
 
+		/** نتایج هر صفحهٔ جستجوی محصول؛ بقیه با «نمایش موارد بعدی» می‌آیند. */
+		const SEARCH_PER_PAGE = 100;
+
+		/** سقف کلمه‌های یک عبارت جستجو تا کوئری چندبرابر نشود. */
+		const SEARCH_MAX_WORDS = 6;
+
 		/** حالت رند جاری برای این درخواست/صفحه: none | round | jitter (از args می‌آید). */
 		public static $round_mode = 'none';
 
@@ -470,6 +476,254 @@ if ( ! class_exists( 'TCP_Ops' ) ) {
 
 		public static function type_allowed( $t ) {
 			return in_array( $t, array( 'simple', 'variable', 'grouped', 'external' ), true );
+		}
+
+		/* -----------------------------------------------------------------
+		 * جستجوی محصول در کل کاتالوگ (نام / توضیح / SKU / شناسه) با صفحه‌بندی
+		 * منبع واحد برای جستجوی «قوانین داینامیک» و فیلد «محصولات مستثنا»ی تغییر گروهی.
+		 * --------------------------------------------------------------- */
+
+		/** وضعیت‌هایی که جستجو شامل می‌شود؛ پیش‌نویس و خصوصی هم قابل قانون/استثنا هستند. */
+		public static function searchable_statuses() {
+			return array( 'publish', 'private', 'draft', 'pending', 'future' );
+		}
+
+		/**
+		 * شکستن عبارت جستجو به کلمه‌های یکتا.
+		 * همهٔ کلمه‌ها باید پیدا شوند ولی ترتیبشان مهم نیست؛ یعنی «پک محافظ شارژر»
+		 * محصولی با نام «محافظ شارژر پک آیفون» را هم می‌آورد.
+		 */
+		public static function search_words( $term, $max = self::SEARCH_MAX_WORDS ) {
+			$term = trim( (string) $term );
+			if ( '' === $term ) {
+				return array();
+			}
+			$parts = preg_split( '/\s+/u', $term );
+			if ( ! is_array( $parts ) ) {
+				// عبارت با بایت‌های نامعتبر UTF-8؛ به شکستن ساده برمی‌گردیم.
+				$parts = preg_split( '/\s+/', $term );
+			}
+			$words = array();
+			foreach ( (array) $parts as $part ) {
+				$part = trim( (string) $part );
+				if ( '' === $part || in_array( $part, $words, true ) ) {
+					continue;
+				}
+				$words[] = $part;
+				if ( count( $words ) >= $max ) {
+					break;
+				}
+			}
+			return $words;
+		}
+
+		/** پارامترهای صفحه‌بندی جستجو؛ صفحهٔ بیرون از محدوده به آخرین صفحه برمی‌گردد. */
+		public static function search_paging( $page_raw, $total, $per_page = self::SEARCH_PER_PAGE ) {
+			$per_page = max( 1, (int) $per_page );
+			$total    = max( 0, (int) $total );
+			$pages    = $total ? (int) ceil( $total / $per_page ) : 0;
+			$page     = max( 1, (int) $page_raw );
+			if ( $pages && $page > $pages ) {
+				$page = $pages;
+			}
+			return array(
+				'page'     => $page,
+				'pages'    => $pages,
+				'per_page' => $per_page,
+				'offset'   => ( $page - 1 ) * $per_page,
+			);
+		}
+
+		/**
+		 * شرط WHERE جستجوی محصول مادر در کل سایت.
+		 * هر کلمه باید در یکی از این‌ها باشد: نام، توضیح کوتاه، توضیح بلند، SKU خودِ
+		 * محصول یا SKU یکی از واریشن‌هایش (واریشن انتخاب می‌شود، مادر برمی‌گردد).
+		 * اگر کل عبارت عددی باشد، شناسهٔ مستقیم هم پذیرفته می‌شود — شناسهٔ محصول،
+		 * یا شناسهٔ واریشن که والدش را برمی‌گرداند.
+		 *
+		 * @param string $term     عبارت جستجو.
+		 * @param array  $statuses وضعیت‌های مجاز؛ خالی یعنی همهٔ وضعیت‌های قابل جستجو.
+		 * @param int|null $exact_id شناسهٔ مستقیم؛ null یعنی از خود عبارت گرفته شود.
+		 * @return array شرط SQL با placeholder و آرایهٔ پارامترهایش.
+		 */
+		public static function product_search_where_sql( $term, $statuses = array(), $exact_id = null ) {
+			global $wpdb;
+
+			$statuses = (array) $statuses;
+			if ( empty( $statuses ) ) {
+				$statuses = self::searchable_statuses();
+			}
+			$statuses = array_values( array_intersect( self::searchable_statuses(), array_map( 'sanitize_key', $statuses ) ) );
+			if ( empty( $statuses ) ) {
+				// بدون وضعیت مجاز هیچ نتیجه‌ای نباید برگردد.
+				return array( '1=0', array() );
+			}
+
+			$words = self::search_words( $term );
+			if ( empty( $words ) ) {
+				return array( '1=0', array() );
+			}
+
+			if ( null === $exact_id ) {
+				$exact_id = is_numeric( trim( (string) $term ) ) ? absint( $term ) : 0;
+			}
+
+			$where  = array( 'p.post_type = %s' );
+			$params = array( 'product' );
+
+			$status_placeholders = implode( ', ', array_fill( 0, count( $statuses ), '%s' ) );
+			$where[] = "p.post_status IN ({$status_placeholders})";
+			$params  = array_merge( $params, $statuses );
+
+			$word_clauses = array();
+			foreach ( $words as $word ) {
+				$like    = '%' . $wpdb->esc_like( $word ) . '%';
+				$columns = array(
+					'p.post_title LIKE %s',
+					'p.post_excerpt LIKE %s',
+					'p.post_content LIKE %s',
+					"EXISTS (
+						SELECT 1 FROM {$wpdb->postmeta} psku
+						WHERE psku.post_id = p.ID AND psku.meta_key = '_sku'
+						  AND psku.meta_value <> '' AND psku.meta_value LIKE %s
+					)",
+					"EXISTS (
+						SELECT 1 FROM {$wpdb->posts} vsku_p
+						INNER JOIN {$wpdb->postmeta} vsku ON vsku.post_id = vsku_p.ID AND vsku.meta_key = '_sku'
+						WHERE vsku_p.post_type = 'product_variation' AND vsku_p.post_status NOT IN ('trash','auto-draft')
+						  AND vsku_p.post_parent = p.ID AND vsku.meta_value <> '' AND vsku.meta_value LIKE %s
+					)",
+				);
+				$word_clauses[] = '( ' . implode( ' OR ', $columns ) . ' )';
+				$params         = array_merge( $params, array_fill( 0, count( $columns ), $like ) );
+			}
+			$match = implode( ' AND ', $word_clauses );
+
+			if ( $exact_id ) {
+				// شناسهٔ مستقیم حتی اگر عددی در نام/SKU نباشد باید پیدا شود؛
+				// شناسهٔ واریشن هم والدش را برمی‌گرداند.
+				$where[]  = "( ({$match}) OR p.ID = %d OR EXISTS (
+						SELECT 1 FROM {$wpdb->posts} vid
+						WHERE vid.ID = %d AND vid.post_type = 'product_variation' AND vid.post_parent = p.ID
+					) )";
+				$params[] = $exact_id;
+				$params[] = $exact_id;
+			} else {
+				$where[] = "({$match})";
+			}
+
+			return array( implode( ' AND ', $where ), $params );
+		}
+
+		/** ترتیب نتایج: اول محصولی که کل عبارت در نامش هست، بعد بقیه به‌ترتیب نام (پایدار برای صفحه‌بندی). */
+		public static function product_search_order_sql( $term ) {
+			global $wpdb;
+			return array(
+				'CASE WHEN p.post_title LIKE %s THEN 0 ELSE 1 END ASC, p.post_title ASC, p.ID ASC',
+				array( '%' . $wpdb->esc_like( trim( (string) $term ) ) . '%' ),
+			);
+		}
+
+		/**
+		 * جستجوی صفحه‌بندی‌شدهٔ محصول در کل کاتالوگ.
+		 *
+		 * @param string $term عبارت جستجو.
+		 * @param array  $args کلیدها: statuses، page، per_page.
+		 * @return array items/total/page/pages/per_page
+		 */
+		public static function search_products( $term, $args = array() ) {
+			global $wpdb;
+
+			$args     = (array) $args;
+			$per_page = isset( $args['per_page'] ) ? max( 1, (int) $args['per_page'] ) : self::SEARCH_PER_PAGE;
+			$term     = trim( (string) $term );
+			$empty    = array(
+				'items'    => array(),
+				'total'    => 0,
+				'page'     => 1,
+				'pages'    => 0,
+				'per_page' => $per_page,
+			);
+			if ( '' === $term ) {
+				return $empty;
+			}
+
+			list( $where_sql, $params ) = self::product_search_where_sql( $term, isset( $args['statuses'] ) ? $args['statuses'] : array() );
+			if ( '1=0' === $where_sql ) {
+				return $empty;
+			}
+			list( $order_sql, $order_params ) = self::product_search_order_sql( $term );
+
+			$total = absint( $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} p WHERE {$where_sql}", $params ) ) );
+			if ( ! $total ) {
+				return $empty;
+			}
+
+			$paging = self::search_paging( isset( $args['page'] ) ? $args['page'] : 1, $total, $per_page );
+			$rows   = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT p.ID, p.post_title FROM {$wpdb->posts} p WHERE {$where_sql} ORDER BY {$order_sql} LIMIT %d OFFSET %d",
+					array_merge( $params, $order_params, array( $per_page, $paging['offset'] ) )
+				),
+				ARRAY_A
+			);
+
+			return array(
+				'items'    => self::search_product_items( (array) $rows ),
+				'total'    => $total,
+				'page'     => $paging['page'],
+				'pages'    => $paging['pages'],
+				'per_page' => $per_page,
+			);
+		}
+
+		/** شکل‌دهی ردیف‌های جستجو به آیتم‌های JSON (عکس، SKU، دسته، لینک ویرایش). */
+		public static function search_product_items( $rows ) {
+			$rows = (array) $rows;
+			$ids  = array();
+			foreach ( $rows as $row ) {
+				$id = isset( $row['ID'] ) ? absint( $row['ID'] ) : 0;
+				if ( $id ) {
+					$ids[] = $id;
+				}
+			}
+
+			$cats = array();
+			if ( ! empty( $ids ) && function_exists( 'wp_get_object_terms' ) ) {
+				update_meta_cache( 'post', $ids );
+				$terms = wp_get_object_terms( $ids, 'product_cat', array( 'fields' => 'all_with_object_id' ) );
+				if ( ! is_wp_error( $terms ) ) {
+					foreach ( (array) $terms as $item ) {
+						$object_id = isset( $item->object_id ) ? absint( $item->object_id ) : 0;
+						if ( $object_id ) {
+							$cats[ $object_id ][] = $item->name;
+						}
+					}
+				}
+			}
+
+			$items = array();
+			foreach ( $rows as $row ) {
+				$id = isset( $row['ID'] ) ? absint( $row['ID'] ) : 0;
+				if ( ! $id ) {
+					continue;
+				}
+				$product  = function_exists( 'wc_get_product' ) ? wc_get_product( $id ) : null;
+				$image_id = $product && method_exists( $product, 'get_image_id' )
+					? absint( $product->get_image_id() )
+					: absint( get_post_meta( $id, '_thumbnail_id', true ) );
+				$image_url = $image_id ? wp_get_attachment_image_url( $image_id, 'thumbnail' ) : '';
+				$items[]   = array(
+					'id'         => $id,
+					'name'       => wp_specialchars_decode( (string) ( isset( $row['post_title'] ) ? $row['post_title'] : '' ), ENT_QUOTES ),
+					'sku'        => $product ? (string) $product->get_sku() : (string) get_post_meta( $id, '_sku', true ),
+					'type'       => $product && method_exists( $product, 'get_type' ) ? (string) $product->get_type() : '',
+					'categories' => isset( $cats[ $id ] ) ? implode( ', ', $cats[ $id ] ) : '',
+					'image_url'  => $image_url ? esc_url_raw( $image_url ) : '',
+					'edit_url'   => (string) get_edit_post_link( $id, '' ),
+				);
+			}
+			return $items;
 		}
 
 		public static function ids( $raw ) {

@@ -847,6 +847,30 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 		}
 
 		/* -----------------------------------------------------------------
+		 * جستجوی سراسری محصول (نام/توضیح/SKU/شناسه) با صفحه‌بندی
+		 * برای «محصولات مستثنا»: کل کاتالوگ، بدون سقف ۳۰ موردی جستجوی ووکامرس.
+		 * --------------------------------------------------------------- */
+
+		public static function ajax_search_products_any() {
+			self::guard();
+			if ( ! TCP_Settings::wc_active() ) {
+				wp_send_json_error( array( 'message' => 'ووکامرس فعال نیست.' ), 400 );
+			}
+
+			$raw_term = isset( $_POST['term'] ) && is_scalar( $_POST['term'] ) ? wp_unslash( $_POST['term'] ) : '';
+			$term     = trim( sanitize_text_field( (string) $raw_term ) );
+			$length   = function_exists( 'mb_strlen' ) ? mb_strlen( $term, 'UTF-8' ) : strlen( $term );
+			$page_raw = isset( $_POST['page'] ) && is_scalar( $_POST['page'] ) ? wp_unslash( $_POST['page'] ) : 1;
+			$page     = max( 1, min( 100000, absint( $page_raw ) ) );
+
+			if ( $length < 2 ) {
+				wp_send_json_success( array( 'items' => array(), 'total' => 0, 'page' => $page, 'pages' => 0, 'per_page' => TCP_Ops::SEARCH_PER_PAGE ) );
+			}
+
+			wp_send_json_success( TCP_Ops::search_products( $term, array( 'page' => $page ) ) );
+		}
+
+		/* -----------------------------------------------------------------
 		 * جستجوی عبارتی محصول‌ها برای تغییر گروهی
 		 * --------------------------------------------------------------- */
 

@@ -143,7 +143,7 @@ body.woocommerce_page_tisacase-pricing #wpcontent { background: var(--tisa-bg, #
 .tcp-search-box .tisa-input { width: 100%; }
 .tcp-search-results {
 	position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; left: 0;
-	display: none; max-height: 320px; overflow: auto;
+	display: none; max-height: 400px; overflow: auto;
 	border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px);
 	background: var(--tisa-surface, #fff);
 	box-shadow: var(--tisa-shadow, 0 8px 24px rgba(31, 42, 46, .12));
@@ -159,6 +159,15 @@ body.woocommerce_page_tisacase-pricing #wpcontent { background: var(--tisa-bg, #
 .tcp-search-item:hover, .tcp-search-item:focus-visible { background: var(--tisa-primary-tint, #F2FBF8); outline: 0; }
 .tcp-search-item small, .tcp-rule-name small { color: var(--tisa-muted, #77828A); font-weight: 400; }
 .tcp-search-empty, .tcp-search-loading { padding: var(--tisa-sp-3, 12px); color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
+/* سرصفحهٔ نتایج جستجو: چند مورد در کل سایت پیدا شد. */
+.tcp-search-head {
+	position: sticky; top: 0; z-index: 1;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-muted, #77828A);
+	font-size: var(--tisa-fs-meta, 12px); font-weight: 700;
+}
 .tcp-table-scroll { overflow: auto; }
 .tcp-target-modes {
 	display: grid;

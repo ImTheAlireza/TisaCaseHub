@@ -409,5 +409,50 @@ $GLOBALS['tcp_products'][40] = $grouped;
 $g = TCP_Ops::process_parent( 40, 'regular_increase_percent', 10, array( 'run_id' => 8 ) );
 t( 'محصول گروهی رد می‌شود و ذخیره نمی‌شود', 1 === $g['skipped'] && 0 === $grouped->saved && true === $g['complete'] );
 
+echo "--- 14) جستجوی محصول در کل کاتالوگ (TCP_Ops) ---\n";
+$GLOBALS['wpdb'] = new TCP_Test_WPDB();
+t( 'search_words: عبارت به کلمه‌های یکتا شکسته می‌شود', TCP_Ops::search_words( '  پک   محافظ شارژر ' ) === array( 'پک', 'محافظ', 'شارژر' ) );
+t( 'search_words: کلمهٔ تکراری حذف می‌شود', TCP_Ops::search_words( 'قاب قاب گوشی' ) === array( 'قاب', 'گوشی' ) );
+t( 'search_words: عبارت خالی → آرایهٔ خالی', TCP_Ops::search_words( '   ' ) === array() );
+t( 'search_words: سقف SEARCH_MAX_WORDS رعایت می‌شود',
+	count( TCP_Ops::search_words( 'a b c d e f g h i j' ) ) === TCP_Ops::SEARCH_MAX_WORDS );
+$p = TCP_Ops::search_paging( 1, 250, 100 );
+t( 'search_paging: ۲۵۰ نتیجه → ۳ صفحه، offset صفر', 3 === $p['pages'] && 0 === $p['offset'] && 1 === $p['page'] );
+$p = TCP_Ops::search_paging( 2, 250, 100 );
+t( 'search_paging: صفحهٔ دوم → offset ۱۰۰', 2 === $p['page'] && 100 === $p['offset'] );
+$p = TCP_Ops::search_paging( 99, 250, 100 );
+t( 'search_paging: صفحهٔ بیرون از محدوده به آخرین صفحه برمی‌گردد', 3 === $p['page'] && 200 === $p['offset'] );
+$p = TCP_Ops::search_paging( 0, 0, 100 );
+t( 'search_paging: بدون نتیجه → صفر صفحه', 0 === $p['pages'] && 1 === $p['page'] );
+
+list( $where_sql, $where_params ) = TCP_Ops::product_search_where_sql( 'پک محافظ شارژر' );
+t( 'WHERE جستجو فقط روی محصول مادر است', 0 === strpos( $where_sql, 'p.post_type = %s' ) && 'product' === $where_params[0] );
+t( 'WHERE جستجو هر ۵ وضعیت قابل جستجو را می‌گیرد',
+	strpos( $where_sql, 'p.post_status IN (%s, %s, %s, %s, %s)' ) !== false, $where_sql );
+t( 'هر کلمه در نام، توضیح کوتاه و توضیح بلند جستجو می‌شود',
+	3 === substr_count( $where_sql, 'p.post_title LIKE %s' ) && 3 === substr_count( $where_sql, 'p.post_excerpt LIKE %s' ) && 3 === substr_count( $where_sql, 'p.post_content LIKE %s' ) );
+t( 'SKU خودِ محصول و SKU واریشن‌ها هم جستجو می‌شود (→ والد)',
+	3 === substr_count( $where_sql, "psku.meta_key = '_sku'" ) && 3 === substr_count( $where_sql, "vsku_p.post_type = 'product_variation'" ) && 3 === substr_count( $where_sql, 'vsku_p.post_parent = p.ID' ) );
+t( 'کلمه‌ها با AND ترکیب می‌شوند؛ پس ترتیب کلمه‌ها مهم نیست', 2 === substr_count( $where_sql, ') AND ( ' ) );
+t( 'عبارت غیرعددی شاخهٔ شناسهٔ مستقیم ندارد', false === strpos( $where_sql, 'OR p.ID = %d' ) );
+t( 'تعداد پارامترها با placeholderها می‌خواند (۱ نوع + ۵ وضعیت + ۳ کلمه × ۵ ستون)',
+	21 === count( $where_params ), count( $where_params ) . ' پارامتر' );
+
+list( $id_where, $id_params ) = TCP_Ops::product_search_where_sql( '1234' );
+t( 'عبارت عددی، شناسهٔ مستقیم محصول را هم پیدا می‌کند',
+	false !== strpos( $id_where, 'OR p.ID = %d' ) && 1234 === end( $id_params ) );
+t( 'شناسهٔ واریشن هم پذیرفته می‌شود و والدش برمی‌گردد',
+	false !== strpos( $id_where, "vid.post_type = 'product_variation'" ) && false !== strpos( $id_where, 'vid.post_parent = p.ID' )
+	&& array( 1234, 1234 ) === array_slice( $id_params, -2 ), implode( ',', $id_params ) );
+list( $bad_where, $bad_params ) = TCP_Ops::product_search_where_sql( 'قاب', array( 'trash' ) );
+t( 'وضعیت نامعتبر → بدون نتیجه (1=0)', '1=0' === $bad_where && array() === $bad_params );
+t( 'عبارت خالی → بدون نتیجه (1=0)', '1=0' === TCP_Ops::product_search_where_sql( '  ' )[0] );
+
+list( $order_sql, $order_params ) = TCP_Ops::product_search_order_sql( 'پک محافظ شارژر' );
+t( 'ترتیب: اول عنوان منطبق با کل عبارت، بعد بقیه به‌ترتیب نام (پایدار برای صفحه‌بندی)',
+	0 === strpos( $order_sql, 'CASE WHEN p.post_title LIKE %s THEN 0 ELSE 1 END ASC' )
+	&& false !== strpos( $order_sql, 'p.post_title ASC, p.ID ASC' )
+	&& array( '%پک محافظ شارژر%' ) === $order_params );
+
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

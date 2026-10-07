@@ -228,6 +228,7 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 					'search'         => TCP_Settings::AJAX_SEARCH,
 					'nameSearch'     => TCP_Settings::AJAX_PRODUCT_NAME_SEARCH,
 					'skuSearch'      => TCP_Settings::AJAX_PRODUCT_SKU_SEARCH,
+					'anySearch'      => TCP_Settings::AJAX_PRODUCT_ANY_SEARCH,
 				),
 				'ops'      => $ops,
 				'filters'  => array(

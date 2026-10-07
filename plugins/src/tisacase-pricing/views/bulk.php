@@ -112,7 +112,8 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				<div class="tcp-source-heading"><h3>افزودن محصول به‌صورت تکی</h3><p>با انتخاب هر نتیجه، محصول به فهرست انتخاب‌شده‌ها افزوده می‌شود.</p></div>
 				<div id="tcp-retail-product-search">
 					<label class="tcp-label" for="tcp-products">جستجوی محصول (نام، شناسه یا SKU)</label>
-					<select id="tcp-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
+					<select id="tcp-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-limit="100" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
+					<p class="tcp-muted">این کادر تا ۱۰۰ نتیجه نشان می‌دهد؛ برای افزودن دسته‌جمعی از «جستجو در نام» یا «جستجو در SKU» استفاده کن.</p>
 				</div>
 				<div id="tcp-wholesale-product-search" style="display:none">
 					<label class="tcp-label" for="tcp-wholesale-products">جستجوی محصول‌های دارای قیمت عمده</label>
@@ -160,8 +161,8 @@ $tcp_currency = function_exists( 'get_woocommerce_currency_symbol' ) ? get_wooco
 				<div class="tcp-grid-2 tcp-exclusion-grid">
 					<div>
 						<label class="tcp-label" for="tcp-excluded-products">محصولات مستثنا</label>
-						<select id="tcp-excluded-products" class="wc-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، شناسه یا SKU محصول را جستجو کن…" data-action="woocommerce_json_search_products"></select>
-						<p class="tcp-muted">حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_PRODUCTS ); ?> محصول.</p>
+						<select id="tcp-excluded-products" class="tcp-product-search" multiple="multiple" data-tcp-w="wide" data-placeholder="نام، SKU یا شناسهٔ محصول را جستجو کن…"></select>
+						<p class="tcp-muted">جستجو در کل سایت (نام، توضیح، SKU خودِ محصول یا واریشن‌ها و شناسه) انجام می‌شود؛ هر بار ۱۰۰ نتیجه می‌آید و با اسکرول، موارد بعدی بارگذاری می‌شوند. حداکثر <?php echo esc_html( TCP_Ops::MAX_EXCLUDED_PRODUCTS ); ?> محصول.</p>
 					</div>
 					<div>
 						<label class="tcp-label" for="tcp-excluded-cats">دسته‌های مستثنا</label>
