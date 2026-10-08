@@ -1,0 +1,1379 @@
+/* ======================================================
+ * TisaCase - 158,000 Toman Phone Restricted Coupon V3
+ * Coupon Code: tisacase158
+ * author : shayan zakizadeh
+ * منطق جدید:
+ * - Pending / Failed / Cancelled / On-hold مصرف قطعی نیست.
+ * - فقط Processing یا Completed مصرف قطعی محسوب می‌شود.
+ * - سوابق واقعی قبلی از روی سفارش‌های موفق حفظ می‌شوند.
+ * - محدودیت داخلی "یک بار برای هر کاربر" ووکامرس غیرفعال است تا
+ *   سفارش Pending باعث قفل‌شدن کد نشود.
+ * ====================================================== */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+/* ======================================================
+ * تنظیمات اصلی
+ * ====================================================== */
+
+if (!defined('TISACASE158_COUPON_CODE')) {
+    define('TISACASE158_COUPON_CODE', 'tisacase158');
+}
+
+if (!defined('TISACASE158_OLD_COUPON_CODE')) {
+    define('TISACASE158_OLD_COUPON_CODE', 'TISAKIS158');
+}
+
+if (!defined('TISACASE158_AMOUNT_TOMAN')) {
+    define('TISACASE158_AMOUNT_TOMAN', 158000);
+}
+
+if (!defined('TISACASE158_ALLOWED_PHONES_OPTION')) {
+    define('TISACASE158_ALLOWED_PHONES_OPTION', 'tisacase158_allowed_phones');
+}
+
+/* داده قدیمی حذف نمی‌شود، فقط دیگر مرجع تشخیص مصرف نیست. */
+if (!defined('TISACASE158_USED_PHONES_OPTION')) {
+    define('TISACASE158_USED_PHONES_OPTION', 'tisacase158_used_phones');
+}
+
+/* فقط استفاده‌های قطعی در این Option جدید ثبت می‌شوند. */
+if (!defined('TISACASE158_CONFIRMED_PHONES_OPTION')) {
+    define('TISACASE158_CONFIRMED_PHONES_OPTION', 'tisacase158_confirmed_phones_v2');
+}
+
+/* زمان ریست کلی محدودیت استفاده‌ها. */
+if (!defined('TISACASE158_GLOBAL_RESET_AT_OPTION')) {
+    define('TISACASE158_GLOBAL_RESET_AT_OPTION', 'tisacase158_global_reset_at_v3');
+}
+
+/* زمان ریست اختصاصی هر شماره. */
+if (!defined('TISACASE158_RESET_PHONES_OPTION')) {
+    define('TISACASE158_RESET_PHONES_OPTION', 'tisacase158_reset_phones_v3');
+}
+
+
+/* ======================================================
+ * ساخت / آپدیت خودکار کد تخفیف
+ * ====================================================== */
+
+add_action('admin_init', 'tisacase158_create_or_update_coupon');
+
+function tisacase158_create_or_update_coupon() {
+
+    if (!current_user_can('manage_woocommerce') || !class_exists('WC_Coupon')) {
+        return;
+    }
+
+    $old_coupon_id = wc_get_coupon_id_by_code(TISACASE158_OLD_COUPON_CODE);
+
+    if ($old_coupon_id) {
+        wp_update_post(array(
+            'ID'          => $old_coupon_id,
+            'post_status' => 'draft',
+        ));
+    }
+
+    $coupon_id = wc_get_coupon_id_by_code(TISACASE158_COUPON_CODE);
+    $amount    = tisacase158_get_coupon_amount();
+
+    if ($coupon_id) {
+        $coupon = new WC_Coupon($coupon_id);
+    } else {
+        $coupon = new WC_Coupon();
+        $coupon->set_code(TISACASE158_COUPON_CODE);
+    }
+
+    $coupon->set_discount_type('fixed_cart');
+    $coupon->set_amount($amount);
+    $coupon->set_individual_use(true);
+
+    /*
+     * مهم:
+     * محدودیت داخلی ووکامرس غیرفعال می‌شود، چون WooCommerce می‌تواند
+     * استفاده را روی سفارش Pending رزرو کند. محدودیت یک‌بار فقط با
+     * شماره موبایل و خرید قطعی کنترل می‌شود.
+     */
+    $coupon->set_usage_limit_per_user(0);
+
+    $coupon->set_description(
+        'کد تخفیف ۱۵۸ هزار تومانی مخصوص شماره‌های منتخب کیف پول - هر شماره فقط پس از خرید موفق یک بار'
+    );
+
+    $saved_coupon_id = $coupon->save();
+
+    if ($saved_coupon_id) {
+        update_post_meta($saved_coupon_id, '_tisacase158_phone_restricted', 'yes');
+    }
+}
+
+function tisacase158_get_coupon_amount() {
+
+    $currency = function_exists('get_woocommerce_currency')
+        ? get_woocommerce_currency()
+        : 'IRT';
+
+    return ($currency === 'IRR')
+        ? TISACASE158_AMOUNT_TOMAN * 10
+        : TISACASE158_AMOUNT_TOMAN;
+}
+
+
+/* ======================================================
+ * نرمال‌سازی شماره موبایل
+ * خروجی: 09xxxxxxxxx
+ * ====================================================== */
+
+function tisacase158_normalize_phone($phone) {
+
+    $phone = (string) $phone;
+
+    $persian_digits = array(
+        '۰','۱','۲','۳','۴','۵','۶','۷','۸','۹',
+        '٠','١','٢','٣','٤','٥','٦','٧','٨','٩'
+    );
+
+    $english_digits = array(
+        '0','1','2','3','4','5','6','7','8','9',
+        '0','1','2','3','4','5','6','7','8','9'
+    );
+
+    $phone = str_replace($persian_digits, $english_digits, $phone);
+    $phone = preg_replace('/[^0-9]/', '', $phone);
+
+    if (empty($phone)) {
+        return '';
+    }
+
+    if (strpos($phone, '0098') === 0) {
+        $phone = '0' . substr($phone, 4);
+    } elseif (strpos($phone, '98') === 0 && strlen($phone) >= 12) {
+        $phone = '0' . substr($phone, 2);
+    } elseif (strpos($phone, '9') === 0 && strlen($phone) === 10) {
+        $phone = '0' . $phone;
+    }
+
+    if (strlen($phone) > 11 && substr($phone, -11, 2) === '09') {
+        $phone = substr($phone, -11);
+    }
+
+    return preg_match('/^09[0-9]{9}$/', $phone) ? $phone : '';
+}
+
+function tisacase158_parse_phones($raw_text) {
+
+    $lines  = preg_split('/\r\n|\r|\n|,|;|\s+/', (string) $raw_text);
+    $phones = array();
+
+    foreach ($lines as $line) {
+        $phone = tisacase158_normalize_phone($line);
+
+        if ($phone) {
+            $phones[$phone] = $phone;
+        }
+    }
+
+    return array_values($phones);
+}
+
+function tisacase158_get_allowed_phones() {
+
+    $phones = get_option(TISACASE158_ALLOWED_PHONES_OPTION, array());
+
+    if (!is_array($phones)) {
+        return array();
+    }
+
+    $clean = array();
+
+    foreach ($phones as $phone) {
+        $normalized = tisacase158_normalize_phone($phone);
+
+        if ($normalized) {
+            $clean[$normalized] = $normalized;
+        }
+    }
+
+    return array_values($clean);
+}
+
+
+/* ======================================================
+ * سوابق قطعی
+ * ====================================================== */
+
+function tisacase158_get_confirmed_phones() {
+
+    $used = get_option(TISACASE158_CONFIRMED_PHONES_OPTION, array());
+
+    return is_array($used) ? $used : array();
+}
+
+function tisacase158_save_confirmed_phones($used) {
+
+    if (!is_array($used)) {
+        $used = array();
+    }
+
+    update_option(TISACASE158_CONFIRMED_PHONES_OPTION, $used, false);
+}
+
+
+/* ======================================================
+ * اطلاعات ریست محدودیت استفاده
+ * ====================================================== */
+
+function tisacase158_get_reset_phones() {
+
+    $resets = get_option(TISACASE158_RESET_PHONES_OPTION, array());
+
+    return is_array($resets) ? $resets : array();
+}
+
+function tisacase158_save_reset_phones($resets) {
+
+    if (!is_array($resets)) {
+        $resets = array();
+    }
+
+    update_option(TISACASE158_RESET_PHONES_OPTION, $resets, false);
+}
+
+function tisacase158_get_global_reset_at() {
+
+    return absint(get_option(TISACASE158_GLOBAL_RESET_AT_OPTION, 0));
+}
+
+function tisacase158_get_phone_reset_at($phone) {
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if (!$phone) {
+        return 0;
+    }
+
+    $resets = tisacase158_get_reset_phones();
+
+    return isset($resets[$phone]) ? absint($resets[$phone]) : 0;
+}
+
+function tisacase158_get_effective_reset_at($phone) {
+
+    return max(
+        tisacase158_get_global_reset_at(),
+        tisacase158_get_phone_reset_at($phone)
+    );
+}
+
+/*
+ * زمان واقعی استفاده از سفارش را برمی‌گرداند.
+ * اولویت با متای ثبت قطعی، سپس زمان پرداخت و سپس زمان ایجاد سفارش است.
+ */
+function tisacase158_get_order_usage_timestamp($order) {
+
+    if (!$order || !is_a($order, 'WC_Order')) {
+        return 0;
+    }
+
+    $confirmed_at = $order->get_meta('_tisacase158_confirmed_at');
+
+    if ($confirmed_at) {
+        $timestamp = strtotime((string) $confirmed_at);
+
+        if ($timestamp) {
+            return absint($timestamp);
+        }
+    }
+
+    $date_paid = $order->get_date_paid();
+
+    if ($date_paid) {
+        return absint($date_paid->getTimestamp());
+    }
+
+    $date_created = $order->get_date_created();
+
+    if ($date_created) {
+        return absint($date_created->getTimestamp());
+    }
+
+    $date_modified = $order->get_date_modified();
+
+    return $date_modified
+        ? absint($date_modified->getTimestamp())
+        : 0;
+}
+
+/*
+ * ریست محدودیت فقط برای یک شماره.
+ * سفارش‌ها و سوابق تاریخی حذف نمی‌شوند؛ فقط سفارش‌های قبل از زمان ریست
+ * دیگر باعث مسدودشدن شماره نخواهند شد.
+ */
+function tisacase158_reset_single_phone($phone) {
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if (!$phone) {
+        return false;
+    }
+
+    $confirmed = tisacase158_get_confirmed_phones();
+
+    if (isset($confirmed[$phone])) {
+        unset($confirmed[$phone]);
+        tisacase158_save_confirmed_phones($confirmed);
+    }
+
+    $resets         = tisacase158_get_reset_phones();
+    $resets[$phone] = time();
+
+    tisacase158_save_reset_phones($resets);
+
+    return true;
+}
+
+/*
+ * ریست محدودیت برای همه شماره‌ها.
+ * لیست شماره‌های مجاز، سفارش‌ها و کد تخفیف دست‌نخورده باقی می‌مانند.
+ */
+function tisacase158_reset_all_phones() {
+
+    $reset_at = time();
+
+    tisacase158_save_confirmed_phones(array());
+    tisacase158_save_reset_phones(array());
+
+    update_option(
+        TISACASE158_GLOBAL_RESET_AT_OPTION,
+        $reset_at,
+        false
+    );
+
+    return $reset_at;
+}
+
+
+/* ======================================================
+ * گرفتن شماره مشتری از Checkout / Session / Customer
+ * ====================================================== */
+
+add_action('woocommerce_checkout_update_order_review', 'tisacase158_store_checkout_phone');
+
+function tisacase158_store_checkout_phone($post_data) {
+
+    if (!function_exists('WC') || !WC()->session) {
+        return;
+    }
+
+    parse_str($post_data, $data);
+
+    if (!empty($data['billing_phone'])) {
+        $phone = tisacase158_normalize_phone($data['billing_phone']);
+
+        if ($phone) {
+            WC()->session->set('tisacase158_checkout_phone', $phone);
+        }
+    }
+}
+
+function tisacase158_get_current_checkout_phone() {
+
+    $phone = '';
+
+    if (!empty($_POST['billing_phone'])) {
+        $phone = wp_unslash($_POST['billing_phone']);
+    }
+
+    if (!$phone && function_exists('WC') && WC()->session) {
+        $phone = WC()->session->get('tisacase158_checkout_phone');
+    }
+
+    if (!$phone && function_exists('WC') && WC()->customer) {
+        $phone = WC()->customer->get_billing_phone();
+    }
+
+    return tisacase158_normalize_phone($phone);
+}
+
+
+/* ======================================================
+ * تشخیص Coupon روی سبد / سفارش
+ * ====================================================== */
+
+function tisacase158_cart_has_target_coupon() {
+
+    if (!function_exists('WC') || !WC()->cart) {
+        return false;
+    }
+
+    foreach ((array) WC()->cart->get_applied_coupons() as $coupon_code) {
+        if (strtolower($coupon_code) === strtolower(TISACASE158_COUPON_CODE)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function tisacase158_order_has_target_coupon($order) {
+
+    if (!$order || !is_a($order, 'WC_Order')) {
+        return false;
+    }
+
+    foreach ((array) $order->get_coupon_codes() as $code) {
+        if (strtolower($code) === strtolower(TISACASE158_COUPON_CODE)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+/* ======================================================
+ * آیا سفارش استفاده قطعی محسوب می‌شود؟
+ * ====================================================== */
+
+function tisacase158_order_is_confirmed_use($order) {
+
+    if (!$order || !is_a($order, 'WC_Order')) {
+        return false;
+    }
+
+    if (!tisacase158_order_has_target_coupon($order)) {
+        return false;
+    }
+
+    if ($order->has_status(array('processing', 'completed'))) {
+        return true;
+    }
+
+    /*
+     * برای حفظ سابقه واقعی قدیمی:
+     * اگر پرداخت قبلاً ثبت شده باشد، حتی اگر وضعیت بعداً عوض شده باشد،
+     * استفاده را قطعی نگه می‌داریم.
+     */
+    return (bool) $order->get_date_paid();
+}
+
+
+/* ======================================================
+ * کوئری HPOS-safe سفارش‌های یک شماره
+ * ====================================================== */
+
+function tisacase158_query_orders_by_saved_phone($phone, $limit = 100, $paged = 1) {
+
+    if (!function_exists('wc_get_orders')) {
+        return array();
+    }
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if (!$phone) {
+        return array();
+    }
+
+    $args = array(
+        'limit'   => absint($limit),
+        'paged'   => max(1, absint($paged)),
+        'orderby' => 'date',
+        'order'   => 'DESC',
+        'return'  => 'objects',
+        'status'  => array_keys(wc_get_order_statuses()),
+    );
+
+    $hpos_enabled = (
+        class_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil') &&
+        \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+    );
+
+    if ($hpos_enabled) {
+        $args['meta_query'] = array(
+            array(
+                'key'     => '_tisacase158_coupon_phone',
+                'value'   => $phone,
+                'compare' => '=',
+            ),
+        );
+    } else {
+        $args['meta_key']   = '_tisacase158_coupon_phone';
+        $args['meta_value'] = $phone;
+    }
+
+    return wc_get_orders($args);
+}
+
+
+/* ======================================================
+ * پیدا کردن استفاده واقعی قبلی برای یک شماره
+ * ====================================================== */
+
+function tisacase158_find_confirmed_order_for_phone($phone, $after_timestamp = 0) {
+
+    $phone           = tisacase158_normalize_phone($phone);
+    $after_timestamp = absint($after_timestamp);
+
+    if (!$phone) {
+        return false;
+    }
+
+    $orders = tisacase158_query_orders_by_saved_phone($phone, 100, 1);
+
+    foreach ((array) $orders as $order) {
+
+        if (!tisacase158_order_is_confirmed_use($order)) {
+            continue;
+        }
+
+        $usage_timestamp = tisacase158_get_order_usage_timestamp($order);
+
+        if ($after_timestamp && $usage_timestamp <= $after_timestamp) {
+            continue;
+        }
+
+        return $order;
+    }
+
+    /* Fallback برای سفارش‌های خیلی قدیمی که متای اختصاصی نداشته‌اند. */
+    $orders = wc_get_orders(array(
+        'limit'         => 100,
+        'orderby'       => 'date',
+        'order'         => 'DESC',
+        'return'        => 'objects',
+        'status'        => array_keys(wc_get_order_statuses()),
+        'billing_phone' => $phone,
+    ));
+
+    foreach ((array) $orders as $order) {
+
+        if (!tisacase158_order_is_confirmed_use($order)) {
+            continue;
+        }
+
+        $usage_timestamp = tisacase158_get_order_usage_timestamp($order);
+
+        if ($after_timestamp && $usage_timestamp <= $after_timestamp) {
+            continue;
+        }
+
+        return $order;
+    }
+
+    return false;
+}
+
+
+/* ======================================================
+ * آیا شماره قبلاً استفاده قطعی داشته؟
+ * ====================================================== */
+
+function tisacase158_phone_already_used($phone) {
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if (!$phone) {
+        return false;
+    }
+
+    $reset_at  = tisacase158_get_effective_reset_at($phone);
+    $confirmed = tisacase158_get_confirmed_phones();
+
+    if (isset($confirmed[$phone])) {
+
+        $used_timestamp = !empty($confirmed[$phone]['used_ts'])
+            ? absint($confirmed[$phone]['used_ts'])
+            : (!empty($confirmed[$phone]['used_at'])
+                ? absint(strtotime($confirmed[$phone]['used_at']))
+                : 0);
+
+        /*
+         * اگر رکورد بعد از آخرین ریست ثبت شده باشد، شماره مصرف‌شده است.
+         */
+        if (!$reset_at || !$used_timestamp || $used_timestamp > $reset_at) {
+            return true;
+        }
+
+        /*
+         * رکورد قدیمی‌تر از ریست را از لیست فعال پاک می‌کنیم.
+         */
+        unset($confirmed[$phone]);
+        tisacase158_save_confirmed_phones($confirmed);
+    }
+
+    /*
+     * سفارش‌های قبل از آخرین ریست نباید شماره را دوباره قفل کنند.
+     */
+    $order = tisacase158_find_confirmed_order_for_phone(
+        $phone,
+        $reset_at
+    );
+
+    if ($order) {
+        tisacase158_mark_order_as_confirmed_use($order, false);
+        return true;
+    }
+
+    return false;
+}
+
+
+/* ======================================================
+ * ثبت استفاده قطعی
+ * ====================================================== */
+
+function tisacase158_mark_order_as_confirmed_use($order, $add_note = true) {
+
+    if (!$order || !is_a($order, 'WC_Order')) {
+        return false;
+    }
+
+    if (!tisacase158_order_is_confirmed_use($order)) {
+        return false;
+    }
+
+    $phone = $order->get_meta('_tisacase158_coupon_phone');
+
+    if (!$phone) {
+        $phone = $order->get_billing_phone();
+    }
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if (!$phone) {
+        return false;
+    }
+
+    /*
+     * اگر این سفارش مربوط به قبل از آخرین ریست این شماره است،
+     * نباید شماره را دوباره مسدود کند.
+     */
+    /*
+     * در اجرای زنده پس از موفق‌شدن سفارش، زمان همین لحظه ملاک است.
+     * در همگام‌سازی و بررسی سوابق، زمان واقعی تاریخی سفارش ملاک می‌ماند.
+     */
+    $usage_timestamp = $add_note
+        ? time()
+        : tisacase158_get_order_usage_timestamp($order);
+
+    $reset_at = tisacase158_get_effective_reset_at($phone);
+
+    if ($reset_at && $usage_timestamp && $usage_timestamp <= $reset_at) {
+        return false;
+    }
+
+    $confirmed = tisacase158_get_confirmed_phones();
+
+    $first_name = trim((string) $order->get_billing_first_name());
+    $last_name  = trim((string) $order->get_billing_last_name());
+    $full_name  = trim($first_name . ' ' . $last_name);
+
+    if (!$full_name) {
+        $full_name = '—';
+    }
+
+    $used_date = $order->get_date_paid();
+
+    if (!$used_date) {
+        $used_date = $order->get_date_modified();
+    }
+
+    $used_at = $used_date
+        ? $used_date->date_i18n('Y-m-d H:i:s')
+        : current_time('mysql');
+
+    $is_new = !isset($confirmed[$phone]);
+
+    $confirmed[$phone] = array(
+        'phone'      => $phone,
+        'name'       => $full_name,
+        'first_name' => $first_name,
+        'last_name'  => $last_name,
+        'email'      => sanitize_email($order->get_billing_email()),
+        'order_id'   => absint($order->get_id()),
+        'status'     => sanitize_key($order->get_status()),
+        'used_at'    => $used_at,
+        'used_ts'    => $usage_timestamp ? absint($usage_timestamp) : time(),
+    );
+
+    tisacase158_save_confirmed_phones($confirmed);
+
+    $already_marked = $order->get_meta('_tisacase158_confirmed_use');
+
+    $order->update_meta_data('_tisacase158_coupon_phone', $phone);
+    $order->update_meta_data('_tisacase158_confirmed_use', 'yes');
+    $order->update_meta_data('_tisacase158_confirmed_at', $used_at);
+    $order->save();
+
+    if ($add_note && $is_new && $already_marked !== 'yes') {
+        $order->add_order_note(
+            'استفاده قطعی از کد ' .
+            TISACASE158_COUPON_CODE .
+            ' برای شماره ' .
+            $phone .
+            ' ثبت شد؛ این شماره دیگر مجاز به استفاده مجدد نیست.'
+        );
+    }
+
+    return true;
+}
+
+
+/* ======================================================
+ * فقط Processing / Completed شماره را مصرف می‌کند
+ * ====================================================== */
+
+add_action('woocommerce_order_status_processing', 'tisacase158_confirm_coupon_usage', 30);
+add_action('woocommerce_order_status_completed', 'tisacase158_confirm_coupon_usage', 30);
+
+function tisacase158_confirm_coupon_usage($order_id) {
+
+    $order = wc_get_order($order_id);
+
+    if (!$order || !tisacase158_order_has_target_coupon($order)) {
+        return;
+    }
+
+    tisacase158_mark_order_as_confirmed_use($order, true);
+}
+
+
+/* ======================================================
+ * محدودیت هنگام اعمال Coupon
+ * ====================================================== */
+
+add_filter('woocommerce_coupon_is_valid', 'tisacase158_restrict_coupon_by_phone', 20, 3);
+
+function tisacase158_restrict_coupon_by_phone($valid, $coupon, $discounts) {
+
+    if (!$valid) {
+        return $valid;
+    }
+
+    if (
+        !$coupon ||
+        strtolower($coupon->get_code()) !== strtolower(TISACASE158_COUPON_CODE)
+    ) {
+        return $valid;
+    }
+
+    $GLOBALS['tisacase158_coupon_error'] = '';
+
+    $allowed_phones = tisacase158_get_allowed_phones();
+
+    if (empty($allowed_phones)) {
+        $GLOBALS['tisacase158_coupon_error'] = 'empty_list';
+        return false;
+    }
+
+    $current_phone = tisacase158_get_current_checkout_phone();
+
+    if (!$current_phone) {
+        $GLOBALS['tisacase158_coupon_error'] = 'empty_phone';
+        return false;
+    }
+
+    if (!in_array($current_phone, $allowed_phones, true)) {
+        $GLOBALS['tisacase158_coupon_error'] = 'not_allowed';
+        return false;
+    }
+
+    if (tisacase158_phone_already_used($current_phone)) {
+        $GLOBALS['tisacase158_coupon_error'] = 'already_used';
+        return false;
+    }
+
+    return $valid;
+}
+
+
+/* ======================================================
+ * اعتبارسنجی نهایی Checkout
+ * ====================================================== */
+
+add_action('woocommerce_after_checkout_validation', 'tisacase158_checkout_validation', 20, 2);
+
+function tisacase158_checkout_validation($data, $errors) {
+
+    if (!tisacase158_cart_has_target_coupon()) {
+        return;
+    }
+
+    $billing_phone = isset($data['billing_phone'])
+        ? tisacase158_normalize_phone($data['billing_phone'])
+        : '';
+
+    $allowed_phones = tisacase158_get_allowed_phones();
+
+    if (!$billing_phone) {
+        $errors->add(
+            'tisacase158_phone_empty',
+            'برای استفاده از این کد تخفیف، شماره موبایل صورتحساب را وارد کنید.'
+        );
+        return;
+    }
+
+    if (!in_array($billing_phone, $allowed_phones, true)) {
+        $errors->add(
+            'tisacase158_phone_not_allowed',
+            'این کد تخفیف فقط برای شماره‌های منتخب کیف پول فعال است.'
+        );
+        return;
+    }
+
+    if (tisacase158_phone_already_used($billing_phone)) {
+        $errors->add(
+            'tisacase158_phone_already_used',
+            'این شماره موبایل قبلاً با این کد تخفیف خرید موفق داشته است.'
+        );
+    }
+}
+
+
+/* ======================================================
+ * ذخیره شماره روی سفارش
+ * این مرحله شماره را مصرف‌شده نمی‌کند.
+ * ====================================================== */
+
+add_action('woocommerce_checkout_create_order', 'tisacase158_save_phone_on_order', 20, 2);
+
+function tisacase158_save_phone_on_order($order, $data) {
+
+    if (!tisacase158_cart_has_target_coupon()) {
+        return;
+    }
+
+    $phone = '';
+
+    if (!empty($data['billing_phone'])) {
+        $phone = $data['billing_phone'];
+    } elseif ($order && $order->get_billing_phone()) {
+        $phone = $order->get_billing_phone();
+    }
+
+    $phone = tisacase158_normalize_phone($phone);
+
+    if ($phone) {
+        $order->update_meta_data('_tisacase158_coupon_phone', $phone);
+    }
+}
+
+
+/* ======================================================
+ * پیام خطای اختصاصی
+ * ====================================================== */
+
+add_filter('woocommerce_coupon_error', 'tisacase158_custom_coupon_error_message', 20, 3);
+
+function tisacase158_custom_coupon_error_message($message, $error_code, $coupon) {
+
+    if (
+        !$coupon ||
+        strtolower($coupon->get_code()) !== strtolower(TISACASE158_COUPON_CODE)
+    ) {
+        return $message;
+    }
+
+    $error = isset($GLOBALS['tisacase158_coupon_error'])
+        ? $GLOBALS['tisacase158_coupon_error']
+        : '';
+
+    if ($error === 'empty_list') {
+        return 'لیست شماره‌های مجاز برای این کد تخفیف هنوز تنظیم نشده است.';
+    }
+
+    if ($error === 'empty_phone') {
+        return 'برای استفاده از این کد تخفیف، ابتدا شماره موبایل صورتحساب را وارد کنید.';
+    }
+
+    if ($error === 'not_allowed') {
+        return 'این کد تخفیف فقط برای شماره‌های منتخب کیف پول فعال است.';
+    }
+
+    if ($error === 'already_used') {
+        return 'این شماره موبایل قبلاً با این کد تخفیف خرید موفق داشته و امکان استفاده مجدد ندارد.';
+    }
+
+    return $message;
+}
+
+
+/* ======================================================
+ * همگام‌سازی سوابق واقعی قبلی
+ * ====================================================== */
+
+function tisacase158_sync_confirmed_history() {
+
+    if (!function_exists('wc_get_orders')) {
+        return array('checked' => 0, 'added' => 0);
+    }
+
+    $stats = array(
+        'checked' => 0,
+        'added'   => 0,
+    );
+
+    $paged = 1;
+    $limit = 100;
+
+    do {
+
+        $args = array(
+            'limit'    => $limit,
+            'paged'    => $paged,
+            'paginate' => true,
+            'orderby'  => 'date',
+            'order'    => 'DESC',
+            'return'   => 'objects',
+            'status'   => array_keys(wc_get_order_statuses()),
+        );
+
+        $hpos_enabled = (
+            class_exists('\\Automattic\\WooCommerce\\Utilities\\OrderUtil') &&
+            \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()
+        );
+
+        if ($hpos_enabled) {
+            $args['meta_query'] = array(
+                array(
+                    'key'     => '_tisacase158_coupon_phone',
+                    'compare' => 'EXISTS',
+                ),
+            );
+        } else {
+            $args['meta_key'] = '_tisacase158_coupon_phone';
+        }
+
+        $result = wc_get_orders($args);
+
+        if (!$result || !isset($result->orders)) {
+            break;
+        }
+
+        foreach ($result->orders as $order) {
+
+            $stats['checked']++;
+
+            if (!tisacase158_order_is_confirmed_use($order)) {
+                continue;
+            }
+
+            $phone = tisacase158_normalize_phone(
+                $order->get_meta('_tisacase158_coupon_phone')
+            );
+
+            if (!$phone) {
+                $phone = tisacase158_normalize_phone($order->get_billing_phone());
+            }
+
+            if (!$phone) {
+                continue;
+            }
+
+            $reset_at        = tisacase158_get_effective_reset_at($phone);
+            $usage_timestamp = tisacase158_get_order_usage_timestamp($order);
+
+            if ($reset_at && $usage_timestamp && $usage_timestamp <= $reset_at) {
+                continue;
+            }
+
+            $before        = tisacase158_get_confirmed_phones();
+            $was_confirmed = isset($before[$phone]);
+
+            if (tisacase158_mark_order_as_confirmed_use($order, false) && !$was_confirmed) {
+                $stats['added']++;
+            }
+        }
+
+        $max_pages = isset($result->max_num_pages)
+            ? absint($result->max_num_pages)
+            : 1;
+
+        $paged++;
+
+    } while ($paged <= $max_pages);
+
+    return $stats;
+}
+
+
+/* ======================================================
+ * صفحه مدیریت
+ * ووکامرس > کد تخفیف TisaCase 158
+ * ====================================================== */
+
+add_action('admin_menu', 'tisacase158_admin_menu');
+
+function tisacase158_admin_menu() {
+
+    add_submenu_page(
+        'woocommerce',
+        'کد تخفیف TisaCase 158',
+        'کد تخفیف TisaCase 158',
+        'manage_woocommerce',
+        'tisacase158-coupon',
+        'tisacase158_admin_page'
+    );
+}
+
+function tisacase158_admin_page() {
+
+    if (!current_user_can('manage_woocommerce')) {
+        wp_die('دسترسی غیرمجاز');
+    }
+
+    if (isset($_POST['tisacase158_save_phones'])) {
+
+        check_admin_referer('tisacase158_save_phones_nonce');
+
+        $raw_phones = isset($_POST['tisacase158_allowed_phones'])
+            ? wp_unslash($_POST['tisacase158_allowed_phones'])
+            : '';
+
+        $phones = tisacase158_parse_phones($raw_phones);
+
+        update_option(TISACASE158_ALLOWED_PHONES_OPTION, $phones, false);
+
+        echo '<div class="notice notice-success is-dismissible"><p>لیست شماره‌های مجاز ذخیره شد. تعداد: <strong>' .
+            esc_html(count($phones)) .
+            '</strong></p></div>';
+    }
+
+    if (isset($_POST['tisacase158_sync_history'])) {
+
+        check_admin_referer('tisacase158_sync_history_nonce');
+
+        $stats = tisacase158_sync_confirmed_history();
+
+        echo '<div class="notice notice-success is-dismissible"><p>' .
+            'همگام‌سازی تمام شد. سفارش بررسی‌شده: <strong>' .
+            esc_html($stats['checked']) .
+            '</strong> — شماره قطعی جدید: <strong>' .
+            esc_html($stats['added']) .
+            '</strong></p></div>';
+    }
+
+    if (isset($_POST['tisacase158_reset_single_phone'])) {
+
+        check_admin_referer('tisacase158_reset_single_phone_nonce');
+
+        $raw_phone = isset($_POST['tisacase158_reset_phone'])
+            ? wp_unslash($_POST['tisacase158_reset_phone'])
+            : '';
+
+        $reset_phone = tisacase158_normalize_phone($raw_phone);
+
+        if (!$reset_phone) {
+
+            echo '<div class="notice notice-error is-dismissible"><p>' .
+                'شماره موبایل معتبر وارد نشده است.' .
+                '</p></div>';
+
+        } elseif (tisacase158_reset_single_phone($reset_phone)) {
+
+            echo '<div class="notice notice-success is-dismissible"><p>' .
+                'محدودیت استفاده برای شماره <strong dir="ltr">' .
+                esc_html($reset_phone) .
+                '</strong> ریست شد و این شماره دوباره می‌تواند از کد تخفیف استفاده کند.' .
+                '</p></div>';
+        }
+    }
+
+    if (isset($_POST['tisacase158_reset_all_phones'])) {
+
+        check_admin_referer('tisacase158_reset_all_phones_nonce');
+
+        $before_count = count(tisacase158_get_confirmed_phones());
+        $reset_at     = tisacase158_reset_all_phones();
+
+        echo '<div class="notice notice-success is-dismissible"><p>' .
+            'محدودیت استفاده همه شماره‌ها ریست شد. تعداد رکورد فعال قبلی: <strong>' .
+            esc_html($before_count) .
+            '</strong> — از این لحظه همه شماره‌های مجاز دوباره امکان استفاده دارند.' .
+            '</p></div>';
+    }
+
+    $allowed_phones = tisacase158_get_allowed_phones();
+    $confirmed      = tisacase158_get_confirmed_phones();
+
+    uasort($confirmed, function($a, $b) {
+        $a_time = !empty($a['used_at']) ? strtotime($a['used_at']) : 0;
+        $b_time = !empty($b['used_at']) ? strtotime($b['used_at']) : 0;
+        return $b_time <=> $a_time;
+    });
+
+    $textarea_value  = implode("\n", $allowed_phones);
+    $amount          = tisacase158_get_coupon_amount();
+    $global_reset_at = tisacase158_get_global_reset_at();
+
+    ?>
+    <div class="wrap" dir="rtl">
+
+        <h1>کد تخفیف TisaCase 158</h1>
+
+        <div style="background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:18px;max-width:1100px;margin-top:18px;">
+
+            <p>
+                کد فعال:
+                <strong style="font-size:18px;direction:ltr;display:inline-block;">
+                    <?php echo esc_html(TISACASE158_COUPON_CODE); ?>
+                </strong>
+            </p>
+
+            <p>
+                مبلغ تخفیف:
+                <strong><?php echo esc_html(number_format($amount)); ?></strong>
+            </p>
+
+            <p>
+                شماره‌های مجاز:
+                <strong><?php echo esc_html(count($allowed_phones)); ?></strong>
+                  |  
+                استفاده قطعی:
+                <strong><?php echo esc_html(count($confirmed)); ?></strong>
+            </p>
+
+            <p style="color:#646970;">
+                فقط سفارش‌هایی که به «در حال انجام» یا «تکمیل‌شده» رسیده‌اند
+                مصرف قطعی محسوب می‌شوند. رفتن به درگاه و رهاکردن پرداخت، شماره را مصرف نمی‌کند.
+            </p>
+
+        </div>
+
+        <div style="background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:18px;max-width:1100px;margin-top:18px;">
+
+            <h2>لیست شماره‌های مجاز</h2>
+
+            <form method="post">
+
+                <?php wp_nonce_field('tisacase158_save_phones_nonce'); ?>
+
+                <textarea
+                    name="tisacase158_allowed_phones"
+                    rows="16"
+                    style="width:100%;max-width:750px;direction:ltr;text-align:left;font-family:monospace;"><?php
+                    echo esc_textarea($textarea_value);
+                ?></textarea>
+
+                <p>
+                    <button
+                        type="submit"
+                        name="tisacase158_save_phones"
+                        class="button button-primary button-large"
+                    >
+                        ذخیره شماره‌ها
+                    </button>
+                </p>
+
+            </form>
+
+        </div>
+
+        <div style="background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:18px;max-width:1100px;margin-top:18px;">
+
+            <h2>همگام‌سازی استفاده‌های واقعی قبلی</h2>
+
+            <p>
+                بعد از جایگزینی نسخه قدیمی، این دکمه را یک بار بزن.
+                فقط سفارش‌های واقعاً موفق قبلی وارد لیست قطعی می‌شوند؛
+                سفارش‌های رهاشده در درگاه وارد نمی‌شوند.
+            </p>
+
+            <form method="post">
+
+                <?php wp_nonce_field('tisacase158_sync_history_nonce'); ?>
+
+                <button
+                    type="submit"
+                    name="tisacase158_sync_history"
+                    class="button button-secondary"
+                >
+                    همگام‌سازی سوابق قطعی قبلی
+                </button>
+
+            </form>
+
+        </div>
+
+        <div style="background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:18px;max-width:1100px;margin-top:18px;">
+
+            <h2>ریست محدودیت استفاده از کد تخفیف</h2>
+
+            <p style="color:#646970;line-height:2;">
+                ریست فقط قفل «یک بار استفاده» را باز می‌کند.
+                لیست شماره‌های مجاز، سفارش‌ها، کد تخفیف و سوابق تاریخی حذف نمی‌شوند.
+                بعد از خرید موفق بعدی، شماره دوباره به‌صورت خودکار مصرف‌شده ثبت خواهد شد.
+            </p>
+
+            <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start;">
+
+                <form method="post" style="min-width:320px;flex:1;background:#f6f7f7;border:1px solid #dcdcde;border-radius:8px;padding:16px;">
+
+                    <?php wp_nonce_field('tisacase158_reset_single_phone_nonce'); ?>
+
+                    <h3 style="margin-top:0;">ریست یک شماره مشخص</h3>
+
+                    <p>
+                        <input
+                            type="text"
+                            name="tisacase158_reset_phone"
+                            placeholder="مثلاً 09123456789"
+                            inputmode="numeric"
+                            autocomplete="off"
+                            required
+                            style="width:100%;max-width:360px;direction:ltr;text-align:left;"
+                        >
+                    </p>
+
+                    <button
+                        type="submit"
+                        name="tisacase158_reset_single_phone"
+                        class="button button-primary"
+                    >
+                        ریست همین شماره
+                    </button>
+
+                </form>
+
+                <form method="post" style="min-width:320px;flex:1;background:#fff4f4;border:1px solid #f0b7b7;border-radius:8px;padding:16px;">
+
+                    <?php wp_nonce_field('tisacase158_reset_all_phones_nonce'); ?>
+
+                    <h3 style="margin-top:0;color:#b32d2e;">ریست همه شماره‌ها</h3>
+
+                    <p>
+                        همه شماره‌هایی که تاکنون مصرف‌شده‌اند دوباره مجاز به استفاده می‌شوند.
+                    </p>
+
+                    <?php if ($global_reset_at) : ?>
+                        <p style="color:#646970;">
+                            آخرین ریست کلی:
+                            <strong>
+                                <?php echo esc_html(date_i18n('Y-m-d H:i:s', $global_reset_at)); ?>
+                            </strong>
+                        </p>
+                    <?php endif; ?>
+
+                    <button
+                        type="submit"
+                        name="tisacase158_reset_all_phones"
+                        class="button"
+                        style="color:#b32d2e;border-color:#b32d2e;"
+                        onclick="return confirm('آیا مطمئن هستید؟ محدودیت استفاده همه شماره‌ها ریست می‌شود.');"
+                    >
+                        ریست تمام شماره‌ها
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+        <div style="background:#fff;border:1px solid #dcdcde;border-radius:10px;padding:18px;max-width:1100px;margin-top:18px;">
+
+            <h2>افرادی که واقعاً از کد استفاده کرده‌اند</h2>
+
+            <?php if (empty($confirmed)) : ?>
+
+                <p>هنوز استفاده قطعی ثبت نشده است.</p>
+
+            <?php else : ?>
+
+                <div style="overflow:auto;">
+
+                    <table class="widefat striped">
+
+                        <thead>
+                            <tr>
+                                <th>نام مشتری</th>
+                                <th>شماره موبایل</th>
+                                <th>سفارش</th>
+                                <th>وضعیت سفارش</th>
+                                <th>تاریخ استفاده</th>
+                                <th>ایمیل</th>
+                                <th>در لیست مجاز فعلی</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+
+                        <?php foreach ($confirmed as $phone => $data) : ?>
+
+                            <?php
+                            $order_id = !empty($data['order_id'])
+                                ? absint($data['order_id'])
+                                : 0;
+
+                            $order = $order_id ? wc_get_order($order_id) : false;
+
+                            $name = !empty($data['name']) ? $data['name'] : '—';
+                            $email = !empty($data['email']) ? $data['email'] : '—';
+                            $status = !empty($data['status'])
+                                ? wc_get_order_status_name($data['status'])
+                                : '—';
+
+                            if ($order) {
+                                $current_name = trim(
+                                    $order->get_billing_first_name() .
+                                    ' ' .
+                                    $order->get_billing_last_name()
+                                );
+
+                                if ($current_name) {
+                                    $name = $current_name;
+                                }
+
+                                if ($order->get_billing_email()) {
+                                    $email = $order->get_billing_email();
+                                }
+
+                                $status = wc_get_order_status_name($order->get_status());
+                            }
+
+                            $is_allowed = in_array(
+                                tisacase158_normalize_phone($phone),
+                                $allowed_phones,
+                                true
+                            );
+                            ?>
+
+                            <tr>
+                                <td><strong><?php echo esc_html($name); ?></strong></td>
+                                <td dir="ltr"><?php echo esc_html($phone); ?></td>
+                                <td>
+                                    <?php if ($order) : ?>
+                                        <a href="<?php echo esc_url($order->get_edit_order_url()); ?>" target="_blank">
+                                            #<?php echo esc_html($order_id); ?>
+                                        </a>
+                                    <?php elseif ($order_id) : ?>
+                                        #<?php echo esc_html($order_id); ?>
+                                    <?php else : ?>
+                                        —
+                                    <?php endif; ?>
+                                </td>
+                                <td><?php echo esc_html($status); ?></td>
+                                <td>
+                                    <?php echo !empty($data['used_at']) ? esc_html($data['used_at']) : '—'; ?>
+                                </td>
+                                <td dir="ltr"><?php echo esc_html($email); ?></td>
+                                <td><?php echo $is_allowed ? 'بله' : 'خیر'; ?></td>
+                            </tr>
+
+                        <?php endforeach; ?>
+
+                        </tbody>
+
+                    </table>
+
+                </div>
+
+            <?php endif; ?>
+
+        </div>
+
+    </div>
+    <?php
+}
