@@ -65,16 +65,26 @@
 	function phoneMode() {
 		var enabled = $('input[name="phone_enabled"]').prop('checked');
 		$('.tcp-phone-options').toggle(!!enabled);
-		$('.tcp-phone-options input[required]').prop('required', !!enabled);
+		$('input[name="phone_limit"]').prop('required', !!enabled);
+		$('input[name="phone_enabled"]').attr({'aria-controls': 'tcp-phone-options', 'aria-expanded': String(!!enabled)});
 		if ($('input[name="phone_enabled"]').length) {
 			$('input[name="usage_limit"], input[name="usage_limit_per_user"]').prop('disabled', !!enabled);
 		}
 	}
 	$('input[name="phone_enabled"]').on('change', phoneMode);
 	phoneMode();
+	function phoneAudience() {
+		var selected = $('input[name="phone_selected"]').prop('checked');
+		$('.tcp-phone-list').toggle(!!selected);
+		$('.tcp-phone-all').toggle(!selected);
+		$('input[name="phone_selected"]').attr({'aria-controls': 'tcp-phone-list', 'aria-expanded': String(!!selected)});
+	}
+	$('input[name="phone_selected"]').on('change', phoneAudience);
+	phoneAudience();
 	$('.tcp-phone-import').on('click', function () {
 		if (window.confirm('فهرست فعلی فرم با شماره‌های نسخه قدیمی جایگزین شود؟ برای اعمال، ذخیره کنید.')) {
 			$('textarea[name="phone_list"]').val($(this).attr('data-phones'));
+			$('input[name="phone_selected"]').prop('checked', true).trigger('change');
 		}
 	});
 
