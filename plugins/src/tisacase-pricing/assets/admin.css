@@ -564,3 +564,15 @@ body.tcp-modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
 	.tcp-modal__backdrop, .tcp-modal__box { animation: none; }
 }
+
+/* Per-coupon successful phone usage */
+.tcp-phone-card { margin-top: 24px; }
+.tcp-phone-notice { padding: 14px 18px; border-inline-start: 3px solid #c38b32; background: #fffbeb; line-height: 1.9; }
+.tcp-phone-table { overflow-x: auto; }
+.tcp-phone-options textarea { width: 100%; max-width: 760px; font-family: monospace; }
+.tcp-report-meta { display: flex; gap: 20px; flex-wrap: wrap; margin: 16px 0; }
+.tcp-report-table { min-width: 1150px; }
+.tcp-report-table td { vertical-align: top; line-height: 1.9; }
+.tcp-report-table small { display: block; margin-top: 5px; }
+.tcp-report-table details { min-width: 180px; max-width: 300px; }
+.tcp-report-table summary { cursor: pointer; color: #2271b1; }
