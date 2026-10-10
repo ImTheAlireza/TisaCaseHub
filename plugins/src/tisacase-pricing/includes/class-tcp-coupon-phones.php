@@ -217,17 +217,40 @@ final class TCP_Coupon_Phones {
 		}
 	}
 
-	/** One bounded batch per authenticated request. Uses Woo CRUD for HPOS and legacy stores. */
+	/**
+	 * Next batch (max 100) of order IDs above $after that carry this coupon or one of its aliases.
+	 * Reads the order-items table directly, so only coupon orders are loaded, not the whole store.
+	 * HPOS and legacy stores both keep coupon lines in {prefix}woocommerce_order_items.
+	 */
+	public static function candidate_ids( $c, $after = 0 ) {
+		global $wpdb;
+		$codes = array_values( array_unique( array_map( 'strtolower', array_merge( array( $c->get_code() ), self::policy( $c )['aliases'] ) ) ) );
+		$marks = implode( ',', array_fill( 0, count( $codes ), '%s' ) );
+		$sql   = $wpdb->prepare(
+			'SELECT DISTINCT order_id FROM ' . $wpdb->prefix . "woocommerce_order_items WHERE order_item_type='coupon' AND order_id>%d AND LOWER(order_item_name) IN ($marks) ORDER BY order_id ASC LIMIT 100",
+			...array_merge( array( absint( $after ) ), $codes )
+		);
+		$ids = $wpdb->get_col( $sql );
+		if ( null === $ids || $wpdb->last_error ) { throw new Exception( 'خواندن فهرست سفارش‌های این کد ممکن نیست؛ دوباره تلاش کنید.' ); }
+		return array_map( 'intval', $ids );
+	}
+
+	/** One bounded batch per authenticated request. Keyset cursor ('after') survives retries and stops. */
 	public static function sync( $c ) {
 		$s = $c->get_meta( '_tcp_phone_sync' );
-		if ( ! is_array( $s ) || ! empty( $s['done'] ) ) { $s = array( 'page' => 1, 'until' => time(), 'done' => false ); }
-		$result = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'page' => max( 1, (int) $s['page'] ), 'paginate' => true, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . absint( $s['until'] ) ) );
+		if ( ! is_array( $s ) || ! empty( $s['done'] ) ) { $s = array( 'page' => 1, 'after' => 0, 'until' => time(), 'done' => false ); }
+		$ids = self::candidate_ids( $c, (int) ( $s['after'] ?? 0 ) );
+		$orders = array();
+		if ( $ids ) {
+			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $ids, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . absint( $s['until'] ) ) );
+		}
 		$codes = array_merge( array( strtolower( $c->get_code() ) ), self::policy( $c )['aliases'] );
-		foreach ( $result->orders as $order ) {
+		foreach ( $orders as $order ) {
 			if ( array_intersect( $codes, array_map( 'strtolower', $order->get_coupon_codes() ) ) ) { self::record( $c, $order ); }
 		}
-		$s['done'] = $s['page'] >= $result->max_num_pages;
-		$s['page']++;
+		if ( $ids ) { $s['after'] = max( $ids ); }
+		$s['done'] = count( $ids ) < 100;
+		$s['page'] = (int) $s['page'] + 1;
 		$c->update_meta_data( '_tcp_phone_sync', $s );
 		$c->save();
 	}

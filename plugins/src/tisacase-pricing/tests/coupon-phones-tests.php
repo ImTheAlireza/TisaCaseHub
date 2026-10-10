@@ -16,8 +16,12 @@ function wc_get_order( $id ) { return $GLOBALS['orders'][ $id ] ?? null; }
 function wc_get_order_statuses() { return array_fill_keys( array( 'pending', 'failed', 'cancelled', 'on-hold', 'processing', 'completed', 'refunded' ), '' ); }
 function wc_get_orders( $args ) {
 	$GLOBALS['last_args'] = $args;
-	$orders = array_values( $GLOBALS['orders'] );
-	return (object) array( 'orders' => array_slice( $orders, ( $args['page'] - 1 ) * 100, 100 ), 'max_num_pages' => (int) ceil( count( $orders ) / 100 ) );
+	$out = array();
+	foreach ( $GLOBALS['orders'] as $id => $o ) {
+		if ( isset( $args['include'] ) && ! in_array( (int) $id, array_map( 'intval', $args['include'] ), true ) ) { continue; }
+		$out[] = $o;
+	}
+	return array_slice( $out, 0, $args['limit'] ?? 100 );
 }
 class WC_Coupon {
 	public $id, $meta = array(), $code, $native_limit = 3, $per_user = 1;
@@ -52,6 +56,7 @@ class TestDB {
 	public function __construct() {
 		$this->db = new SQLite3( ':memory:' );
 		$this->db->exec( 'CREATE TABLE wp_tcp_coupon_uses (id INTEGER PRIMARY KEY, coupon_id INTEGER, order_id INTEGER, phone TEXT, used_at INTEGER, released INTEGER DEFAULT 0, reset_by INTEGER DEFAULT 0, reset_at INTEGER DEFAULT 0, UNIQUE(coupon_id,order_id))' );
+		$this->db->exec( 'CREATE TABLE wp_woocommerce_order_items (order_item_id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER, order_item_type TEXT, order_item_name TEXT)' );
 	}
 	public function prepare( $sql, ...$args ) {
 		foreach ( $args as $arg ) { $sql = preg_replace_callback( '/%[ds]/', function ( $m ) use ( $arg ) { return '%d' === $m[0] ? (string) (int) $arg : "'" . SQLite3::escapeString( $arg ) . "'"; }, $sql, 1 ); }
@@ -128,12 +133,18 @@ $orders = array();
 for ( $i = 100; $i <= 200; $i++ ) { $orders[$i] = new WC_Order( $i ); }
 $orders[200]->status = 'completed'; $orders[200]->codes = array( 'OLD-CODE' );
 $p['aliases'] = array( 'old-code' ); $c->update_meta_data( TCP_Coupon_Phones::META, $p );
+$GLOBALS['orders'] = $orders;
+foreach ( $orders as $o ) { foreach ( $o->codes as $code ) { $wpdb->db->exec( "INSERT INTO wp_woocommerce_order_items (order_id, order_item_type, order_item_name) VALUES ({$o->id}, 'coupon', '$code')" ); } }
+$before = TCP_Coupon_Phones::count( 1 );
 TCP_Coupon_Phones::sync( $c );
-t( 'history import uses bounded pages', 100 === $last_args['limit'] && 1 === $last_args['page'] );
-t( 'first page not marked finished', ! $c->get_meta( '_tcp_phone_sync' )['done'] );
+t( 'history import uses bounded batches', 100 === $last_args['limit'] && 100 === count( $last_args['include'] ) );
+t( 'first batch not marked finished', ! $c->get_meta( '_tcp_phone_sync' )['done'] );
+t( 'cursor advances to last id of batch', 199 === $c->get_meta( '_tcp_phone_sync' )['after'] );
 TCP_Coupon_Phones::sync( $c );
-t( 'second page includes old alias successful order', 2 === TCP_Coupon_Phones::count( 1 ) );
+t( 'second batch loads only the coupon orders', 1 === count( $last_args['include'] ) && 200 === $last_args['include'][0] );
+t( 'second batch includes old alias successful order', TCP_Coupon_Phones::count( 1 ) === $before + 1 );
 t( 'history finished', $c->get_meta( '_tcp_phone_sync' )['done'] );
+t( 'candidate lookup ignores non-coupon orders', array() === TCP_Coupon_Phones::candidate_ids( new WC_Coupon( 1 ), 200 ) );
 TCP_Coupon_Phones::reset( 1 ); TCP_Coupon_Phones::sync( $c ); TCP_Coupon_Phones::sync( $c );
 t( 'reimport cannot undo resets', 0 === TCP_Coupon_Phones::count( 1 ) );
 $wc = (object) array( 'customer' => new WC_Order( 5 ) );

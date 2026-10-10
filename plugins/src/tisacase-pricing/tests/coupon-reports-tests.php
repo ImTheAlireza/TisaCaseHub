@@ -29,6 +29,9 @@ t( '25 rows maximum per page', 25 === count( TCP_Coupon_Reports::rows( 1, 1 )['i
 t( 'out of range page clamped', 2 === TCP_Coupon_Reports::rows( 1, 900 )['page'] );
 $orders = array();
 for ( $i = 100; $i <= 200; $i++ ) { $orders[$i] = new WC_Order( $i ); $orders[$i]->codes = array( 'old' ); }
+$GLOBALS['orders'] = $orders;
+$wpdb->db->exec( 'DELETE FROM wp_woocommerce_order_items' );
+foreach ( $orders as $o ) { $wpdb->db->exec( "INSERT INTO wp_woocommerce_order_items (order_id, order_item_type, order_item_name) VALUES ({$o->id}, 'coupon', 'old')" ); }
 $c->update_meta_data( TCP_Coupon_Phones::META, array( 'aliases' => array( 'old' ) ) );
 $state = TCP_Coupon_Reports::sync( $c );
 t( 'backfill first batch bounded and unfinished', 100 === $state['checked'] && ! $state['done'] );
