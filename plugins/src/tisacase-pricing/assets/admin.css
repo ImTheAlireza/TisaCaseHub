@@ -404,7 +404,7 @@ html[dir="ltr"] .tcp-toggle input:checked + .tisa-switch__track::after { transfo
 }
 body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px) var(--tisa-sp-4, 16px); }
 /* ---------- قوانین داینامیک: جستجوی چندانتخابی + جدول قوانین + مودال ---------- */
-.tcp-css-probe { --tcp-probe: rules-v2; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.tcp-css-probe { --tcp-probe: rules-v3; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 #tcp-stale-assets kbd {
 	display: inline-block; padding: 1px 7px; border: 1px solid var(--tisa-border-strong, #C9C6BD);
 	border-bottom-width: 2px; border-radius: 6px; background: var(--tisa-surface, #fff);
@@ -433,6 +433,7 @@ body.tisa-compact .tcp-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp
 	background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52);
 	font-size: var(--tisa-fs-tiny, 11px); font-weight: 700; white-space: nowrap;
 }
+.tcp-added-tag--move { background: var(--tisa-warning-soft, #FCF3D7); color: var(--tisa-warning-ink, #8A6116); }
 .tcp-search-foot {
 	position: sticky; bottom: 0;
 	display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
@@ -603,3 +604,25 @@ body.tcp-modal-open { overflow: hidden; }
 .tcp-report-table small { display: block; margin-top: 5px; }
 .tcp-report-table details { min-width: 180px; max-width: 300px; }
 .tcp-report-table summary { cursor: pointer; color: #2271b1; }
+
+/* ---------- بخش استثناها: سه تب (تکی / دسته‌بندی / شناسه) ---------- */
+.tcp-wrap .tcp-subnav button.tcp-subtab { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 14px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-pill, 999px); background: var(--tisa-surface, #fff); color: var(--tisa-ink-soft, #45555C); font: inherit; font-size: var(--tisa-fs-control, 13px); font-weight: 600; cursor: pointer; }
+.tcp-wrap .tcp-subnav button.tcp-subtab.is-active { border-color: var(--tisa-primary, #0E7C6B); background: var(--tisa-primary-soft, #E8F0EE); color: var(--tisa-primary-ink, #0A5F52); }
+.tcp-wrap .tcp-subnav button.tcp-subtab:focus-visible { outline: 2px solid var(--tisa-primary, #0E7C6B); outline-offset: 2px; }
+.tcp-ex-panel[hidden] { display: none; }
+.tcp-lane-note { min-height: 0; margin: 0 0 8px; color: var(--tisa-primary-ink, #0A5F52); font-size: var(--tisa-fs-meta, 12px); font-weight: 600; }
+.tcp-lane-note:empty { display: none; }
+.tcp-rule-table--exc { min-width: 640px; }
+.tcp-prefix-add { display: flex; gap: 8px; align-items: center; max-width: 560px; margin: 12px 0 0; }
+.tcp-prefix-add .tisa-input { flex: 1 1 auto; }
+.tcp-prefix-msg { min-height: 0; margin: 8px 0 0; color: var(--tisa-primary-ink, #0A5F52); font-size: var(--tisa-fs-meta, 12px); font-weight: 600; }
+.tcp-prefix-msg:empty { display: none; }
+.tcp-prefix-msg.is-error { color: var(--tisa-danger-ink, #8E3128); }
+.tcp-prefix-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 0; }
+.tcp-prefix-list:empty { display: none; }
+.tcp-prefix-chip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 12px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-pill, 999px); background: var(--tisa-surface-2, #FAFAF8); }
+.tcp-prefix-code { padding: 1px 6px; border-radius: 6px; background: var(--tisa-surface, #fff); font-weight: 700; letter-spacing: .04em; }
+.tcp-prefix-count { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); }
+.tcp-prefix-remove { width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--tisa-ink-soft, #45555C); font-size: 16px; line-height: 1; cursor: pointer; }
+.tcp-prefix-remove:hover { background: var(--tisa-danger-soft, #FBECEA); color: var(--tisa-danger-ink, #8E3128); }
+#tcp-prefix-empty { margin-top: 14px; }

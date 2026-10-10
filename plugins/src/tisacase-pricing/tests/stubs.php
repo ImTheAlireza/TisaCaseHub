@@ -130,7 +130,11 @@ class TCP_Test_WPDB {
 
 	public function prepare( $query, ...$args ) {
 		foreach ( $args as $arg ) {
-			$query = preg_replace( '/%d/', (string) absint( $arg ), $query, 1 );
+			if ( preg_match( '/%s/', $query, $m, PREG_OFFSET_CAPTURE ) && ( ! preg_match( '/%d/', $query, $d, PREG_OFFSET_CAPTURE ) || $m[0][1] < $d[0][1] ) ) {
+				$query = preg_replace( '/%s/', "'" . addslashes( (string) $arg ) . "'", $query, 1 );
+			} else {
+				$query = preg_replace( '/%d/', (string) absint( $arg ), $query, 1 );
+			}
 		}
 		return $query;
 	}
@@ -145,6 +149,22 @@ class TCP_Test_WPDB {
 			$parent = absint( $m[1] );
 			$product = isset( $GLOBALS['tcp_products'][ $parent ] ) ? $GLOBALS['tcp_products'][ $parent ] : null;
 			return $product && method_exists( $product, 'get_children' ) ? array_map( 'absint', $product->get_children() ) : array();
+		}
+		// استریپ SKU-prefix: $GLOBALS['tcp_sku_rows'] = array( array( type, id, parent, sku ), ... )
+		if ( false !== strpos( $query, 'pm.meta_value LIKE' ) && isset( $GLOBALS['tcp_sku_rows'] ) ) {
+			preg_match_all( "/pm\.meta_value LIKE '([^']*)%'/", $query, $m );
+			$out = array();
+			foreach ( $GLOBALS['tcp_sku_rows'] as $row ) {
+				list( $type, $id, $parent, $sku ) = $row;
+				foreach ( $m[1] as $like ) {
+					$prefix = strtoupper( stripcslashes( $like ) );
+					if ( 0 === strpos( strtoupper( $sku ), $prefix ) ) {
+						$out[] = 'product_variation' === $type ? (string) $parent : (string) $id;
+						break;
+					}
+				}
+			}
+			return array_values( array_unique( $out ) );
 		}
 		if ( false !== strpos( $query, 'SELECT object_id FROM' ) ) {
 			return array();

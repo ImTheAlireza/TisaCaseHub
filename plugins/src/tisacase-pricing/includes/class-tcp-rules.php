@@ -29,6 +29,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		private static $rule_cache     = array();
 		private static $category_ids   = array();
 		private static $wholesale      = array();
+		private static $prefix_ids     = array();
 
 		/* -----------------------------------------------------------------
 		 * راه‌اندازی
@@ -76,6 +77,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				'global'     => array( 'enabled' => 0, 'increase' => 10, 'sale' => 10, 'mode' => 'round' ),
 				'products'   => array(),
 				'categories' => array(),
+				'prefixes'   => array(),
 			);
 		}
 
@@ -110,17 +112,46 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			if ( $min && $max && $min > $max ) {
 				$max = 0;
 			}
+			$exclude = ! empty( $rule['exclude'] );
+			// استثنا همیشه فعال و بدون بازهٔ زمانی است؛ فهرست استثناها سوییچ «فعال» ندارد.
 			return array(
-				'enabled'  => ! empty( $rule['enabled'] ) ? 1 : 0,
-				'exclude'  => ! empty( $rule['exclude'] ) ? 1 : 0,
+				'enabled'  => ( $exclude || ! empty( $rule['enabled'] ) ) ? 1 : 0,
+				'exclude'  => $exclude ? 1 : 0,
 				'increase' => self::percent( isset( $rule['increase'] ) ? $rule['increase'] : 0, 500 ),
 				'sale'     => self::percent( isset( $rule['sale'] ) ? $rule['sale'] : 0, 99.9 ),
 				'mode'     => array_key_exists( $mode, self::modes() ) ? $mode : 'round',
-				'from'     => self::date( isset( $rule['from'] ) ? $rule['from'] : '' ),
-				'to'       => self::date( isset( $rule['to'] ) ? $rule['to'] : '' ),
+				'from'     => $exclude ? '' : self::date( isset( $rule['from'] ) ? $rule['from'] : '' ),
+				'to'       => $exclude ? '' : self::date( isset( $rule['to'] ) ? $rule['to'] : '' ),
 				'min'      => $min,
 				'max'      => $max,
 			);
+		}
+
+		/**
+		 * پیشوندهای SKU استثناشده: حروف ابتدای SKU (مثلاً CH). یکتا، بزرگ‌حرف، بدون فاصله.
+		 *
+		 * @param mixed $list آرایه یا رشتهٔ جداشده با ویرگول/خط جدید.
+		 * @return string[]
+		 */
+		public static function normalize_prefixes( $list ) {
+			if ( is_string( $list ) ) {
+				$list = preg_split( '/[\s,،;]+/u', $list );
+			}
+			$out = array();
+			foreach ( (array) $list as $item ) {
+				if ( ! is_scalar( $item ) ) {
+					continue;
+				}
+				$p = self::upper( preg_replace( '/\s+/u', '', trim( (string) $item ) ) );
+				if ( '' !== $p && preg_match( '/^[\p{L}\p{N}_\-]{1,30}$/u', $p ) && ! in_array( $p, $out, true ) ) {
+					$out[] = $p;
+				}
+			}
+			return $out;
+		}
+
+		private static function upper( $text ) {
+			return function_exists( 'mb_strtoupper' ) ? mb_strtoupper( (string) $text, 'UTF-8' ) : strtoupper( (string) $text );
 		}
 
 		/** آیا قانون الان (با توجه به بازهٔ زمانی) فعال است؟ */
@@ -150,6 +181,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				'global'     => self::normalize_rule( isset( $raw['global'] ) && is_array( $raw['global'] ) ? $raw['global'] : $defaults['global'] ),
 				'products'   => array(),
 				'categories' => array(),
+				'prefixes'   => self::normalize_prefixes( isset( $raw['prefixes'] ) ? $raw['prefixes'] : array() ),
 			);
 			foreach ( array( 'products', 'categories' ) as $group ) {
 				foreach ( (array) ( isset( $raw[ $group ] ) ? $raw[ $group ] : array() ) as $id => $rule ) {
@@ -170,6 +202,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			self::$settings_cache = null;
 			self::$rule_cache     = array();
 			self::$category_ids   = array();
+			self::$prefix_ids     = array();
 		}
 
 		/* -----------------------------------------------------------------
@@ -206,6 +239,52 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			return (bool) array_intersect( $expanded[ $category_id ], $product_cats );
 		}
 
+		/**
+		 * مجموعهٔ شناسهٔ محصولاتی (والد) که SKUی با یکی از پیشوندهای استثنا دارند.
+		 * SKU خود محصول یا SKU هر واریشنش ملاک است (واریشن‌ها معمولاً SKU جدا دارند).
+		 * یک کوئری در هر درخواست؛ نتیجه کش می‌شود.
+		 *
+		 * @param string[] $prefixes پیشوندهای نرمال‌شده.
+		 * @return array<int,int> شناسه => شناسه.
+		 */
+		public static function prefix_product_ids( $prefixes ) {
+			$prefixes = self::normalize_prefixes( $prefixes );
+			if ( empty( $prefixes ) ) {
+				return array();
+			}
+			$key = implode( '|', $prefixes );
+			if ( isset( self::$prefix_ids[ $key ] ) ) {
+				return self::$prefix_ids[ $key ];
+			}
+			global $wpdb;
+			if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) {
+				return array();
+			}
+			$likes = array();
+			foreach ( $prefixes as $prefix ) {
+				$likes[] = $wpdb->prepare( 'pm.meta_value LIKE %s', $wpdb->esc_like( $prefix ) . '%' );
+			}
+			$sql = "SELECT DISTINCT CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END AS pid"
+				. " FROM {$wpdb->posts} p"
+				. " INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_sku'"
+				. " WHERE p.post_type IN ('product','product_variation') AND p.post_status <> 'trash'"
+				. ' AND (' . implode( ' OR ', $likes ) . ')';
+			$ids = array();
+			foreach ( (array) $wpdb->get_col( $sql ) as $id ) {
+				$id = absint( $id );
+				if ( $id ) {
+					$ids[ $id ] = $id;
+				}
+			}
+			self::$prefix_ids[ $key ] = $ids;
+			return $ids;
+		}
+
+		/** تعداد محصولات (والد) یک پیشوند؛ برای نمایش در فهرست استثناها. */
+		public static function prefix_product_count( $prefix ) {
+			return count( self::prefix_product_ids( array( $prefix ) ) );
+		}
+
 		private static function resolve_rule( $product ) {
 			$scope_id = self::scope_product_id( $product );
 			if ( ! $scope_id ) {
@@ -214,26 +293,37 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			if ( array_key_exists( $scope_id, self::$rule_cache ) ) {
 				return self::$rule_cache[ $scope_id ];
 			}
-			$s    = self::settings();
-			$rule = null;
+			$s       = self::settings();
+			$rule    = null;
+			$decided = false;
 
-			// ۱) قانون/استثنای خود محصول.
+			// ۱) قانون یا استثنای تکیِ محصول — همیشه برنده است، حتی اگر در دسته یا شناسهٔ استثناشده باشد.
 			if ( isset( $s['products'][ $scope_id ] ) && self::rule_live( $s['products'][ $scope_id ] ) ) {
-				$pr   = $s['products'][ $scope_id ];
-				$rule = ! empty( $pr['exclude'] ) ? false : $pr;
+				$pr      = $s['products'][ $scope_id ];
+				$rule    = ! empty( $pr['exclude'] ) ? false : $pr;
+				$decided = true;
 			}
-			// ۲) اولین دستهٔ منطبق (استثنا یعنی هیچ قانونی، حتی سراسری).
-			if ( null === $rule ) {
+			// ۲) استثنای شناسه (پیشوند SKU): از همه قوانین خارج است.
+			if ( ! $decided && ! empty( $s['prefixes'] ) ) {
+				$ids = self::prefix_product_ids( $s['prefixes'] );
+				if ( isset( $ids[ $scope_id ] ) ) {
+					$rule    = false;
+					$decided = true;
+				}
+			}
+			// ۳) اولین دستهٔ منطبق (استثنا یعنی هیچ قانونی، حتی سراسری).
+			if ( ! $decided ) {
 				$cats = self::product_category_ids( $scope_id );
 				foreach ( $s['categories'] as $category_id => $cat_rule ) {
 					if ( self::rule_live( $cat_rule ) && self::category_matches( $category_id, $cats ) ) {
-						$rule = ! empty( $cat_rule['exclude'] ) ? false : $cat_rule;
+						$rule    = ! empty( $cat_rule['exclude'] ) ? false : $cat_rule;
+						$decided = true;
 						break;
 					}
 				}
 			}
-			// ۳) سراسری.
-			if ( null === $rule && self::rule_live( $s['global'] ) ) {
+			// ۴) سراسری.
+			if ( ! $decided && self::rule_live( $s['global'] ) ) {
 				$rule = $s['global'];
 			}
 			if ( false === $rule ) {
@@ -479,6 +569,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				'global'     => self::normalize_rule( isset( $_POST['global'] ) ? wp_unslash( $_POST['global'] ) : array() ),
 				'products'   => self::posted_group( isset( $_POST['products'] ) ? wp_unslash( $_POST['products'] ) : array(), 'products' ),
 				'categories' => self::posted_group( isset( $_POST['categories'] ) ? wp_unslash( $_POST['categories'] ) : array(), 'categories' ),
+				'prefixes'   => self::normalize_prefixes( isset( $_POST['prefixes'] ) ? wp_unslash( $_POST['prefixes'] ) : array() ),
 			);
 			// phpcs:enable
 			self::persist( $settings );

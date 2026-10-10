@@ -454,5 +454,66 @@ t( 'ترتیب: اول عنوان منطبق با کل عبارت، بعد بق�
 	&& false !== strpos( $order_sql, 'p.post_title ASC, p.ID ASC' )
 	&& array( '%پک محافظ شارژر%' ) === $order_params );
 
+echo "--- 13) استثناها: تکی > شناسه (پیشوند SKU) > دسته‌بندی > سراسری ---\n";
+// محصولات: 201 و 2031 (واریشن والد 203) → پیشوند CH؛ 202 → LP؛ 204 قانون تکی + CH؛ 205 دستهٔ استثنا (۷۷)؛ 206 در دستهٔ ۵۵ بدون استثنا.
+$GLOBALS['tcp_sku_rows'] = array(
+	array( 'product', 201, 0, 'CH-001' ),
+	array( 'product', 202, 0, 'LP-001' ),
+	array( 'product', 203, 0, '' ),
+	array( 'product_variation', 2031, 203, 'CH-RED' ),
+	array( 'product', 204, 0, 'CH-HASRULE' ),
+	array( 'product', 205, 0, 'LP-EXC' ),
+	array( 'product', 206, 0, 'chx-lower' ),
+);
+$GLOBALS['tcp_post_terms'] = array( 201 => array( 55 ), 202 => array( 55 ), 203 => array( 55 ), 2031 => array( 55 ), 204 => array( 55 ), 205 => array( 77 ), 206 => array( 55 ) );
+$GLOBALS['tcp_term_children'] = array( 55 => array( 56 ) );
+
+$t_norm = TCP_Rules::normalize_prefixes( ' ch, lp ;CH  xyz! ab-1' );
+t( 'normalize_prefixes: بزرگ‌حرف، یکتا، نامعتبر (xyz!) حذف', array( 'CH', 'LP', 'AB-1' ) === array_values( $t_norm ), var_export( $t_norm, true ) );
+t( 'normalize_prefixes: ورودی آرایه با حروف کوچک', array( 'CH' ) === TCP_Rules::normalize_prefixes( array( 'ch', 'CH', '  ' ) ) );
+
+$ex_rules = array(
+	'global'     => array( 'enabled' => 1, 'increase' => 30 ),
+	'products'   => array(
+		204 => array( 'enabled' => 1, 'increase' => 10 ),
+		205 => array( 'enabled' => 0, 'exclude' => 1 ),
+	),
+	'categories' => array(
+		55 => array( 'enabled' => 1, 'increase' => 20 ),
+		77 => array( 'enabled' => 1, 'exclude' => 1 ),
+	),
+	'prefixes'   => array( 'CH' ),
+);
+set_rules( $ex_rules ); // set_rules کش قوانین و کش شناسه‌ها را پاک می‌کند.
+
+t( 'شناسه: محصول با SKU شروع‌شده با CH → استثنا (سراسری هم اعمال نمی‌شود)',
+	null === call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 201 ) ) ) );
+t( 'شناسه: واریشنِ SKU شروع‌شده با CH → والد استثنا می‌شود',
+	null === call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 2031, 'variation', 203 ) ) ) );
+t( 'شناسه: SKU بدون پیشوند → قانون سراسری/دسته',
+	( $r202 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 202 ) ) ) ) && 20.0 === (float) $r202['increase'], var_export( $r202 ?? null, true ) );
+t( 'شناسه: بی‌حساسیت به حروف کوچک/بزرگ (chx-lower ← CHX)',
+	null === call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 206 ) ) ) );
+t( 'اولویت: قانون تکی محصول بر استثنای شناسه برنده است (۲۰۴ با CH)',
+	( $r204 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 204 ) ) ) ) && 10.0 === (float) $r204['increase'], var_export( $r204 ?? null, true ) );
+t( 'اولویت: استثنای شناسه بر قانون دسته برنده است (۲۰۱ در دستهٔ ۵۵ با قانون ۲۰٪)',
+	null === call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 201 ) ) ) );
+t( 'دسته: استثنای دسته، محصول بدون شناسه را خارج می‌کند (۲۰۵ در دستهٔ استثناشدهٔ ۷۷)',
+	null === call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 205 ) ) ) );
+
+// استثنای تکی که خاموش ذخیره شده، باید همچنان استثنا باشد (استثنا همیشه فعال است).
+$nr_exc = TCP_Rules::normalize_rule( array( 'exclude' => 1, 'enabled' => 0, 'from' => '2030-01-01' ) );
+t( 'normalize_rule: استثنا همیشه فعال و بدون بازهٔ زمانی', 1 === $nr_exc['enabled'] && '' === $nr_exc['from'] && 1 === $nr_exc['exclude'] );
+
+// تست بدون شناسه: همان رفتار قبلی (دسته و سراسری) دست‌نخورده.
+set_rules( array( 'global' => array( 'enabled' => 1, 'increase' => 30 ), 'categories' => array( 55 => array( 'enabled' => 1, 'increase' => 20 ) ) ) );
+t( 'بدون شناسه: دسته همچنان بر سراسری مقدم است', ( $r = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 202 ) ) ) ) && 20.0 === (float) $r['increase'] );
+
+// نمونهٔ SQL: پیشوندهای چندتایی با OR و esc_like.
+$sql_ids = TCP_Rules::prefix_product_ids( array( 'CH', 'LP' ) );
+t( 'prefix_product_ids: CH و LP → همهٔ محصولات منطبق (۲۰۱…۲۰۶، واریشن ۲۰۳۱ → والد ۲۰۳)', array( 201, 202, 203, 204, 205, 206 ) === array_values( $sql_ids ), var_export( $sql_ids, true ) );
+t( 'prefix_product_count: CH → ۴ محصول (201، 203 از واریشن، 204 و CHX-… در 206)', 4 === TCP_Rules::prefix_product_count( 'CH' ), (string) TCP_Rules::prefix_product_count( 'CH' ) );
+t( 'prefix_product_count: LP → ۲ محصول (202، 205)', 2 === TCP_Rules::prefix_product_count( 'LP' ), (string) TCP_Rules::prefix_product_count( 'LP' ) );
+
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

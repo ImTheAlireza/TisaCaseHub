@@ -1,13 +1,16 @@
 /**
  * TisaCase Pricing — تب قوانین داینامیک.
- * جستجوی چندانتخابی محصول/دسته، جدول قوانین و ویرایش با مودال.
+ *
+ * هر «فهرست» یک lane است: کلید = نوع-نوعِ‌فهرست، مثلاً product-rule, product-exc, category-rule, category-exc.
+ * هر محصول/دسته فقط در یکی از دو فهرست همان نوع می‌تواند باشد (قانون یا استثنا)؛ جابه‌جایی خودکار انجام می‌شود.
+ * استثناهای شناسه (پیشوند SKU) هم در تب سوم همین بخش مدیریت می‌شوند.
  */
 /* global TCP_RULES, jQuery */
 (function ($) {
     'use strict';
 
     // پرچم سلامت برای آشکارساز asset کش‌شده داخل views/rules.php — باید اول باشد.
-    window.__tcpRulesV2 = true;
+    window.__tcpRulesV3 = true;
 
     const cfg = window.TCP_RULES || {};
     const modes = cfg.modes || { none: 'بدون رند', round: 'رند به ۸', jitter: 'تخفیف متغیر (رند به ۸)' };
@@ -15,43 +18,27 @@
     const defaults = cfg.defaults || { increase: 10, sale: 10, mode: 'round' };
     const minChars = parseInt(cfg.minChars || 2, 10);
 
-    const GROUPS = {
-        product: {
-            group: 'products',
-            list: '#tcp-product-rules',
-            empty: '#tcp-product-empty',
-            count: '#tcp-product-count',
-            filter: '#tcp-product-filter',
-            search: '#tcp-product-search',
-            results: '#tcp-product-results',
-            action: cfg.productAct,
-            modalKind: 'محصول'
-        },
-        category: {
-            group: 'categories',
-            list: '#tcp-category-rules',
-            empty: '#tcp-category-empty',
-            count: '#tcp-category-count',
-            filter: '#tcp-category-filter',
-            search: '#tcp-category-search',
-            results: '#tcp-category-results',
-            action: cfg.catAct,
-            modalKind: 'دسته‌بندی'
-        }
-    };
-
+    const ACTIONS = { product: cfg.productAct, category: cfg.catAct };
+    const LANE_KEYS = ['product-rule', 'product-exc', 'category-rule', 'category-exc'];
     const ROW_SEL = 'tr[data-rule-id]';
 
-    // انتخاب‌های داخل دراپ‌داون هر گروه: id -> آیتم.
-    const selection = { product: new Map(), category: new Map() };
-    // آخرین نتایج هر گروه برای رندر مجدد (بعد از افزودن، تیک «در لیست»).
-    const lastResults = { product: [], category: [] };
-    // وضعیت صفحه‌بندی جستجو: نتیجه‌ها صفحه‌به‌صفحه (۱۰۰ مورد) اضافه می‌شوند.
-    const searchState = { product: blankSearch(), category: blankSearch() };
-    // شمارهٔ آخرین درخواست هر گروه؛ پاسخ درخواست قدیمی نادیده گرفته می‌شود.
-    const searchGen = { product: 0, category: 0 };
-    const searchXhr = { product: null, category: null };
+    // انتخاب‌های داخل نتایج هر lane: id -> آیتم.
+    const selection = {};
+    // آخرین نتایج هر lane برای رندر مجدد.
+    const lastResults = {};
+    // وضعیت صفحه‌بندی جستجو هر lane.
+    const searchState = {};
+    // شمارهٔ آخرین درخواست؛ پاسخ درخواست قدیمی نادیده گرفته می‌شود.
+    const searchGen = {};
+    const searchXhr = {};
     const debounceTimers = {};
+    LANE_KEYS.forEach(function (key) {
+        selection[key] = new Map();
+        lastResults[key] = [];
+        searchState[key] = blankSearch();
+        searchGen[key] = 0;
+        searchXhr[key] = null;
+    });
 
     function blankSearch() {
         return { term: '', page: 0, pages: 0, total: 0, perPage: 0 };
@@ -89,6 +76,27 @@
 
     function typeLabel(type) {
         return typeLabels[type] || type || '';
+    }
+
+    function laneEl(key) {
+        return $('.tcp-lane[data-lane="' + key + '"]');
+    }
+
+    function laneKeyOf($el) {
+        return String($el.closest('.tcp-lane').attr('data-lane') || '');
+    }
+
+    function siblingKey(key) {
+        const parts = key.split('-');
+        return parts[0] + '-' + (parts[1] === 'rule' ? 'exc' : 'rule');
+    }
+
+    function isExcKey(key) {
+        return key.split('-')[1] === 'exc';
+    }
+
+    function typeOfKey(key) {
+        return key.split('-')[0];
     }
 
     /** خواندن همهٔ فیلدهای یک سطر از inputهای مخفی. */
@@ -132,47 +140,60 @@
         setTimeout(function () { $el.removeClass('tcp-flash'); }, 950);
     }
 
+    const noteTimers = {};
+    /** پیام کوتاه بالای فهرست (مثلاً «منتقل شد»)؛ بعد از چند ثانیه پاک می‌شود. */
+    function note(key, text) {
+        const $n = laneEl(key).find('.tcp-lane-note');
+        $n.text(text || '');
+        clearTimeout(noteTimers[key]);
+        if (text) {
+            noteTimers[key] = setTimeout(function () { $n.text(''); }, 6000);
+        }
+    }
+
     /* ---------------- شمارنده و حالت خالی ---------------- */
 
-    function refreshGroup(type) {
-        const g = GROUPS[type];
-        const $rows = $(g.list).children(ROW_SEL);
+    function refreshLane(key) {
+        const $lane = laneEl(key);
+        const $rows = $lane.find('.tcp-lane-body').children(ROW_SEL);
         const n = $rows.length;
-        let e = 0;
-        $rows.each(function () {
-            if ($(this).find('input[data-f="exclude"]').val() === '1') e++;
-        });
-        let text = faNum(n) + ' مورد';
-        if (e) text += ' · ' + faNum(e) + ' استثنا';
-        $(g.count).text(text);
-        $(g.empty).toggle(!n);
-        $(g.list).closest('.tcp-rule-table-scroll').toggle(!!n);
+        $lane.find('.tcp-lane-count').text(faNum(n) + ' مورد');
+        $lane.find('.tcp-lane-empty').toggle(!n);
+        $lane.find('.tcp-rule-table-scroll').toggle(!!n);
+        refreshTabs();
+    }
+
+    /** شمارندهٔ کنار تب‌های بخش استثناها. */
+    function refreshTabs() {
+        const count = function (key) { return laneEl(key).find('.tcp-lane-body').children(ROW_SEL).length; };
+        $('[data-ex-count="product"]').text(faNum(count('product-exc')));
+        $('[data-ex-count="category"]').text(faNum(count('category-exc')));
+        $('[data-ex-count="prefix"]').text(faNum($('#tcp-prefix-list .tcp-prefix-chip').length));
+        $('#tcp-prefix-empty').toggle(!$('#tcp-prefix-list .tcp-prefix-chip').length);
     }
 
     function refreshAll() {
-        refreshGroup('product');
-        refreshGroup('category');
+        LANE_KEYS.forEach(refreshLane);
     }
 
-    /** به‌روزرسانی بج‌ها و خلاصهٔ یک سطر از روی مقادیر مخفی. */
+    /** به‌روزرسانی بج‌ها و خلاصهٔ یک سطر از روی مقادیر مخفی (فقط سطر قانون). */
     function refreshRow($tr) {
         const rule = readRule($tr);
         const sum = summarize(rule);
-
-        const $status = $tr.find('.tcp-status');
-        $status
+        const key = laneKeyOf($tr);
+        if (isExcKey(key)) {
+            $tr.find('.tcp-rule-sum').text(sum.text);
+            return;
+        }
+        $tr.find('.tcp-status')
             .text(rule.enabled ? 'فعال' : 'غیرفعال')
             .toggleClass('tcp-st-done', rule.enabled)
             .toggleClass('tcp-st-cancelled', !rule.enabled);
-        $tr.find('.tcp-exbadge').toggleClass('tcp-hidden', !rule.exclude);
         $tr.find('.tcp-rule-sum').text(sum.text);
         const $sub = $tr.find('.tcp-rule-sub');
         $sub.text(sum.sub).toggleClass('tcp-hidden', sum.sub === '');
-
-        $tr.toggleClass('is-excluded', rule.exclude);
         $tr.toggleClass('is-off', !rule.enabled);
         $tr.find('.tcp-quick-enabled').prop('checked', rule.enabled);
-        $tr.find('.tcp-quick-exclude').prop('checked', rule.exclude);
     }
 
     /* ---------------- ساخت سطر ---------------- */
@@ -216,59 +237,55 @@
         return String(raw).toLowerCase();
     }
 
-    function addRuleRow(type, item, rule) {
-        const g = GROUPS[type];
-        const $list = $(g.list);
+    /** سطر جدید برای یک lane. */
+    function buildRow(key, item, rule) {
+        const type = typeOfKey(key);
+        const exc = isExcKey(key);
         const id = parseInt(item.id, 10);
-
-        const $dup = $list.children(ROW_SEL + '[data-rule-id="' + id + '"]');
-        if ($dup.length) {
-            flash($dup);
-            return 'dup';
-        }
-
-        const n = g.group + '[' + id + ']';
+        const group = type === 'product' ? 'products' : 'categories';
+        const n = group + '[' + id + ']';
         const sum = summarize(rule);
         const editUrl = item.edit_url || item.editUrl || '';
         const title = editUrl
             ? '<a class="tcp-rule-name" href="' + escAttr(editUrl) + '" target="_blank" rel="noopener" title="باز کردن صفحهٔ ویرایش در تب جدید">' + esc(item.name) + '</a>'
             : '<span class="tcp-rule-name">' + esc(item.name) + '</span>';
+        const enabled = exc ? true : !!rule.enabled;
 
         const hidden = (f, v) => '<input type="hidden" data-f="' + f + '" name="' + n + '[' + f + ']" value="' + escAttr(v) + '">';
-        const html =
+        const identity =
             '<td class="tcp-cell-identity"><div class="tcp-rule-identity">' + thumbHtml(type, item) +
                 '<div class="tcp-rule-idmain"><div class="tcp-rule-title">' + title +
-                    '<span class="tcp-badge tcp-status ' + (rule.enabled ? 'tcp-st-done' : 'tcp-st-cancelled') + '">' + (rule.enabled ? 'فعال' : 'غیرفعال') + '</span>' +
-                    '<span class="tcp-badge tcp-exbadge tcp-cp-expired' + (rule.exclude ? '' : ' tcp-hidden') + '">استثنا</span>' +
+                    (exc ? '' : '<span class="tcp-badge tcp-status ' + (enabled ? 'tcp-st-done' : 'tcp-st-cancelled') + '">' + (enabled ? 'فعال' : 'غیرفعال') + '</span>') +
                 '</div><div class="tcp-rule-chips">' + chipsHtml(type, item) + '</div></div>' +
-            '</div></td>' +
+            '</div></td>';
+        const ruleCell =
             '<td class="tcp-cell-rule"><div class="tcp-rule-sum">' + esc(sum.text) + '</div>' +
-                '<div class="tcp-rule-sub' + (sum.sub ? '' : ' tcp-hidden') + '">' + esc(sum.sub) + '</div></td>' +
-            '<td class="tcp-cell-flags">' +
-                '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled"' + (rule.enabled ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>' +
-                '<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-exclude"' + (rule.exclude ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>' +
-            '</td>' +
-            '<td class="tcp-cell-actions">' +
-                '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>' +
-                '<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule" aria-label="حذف قانون ' + escAttr(item.name) + '">حذف</button>' +
-                '<input type="hidden" name="' + n + '[exists]" value="1">' +
+                '<div class="tcp-rule-sub' + (sum.sub && !exc ? '' : ' tcp-hidden') + '">' + esc(exc ? '' : sum.sub) + '</div></td>';
+        const flagsCell = exc ? '' :
+            '<td class="tcp-cell-flags"><label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled"' + (enabled ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label></td>';
+        const actions = exc
+            ? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>'
+            : '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>' +
+              '<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="exc" title="خارج کردن از همهٔ قوانین و افزودن به استثناها">به استثنا</button>';
+        const label = exc ? 'حذف استثنای ' : 'حذف قانون ';
+        const actionCell =
+            '<td class="tcp-cell-actions">' + actions +
+                '<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule" aria-label="' + escAttr(label + item.name) + '">حذف</button>' +
+                hidden('exists', '1') +
                 hidden('increase', rule.increase) + hidden('sale', rule.sale) + hidden('mode', rule.mode) +
                 hidden('from', rule.from) + hidden('to', rule.to) +
                 hidden('min', rule.min) + hidden('max', rule.max) +
-                hidden('enabled', rule.enabled ? '1' : '0') + hidden('exclude', rule.exclude ? '1' : '0') +
+                hidden('enabled', enabled ? '1' : '0') + hidden('exclude', exc ? '1' : '0') +
             '</td>';
 
         const $tr = $('<tr>', {
-            'class': 'tcp-rule-row' + (rule.exclude ? ' is-excluded' : '') + (rule.enabled ? '' : ' is-off'),
+            'class': 'tcp-rule-row' + (exc ? ' is-excluded' : '') + (enabled ? '' : ' is-off'),
             'data-rule-id': id
         });
         $tr.attr('data-search', searchKey(type, item));
-        $tr.html(html);
-        $list.append($tr);
-        flash($tr);
-        refreshGroup(type);
-        applyFilter(type);
-        return 'added';
+        $tr.attr('data-item', JSON.stringify(item));
+        $tr.html(identity + ruleCell + flagsCell + actionCell);
+        return $tr;
     }
 
     function defaultRule(asExclude) {
@@ -285,11 +302,47 @@
         };
     }
 
-    /* ---------------- جستجوی چندانتخابی ---------------- */
-
-    function inList(type, id) {
-        return $(GROUPS[type].list).children(ROW_SEL + '[data-rule-id="' + id + '"]').length > 0;
+    function rowIn(key, id) {
+        return laneEl(key).find('.tcp-lane-body').children(ROW_SEL + '[data-rule-id="' + id + '"]');
     }
+
+    /**
+     * آیتم را در یک lane قرار می‌دهد. اگر همان محصول/دسته در lane خواهرِ خودش (قانون ↔ استثنا) باشد، منتقل می‌شود.
+     * @returns {'added'|'moved'|'dup'}
+     */
+    function placeItem(key, item, baseRule) {
+        const id = parseInt(item.id, 10);
+        const $existing = rowIn(key, id);
+        if ($existing.length) {
+            flash($existing);
+            return 'dup';
+        }
+        const exc = isExcKey(key);
+        let rule = baseRule ? $.extend({}, baseRule) : defaultRule(exc);
+        let moved = false;
+        const sib = siblingKey(key);
+        const $sib = rowIn(sib, id);
+        if ($sib.length) {
+            if (!baseRule) rule = readRule($sib);
+            $sib.remove();
+            refreshLane(sib);
+            moved = true;
+        }
+        rule.exclude = exc;
+        if (exc) {
+            rule.enabled = true;
+            rule.from = '';
+            rule.to = '';
+        }
+        const $tr = buildRow(key, item, rule);
+        laneEl(key).find('.tcp-lane-body').append($tr);
+        refreshLane(key);
+        applyFilter(key);
+        flash($tr);
+        return moved ? 'moved' : 'added';
+    }
+
+    /* ---------------- جستجوی چندانتخابی ---------------- */
 
     function resultMeta(type, item) {
         if (type === 'product') {
@@ -335,11 +388,13 @@
         return out;
     }
 
-    function renderResults(type) {
-        const g = GROUPS[type];
-        const $box = $(g.results);
-        const items = lastResults[type];
-        const st = searchState[type];
+    function renderResults(key) {
+        const $box = laneEl(key).find('.tcp-lane-results');
+        const items = lastResults[key];
+        const st = searchState[key];
+        const type = typeOfKey(key);
+        const sib = siblingKey(key);
+        const sibLabel = isExcKey(key) ? 'در قوانین' : 'در استثناها';
         $box.empty();
 
         if (!items.length) {
@@ -356,16 +411,17 @@
 
         items.forEach(function (item) {
             const id = parseInt(item.id, 10);
-            const added = inList(type, id);
-            const checked = selection[type].has(id);
+            const inHere = rowIn(key, id).length > 0;
+            const inSib = !inHere && rowIn(sib, id).length > 0;
+            const checked = selection[key].has(id);
 
-            const $label = $('<label class="tcp-search-check">').toggleClass('is-added', added);
+            const $label = $('<label class="tcp-search-check">').toggleClass('is-added', inHere);
             const $cb = $('<input type="checkbox">')
                 .attr('data-id', id)
                 .prop('checked', checked)
-                .prop('disabled', added);
+                .prop('disabled', inHere);
             $label.append($cb);
-            $label.toggleClass('is-checked', checked && !added);
+            $label.toggleClass('is-checked', checked && !inHere);
             if (type === 'product') {
                 if (item.image_url) {
                     $label.append($('<img class="tcp-rule-thumb tcp-rule-thumb--xs" alt="">').attr('src', item.image_url).attr('loading', 'lazy'));
@@ -379,8 +435,10 @@
             $txt.append($('<strong>').text(item.name));
             $txt.append($('<small>').text(resultMeta(type, item)));
             $label.append($txt);
-            if (added) {
-                $label.append($('<span class="tcp-added-tag">').text('در لیست'));
+            if (inHere) {
+                $label.append($('<span class="tcp-added-tag">').text('در این فهرست'));
+            } else if (inSib) {
+                $label.append($('<span class="tcp-added-tag tcp-added-tag--move">').text(sibLabel + ' · با افزودن منتقل می‌شود'));
             }
             $box.append($label);
         });
@@ -392,8 +450,8 @@
             .text('انتخاب همه')
             .attr('title', 'همهٔ موارد بارگذاری‌شده در این فهرست انتخاب می‌شوند'));
         $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--ghost" data-tcp-clear>').text('پاک کردن'));
-        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--primary" data-tcp-add>').text('افزودن'));
-        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--secondary" data-tcp-add-ex>').text('افزودن به‌عنوان استثنا'));
+        $foot.append($('<button type="button" class="tisa-btn tisa-btn--sm tisa-btn--primary" data-tcp-add>')
+            .text(isExcKey(key) ? 'افزودن به استثناها' : 'افزودن به قوانین'));
         // بقیهٔ نتایج: فهرست دیگر به ۳۰ مورد ختم نمی‌شود.
         if (st.pages > st.page) {
             const rest = Math.max(0, st.total - items.length);
@@ -403,37 +461,36 @@
         }
         $box.append($foot);
 
-        updateFoot(type);
+        updateFoot(key);
         $box.show();
     }
 
-    function updateFoot(type) {
-        const g = GROUPS[type];
-        const $box = $(g.results);
-        const n = selection[type].size;
+    function updateFoot(key) {
+        const $box = laneEl(key).find('.tcp-lane-results');
+        const n = selection[key].size;
         $box.find('.tcp-search-count').text(faNum(n) + ' انتخاب شده');
-        $box.find('[data-tcp-add]').text(n ? 'افزودن ' + faNum(n) + ' مورد' : 'افزودن').prop('disabled', !n);
-        $box.find('[data-tcp-add-ex]').prop('disabled', !n);
+        $box.find('[data-tcp-add]').text(
+            (n ? 'افزودن ' + faNum(n) + ' مورد' : (isExcKey(key) ? 'افزودن به استثناها' : 'افزودن به قوانین'))
+        ).prop('disabled', !n);
     }
 
     /**
      * جستجو در کل کاتالوگ؛ page>1 نتایج صفحهٔ بعدی را به فهرست اضافه می‌کند.
      */
-    function doSearch(type, page) {
-        const g = GROUPS[type];
-        const $input = $(g.search);
-        const $results = $(g.results);
+    function doSearch(key, page) {
+        const $input = laneEl(key).find('.tcp-lane-search');
+        const $results = laneEl(key).find('.tcp-lane-results');
         const want = Math.max(1, parseInt(page, 10) || 1);
-        const term = want > 1 ? searchState[type].term : ($input.val() || '').trim();
+        const term = want > 1 ? searchState[key].term : ($input.val() || '').trim();
 
         if (want > 1 && !term) return;
 
         if (want === 1) {
-            searchState[type] = blankSearch();
+            searchState[key] = blankSearch();
             if (term.length < minChars) {
-                searchGen[type]++;
-                if (searchXhr[type]) { searchXhr[type].abort(); searchXhr[type] = null; }
-                lastResults[type] = [];
+                searchGen[key]++;
+                if (searchXhr[key]) { searchXhr[key].abort(); searchXhr[key] = null; }
+                lastResults[key] = [];
                 if (!term.length) {
                     $results.empty().hide();
                 } else {
@@ -443,8 +500,8 @@
             }
         }
 
-        const requestId = ++searchGen[type];
-        if (searchXhr[type]) { searchXhr[type].abort(); searchXhr[type] = null; }
+        const requestId = ++searchGen[key];
+        if (searchXhr[key]) { searchXhr[key].abort(); searchXhr[key] = null; }
 
         if (want === 1) {
             $results.html('<div class="tcp-search-loading">در حال جستجو...</div>').show();
@@ -452,49 +509,48 @@
             $results.find('[data-tcp-more]').prop('disabled', true).text('در حال بارگذاری…');
         }
 
-        searchXhr[type] = $.post(cfg.ajaxUrl, {
-            action: g.action,
+        searchXhr[key] = $.post(cfg.ajaxUrl, {
+            action: ACTIONS[typeOfKey(key)],
             nonce: cfg.nonce,
             term: term,
             page: want
         }).done(function (response) {
-            if (requestId !== searchGen[type]) return;
+            if (requestId !== searchGen[key]) return;
             if (!response || !response.success) {
                 $results.html('<div class="tcp-search-empty">خطا در جستجو.</div>').show();
                 return;
             }
             const data = normalizeResults(response.data);
-            searchState[type] = {
+            searchState[key] = {
                 term: term,
                 page: data.page,
                 pages: data.pages,
                 total: data.total,
                 perPage: data.perPage
             };
-            lastResults[type] = want > 1 ? mergeItems(lastResults[type], data.items) : data.items;
-            renderResults(type);
+            lastResults[key] = want > 1 ? mergeItems(lastResults[key], data.items) : data.items;
+            renderResults(key);
         }).fail(function (xhr, status) {
             // پاسخ درخواستی که با جستجوی تازه‌تر باطل شده نادیده گرفته می‌شود.
-            if ('abort' === status || requestId !== searchGen[type]) return;
+            if ('abort' === status || requestId !== searchGen[key]) return;
             $results.html('<div class="tcp-search-empty">ارتباط با سرور برقرار نشد.</div>').show();
         }).always(function () {
-            if (requestId === searchGen[type]) { searchXhr[type] = null; }
+            if (requestId === searchGen[key]) { searchXhr[key] = null; }
         });
     }
 
-    function bindSearch(type) {
-        const g = GROUPS[type];
-        const $input = $(g.search);
+    function bindSearch(key) {
+        const $input = laneEl(key).find('.tcp-lane-search');
 
         $input.on('input', function () {
-            clearTimeout(debounceTimers[type]);
-            debounceTimers[type] = setTimeout(function () { doSearch(type, 1); }, 300);
+            clearTimeout(debounceTimers[key]);
+            debounceTimers[key] = setTimeout(function () { doSearch(key, 1); }, 300);
         });
 
         $input.on('focus', function () {
             if (($input.val() || '').trim().length >= minChars) {
-                if (lastResults[type].length) renderResults(type);
-                else doSearch(type, 1);
+                if (lastResults[key].length) renderResults(key);
+                else doSearch(key, 1);
             }
         });
 
@@ -502,52 +558,55 @@
         $input.on('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                clearTimeout(debounceTimers[type]);
-                doSearch(type, 1);
+                clearTimeout(debounceTimers[key]);
+                doSearch(key, 1);
             }
         });
     }
 
-    /** افزودن همهٔ انتخاب‌شده‌ها به جدول. */
-    function addSelected(type, asExclude) {
-        let added = 0, dup = 0;
-        selection[type].forEach(function (item) {
-            const res = addRuleRow(type, item, defaultRule(asExclude));
+    /** افزودن همهٔ انتخاب‌شده‌ها به lane. */
+    function addSelected(key) {
+        let added = 0, dup = 0, moved = 0;
+        selection[key].forEach(function (item) {
+            const res = placeItem(key, item, null);
             if (res === 'added') added++;
+            else if (res === 'moved') { added++; moved++; }
             else dup++;
         });
         if (added) {
-            const $scroll = $(GROUPS[type].list).closest('.tcp-rule-table-scroll');
+            const $scroll = laneEl(key).find('.tcp-rule-table-scroll');
             $scroll.scrollTop($scroll.prop('scrollHeight'));
         }
-        selection[type].clear();
-        // نتایج را تازه کن تا «در لیست»ها به‌روز شوند.
-        if ($(GROUPS[type].results).is(':visible') && lastResults[type].length) {
-            renderResults(type);
+        selection[key].clear();
+        if (moved) {
+            note(key, faNum(moved) + ' مورد از ' + (isExcKey(key) ? 'قوانین' : 'استثناها') + ' به این فهرست منتقل شد.');
+        }
+        // نتایج را تازه کن تا «در این فهرست»ها به‌روز شوند.
+        const $box = laneEl(key).find('.tcp-lane-results');
+        if (lastResults[key].length && $box.css('display') !== 'none') {
+            renderResults(key);
         } else {
-            $(GROUPS[type].results).empty().hide();
+            laneEl(key).find('.tcp-lane-results').empty().hide();
         }
         return { added: added, dup: dup };
     }
 
     /* ---------------- فیلتر داخل لیست ---------------- */
 
-    function applyFilter(type) {
-        const g = GROUPS[type];
-        const q = ($(g.filter).val() || '').trim().toLowerCase();
-        $(g.list).children(ROW_SEL).each(function () {
-            const key = ($(this).attr('data-search') || '');
-            $(this).toggle(!q || key.indexOf(q) !== -1);
+    function applyFilter(key) {
+        const q = (laneEl(key).find('.tcp-lane-filter').val() || '').trim().toLowerCase();
+        laneEl(key).find('.tcp-lane-body').children(ROW_SEL).each(function () {
+            const k = ($(this).attr('data-search') || '');
+            $(this).toggle(!q || k.indexOf(q) !== -1);
         });
     }
 
-    /* ---------------- مودال ویرایش ---------------- */
+    /* ---------------- مودال ویرایش (فقط قانون) ---------------- */
 
-    // تنبل: اگر بهینه‌سازی اسکریپت را زودتر اجرا کند، رفرنس خالی کش نمی‌شود.
     function $modal() {
         return $('#tcp-rule-modal');
     }
-    let modalTarget = null; // { type, id }
+    let modalTarget = null; // { key, id }
 
     function modalRule() {
         return {
@@ -559,7 +618,7 @@
             min: $('#tcp-m-min').val() || '',
             max: $('#tcp-m-max').val() || '',
             enabled: $('#tcp-m-enabled').is(':checked'),
-            exclude: $('#tcp-m-exclude').is(':checked')
+            exclude: false
         };
     }
 
@@ -568,12 +627,12 @@
         $('#tcp-modal-hint').text(sum.text + (sum.sub ? ' — ' + sum.sub : ''));
     }
 
-    function openModal(type, id) {
-        const $tr = $(GROUPS[type].list).children(ROW_SEL + '[data-rule-id="' + id + '"]');
+    function openModal(key, id) {
+        const $tr = rowIn(key, id);
         if (!$tr.length) return;
         const rule = readRule($tr);
 
-        modalTarget = { type: type, id: id };
+        modalTarget = { key: key, id: id };
         $('#tcp-m-increase').val(rule.increase);
         $('#tcp-m-sale').val(rule.sale);
         $('#tcp-m-mode').val(rule.mode);
@@ -582,10 +641,9 @@
         $('#tcp-m-min').val(rule.min);
         $('#tcp-m-max').val(rule.max);
         $('#tcp-m-enabled').prop('checked', rule.enabled);
-        $('#tcp-m-exclude').prop('checked', rule.exclude);
 
         const name = $tr.find('.tcp-rule-name').first().text();
-        $('#tcp-modal-title').text('ویرایش قانون ' + GROUPS[type].modalKind);
+        $('#tcp-modal-title').text('ویرایش قانون ' + (typeOfKey(key) === 'product' ? 'محصول' : 'دسته‌بندی'));
         $('#tcp-modal-sub').text(name + ' — #' + id);
         updateModalHint();
 
@@ -606,7 +664,7 @@
 
     function saveModal() {
         if (!modalTarget) return;
-        const $tr = $(GROUPS[modalTarget.type].list).children(ROW_SEL + '[data-rule-id="' + modalTarget.id + '"]');
+        const $tr = rowIn(modalTarget.key, modalTarget.id);
         if (!$tr.length) {
             closeModal();
             return;
@@ -631,32 +689,96 @@
         $tr.find('input[data-f="min"]').val(rule.min);
         $tr.find('input[data-f="max"]').val(rule.max);
         $tr.find('input[data-f="enabled"]').val(rule.enabled ? '1' : '0');
-        $tr.find('input[data-f="exclude"]').val(rule.exclude ? '1' : '0');
 
         refreshRow($tr);
-        refreshGroup(modalTarget.type);
+        refreshLane(modalTarget.key);
         closeModal();
         flash($tr);
+    }
+
+    /* ---------------- استثنای شناسه (پیشوند SKU) ---------------- */
+
+    const PREFIX_RE = /^[\p{L}\p{N}_-]{1,30}$/u;
+
+    function prefixMsg(text, isError) {
+        $('#tcp-prefix-msg').text(text || '').toggleClass('is-error', !!isError);
+        if (text) {
+            clearTimeout(prefixMsg.timer);
+            prefixMsg.timer = setTimeout(function () { $('#tcp-prefix-msg').text(''); }, 6000);
+        }
+    }
+
+    function prefixExists(p) {
+        let found = false;
+        $('#tcp-prefix-list .tcp-prefix-chip').each(function () {
+            if (String($(this).attr('data-prefix')) === p) found = true;
+        });
+        return found;
+    }
+
+    function appendPrefixChip(p) {
+        const label = 'حذف شناسهٔ ' + p;
+        const $chip = $(
+            '<span class="tcp-prefix-chip" data-prefix="' + escAttr(p) + '">' +
+                '<code class="tcp-prefix-code" dir="ltr">' + esc(p) + '</code>' +
+                '<span class="tcp-prefix-count">پس از ذخیره</span>' +
+                '<button type="button" class="tcp-prefix-remove" aria-label="' + escAttr(label) + '">×</button>' +
+                '<input type="hidden" name="prefixes[]" value="' + escAttr(p) + '">' +
+            '</span>'
+        );
+        $('#tcp-prefix-list').append($chip);
+        flash($chip);
+        return $chip;
+    }
+
+    function addPrefixes(raw) {
+        const parts = String(raw || '').split(/[\s,،;]+/).map(function (s) { return s.trim(); }).filter(Boolean);
+        if (!parts.length) {
+            prefixMsg('اول یک شناسه بنویس.', true);
+            return;
+        }
+        let added = 0, dup = 0;
+        const bad = [];
+        parts.forEach(function (part) {
+            const p = part.toUpperCase();
+            if (!PREFIX_RE.test(p)) {
+                bad.push(part);
+                return;
+            }
+            if (prefixExists(p)) {
+                dup++;
+                return;
+            }
+            appendPrefixChip(p);
+            added++;
+        });
+        if (added) {
+            $('#tcp-prefix-input').val('');
+        }
+        const msgs = [];
+        if (added) msgs.push(faNum(added) + ' شناسه اضافه شد. برای اعمال روی قیمت‌ها ذخیره کن.');
+        if (dup) msgs.push(faNum(dup) + ' شناسه از قبل در فهرست بود.');
+        if (bad.length) msgs.push('نامعتبر (فقط حروف، عدد، - و _ ، تا ۳۰ نویسه): ' + bad.join('، '));
+        prefixMsg(msgs.join(' '), !added);
+        refreshTabs();
     }
 
     /* ---------------- اتصال رویدادها ---------------- */
 
     function bindAll() {
-        bindSearch('product');
-        bindSearch('category');
+        LANE_KEYS.forEach(bindSearch);
         refreshAll();
+        applyFilterAll();
+    }
+
+    function applyFilterAll() {
+        LANE_KEYS.forEach(applyFilter);
     }
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', bindAll);
     } else {
         bindAll();
-    }
-
-    function groupOf($el) {
-        const $box = $el.closest('.tcp-search-results, tbody');
-        if ($box.is(GROUPS.product.results) || $box.is(GROUPS.product.list)) return 'product';
-        return 'category';
     }
 
     // کلیک روی سطر نتیجه: تاگل قطعی چک‌باکس، مستقل از رفتار پیش‌فرض لیبل.
@@ -675,63 +797,85 @@
     // تیک‌زدن داخل نتایج.
     $(document).on('change', '.tcp-search-check input', function () {
         const $cbx = $(this);
+        const key = laneKeyOf($cbx);
         $cbx.closest('.tcp-search-check').toggleClass('is-checked', $cbx.is(':checked'));
-        const type = groupOf($cbx);
         const id = parseInt($cbx.attr('data-id'), 10);
         if (this.checked) {
-            const found = lastResults[type].find(function (it) { return parseInt(it.id, 10) === id; });
-            if (found) selection[type].set(id, found);
+            const found = lastResults[key].find(function (it) { return parseInt(it.id, 10) === id; });
+            if (found) selection[key].set(id, found);
         } else {
-            selection[type].delete(id);
+            selection[key].delete(id);
         }
-        updateFoot(type);
+        updateFoot(key);
     });
 
-    // دکمه‌های نوار نتایج.
-    $(document).on('click', '[data-tcp-add], [data-tcp-add-ex]', function () {
-        const type = groupOf($(this));
-        addSelected(type, $(this).is('[data-tcp-add-ex]'));
+    // دکمهٔ افزودن نتایج.
+    $(document).on('click', '[data-tcp-add]', function () {
+        addSelected(laneKeyOf($(this)));
     });
 
     $(document).on('click', '[data-tcp-all]', function () {
-        const type = groupOf($(this));
-        lastResults[type].forEach(function (item) {
+        const key = laneKeyOf($(this));
+        lastResults[key].forEach(function (item) {
             const id = parseInt(item.id, 10);
-            if (!inList(type, id)) selection[type].set(id, item);
+            if (!rowIn(key, id).length) selection[key].set(id, item);
         });
-        renderResults(type);
+        renderResults(key);
     });
 
     $(document).on('click', '[data-tcp-clear]', function () {
-        const type = groupOf($(this));
-        selection[type].clear();
-        renderResults(type);
+        const key = laneKeyOf($(this));
+        selection[key].clear();
+        renderResults(key);
     });
 
     // صفحهٔ بعدی نتایج جستجو.
     $(document).on('click', '[data-tcp-more]', function () {
-        const type = groupOf($(this));
-        const st = searchState[type];
+        const key = laneKeyOf($(this));
+        const st = searchState[key];
         if (st.pages > st.page) {
-            doSearch(type, st.page + 1);
+            doSearch(key, st.page + 1);
         }
     });
 
-    // ویرایش / حذف سطر.
+    // ویرایش / حذف / جابه‌جایی سطر.
     $(document).on('click', '.tcp-edit-rule', function () {
         const $tr = $(this).closest(ROW_SEL);
-        openModal(groupOf($(this)), parseInt($tr.attr('data-rule-id'), 10));
+        openModal(laneKeyOf($(this)), parseInt($tr.attr('data-rule-id'), 10));
     });
 
     $(document).on('click', '.tcp-remove-rule', function () {
         const $btn = $(this);
-        const type = groupOf($btn);
+        const key = laneKeyOf($btn);
         $btn.closest(ROW_SEL).remove();
-        refreshGroup(type);
+        refreshLane(key);
     });
 
-    // سوییچ‌های سریع روی سطر.
-    $(document).on('change', '.tcp-quick-enabled, .tcp-quick-exclude', function () {
+    // «به استثنا» / «به قوانین»: سطر به lane مقابل منتقل می‌شود (تنظیمات قانون حفظ می‌شود).
+    $(document).on('click', '.tcp-move-rule', function () {
+        const $tr = $(this).closest(ROW_SEL);
+        const from = laneKeyOf($(this));
+        const type = typeOfKey(from);
+        const to = type + '-' + $(this).attr('data-to');
+        let item = {};
+        try {
+            item = JSON.parse($tr.attr('data-item') || '{}');
+        } catch (e) {
+            item = {};
+        }
+        item.id = parseInt($tr.attr('data-rule-id'), 10);
+        item.name = item.name || $tr.find('.tcp-rule-name').first().text();
+        const rule = readRule($tr);
+        $tr.remove();
+        refreshLane(from);
+        const res = placeItem(to, item, rule);
+        if (res === 'added' || res === 'moved') {
+            note(to, 'به ' + (isExcKey(to) ? 'استثناها' : 'قوانین') + ' منتقل شد.');
+        }
+    });
+
+    // سوییچ «فعال» روی سطر قانون.
+    $(document).on('change', '.tcp-quick-enabled', function () {
         // موقعیت اسکرول صفحه و جدول قبل از تغییر DOM؛ هر جابه‌جایی ناخواسته برگردانده می‌شود.
         const winY = window.pageYOffset || document.documentElement.scrollTop || 0;
         const $scrolls = $('.tcp-rule-table-scroll');
@@ -749,11 +893,8 @@
             } catch (e) { /* ignore */ }
         };
         const $tr = $(this).closest(ROW_SEL);
-        const type = groupOf($(this));
         $tr.find('input[data-f="enabled"]').val($tr.find('.tcp-quick-enabled').is(':checked') ? '1' : '0');
-        $tr.find('input[data-f="exclude"]').val($tr.find('.tcp-quick-exclude').is(':checked') ? '1' : '0');
         refreshRow($tr);
-        refreshGroup(type);
         restoreScroll();
         if (window.requestAnimationFrame) {
             window.requestAnimationFrame(restoreScroll);
@@ -762,17 +903,43 @@
         }
     });
 
-    // فیلتر داخل لیست.
-    $(document).on('input', '#tcp-product-filter', function () { applyFilter('product'); });
-    $(document).on('input', '#tcp-category-filter', function () { applyFilter('category'); });
-    $(document).on('keydown', '#tcp-product-filter, #tcp-category-filter', function (e) {
+    // فیلتر داخل فهرست.
+    $(document).on('input', '.tcp-lane-filter', function () { applyFilter(laneKeyOf($(this))); });
+    $(document).on('keydown', '.tcp-lane-filter', function (e) {
         if (e.key === 'Enter') e.preventDefault();
+    });
+
+    // تب‌های بخش استثناها.
+    $(document).on('click', '[data-ex-tab]', function () {
+        const tab = String($(this).attr('data-ex-tab'));
+        $('[data-ex-tab]').each(function () {
+            const on = String($(this).attr('data-ex-tab')) === tab;
+            $(this).toggleClass('is-active', on).attr('aria-selected', on ? 'true' : 'false');
+        });
+        $('[data-ex-panel]').each(function () {
+            $(this).prop('hidden', String($(this).attr('data-ex-panel')) !== tab);
+        });
+    });
+
+    // استثنای شناسه: افزودن با دکمه یا Enter (چند مورد با ویرگول/فاصله).
+    $(document).on('click', '#tcp-prefix-add', function () {
+        addPrefixes($('#tcp-prefix-input').val());
+    });
+    $(document).on('keydown', '#tcp-prefix-input', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addPrefixes($(this).val());
+        }
+    });
+    $(document).on('click', '.tcp-prefix-remove', function () {
+        $(this).closest('.tcp-prefix-chip').remove();
+        refreshTabs();
     });
 
     // مودال.
     $(document).on('click', '#tcp-modal-save', saveModal);
     $(document).on('click', '[data-tcp-close]', closeModal);
-    $(document).on('input change', '#tcp-m-increase, #tcp-m-sale, #tcp-m-mode, #tcp-m-from, #tcp-m-to, #tcp-m-min, #tcp-m-max, #tcp-m-enabled, #tcp-m-exclude', updateModalHint);
+    $(document).on('input change', '#tcp-m-increase, #tcp-m-sale, #tcp-m-mode, #tcp-m-from, #tcp-m-to, #tcp-m-min, #tcp-m-max, #tcp-m-enabled', updateModalHint);
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape' && modalOpen()) closeModal();
         // اینتر داخل فیلدهای متنی مودال = ذخیره؛ روی دکمه/سلکت/چک‌باکس رفتار پیش‌فرض مرورگر.
