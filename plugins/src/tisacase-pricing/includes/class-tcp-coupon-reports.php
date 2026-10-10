@@ -42,13 +42,15 @@ final class TCP_Coupon_Reports {
 		$s = $coupon->get_meta( '_tcp_report_sync' );
 		if ( $restart || ! is_array( $s ) ) { $s = array( 'page' => 1, 'until' => time(), 'done' => false, 'checked' => 0 ); }
 		if ( ! empty( $s['done'] ) ) { return $s; }
-		$result = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'page' => $s['page'], 'paginate' => true, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . $s['until'] ) );
+		$ids = TCP_Coupon_Phones::candidate_ids( $coupon, (int) ( $s['after'] ?? 0 ) );
+		$orders = TCP_Coupon_Phones::orders_for_ids( $ids, absint( $s['until'] ) );
 		$codes = self::codes( $coupon );
-		foreach ( $result->orders as $order ) {
+		foreach ( $orders as $order ) {
 			if ( array_intersect( $codes, array_map( 'strtolower', $order->get_coupon_codes() ) ) ) { self::link( $coupon->get_id(), $order->get_id() ); }
 		}
-		$s['checked'] += count( $result->orders );
-		$s['done'] = $s['page'] >= $result->max_num_pages;
+		$s['checked'] += count( $ids );
+		if ( $ids ) { $s['after'] = max( $ids ); }
+		$s['done'] = count( $ids ) < 100;
 		$s['page']++;
 		$coupon->update_meta_data( '_tcp_report_sync', $s );
 		$coupon->save();

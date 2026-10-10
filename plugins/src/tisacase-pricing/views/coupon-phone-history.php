@@ -13,9 +13,26 @@ $tcp_action_fields = static function () use ( $tcp_pc ) {
 	<div class="tcp-card-head"><span class="tcp-dot"></span><div><h2>سوابق و آزادسازی سهمیه این کد</h2><p>مصرف هر سفارش فقط یک بار ثبت می‌شود. تغییر وضعیت دوباره یا همگام‌سازی، ریست را خنثی نمی‌کند. بازپرداخت سهمیه را خودکار آزاد نمی‌کند؛ در صورت نیاز دستی ریست کنید.</p></div></div>
 	<div class="tcp-card-body">
 		<?php if ( isset( $_GET['phone_saved'] ) ) : ?><p role="status" class="tcp-phone-notice">عملیات انجام شد.</p><?php endif; ?>
+		<?php $tcp_found = (int) ( $tcp_sync['found'] ?? 0 ); $tcp_paid = (int) ( $tcp_sync['paid'] ?? 0 ); ?>
 		<?php if ( empty( $tcp_sync['done'] ) ) : ?>
-		<p role="status" class="tcp-phone-notice"><strong>کد تا پایان بررسی سابقه، موقتاً قابل استفاده نیست.</strong> هر بار ۱۰۰ سفارش بررسی می‌شود. دسته بعدی: <?php echo esc_html( $tcp_sync['page'] ?? 1 ); ?>. با شروع، دسته‌ها خودکار بررسی می‌شوند؛ تا پایان این صفحه را باز نگه دارید. بعد از قطع اتصال، ادامه از دسته ذخیره‌شده ممکن است.</p>
-		<?php else : ?><p>✓ همگام‌سازی کامل شد. مصرف زنده سفارش‌های جدید خودکار ثبت می‌شود.</p><?php endif; ?>
+		<p role="status" class="tcp-phone-notice"><strong>کد تا پایان بررسی سابقه، موقتاً قابل استفاده نیست.</strong> هر بار ۱۰۰ سفارش بررسی می‌شود. دسته بعدی: <?php echo esc_html( $tcp_sync['page'] ?? 1 ); ?></p>
+		<?php else : ?>
+		<p class="tcp-phone-ok">✓ همگام‌سازی کامل شد. مصرف زنده سفارش‌های جدید خودکار ثبت می‌شود.</p>
+		<?php endif; ?>
+		<?php $tcp_diag = TCP_Coupon_Phones::diagnose( $tcp_pc ); $tcp_st = array(); foreach ( $tcp_diag['statuses'] as $tcp_k => $tcp_n ) { $tcp_st[] = $tcp_k . ': ' . $tcp_n; } ?>
+		<details class="tcp-phone-diag"><summary>تشخیص زنده (فقط خواندنی)</summary>
+		<ul>
+			<li>سفارش‌های دارای این کد در دیتابیس: <strong><?php echo esc_html( $tcp_diag['in_db'] ); ?></strong></li>
+			<li>بارگذاری‌شده از ووکامرس: <strong><?php echo esc_html( $tcp_diag['loaded'] ); ?></strong> · وضعیت‌ها: <?php echo esc_html( $tcp_st ? implode( ' | ', $tcp_st ) : '—' ); ?></li>
+			<li>پرداخت‌شده و معتبر: <strong><?php echo esc_html( $tcp_diag['paid'] ); ?></strong> · با شماره موبایل معتبر: <strong><?php echo esc_html( $tcp_diag['phoned'] ); ?></strong></li>
+			<li>ردیف‌های مصرف فعال در سهمیه: <strong><?php echo esc_html( $tcp_diag['uses'] ); ?></strong><?php if ( $tcp_diag['error'] ) : ?> · خطای دیتابیس: <code><?php echo esc_html( $tcp_diag['error'] ); ?></code><?php endif; ?></li>
+		</ul>
+		</details>
+		<?php if ( ! empty( $tcp_sync['done'] ) && 0 === $tcp_found ) : ?>
+		<p class="tcp-phone-notice">هیچ سفارشی با این کد در سوابق فروشگاه پیدا نشد. اگر سفارش قدیمی دارید، نام این کد و «نام‌های قبلی» در تنظیمات کد را بررسی کنید.</p>
+		<?php elseif ( ! empty( $tcp_sync['done'] ) ) : ?>
+		<p class="tcp-phone-stats">سفارش‌های دارای این کد: <strong><?php echo esc_html( $tcp_found ); ?></strong> · پرداخت‌شده و ثبت‌شده در سابقه: <strong><?php echo esc_html( $tcp_paid ); ?></strong></p>
+		<?php endif; ?>
 		<form method="post" class="tcp-phone-sync" data-ajax-url="<?php echo esc_url( admin_url( 'admin-ajax.php' ) ); ?>" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
 			<?php $tcp_action_fields(); ?><input type="hidden" name="operation" value="sync">
 			<button class="button button-secondary"><?php echo empty( $tcp_sync['done'] ) ? 'شروع / ادامه همگام‌سازی' : 'بررسی مجدد سوابق از ابتدا'; ?></button>
@@ -23,16 +40,20 @@ $tcp_action_fields = static function () use ( $tcp_pc ) {
 			<span class="tcp-phone-sync-status" role="status" aria-live="polite"></span>
 		</form>
 		<?php if ( ! empty( $tcp_sync['done'] ) ) : ?>
-		<div class="tcp-grid-3 tcp-field">
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سهمیه این شماره در همین کوپن آزاد شود؟');">
-				<?php $tcp_action_fields(); ?><input type="hidden" name="operation" value="reset_one">
-				<label class="tcp-stack">ریست یک شماره<input class="tisa-input" name="phone" dir="ltr" inputmode="tel" required placeholder="09123456789"></label>
-				<button class="button tcp-field">آزادسازی این شماره</button>
-			</form>
-			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سهمیه تمام شماره‌ها و ظرفیت کل همین کوپن آزاد شود؟ سوابق پاک نمی‌شوند.');">
-				<?php $tcp_action_fields(); ?><input type="hidden" name="operation" value="reset_all">
-				<p>این عملیات فقط همین کوپن را ریست می‌کند.</p><button class="button">آزادسازی همه شماره‌ها</button>
-			</form>
+		<div class="tcp-phone-reset">
+			<h3 class="tcp-phone-reset-title">آزادسازی سهمیه</h3>
+			<div class="tcp-phone-reset-row">
+				<form method="post" class="tcp-phone-reset-one" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سهمیه این شماره در همین کوپن آزاد شود؟');">
+					<?php $tcp_action_fields(); ?><input type="hidden" name="operation" value="reset_one">
+					<label>ریست یک شماره<input class="tisa-input" name="phone" dir="ltr" inputmode="tel" required placeholder="09123456789"></label>
+					<button class="button">آزادسازی این شماره</button>
+				</form>
+				<form method="post" class="tcp-phone-reset-all" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return confirm('سهمیه تمام شماره‌ها و ظرفیت کل همین کوپن آزاد شود؟ سوابق پاک نمی‌شوند.');">
+					<?php $tcp_action_fields(); ?><input type="hidden" name="operation" value="reset_all">
+					<p>این عملیات فقط همین کوپن را ریست می‌کند و سوابق پاک نمی‌شوند.</p>
+					<button class="button">آزادسازی همه شماره‌ها</button>
+				</form>
+			</div>
 		</div>
 		<?php endif; ?>
 		<div class="tcp-phone-table tcp-field"><table class="widefat striped">
