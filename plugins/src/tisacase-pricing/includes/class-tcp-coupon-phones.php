@@ -241,17 +241,23 @@ final class TCP_Coupon_Phones {
 	/** One bounded batch per authenticated request. Keyset cursor ('after') survives retries and stops. */
 	public static function sync( $c ) {
 		$s = $c->get_meta( '_tcp_phone_sync' );
-		if ( ! is_array( $s ) || ! empty( $s['done'] ) ) { $s = array( 'page' => 1, 'after' => 0, 'until' => time(), 'done' => false ); }
+		if ( ! is_array( $s ) || ! empty( $s['done'] ) ) { $s = array( 'page' => 1, 'after' => 0, 'until' => time(), 'done' => false, 'found' => 0, 'paid' => 0 ); }
 		$ids = self::candidate_ids( $c, (int) ( $s['after'] ?? 0 ) );
 		$orders = array();
 		if ( $ids ) {
 			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $ids, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . absint( $s['until'] ) ) );
 		}
 		$codes = array_merge( array( strtolower( $c->get_code() ) ), self::policy( $c )['aliases'] );
+		$paid  = 0;
 		foreach ( $orders as $order ) {
-			if ( array_intersect( $codes, array_map( 'strtolower', $order->get_coupon_codes() ) ) ) { self::record( $c, $order ); }
+			if ( array_intersect( $codes, array_map( 'strtolower', $order->get_coupon_codes() ) ) ) {
+				if ( self::successful( $order ) && self::phone( $order->get_meta( '_tisacase158_coupon_phone' ) ?: $order->get_billing_phone() ) ) { $paid++; }
+				self::record( $c, $order );
+			}
 		}
 		if ( $ids ) { $s['after'] = max( $ids ); }
+		$s['found'] = (int) ( $s['found'] ?? 0 ) + count( $ids );
+		$s['paid']  = (int) ( $s['paid'] ?? 0 ) + $paid;
 		$s['done'] = count( $ids ) < 100;
 		$s['page'] = (int) $s['page'] + 1;
 		$c->update_meta_data( '_tcp_phone_sync', $s );

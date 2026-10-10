@@ -628,3 +628,16 @@ body.tcp-modal-open { overflow: hidden; }
 #tcp-prefix-empty { margin-top: 14px; }
 .tcp-add-mode { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
 .tcp-add-mode .tisa-input { width: auto; min-width: 150px; }
+
+/* Phone-history sync and reset controls: aligned rows instead of loose inline buttons. */
+.tcp-phone-ok { margin: 8px 0 12px; font-weight: 600; }
+.tcp-phone-stats { margin: 8px 0; font-size: 13px; color: var(--tisa-muted, #77828A); }
+.tcp-phone-sync { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 12px 0; }
+.tcp-phone-sync-status { flex-basis: 100%; font-size: 13px; color: var(--tisa-muted, #77828A); }
+.tcp-phone-reset { display: grid; gap: 10px; margin: 18px 0 8px; padding-top: 14px; border-top: 1px solid #e5e7eb; }
+.tcp-phone-reset-title { margin: 0; font-size: 14px; }
+.tcp-phone-reset-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; align-items: end; }
+.tcp-phone-reset-one { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.tcp-phone-reset-one label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; font-size: 12px; font-weight: 600; color: var(--tisa-muted, #77828A); }
+.tcp-phone-reset-all { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.tcp-phone-reset-all p { margin: 0; font-size: 13px; color: var(--tisa-muted, #77828A); }

@@ -150,6 +150,7 @@ TCP_Coupon_Phones::sync( $c );
 t( 'second batch loads only the coupon orders', 1 === count( $last_args['include'] ) && 200 === $last_args['include'][0] );
 t( 'second batch includes old alias successful order', TCP_Coupon_Phones::count( 1 ) === $before + 1 );
 t( 'history finished', $c->get_meta( '_tcp_phone_sync' )['done'] );
+t( 'sync reports found and paid counts', 101 === $c->get_meta( '_tcp_phone_sync' )['found'] && 1 === $c->get_meta( '_tcp_phone_sync' )['paid'] );
 t( 'candidate lookup ignores non-coupon orders', array() === TCP_Coupon_Phones::candidate_ids( new WC_Coupon( 1 ), 200 ) );
 TCP_Coupon_Phones::reset( 1 ); TCP_Coupon_Phones::sync( $c ); TCP_Coupon_Phones::sync( $c );
 t( 'reimport cannot undo resets', 0 === TCP_Coupon_Phones::count( 1 ) );
