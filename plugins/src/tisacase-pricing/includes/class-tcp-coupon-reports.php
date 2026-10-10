@@ -43,10 +43,7 @@ final class TCP_Coupon_Reports {
 		if ( $restart || ! is_array( $s ) ) { $s = array( 'page' => 1, 'until' => time(), 'done' => false, 'checked' => 0 ); }
 		if ( ! empty( $s['done'] ) ) { return $s; }
 		$ids = TCP_Coupon_Phones::candidate_ids( $coupon, (int) ( $s['after'] ?? 0 ) );
-		$orders = array();
-		if ( $ids ) {
-			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $ids, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . $s['until'] ) );
-		}
+		$orders = TCP_Coupon_Phones::orders_for_ids( $ids, absint( $s['until'] ) );
 		$codes = self::codes( $coupon );
 		foreach ( $orders as $order ) {
 			if ( array_intersect( $codes, array_map( 'strtolower', $order->get_coupon_codes() ) ) ) { self::link( $coupon->get_id(), $order->get_id() ); }

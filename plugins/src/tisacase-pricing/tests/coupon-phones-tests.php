@@ -15,12 +15,9 @@ function WC() { return $GLOBALS['wc']; }
 function wc_get_order( $id ) { return $GLOBALS['orders'][ $id ] ?? null; }
 function wc_get_order_statuses() { return array_fill_keys( array( 'pending', 'failed', 'cancelled', 'on-hold', 'processing', 'completed', 'refunded' ), '' ); }
 function wc_get_orders( $args ) {
+	// Mirrors the live store: 'include' is IGNORED, so only the first page of all orders is returned.
 	$GLOBALS['last_args'] = $args;
-	$out = array();
-	foreach ( $GLOBALS['orders'] as $id => $o ) {
-		if ( isset( $args['include'] ) && ! in_array( (int) $id, array_map( 'intval', $args['include'] ), true ) ) { continue; }
-		$out[] = $o;
-	}
+	$out = array_values( $GLOBALS['orders'] ?? array() );
 	return array_slice( $out, 0, $args['limit'] ?? 100 );
 }
 class WC_Coupon {
@@ -144,11 +141,11 @@ $GLOBALS['orders'] = $orders;
 foreach ( $orders as $o ) { foreach ( $o->codes as $code ) { $wpdb->db->exec( "INSERT INTO wp_woocommerce_order_items (order_id, order_item_type, order_item_name) VALUES ({$o->id}, 'coupon', '$code')" ); } }
 $before = TCP_Coupon_Phones::count( 1 );
 TCP_Coupon_Phones::sync( $c );
-t( 'history import uses bounded batches', 100 === $last_args['limit'] && 100 === count( $last_args['include'] ) );
+t( 'first batch covers 100 candidate orders', 100 === $c->get_meta( '_tcp_phone_sync' )['found'] );
 t( 'first batch not marked finished', ! $c->get_meta( '_tcp_phone_sync' )['done'] );
 t( 'cursor advances to last id of batch', 199 === $c->get_meta( '_tcp_phone_sync' )['after'] );
 TCP_Coupon_Phones::sync( $c );
-t( 'second batch loads only the coupon orders', 1 === count( $last_args['include'] ) && 200 === $last_args['include'][0] );
+t( 'second batch loads only the coupon order', 101 === $c->get_meta( '_tcp_phone_sync' )['found'] );
 t( 'second batch includes old alias successful order', TCP_Coupon_Phones::count( 1 ) === $before + 1 );
 t( 'history finished', $c->get_meta( '_tcp_phone_sync' )['done'] );
 t( 'sync reports found and paid counts', 101 === $c->get_meta( '_tcp_phone_sync' )['found'] && 1 === $c->get_meta( '_tcp_phone_sync' )['paid'] );

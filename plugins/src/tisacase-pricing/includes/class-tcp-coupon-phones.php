@@ -238,6 +238,21 @@ final class TCP_Coupon_Phones {
 		return array_map( 'intval', $ids );
 	}
 
+	/** Load exact orders by ID. Do not use wc_get_orders( 'include' ): it ignores IDs on some stores. */
+	public static function orders_for_ids( $ids, $until = 0 ) {
+		$out = array();
+		foreach ( $ids as $id ) {
+			$order = wc_get_order( (int) $id );
+			if ( ! $order || 'shop_order' !== $order->get_type() ) { continue; }
+			if ( $until ) {
+				$created = $order->get_date_created();
+				if ( $created && $created->getTimestamp() > $until ) { continue; }
+			}
+			$out[] = $order;
+		}
+		return $out;
+	}
+
 	/**
 	 * Live diagnostic for the coupon screen. Read-only. Shows where the chain breaks:
 	 * orders holding the code in the DB, their statuses, how many pass the paid rule, and recorded uses.
@@ -252,16 +267,13 @@ final class TCP_Coupon_Phones {
 		) );
 		$ids   = array_map( 'intval', (array) $ids );
 		$out   = array( 'in_db' => count( $ids ), 'loaded' => 0, 'paid' => 0, 'phoned' => 0, 'uses' => 0, 'statuses' => array(), 'error' => '' );
-		foreach ( array_chunk( $ids, 100 ) as $chunk ) {
-			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $chunk, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ) ) );
-			foreach ( $orders as $order ) {
-				$out['loaded']++;
-				$st = $order->get_status();
-				$out['statuses'][ $st ] = ( $out['statuses'][ $st ] ?? 0 ) + 1;
-				if ( self::successful( $order ) ) {
-					$out['paid']++;
-					if ( self::phone( $order->get_meta( '_tisacase158_coupon_phone' ) ?: $order->get_billing_phone() ) ) { $out['phoned']++; }
-				}
+		foreach ( self::orders_for_ids( $ids ) as $order ) {
+			$out['loaded']++;
+			$st = $order->get_status();
+			$out['statuses'][ $st ] = ( $out['statuses'][ $st ] ?? 0 ) + 1;
+			if ( self::successful( $order ) ) {
+				$out['paid']++;
+				if ( self::phone( $order->get_meta( '_tisacase158_coupon_phone' ) ?: $order->get_billing_phone() ) ) { $out['phoned']++; }
 			}
 		}
 		$out['uses'] = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . self::table() . ' WHERE coupon_id=%d AND released=0', $c->get_id() ) );
@@ -274,10 +286,7 @@ final class TCP_Coupon_Phones {
 		$s = $c->get_meta( '_tcp_phone_sync' );
 		if ( ! is_array( $s ) || ! empty( $s['done'] ) ) { $s = array( 'page' => 1, 'after' => 0, 'until' => time(), 'done' => false, 'found' => 0, 'paid' => 0 ); }
 		$ids = self::candidate_ids( $c, (int) ( $s['after'] ?? 0 ) );
-		$orders = array();
-		if ( $ids ) {
-			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $ids, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ), 'date_created' => '<=' . absint( $s['until'] ) ) );
-		}
+		$orders = self::orders_for_ids( $ids, absint( $s['until'] ) );
 		$codes = array_merge( array( strtolower( $c->get_code() ) ), self::policy( $c )['aliases'] );
 		$paid  = 0;
 		foreach ( $orders as $order ) {
