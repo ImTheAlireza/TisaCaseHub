@@ -129,6 +129,12 @@ t( 'total quota enforced across phones', '' !== TCP_Coupon_Phones::error( $c, '0
 $p['total'] = 0; $c->update_meta_data( TCP_Coupon_Phones::META, $p );
 t( 'per phone limit can exceed one', '' === TCP_Coupon_Phones::error( $c, $o->phone ) );
 // Legacy orders without custom phone metadata; > 100 orders, alias and failed cases.
+// Store-specific paid statuses (e.g. shipped to warehouse) count; cancelled after payment does not.
+$before_custom = TCP_Coupon_Phones::count( 1 );
+$o4 = new WC_Order( 13 ); $o4->status = 'wc-warehouse'; $o4->paid = true; $o4->phone = '09111111111'; TCP_Coupon_Phones::record( $c, $o4 );
+t( 'custom paid status consumes quota', TCP_Coupon_Phones::count( 1 ) === $before_custom + 1 );
+$o5 = new WC_Order( 14 ); $o5->status = 'cancelled'; $o5->paid = true; $o5->phone = '09122222222'; TCP_Coupon_Phones::record( $c, $o5 );
+t( 'cancelled after payment does not consume quota', TCP_Coupon_Phones::count( 1 ) === $before_custom + 1 );
 $orders = array();
 for ( $i = 100; $i <= 200; $i++ ) { $orders[$i] = new WC_Order( $i ); }
 $orders[200]->status = 'completed'; $orders[200]->codes = array( 'OLD-CODE' );

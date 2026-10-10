@@ -180,10 +180,13 @@ final class TCP_Coupon_Phones {
 	}
 
 	public static function successful( $order ) {
-		// A stray date_paid on pending/failed/on-hold must NEVER spend a phone quota.
+		// Statuses that never mean a completed payment. A stray date_paid here must NEVER spend a phone quota.
+		$unpaid = array( 'pending', 'failed', 'cancelled', 'on-hold', 'draft', 'checkout-draft' );
+		if ( $order->has_status( array( 'processing', 'completed' ) ) ) { return true; }
 		// Refunded historical orders are imported only with evidence of earlier payment.
-		return $order->has_status( array( 'processing', 'completed' ) )
-			|| ( $order->has_status( array( 'refunded' ) ) && (bool) $order->get_date_paid() );
+		if ( $order->has_status( array( 'refunded' ) ) ) { return (bool) $order->get_date_paid(); }
+		// Store-specific paid statuses (e.g. shipped / warehouse) count when payment was recorded.
+		return ! $order->has_status( $unpaid ) && (bool) $order->get_date_paid();
 	}
 
 	public static function record( $c, $order ) {
