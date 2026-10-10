@@ -564,3 +564,42 @@ body.tcp-modal-open { overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
 	.tcp-modal__backdrop, .tcp-modal__box { animation: none; }
 }
+
+/* Per-coupon successful phone usage */
+.tcp-phone-card { margin-top: 24px; }
+.tcp-phone-notice { padding: 14px 18px; border-inline-start: 3px solid #c38b32; background: #fffbeb; line-height: 1.9; }
+.tcp-phone-table { overflow-x: auto; }
+/* Scoped layout: avoid shared form-grid alignment and width overrides. */
+.tcp-phone-card .tcp-card-body { padding-top: 20px; }
+.tcp-phone-card .tcp-phone-switch-row { padding: 16px 0; }
+.tcp-phone-card .tcp-phone-switch-row .tcp-toggle { display: flex; flex-direction: row-reverse; justify-content: space-between; width: 100%; margin: 0; gap: 16px; }
+.tcp-phone-card .tcp-phone-switch-row .tcp-toggle > span:last-child { flex: 1; }
+.tcp-phone-card .tcp-phone-switch-row--main { padding: 0 0 16px; }
+.tcp-phone-card .tcp-phone-options { border-top: 1px solid var(--tisa-border, #E3E1DA); }
+.tcp-phone-card .tcp-phone-limits { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; padding: 24px 0; }
+.tcp-phone-card .tcp-phone-input { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; color: var(--tisa-ink, #1F2A2E); font-size: 13px; font-weight: 500; }
+.tcp-phone-card .tcp-phone-input > span { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 12px; min-height: 22px; }
+.tcp-phone-card .tcp-phone-input small { color: var(--tisa-muted, #77828A); font-size: 12px; font-weight: 400; }
+.tcp-phone-card .tcp-phone-input input { width: 100%; height: 44px; box-sizing: border-box; margin: 0; }
+.tcp-phone-card .tcp-phone-audience { border-block: 1px solid var(--tisa-border, #E3E1DA); }
+.tcp-phone-card .tcp-phone-list { padding-bottom: 16px; }
+.tcp-phone-card .tcp-phone-list-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px 16px; margin-bottom: 10px; font-size: 12px; }
+.tcp-phone-card .tcp-phone-list-heading label { color: var(--tisa-ink, #1F2A2E); font-weight: 500; }
+.tcp-phone-card .tcp-phone-list-heading span, .tcp-phone-card .tcp-phone-caption { color: var(--tisa-muted, #77828A); }
+.tcp-phone-card .tcp-phone-options textarea { display: block; width: 100%; max-width: none; box-sizing: border-box; margin: 0; padding: 12px 14px; line-height: 1.8; resize: vertical; font-family: monospace; }
+.tcp-phone-card .tcp-phone-caption { margin: 8px 0 0; font-size: 12px; line-height: 1.8; }
+.tcp-phone-card .tcp-phone-all { margin: 0; padding-bottom: 16px; }
+.tcp-phone-card .tcp-phone-setup { margin: 0 0 16px; font-size: 12px; color: var(--tisa-muted, #77828A); }
+.tcp-phone-card .tcp-phone-help { border-top: 1px solid var(--tisa-border, #E3E1DA); padding-top: 16px; }
+.tcp-phone-card .tcp-phone-help summary { cursor: pointer; font-size: 12px; color: var(--tisa-primary, #0E7C6B); }
+.tcp-phone-card .tcp-phone-help-body { margin-top: 16px; padding: 16px; border-radius: 10px; background: var(--tisa-surface-2, #FAFAF8); font-size: 12px; line-height: 1.9; }
+.tcp-phone-card .tcp-phone-help-body ul { margin: 0 0 16px; padding-inline-start: 18px; list-style: disc; }
+@media (max-width: 600px) {
+	.tcp-phone-card .tcp-phone-limits { grid-template-columns: 1fr; gap: 16px; }
+}
+.tcp-report-meta { display: flex; gap: 20px; flex-wrap: wrap; margin: 16px 0; }
+.tcp-report-table { min-width: 1150px; }
+.tcp-report-table td { vertical-align: top; line-height: 1.9; }
+.tcp-report-table small { display: block; margin-top: 5px; }
+.tcp-report-table details { min-width: 180px; max-width: 300px; }
+.tcp-report-table summary { cursor: pointer; color: #2271b1; }

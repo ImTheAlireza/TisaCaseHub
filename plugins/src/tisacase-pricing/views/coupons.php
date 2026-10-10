@@ -131,9 +131,12 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 	<a class="tcp-subtab<?php echo 'list' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons' ) ); ?>">فهرست کدها <span class="tcp-count"><?php echo esc_html( number_format_i18n( count( $tcp_rows ) ) ); ?></span></a>
 	<a class="tcp-subtab<?php echo 'single' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons', array( 'panel' => 'single' ) ) ); ?>"><?php echo $tcp_edit ? 'ویرایش کد' : 'ساخت کد'; ?></a>
 	<a class="tcp-subtab<?php echo 'bulk' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons', array( 'panel' => 'bulk' ) ) ); ?>">تولید انبوه</a>
+<?php if ( $tcp_edit ) : ?><a class="tcp-subtab<?php echo 'report' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons', array( 'panel' => 'report', 'edit' => $tcp_edit['id'] ) ) ); ?>">گزارش این کوپن</a><?php endif; ?>
 </nav>
 
-<?php if ( 'single' === $tcp_panel ) : ?>
+<?php if ( 'report' === $tcp_panel ) : ?>
+	<?php require __DIR__ . '/coupon-report.php'; ?>
+<?php elseif ( 'single' === $tcp_panel ) : ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="tcp-cp-form">
 		<input type="hidden" name="action" value="<?php echo esc_attr( TCP_Coupons::ACTION_SAVE ); ?>">
 		<input type="hidden" name="coupon_id" value="<?php echo esc_attr( $tcp_edit ? $tcp_edit['id'] : 0 ); ?>">
@@ -147,6 +150,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 					</label>
 				</div>
 				<div class="tcp-field"><?php $tcp_common_fields( $tcp_edit ? $tcp_edit : array() ); ?></div>
+				<?php require __DIR__ . '/coupon-phone-fields.php'; ?>
 			</div>
 		</section>
 		<div class="tcp-actions">
@@ -154,6 +158,8 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 			<?php if ( $tcp_edit ) : ?><a class="tisa-btn tisa-btn--ghost" href="<?php echo esc_url( TCP_Admin::url( 'coupons' ) ); ?>">انصراف</a><?php endif; ?>
 		</div>
 	</form>
+
+<?php if ( $tcp_edit && $tcp_edit['phone_policy']['enabled'] ) { require __DIR__ . '/coupon-phone-history.php'; } ?>
 
 <?php elseif ( 'bulk' === $tcp_panel ) : ?>
 	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="tcp-cp-form" onsubmit="return confirm('کدها ساخته شوند؟');">
@@ -214,6 +220,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 							<td><?php echo esc_html( number_format_i18n( $r['usage'] ) ); ?> / <?php echo $r['limit'] ? esc_html( number_format_i18n( $r['limit'] ) ) : '∞'; ?></td>
 							<td><?php echo $r['expires'] ? esc_html( $r['expires'] ) : '—'; ?></td>
 							<td class="tcp-cp-feats">
+								<?php if ( $r['phone_policy']['enabled'] ) : ?><span class="tcp-badge tcp-st-done">سهمیه خرید موفق / موبایل</span><?php endif; ?>
 								<?php if ( $r['round'] ) : ?><span class="tcp-badge tcp-st-done">رند ۸</span><?php endif; ?>
 								<?php if ( $r['free_shipping'] ) : ?><span class="tcp-badge tcp-st-running">ارسال رایگان</span><?php endif; ?>
 								<?php if ( $r['individual'] ) : ?><span class="tcp-badge tcp-st-rolled_back">انفرادی</span><?php endif; ?>
@@ -222,6 +229,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 							<td><span class="tcp-badge tcp-cp-<?php echo esc_attr( $r['status'] ); ?>"><?php echo esc_html( TCP_Coupons::status_label( $r['status'] ) ); ?></span></td>
 							<td class="tcp-run-actions">
 								<a class="button button-small" href="<?php echo esc_url( TCP_Admin::url( 'coupons', array( 'edit' => $r['id'] ) ) ); ?>">ویرایش</a>
+								<a class="button button-small" href="<?php echo esc_url( TCP_Admin::url( 'coupons', array( 'panel' => 'report', 'edit' => $r['id'] ) ) ); ?>">گزارش مصرف</a>
 								<button type="button" class="button button-small tcp-cp-toggle" data-id="<?php echo esc_attr( $r['id'] ); ?>"><?php echo 'off' === $r['status'] ? 'فعال کن' : 'غیرفعال'; ?></button>
 							</td>
 						</tr>

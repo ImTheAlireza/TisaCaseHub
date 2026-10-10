@@ -21,6 +21,8 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 		const META_BATCH      = '_tcp_batch';
 
 		public static function hooks() {
+			TCP_Coupon_Phones::hooks();
+			TCP_Coupon_Reports::hooks();
 			add_action( 'admin_post_' . self::ACTION_SAVE, array( __CLASS__, 'save' ) );
 			add_action( 'admin_post_' . self::ACTION_GENERATE, array( __CLASS__, 'generate' ) );
 			add_action( 'admin_post_' . self::ACTION_TOGGLE, array( __CLASS__, 'toggle' ) );
@@ -84,6 +86,11 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$expires = $c->get_date_expires();
 			$limit   = (int) $c->get_usage_limit();
 			$usage   = (int) $c->get_usage_count();
+			$phone_policy = TCP_Coupon_Phones::policy( $c );
+			if ( $phone_policy['enabled'] ) {
+				$limit = $phone_policy['total'];
+				$usage = TCP_Coupon_Phones::count( $c->get_id() );
+			}
 			$status  = 'active';
 			if ( 'publish' !== get_post_status( $c->get_id() ) ) {
 				$status = 'off';
@@ -115,6 +122,7 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 				'emails'        => $c->get_email_restrictions(),
 				'excl_sale'     => (bool) $c->get_exclude_sale_items(),
 				'description'   => $c->get_description(),
+				'phone_policy' => TCP_Coupon_Phones::policy( $c ),
 			);
 		}
 
@@ -192,6 +200,7 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$emails = isset( $p['emails'] ) ? array_filter( array_map( 'sanitize_email', preg_split( '/[\s,;]+/', (string) $p['emails'] ) ) ) : array();
 			$c->set_email_restrictions( array_values( $emails ) );
 
+			TCP_Coupon_Phones::save_policy( $c, $p );
 			$c->update_meta_data( self::META_ROUND, empty( $p['round_to_8'] ) ? 'no' : 'yes' );
 		}
 
@@ -207,12 +216,13 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			if ( $existing && $existing !== $id ) {
 				self::back( 'err', array( 'msg' => 'dupe' ) );
 			}
+			if ( $id && 'shop_coupon' !== get_post_type( $id ) ) { wp_die( 'کد تخفیف معتبر نیست.' ); }
 			$c = new WC_Coupon( $id );
 			$c->set_code( $code );
 			self::fill( $c, $p );
 			$c->set_status( 'publish' );
 			$c->save();
-			self::back( 'saved' );
+			self::back( 'saved', array( 'edit' => $c->get_id() ) );
 		}
 
 		/** تولید انبوه کدهای یک‌بارمصرف. */
