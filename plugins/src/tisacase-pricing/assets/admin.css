@@ -626,3 +626,5 @@ body.tcp-modal-open { overflow: hidden; }
 .tcp-prefix-remove { width: 24px; height: 24px; border: 0; border-radius: 50%; background: transparent; color: var(--tisa-ink-soft, #45555C); font-size: 16px; line-height: 1; cursor: pointer; }
 .tcp-prefix-remove:hover { background: var(--tisa-danger-soft, #FBECEA); color: var(--tisa-danger-ink, #8E3128); }
 #tcp-prefix-empty { margin-top: 14px; }
+.tcp-add-mode { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
+.tcp-add-mode .tisa-input { width: auto; min-width: 150px; }

@@ -515,5 +515,29 @@ t( 'prefix_product_ids: CH و LP → همهٔ محصولات منطبق (۲۰۱�
 t( 'prefix_product_count: CH → ۴ محصول (201، 203 از واریشن، 204 و CHX-… در 206)', 4 === TCP_Rules::prefix_product_count( 'CH' ), (string) TCP_Rules::prefix_product_count( 'CH' ) );
 t( 'prefix_product_count: LP → ۲ محصول (202، 205)', 2 === TCP_Rules::prefix_product_count( 'LP' ), (string) TCP_Rules::prefix_product_count( 'LP' ) );
 
+echo "--- 14) شناسه: هر پیشوند استثنا یا قانون اختصاصی؛ بلندترین پیشوند برنده ---\n";
+$t_map = TCP_Rules::normalize_prefix_map( array( 'ch' => array( 'enabled' => 1, 'increase' => 40, 'exclude' => 0 ), 'LP' => array( 'exclude' => 1 ), 'xyz!' => array( 'exclude' => 1 ) ) );
+t( 'normalize_prefix_map: نقشهٔ جدید، کلید بزرگ‌حرف و کلید نامعتبر حذف', array( 'CH', 'LP' ) === array_keys( $t_map ) && 40.0 === (float) $t_map['CH']['increase'] && 1 === $t_map['LP']['exclude'], var_export( array_keys( $t_map ), true ) );
+$t_legacy = TCP_Rules::normalize_prefix_map( array( 'CH', 'lp' ) );
+t( 'normalize_prefix_map: شکل قدیمی (فهرست ساده) = استثنا', array( 'CH', 'LP' ) === array_keys( $t_legacy ) && 1 === $t_legacy['CH']['exclude'] && 1 === $t_legacy['LP']['exclude'] );
+
+set_rules( array(
+	'global'   => array( 'enabled' => 1, 'increase' => 30 ),
+	'products' => array( 204 => array( 'enabled' => 1, 'increase' => 10 ) ),
+	'prefixes' => array(
+		'CH'   => array( 'enabled' => 1, 'increase' => 40, 'mode' => 'round' ),
+		'CH-0' => array( 'enabled' => 1, 'exclude' => 1 ),
+		'LP'   => array( 'enabled' => 0, 'increase' => 5 ),
+	),
+) );
+$r201 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 201 ) ) );
+t( 'شناسه با قانون: CH-001 زیر CH-0 (استثنای بلندتر) → استثنا', null === $r201, var_export( $r201, true ) );
+$r2031 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 2031, 'variation', 203 ) ) );
+t( 'شناسه با قانون: واریشن CH-RED → قانون CH (۴۰٪)', $r2031 && 40.0 === (float) $r2031['increase'], var_export( $r2031, true ) );
+$r202 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 202 ) ) );
+t( 'شناسه غیرفعال (LP) قانون ندارد؛ به سراسری (۳۰٪) می‌افتد', $r202 && 30.0 === (float) $r202['increase'], var_export( $r202, true ) );
+$r204 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 204 ) ) );
+t( 'اولویت: قانون تکی محصول (۱۰٪) بر قانون شناسه CH (۴۰٪) برنده است', $r204 && 10.0 === (float) $r204['increase'] );
+
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

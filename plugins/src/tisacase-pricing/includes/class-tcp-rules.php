@@ -150,6 +150,37 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			return $out;
 		}
 
+		/**
+		 * نقشهٔ قانون شناسه‌ها: «پیشوند => قانون». هر پیشوند یا استثناست یا قانون اختصاصی خودش را دارد.
+		 * شکل قدیمی (فهرست ساده از پیشوندها) به‌عنوان استثنا خوانده می‌شود.
+		 *
+		 * @param mixed $raw ورودی ذخیره‌شده یا POST.
+		 * @return array<string,array>
+		 */
+		public static function normalize_prefix_map( $raw ) {
+			$out = array();
+			if ( ! is_array( $raw ) ) {
+				return $out;
+			}
+			foreach ( $raw as $key => $rule ) {
+				if ( is_array( $rule ) ) {
+					$prefix = $key;
+					$rule   = $rule;
+				} elseif ( is_scalar( $rule ) && is_int( $key ) ) {
+					$prefix = $rule; // شکل قدیمی: ['CH', 'LP'] => استثنا.
+					$rule   = array( 'exclude' => 1 );
+				} else {
+					continue;
+				}
+				$list = self::normalize_prefixes( array( $prefix ) );
+				if ( empty( $list ) ) {
+					continue;
+				}
+				$out[ $list[0] ] = self::normalize_rule( $rule );
+			}
+			return $out;
+		}
+
 		private static function upper( $text ) {
 			return function_exists( 'mb_strtoupper' ) ? mb_strtoupper( (string) $text, 'UTF-8' ) : strtoupper( (string) $text );
 		}
@@ -181,7 +212,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				'global'     => self::normalize_rule( isset( $raw['global'] ) && is_array( $raw['global'] ) ? $raw['global'] : $defaults['global'] ),
 				'products'   => array(),
 				'categories' => array(),
-				'prefixes'   => self::normalize_prefixes( isset( $raw['prefixes'] ) ? $raw['prefixes'] : array() ),
+				'prefixes'   => self::normalize_prefix_map( isset( $raw['prefixes'] ) ? $raw['prefixes'] : array() ),
 			);
 			foreach ( array( 'products', 'categories' ) as $group ) {
 				foreach ( (array) ( isset( $raw[ $group ] ) ? $raw[ $group ] : array() ) as $id => $rule ) {
@@ -303,12 +334,27 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				$rule    = ! empty( $pr['exclude'] ) ? false : $pr;
 				$decided = true;
 			}
-			// ۲) استثنای شناسه (پیشوند SKU): از همه قوانین خارج است.
+			// ۲) قانون/استثنای شناسه (پیشوند SKU): بلندترین پیشوند منطبق برنده است.
 			if ( ! $decided && ! empty( $s['prefixes'] ) ) {
-				$ids = self::prefix_product_ids( $s['prefixes'] );
-				if ( isset( $ids[ $scope_id ] ) ) {
-					$rule    = false;
-					$decided = true;
+				$live = array_filter(
+					$s['prefixes'],
+					static function ( $pr ) {
+						return self::rule_live( $pr );
+					}
+				);
+				uksort(
+					$live,
+					static function ( $a, $b ) {
+						return strlen( $b ) - strlen( $a );
+					}
+				);
+				foreach ( $live as $prefix => $pr ) {
+					$ids = self::prefix_product_ids( array( (string) $prefix ) );
+					if ( isset( $ids[ $scope_id ] ) ) {
+						$rule    = ! empty( $pr['exclude'] ) ? false : $pr;
+						$decided = true;
+						break;
+					}
 				}
 			}
 			// ۳) اولین دستهٔ منطبق (استثنا یعنی هیچ قانونی، حتی سراسری).
@@ -569,7 +615,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				'global'     => self::normalize_rule( isset( $_POST['global'] ) ? wp_unslash( $_POST['global'] ) : array() ),
 				'products'   => self::posted_group( isset( $_POST['products'] ) ? wp_unslash( $_POST['products'] ) : array(), 'products' ),
 				'categories' => self::posted_group( isset( $_POST['categories'] ) ? wp_unslash( $_POST['categories'] ) : array(), 'categories' ),
-				'prefixes'   => self::normalize_prefixes( isset( $_POST['prefixes'] ) ? wp_unslash( $_POST['prefixes'] ) : array() ),
+				'prefixes'   => self::normalize_prefix_map( isset( $_POST['prefixes'] ) ? wp_unslash( $_POST['prefixes'] ) : array() ),
 			);
 			// phpcs:enable
 			self::persist( $settings );

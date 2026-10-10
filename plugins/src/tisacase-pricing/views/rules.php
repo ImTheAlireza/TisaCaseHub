@@ -2,9 +2,9 @@
 /**
  * تب «قوانین داینامیک».
  *
- * ساختار: قانون سراسری ← محصولات تکی ← دسته‌بندی‌ها (هر کدام فقط «قانون») و یک بخش جدا
- * «استثناها» با سه فهرست: استثنای تکی، استثنای دسته‌بندی، استثنای شناسه (پیشوند SKU).
- * اولویت اجرا: قانون/استثنای تکی ← استثنای شناسه ← دسته‌بندی ← سراسری.
+ * ساختار: قانون سراسری ← دسته‌بندی‌ها (قانون) و بخش «محصولات تکی، استثنا و شناسه» با سه تب:
+ * محصول تکی (هر سطر قانون اختصاصی یا استثنا)، استثنای دسته‌بندی، و شناسه (پیشوند SKU؛ هر پیشوند قانون یا استثنا).
+ * اولویت اجرا: قانون/استثنای تکی ← شناسه (بلندترین پیشوند منطبق) ← دسته‌بندی ← سراسری.
  *
  * @package TisaCase_Pricing
  */
@@ -87,8 +87,8 @@ $tcp_identity_cell = static function ( $info ) {
 				<?php else : ?>
 					<span class="tcp-rule-name"><?php echo esc_html( $info['name'] ); ?></span>
 				<?php endif; ?>
-				<?php if ( ! empty( $info['enabled_badge'] ) ) : ?>
-					<span class="tcp-badge tcp-status <?php echo $info['enabled'] ? 'tcp-st-done' : 'tcp-st-cancelled'; ?>"><?php echo $info['enabled'] ? 'فعال' : 'غیرفعال'; ?></span>
+				<?php if ( ! empty( $info['badge'] ) ) : ?>
+					<span class="tcp-badge tcp-status <?php echo esc_attr( $info['badge_class'] ); ?>"><?php echo esc_html( $info['badge'] ); ?></span>
 				<?php endif; ?>
 			</div>
 			<div class="tcp-rule-chips"><?php echo $info['chips']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- چیپ‌ها پایین همین فایل با esc ساخته شده‌اند. ?></div>
@@ -124,44 +124,59 @@ $tcp_cat_chips = static function ( $id, $count, $path, $name ) {
 };
 
 /**
- * یک سطر (قانون یا استثنا).
+ * یک سطر (محصول، دسته یا شناسه).
  *
- * @param string $kind  rule|exc.
- * @param string $group products|categories (نام فیلد POST).
- * @param int    $id    شناسه.
- * @param array  $rule  قانون نرمال‌شده.
- * @param array  $info  name, edit_url, image/icon, chips, search_text, item (داده برای جابه‌جایی بین فهرست‌ها).
+ * حالت هر سطر فقط با rule[exclude] مشخص می‌شود: استثنا یا قانون اختصاصی.
+ * محصول و شناسه سوییچ «استثنا» دارند؛ دسته‌ها همچنان با دکمهٔ جابه‌جایی بین دو فهرست کار می‌کنند.
+ *
+ * @param string     $type  product|category|prefix.
+ * @param int|string $id    شناسه (محصول/دسته) یا پیشوند.
+ * @param array      $rule  قانون نرمال‌شده.
+ * @param array      $info  name, edit_url, image/icon, chips, search_text, item.
  */
-$tcp_rule_row = static function ( $kind, $group, $id, $rule, $info ) use ( $tcp_identity_cell, $tcp_rule_summary, $tcp_rule_sub ) {
-	$id   = absint( $id );
-	$name = isset( $info['name'] ) ? $info['name'] : '';
+$tcp_rule_row = static function ( $type, $id, $rule, $info ) use ( $tcp_identity_cell, $tcp_rule_summary, $tcp_rule_sub ) {
+	$name = isset( $info['name'] ) ? (string) $info['name'] : '';
 	if ( '' === $name ) {
 		return;
 	}
-	$excluded = 'exc' === $kind;
+	$groups   = array(
+		'product'  => 'products',
+		'category' => 'categories',
+		'prefix'   => 'prefixes',
+	);
+	$group    = $groups[ $type ];
+	$key_id   = 'prefix' === $type ? (string) $id : absint( $id );
+	$excluded = ! empty( $rule['exclude'] );
 	$enabled  = $excluded ? true : ! empty( $rule['enabled'] );
-	$n        = esc_attr( $group ) . '[' . $id . ']';
+	$n        = $group . '[' . $key_id . ']';
 	$summary  = $tcp_rule_summary( $rule );
-	$sub      = $excluded ? '' : $tcp_rule_sub( $rule );
+	$sub      = $tcp_rule_sub( $rule );
 	$cls      = 'tcp-rule-row' . ( $excluded ? ' is-excluded' : '' ) . ( $enabled ? '' : ' is-off' );
-	$item     = isset( $info['item'] ) ? $info['item'] : array( 'id' => $id, 'name' => $name );
+	$item     = isset( $info['item'] ) ? $info['item'] : array( 'id' => $key_id, 'name' => $name );
 	$search   = function_exists( 'mb_strtolower' ) ? mb_strtolower( $info['search_text'], 'UTF-8' ) : strtolower( $info['search_text'] );
 	$hidden   = static function ( $field, $value ) use ( $n ) {
 		return '<input type="hidden" data-f="' . esc_attr( $field ) . '" name="' . $n . '[' . esc_attr( $field ) . ']" value="' . esc_attr( $value ) . '">';
 	};
+	if ( $excluded ) {
+		$badge       = 'استثنا';
+		$badge_class = 'tcp-st-cancelled';
+	} else {
+		$badge       = $enabled ? 'فعال' : 'غیرفعال';
+		$badge_class = $enabled ? 'tcp-st-done' : 'tcp-st-cancelled';
+	}
 	?>
-	<tr class="<?php echo esc_attr( $cls ); ?>" data-rule-id="<?php echo esc_attr( $id ); ?>" data-item="<?php echo esc_attr( wp_json_encode( $item ) ); ?>" data-search="<?php echo esc_attr( $search ); ?>">
+	<tr class="<?php echo esc_attr( $cls ); ?>" data-rule-id="<?php echo esc_attr( $key_id ); ?>" data-item="<?php echo esc_attr( wp_json_encode( $item ) ); ?>" data-search="<?php echo esc_attr( $search ); ?>">
 		<td class="tcp-cell-identity">
 			<?php
 			$tcp_identity_cell(
 				array(
-					'name'          => $name,
-					'edit_url'      => isset( $info['edit_url'] ) ? $info['edit_url'] : '',
-					'image'         => isset( $info['image'] ) ? $info['image'] : '',
-					'icon'          => isset( $info['icon'] ) ? $info['icon'] : '',
-					'chips'         => $info['chips'],
-					'enabled'       => $enabled,
-					'enabled_badge' => ! $excluded,
+					'name'        => $name,
+					'edit_url'    => isset( $info['edit_url'] ) ? $info['edit_url'] : '',
+					'image'       => isset( $info['image'] ) ? $info['image'] : '',
+					'icon'        => isset( $info['icon'] ) ? $info['icon'] : '',
+					'chips'       => $info['chips'],
+					'badge'       => $badge,
+					'badge_class' => $badge_class,
 				)
 			);
 			?>
@@ -170,18 +185,22 @@ $tcp_rule_row = static function ( $kind, $group, $id, $rule, $info ) use ( $tcp_
 			<div class="tcp-rule-sum"><?php echo esc_html( $summary ); ?></div>
 			<div class="tcp-rule-sub<?php echo '' !== $sub ? '' : ' tcp-hidden'; ?>"><?php echo esc_html( $sub ); ?></div>
 		</td>
-		<?php if ( ! $excluded ) : ?>
-			<td class="tcp-cell-flags">
+		<td class="tcp-cell-flags">
+			<?php if ( ! $excluded ) : ?>
 				<label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled" <?php checked( $enabled, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>
-			</td>
-		<?php endif; ?>
+			<?php endif; ?>
+			<?php if ( 'category' !== $type ) : ?>
+				<label class="tisa-switch tcp-toggle tcp-toggle--sm" title="خارج کردن از همهٔ قوانین (حتی سراسری)"><input type="checkbox" class="tcp-quick-exclude" <?php checked( $excluded, true ); ?>><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا</span></label>
+			<?php endif; ?>
+		</td>
 		<td class="tcp-cell-actions">
-			<?php if ( $excluded ) : ?>
-				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
-				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>
-			<?php else : ?>
-				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
-				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="exc" title="خارج کردن از همهٔ قوانین و افزودن به استثناها">به استثنا</button>
+			<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
+			<?php if ( 'category' === $type ) : ?>
+				<?php if ( $excluded ) : ?>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>
+				<?php else : ?>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="exc" title="خارج کردن از همهٔ قوانین و افزودن به استثناها">به استثنا</button>
+				<?php endif; ?>
 			<?php endif; ?>
 			<button type="button" class="tisa-btn tisa-btn--danger-ghost tisa-btn--sm tcp-remove-rule" aria-label="<?php echo esc_attr( ( $excluded ? 'حذف استثنای ' : 'حذف قانون ' ) . $name ); ?>">حذف</button>
 			<?php
@@ -203,36 +222,28 @@ $tcp_rule_row = static function ( $kind, $group, $id, $rule, $info ) use ( $tcp_
 	<?php
 };
 
-/** چیپ‌های بالای فهرست استثنای شناسه: شمارش محصولات منطبق. */
-$tcp_prefix_chip = static function ( $prefix, $count ) {
-	?>
-	<span class="tcp-prefix-chip" data-prefix="<?php echo esc_attr( $prefix ); ?>">
-		<code class="tcp-prefix-code" dir="ltr"><?php echo esc_html( $prefix ); ?></code>
-		<span class="tcp-prefix-count"><?php echo null === $count ? 'پس از ذخیره' : esc_html( number_format_i18n( $count ) . ' محصول' ); ?></span>
-		<button type="button" class="tcp-prefix-remove" aria-label="حذف شناسهٔ <?php echo esc_attr( $prefix ); ?>">×</button>
-		<input type="hidden" name="prefixes[]" value="<?php echo esc_attr( $prefix ); ?>">
-	</span>
-	<?php
-};
-
 /**
- * یک فهرست (قانون یا استثنا) برای یک نوع (محصول/دسته).
+ * یک فهرست. product: یک فهرست برای قانون و استثنا (kind=all)؛ category: kind=rule|exc.
  *
  * @param string $type    product|category.
- * @param string $kind    rule|exc.
+ * @param string $kind    all|rule|exc.
  * @param array  $entries هر ورودی: id, rule, info.
  */
 $tcp_lane = static function ( $type, $kind, $entries ) use ( $tcp_rule_row ) {
-	$excluded = 'exc' === $kind;
-	$group    = 'product' === $type ? 'products' : 'categories';
-	$is_prod  = 'product' === $type;
+	$is_prod   = 'product' === $type;
+	$is_prefix = 'prefix' === $type;
+	$excluded  = 'exc' === $kind;
+	$lane_key  = $is_prod ? 'product' : ( $is_prefix ? 'prefix' : 'category-' . $kind );
 
-	if ( $is_prod ) {
-		$placeholder = $excluded ? 'محصول برای استثنا را جستجو کن… (نام، SKU یا شناسه؛ حداقل ۲ حرف)' : 'نام، SKU یا شناسهٔ محصول… (حداقل ۲ حرف)';
-		$aria        = $excluded ? 'نتایج جستجوی محصول برای استثنا' : 'نتایج جستجوی محصول';
-		$empty       = $excluded
-			? 'هنوز محصولی مستثنا نشده است؛ از جستجوی بالا محصول را انتخاب و با دکمهٔ «افزودن به استثناها» اضافه کن.'
-			: 'هنوز محصولی قانون تکی ندارد؛ از جستجوی بالا چند محصول را انتخاب و یک‌باره اضافه کن.';
+	if ( $is_prefix ) {
+		$placeholder = '';
+		$aria        = '';
+		$empty       = 'هنوز شناسه‌ای ثبت نشده است؛ بالا حروف ابتدای SKU را وارد کن.';
+		$name_head   = 'شناسه (پیشوند SKU)';
+	} elseif ( $is_prod ) {
+		$placeholder = 'نام، SKU یا شناسهٔ محصول… (حداقل ۲ حرف)';
+		$aria        = 'نتایج جستجوی محصول';
+		$empty       = 'هنوز محصولی در این فهرست نیست؛ از جستجوی بالا محصول را انتخاب و اضافه کن.';
 		$name_head   = 'محصول';
 	} else {
 		$placeholder = 'نام دسته‌بندی… (حداقل ۲ حرف)';
@@ -242,21 +253,31 @@ $tcp_lane = static function ( $type, $kind, $entries ) use ( $tcp_rule_row ) {
 			: 'هنوز دسته‌ای قانون ندارد؛ از جستجوی بالا چند دسته را انتخاب و یک‌باره اضافه کن.';
 		$name_head   = 'دسته‌بندی';
 	}
-	$lane_key = $type . '-' . $kind;
 
 	$shown = 0;
 	ob_start();
 	foreach ( $entries as $entry ) {
-		$tcp_rule_row( $kind, $group, $entry['id'], $entry['rule'], $entry['info'] );
+		$tcp_rule_row( $type, $entry['id'], $entry['rule'], $entry['info'] );
 		$shown++;
 	}
 	$rows_html = ob_get_clean();
 	?>
 	<div class="tcp-lane" data-lane="<?php echo esc_attr( $lane_key ); ?>" data-type="<?php echo esc_attr( $type ); ?>" data-kind="<?php echo esc_attr( $kind ); ?>">
+		<?php if ( ! $is_prefix ) : ?>
 		<div class="tcp-search-box tcp-search-box--multi">
+			<?php if ( $is_prod ) : ?>
+				<div class="tcp-add-mode">
+					<span>افزودن به‌عنوان:</span>
+					<select class="tisa-input tisa-input--sm" data-tcp-addmode aria-label="نوع مورد جدید: قانون اختصاصی یا استثنا">
+						<option value="rule">قانون اختصاصی</option>
+						<option value="exc">استثنا</option>
+					</select>
+				</div>
+			<?php endif; ?>
 			<input type="search" class="tisa-input tcp-lane-search" placeholder="<?php echo esc_attr( $placeholder ); ?>" autocomplete="off" aria-label="<?php echo esc_attr( $placeholder ); ?>">
 			<div class="tcp-search-results tcp-lane-results" role="listbox" aria-label="<?php echo esc_attr( $aria ); ?>"></div>
 		</div>
+		<?php endif; ?>
 		<div class="tcp-ex-toolbar">
 			<span class="tcp-selection-badge tcp-lane-count"><?php echo esc_html( number_format_i18n( $shown ) . ' مورد' ); ?></span>
 			<input type="search" class="tisa-input tisa-input--sm tcp-ex-filter tcp-lane-filter" placeholder="جستجو در همین لیست…" autocomplete="off" aria-label="جستجو در این فهرست">
@@ -266,10 +287,8 @@ $tcp_lane = static function ( $type, $kind, $entries ) use ( $tcp_rule_row ) {
 			<table class="tcp-rule-table<?php echo $excluded ? ' tcp-rule-table--exc' : ''; ?>">
 				<thead><tr>
 					<th class="tcp-col-identity"><?php echo esc_html( $name_head ); ?></th>
-					<th class="tcp-col-rule"><?php echo esc_html( $excluded ? 'اثر' : 'قانون' ); ?></th>
-					<?php if ( ! $excluded ) : ?>
-						<th class="tcp-col-flags">وضعیت</th>
-					<?php endif; ?>
+					<th class="tcp-col-rule">قانون / اثر</th>
+					<th class="tcp-col-flags">وضعیت</th>
 					<th class="tcp-col-actions">عملیات</th>
 				</tr></thead>
 				<tbody class="tcp-lane-body"><?php echo $rows_html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- هر سطر با esc ساخته شده است. ?></tbody>
@@ -352,6 +371,26 @@ foreach ( $tcp_rules['categories'] as $id => $rule ) {
 	);
 }
 
+$tcp_prefix_entries = array();
+foreach ( $tcp_rules['prefixes'] as $tcp_prefix => $tcp_prule ) {
+	$tcp_pcount           = TCP_Rules::prefix_product_count( (string) $tcp_prefix );
+	$tcp_prefix_entries[] = array(
+		'id'   => (string) $tcp_prefix,
+		'rule' => $tcp_prule,
+		'info' => array(
+			'name'        => (string) $tcp_prefix,
+			'icon'        => 'dashicons-filter',
+			'chips'       => '<span>' . esc_html( number_format_i18n( $tcp_pcount ) . ' محصول' ) . '</span>',
+			'search_text' => (string) $tcp_prefix,
+			'item'        => array(
+				'id'    => (string) $tcp_prefix,
+				'name'  => (string) $tcp_prefix,
+				'count' => $tcp_pcount,
+			),
+		),
+	);
+}
+
 /** فیلتر ورودی‌ها به یک فهرست: rule = غیراستثنا، exc = استثنا. */
 $tcp_only = static function ( $entries, $kind ) {
 	return array_values(
@@ -367,9 +406,9 @@ $tcp_only = static function ( $entries, $kind ) {
 
 // ---- شمارش‌ها برای برچسب تب‌های استثنا.
 $tcp_ex_count = array(
-	'product'  => count( $tcp_only( $tcp_product_entries, 'exc' ) ),
+	'product'  => count( $tcp_product_entries ),
 	'category' => count( $tcp_only( $tcp_category_entries, 'exc' ) ),
-	'prefix'   => count( $tcp_rules['prefixes'] ),
+	'prefix'   => count( $tcp_prefix_entries ),
 );
 ?>
 
@@ -457,15 +496,6 @@ $tcp_ex_count = array(
 		</div>
 	</section>
 
-	<section class="tcp-card" id="tcp-products-card">
-		<div class="tcp-card-head"><span class="tcp-dot"></span><div><h2>محصولات تکی</h2><p>قانون مخصوص هر محصول. جستجو کن، چند محصول را با هم تیک بزن و یک‌باره اضافه کن. محصولی که مستثنا باشد در تب «استثنای تکی» (بخش استثناها) است.</p></div></div>
-		<div class="tcp-card-body">
-			<?php
-			$tcp_lane( 'product', 'rule', $tcp_only( $tcp_product_entries, 'rule' ) );
-			?>
-		</div>
-	</section>
-
 	<section class="tcp-card" id="tcp-cats-card">
 		<div class="tcp-card-head"><span class="tcp-dot"></span><div><h2>دسته‌بندی‌ها</h2><p>قانون دسته روی خود دسته و همهٔ زیردسته‌هایش اعمال می‌شود. چند دسته را با هم تیک بزن و یک‌باره اضافه کن.</p></div></div>
 		<div class="tcp-card-body">
@@ -479,42 +509,39 @@ $tcp_ex_count = array(
 	</section>
 
 	<section class="tcp-card" id="tcp-exceptions-card">
-		<div class="tcp-card-head"><span class="tcp-dot tcp-dot--muted"></span><div><h2>استثناها</h2><p>این موارد از همهٔ قوانین (حتی سراسری) خارج می‌شوند و قیمت اصلی‌شان را نشان می‌دهند. اولویت: <strong>استثنای تکی ← استثنای شناسه ← استثنای دسته‌بندی</strong>؛ یعنی قانون تکی هر محصول همیشه برنده است.</p></div></div>
+		<div class="tcp-card-head"><span class="tcp-dot"></span><div><h2>محصولات تکی، استثنا و شناسه</h2><p>هر مورد یا <strong>قانون اختصاصی</strong> دارد یا <strong>استثنا</strong> است؛ با سوییچ «استثنا» جابه‌جا کن. استثنا یعنی از همهٔ قوانین (حتی سراسری) خارج است. اولویت اجرا: <strong>قانون/استثنای تکی ← شناسه (پیشوند SKU) ← دسته‌بندی ← سراسری</strong>.</p></div></div>
 		<div class="tcp-card-body">
-			<div class="tcp-subnav tcp-ex-tabs" role="tablist" aria-label="نوع استثنا">
-				<button type="button" class="tcp-subtab is-active" role="tab" aria-selected="true" data-ex-tab="product">استثنای تکی <span class="tcp-count" data-ex-count="product"><?php echo esc_html( number_format_i18n( $tcp_ex_count['product'] ) ); ?></span></button>
+			<div class="tcp-subnav tcp-ex-tabs" role="tablist" aria-label="نوع قانون">
+				<button type="button" class="tcp-subtab is-active" role="tab" aria-selected="true" data-ex-tab="product">محصول تکی <span class="tcp-count" data-ex-count="product"><?php echo esc_html( number_format_i18n( $tcp_ex_count['product'] ) ); ?></span></button>
 				<button type="button" class="tcp-subtab" role="tab" aria-selected="false" data-ex-tab="category">استثنای دسته‌بندی <span class="tcp-count" data-ex-count="category"><?php echo esc_html( number_format_i18n( $tcp_ex_count['category'] ) ); ?></span></button>
-				<button type="button" class="tcp-subtab" role="tab" aria-selected="false" data-ex-tab="prefix">استثنای شناسه (پیشوند SKU) <span class="tcp-count" data-ex-count="prefix"><?php echo esc_html( number_format_i18n( $tcp_ex_count['prefix'] ) ); ?></span></button>
+				<button type="button" class="tcp-subtab" role="tab" aria-selected="false" data-ex-tab="prefix">شناسه (پیشوند SKU) <span class="tcp-count" data-ex-count="prefix"><?php echo esc_html( number_format_i18n( $tcp_ex_count['prefix'] ) ); ?></span></button>
 			</div>
 
 			<div class="tcp-ex-panel" role="tabpanel" data-ex-panel="product">
-				<p class="tcp-muted">محصول‌هایی که اینجا باشند از همهٔ قوانین خارج‌اند. اگر محصولی قانون تکی داشته باشد، آن قانون را در «محصولات تکی» بردار و به استثنا منتقل کن.</p>
+				<p class="tcp-muted">محصول‌های این فهرست یا قانون اختصاصی دارند یا مستثنا هستند. روی «ویرایش» هر سطر قانون اختصاصی را تنظیم کن؛ با سوییچ «استثنا» بین دو حالت جابه‌جا شو. جستجو و افزودن را از بالای فهرست انجام بده.</p>
 				<?php
-				$tcp_lane( 'product', 'exc', $tcp_only( $tcp_product_entries, 'exc' ) );
+				$tcp_lane( 'product', 'all', $tcp_product_entries );
 				?>
 			</div>
 
 			<div class="tcp-ex-panel" role="tabpanel" data-ex-panel="category" hidden>
-				<p class="tcp-muted">همهٔ محصولات این دسته‌ها (و زیردسته‌ها) از قوانین خارج می‌شوند؛ مگر آن‌که قانون تکی یا استثنای تکی جداگانه داشته باشند.</p>
+				<p class="tcp-muted">همهٔ محصولات این دسته‌ها (و زیردسته‌ها) از قوانین خارج می‌شوند؛ مگر آن‌که قانون یا استثنای تکی جداگانه داشته باشند.</p>
 				<?php
 				$tcp_lane( 'category', 'exc', $tcp_only( $tcp_category_entries, 'exc' ) );
 				?>
 			</div>
 
 			<div class="tcp-ex-panel" role="tabpanel" data-ex-panel="prefix" hidden>
-				<p class="tcp-muted">حروف ابتدای SKU را وارد کن (مثلاً <code dir="ltr">CH</code>)؛ همهٔ محصولاتی که SKUشان با آن شروع شود از قوانین خارج می‌شوند. SKU واریشن‌ها هم بررسی می‌شود. بزرگی و کوچکی حروف مهم نیست. چند مورد را با ویرگول یا Enter جدا کن.</p>
-				<p class="tcp-muted">مثال: <code dir="ltr">CH</code> ← <code dir="ltr">CH-001</code> و <code dir="ltr">CHX-9</code> استثنا می‌شوند، <code dir="ltr">LP180</code> نه.</p>
+				<p class="tcp-muted">حروف ابتدای SKU را وارد کن (مثلاً <code dir="ltr">CH</code>)؛ همهٔ محصولاتی که SKUشان با آن شروع شود منطبق‌اند. SKU واریشن‌ها هم بررسی می‌شود. بزرگی و کوچکی حروف مهم نیست. چند مورد را با ویرگول یا Enter جدا کن.</p>
+				<p class="tcp-muted">هر شناسه یا <strong>استثنا</strong> است یا <strong>قانون اختصاصی</strong> خودش را دارد (با «ویرایش»). اگر چند شناسه منطبق باشد، بلندترین آن برنده است؛ مثال: <code dir="ltr">CH-0</code> برنده‌تر از <code dir="ltr">CH</code> برای <code dir="ltr">CH-001</code>.</p>
 				<div class="tcp-prefix-add">
-					<input type="text" class="tisa-input" id="tcp-prefix-input" dir="ltr" maxlength="90" placeholder="مثلاً CH" autocomplete="off" aria-label="شناسهٔ استثنا (پیشوند SKU)">
+					<input type="text" class="tisa-input" id="tcp-prefix-input" dir="ltr" maxlength="90" placeholder="مثلاً CH" autocomplete="off" aria-label="شناسهٔ جدید (پیشوند SKU)">
 					<button type="button" class="tisa-btn tisa-btn--secondary" id="tcp-prefix-add">افزودن</button>
 				</div>
 				<div class="tcp-prefix-msg" id="tcp-prefix-msg" aria-live="polite"></div>
-				<div class="tcp-prefix-list" id="tcp-prefix-list">
-					<?php foreach ( $tcp_rules['prefixes'] as $tcp_prefix ) : ?>
-						<?php $tcp_prefix_chip( $tcp_prefix, TCP_Rules::prefix_product_count( $tcp_prefix ) ); ?>
-					<?php endforeach; ?>
-				</div>
-				<div class="tcp-product-empty" id="tcp-prefix-empty"<?php echo empty( $tcp_rules['prefixes'] ) ? '' : ' style="display:none"'; ?>>هنوز شناسه‌ای استثنا نشده است؛ بالا حروف ابتدای SKU را وارد کن.</div>
+				<?php
+				$tcp_lane( 'prefix', 'all', $tcp_prefix_entries );
+				?>
 			</div>
 		</div>
 	</section>
