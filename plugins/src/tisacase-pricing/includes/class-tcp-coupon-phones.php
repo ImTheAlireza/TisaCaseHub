@@ -238,6 +238,37 @@ final class TCP_Coupon_Phones {
 		return array_map( 'intval', $ids );
 	}
 
+	/**
+	 * Live diagnostic for the coupon screen. Read-only. Shows where the chain breaks:
+	 * orders holding the code in the DB, their statuses, how many pass the paid rule, and recorded uses.
+	 */
+	public static function diagnose( $c ) {
+		global $wpdb;
+		$codes = array_values( array_unique( array_map( 'strtolower', array_merge( array( $c->get_code() ), self::policy( $c )['aliases'] ) ) ) );
+		$marks = implode( ',', array_fill( 0, count( $codes ), '%s' ) );
+		$ids   = $wpdb->get_col( $wpdb->prepare(
+			'SELECT DISTINCT order_id FROM ' . $wpdb->prefix . "woocommerce_order_items WHERE order_item_type='coupon' AND LOWER(order_item_name) IN ($marks) ORDER BY order_id ASC",
+			...$codes
+		) );
+		$ids   = array_map( 'intval', (array) $ids );
+		$out   = array( 'in_db' => count( $ids ), 'loaded' => 0, 'paid' => 0, 'phoned' => 0, 'uses' => 0, 'statuses' => array(), 'error' => '' );
+		foreach ( array_chunk( $ids, 100 ) as $chunk ) {
+			$orders = wc_get_orders( array( 'type' => 'shop_order', 'limit' => 100, 'include' => $chunk, 'orderby' => 'ID', 'order' => 'ASC', 'status' => array_keys( wc_get_order_statuses() ) ) );
+			foreach ( $orders as $order ) {
+				$out['loaded']++;
+				$st = $order->get_status();
+				$out['statuses'][ $st ] = ( $out['statuses'][ $st ] ?? 0 ) + 1;
+				if ( self::successful( $order ) ) {
+					$out['paid']++;
+					if ( self::phone( $order->get_meta( '_tisacase158_coupon_phone' ) ?: $order->get_billing_phone() ) ) { $out['phoned']++; }
+				}
+			}
+		}
+		$out['uses'] = (int) $wpdb->get_var( $wpdb->prepare( 'SELECT COUNT(*) FROM ' . self::table() . ' WHERE coupon_id=%d AND released=0', $c->get_id() ) );
+		if ( $wpdb->last_error ) { $out['error'] = $wpdb->last_error; }
+		return $out;
+	}
+
 	/** One bounded batch per authenticated request. Keyset cursor ('after') survives retries and stops. */
 	public static function sync( $c ) {
 		$s = $c->get_meta( '_tcp_phone_sync' );

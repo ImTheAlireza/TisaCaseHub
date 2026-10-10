@@ -42,6 +42,7 @@ class WC_Order {
 	public $id, $status = 'pending', $phone = '09123456789', $codes = array( 'test1' ), $paid = false;
 	public function __construct( $id ) { $this->id = $id; }
 	public function get_id() { return $this->id; }
+	public function get_status() { return $this->status; }
 	public function get_type() { return 'shop_order'; }
 	public function get_meta( $k ) { return ''; }
 	public function get_billing_phone() { return $this->phone; }
@@ -151,6 +152,8 @@ t( 'second batch loads only the coupon orders', 1 === count( $last_args['include
 t( 'second batch includes old alias successful order', TCP_Coupon_Phones::count( 1 ) === $before + 1 );
 t( 'history finished', $c->get_meta( '_tcp_phone_sync' )['done'] );
 t( 'sync reports found and paid counts', 101 === $c->get_meta( '_tcp_phone_sync' )['found'] && 1 === $c->get_meta( '_tcp_phone_sync' )['paid'] );
+$diag = TCP_Coupon_Phones::diagnose( $c ); 
+t( 'diagnose reads coupon orders and recorded uses', 101 === $diag['in_db'] && 1 === $diag['paid'] && TCP_Coupon_Phones::count( 1 ) === $diag['uses'] );
 t( 'candidate lookup ignores non-coupon orders', array() === TCP_Coupon_Phones::candidate_ids( new WC_Coupon( 1 ), 200 ) );
 TCP_Coupon_Phones::reset( 1 ); TCP_Coupon_Phones::sync( $c ); TCP_Coupon_Phones::sync( $c );
 t( 'reimport cannot undo resets', 0 === TCP_Coupon_Phones::count( 1 ) );

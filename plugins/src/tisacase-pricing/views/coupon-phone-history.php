@@ -19,6 +19,15 @@ $tcp_action_fields = static function () use ( $tcp_pc ) {
 		<?php else : ?>
 		<p class="tcp-phone-ok">✓ همگام‌سازی کامل شد. مصرف زنده سفارش‌های جدید خودکار ثبت می‌شود.</p>
 		<?php endif; ?>
+		<?php $tcp_diag = TCP_Coupon_Phones::diagnose( $tcp_pc ); $tcp_st = array(); foreach ( $tcp_diag['statuses'] as $tcp_k => $tcp_n ) { $tcp_st[] = $tcp_k . ': ' . $tcp_n; } ?>
+		<details class="tcp-phone-diag"><summary>تشخیص زنده (فقط خواندنی)</summary>
+		<ul>
+			<li>سفارش‌های دارای این کد در دیتابیس: <strong><?php echo esc_html( $tcp_diag['in_db'] ); ?></strong></li>
+			<li>بارگذاری‌شده از ووکامرس: <strong><?php echo esc_html( $tcp_diag['loaded'] ); ?></strong> · وضعیت‌ها: <?php echo esc_html( $tcp_st ? implode( ' | ', $tcp_st ) : '—' ); ?></li>
+			<li>پرداخت‌شده و معتبر: <strong><?php echo esc_html( $tcp_diag['paid'] ); ?></strong> · با شماره موبایل معتبر: <strong><?php echo esc_html( $tcp_diag['phoned'] ); ?></strong></li>
+			<li>ردیف‌های مصرف فعال در سهمیه: <strong><?php echo esc_html( $tcp_diag['uses'] ); ?></strong><?php if ( $tcp_diag['error'] ) : ?> · خطای دیتابیس: <code><?php echo esc_html( $tcp_diag['error'] ); ?></code><?php endif; ?></li>
+		</ul>
+		</details>
 		<?php if ( ! empty( $tcp_sync['done'] ) && 0 === $tcp_found ) : ?>
 		<p class="tcp-phone-notice">هیچ سفارشی با این کد در سوابق فروشگاه پیدا نشد. اگر سفارش قدیمی دارید، نام این کد و «نام‌های قبلی» در تنظیمات کد را بررسی کنید.</p>
 		<?php elseif ( ! empty( $tcp_sync['done'] ) ) : ?>
