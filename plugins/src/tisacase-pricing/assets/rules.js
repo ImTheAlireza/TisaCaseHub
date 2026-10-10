@@ -264,7 +264,8 @@
         const flagsCell = exc ? '' :
             '<td class="tcp-cell-flags"><label class="tisa-switch tcp-toggle tcp-toggle--sm"><input type="checkbox" class="tcp-quick-enabled"' + (enabled ? ' checked' : '') + '><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label></td>';
         const actions = exc
-            ? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>'
+            ? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>' +
+              '<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>'
             : '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>' +
               '<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="exc" title="خارج کردن از همهٔ قوانین و افزودن به استثناها">به استثنا</button>';
         const label = exc ? 'حذف استثنای ' : 'حذف قانون ';
@@ -618,7 +619,7 @@
             min: $('#tcp-m-min').val() || '',
             max: $('#tcp-m-max').val() || '',
             enabled: $('#tcp-m-enabled').is(':checked'),
-            exclude: false
+            exclude: $('#tcp-m-exclude').is(':checked')
         };
     }
 
@@ -641,9 +642,10 @@
         $('#tcp-m-min').val(rule.min);
         $('#tcp-m-max').val(rule.max);
         $('#tcp-m-enabled').prop('checked', rule.enabled);
+        $('#tcp-m-exclude').prop('checked', isExcKey(key));
 
         const name = $tr.find('.tcp-rule-name').first().text();
-        $('#tcp-modal-title').text('ویرایش قانون ' + (typeOfKey(key) === 'product' ? 'محصول' : 'دسته‌بندی'));
+        $('#tcp-modal-title').text('ویرایش ' + (typeOfKey(key) === 'product' ? 'محصول' : 'دسته‌بندی'));
         $('#tcp-modal-sub').text(name + ' — #' + id);
         updateModalHint();
 
@@ -664,7 +666,8 @@
 
     function saveModal() {
         if (!modalTarget) return;
-        const $tr = rowIn(modalTarget.key, modalTarget.id);
+        const curKey = modalTarget.key;
+        const $tr = rowIn(curKey, modalTarget.id);
         if (!$tr.length) {
             closeModal();
             return;
@@ -681,6 +684,21 @@
         if (rule.max !== '' && !(Number(rule.max) > 0)) rule.max = '';
         if (rule.min !== '' && rule.max !== '' && Number(rule.min) > Number(rule.max)) rule.max = '';
 
+        // تیک «استثنا» در مودال، سطر را به فهرست مقابل منتقل می‌کند.
+        const targetKey = typeOfKey(curKey) + (rule.exclude ? '-exc' : '-rule');
+        if (targetKey !== curKey) {
+            let item = {};
+            try { item = JSON.parse($tr.attr('data-item') || '{}'); } catch (e) { item = {}; }
+            item.id = modalTarget.id;
+            item.name = item.name || $tr.find('.tcp-rule-name').first().text();
+            $tr.remove();
+            refreshLane(curKey);
+            closeModal();
+            placeItem(targetKey, item, rule);
+            note(targetKey, 'به ' + (isExcKey(targetKey) ? 'استثناها' : 'قوانین') + ' منتقل شد.');
+            return;
+        }
+
         $tr.find('input[data-f="increase"]').val(rule.increase);
         $tr.find('input[data-f="sale"]').val(rule.sale);
         $tr.find('input[data-f="mode"]').val(rule.mode);
@@ -691,7 +709,7 @@
         $tr.find('input[data-f="enabled"]').val(rule.enabled ? '1' : '0');
 
         refreshRow($tr);
-        refreshLane(modalTarget.key);
+        refreshLane(curKey);
         closeModal();
         flash($tr);
     }
@@ -939,7 +957,7 @@
     // مودال.
     $(document).on('click', '#tcp-modal-save', saveModal);
     $(document).on('click', '[data-tcp-close]', closeModal);
-    $(document).on('input change', '#tcp-m-increase, #tcp-m-sale, #tcp-m-mode, #tcp-m-from, #tcp-m-to, #tcp-m-min, #tcp-m-max, #tcp-m-enabled', updateModalHint);
+    $(document).on('input change', '#tcp-m-increase, #tcp-m-sale, #tcp-m-mode, #tcp-m-from, #tcp-m-to, #tcp-m-min, #tcp-m-max, #tcp-m-enabled, #tcp-m-exclude', updateModalHint);
     $(document).on('keydown', function (e) {
         if (e.key === 'Escape' && modalOpen()) closeModal();
         // اینتر داخل فیلدهای متنی مودال = ذخیره؛ روی دکمه/سلکت/چک‌باکس رفتار پیش‌فرض مرورگر.

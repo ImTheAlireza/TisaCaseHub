@@ -177,7 +177,8 @@ $tcp_rule_row = static function ( $kind, $group, $id, $rule, $info ) use ( $tcp_
 		<?php endif; ?>
 		<td class="tcp-cell-actions">
 			<?php if ( $excluded ) : ?>
-				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>
+				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
+				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="rule" title="حذف از استثناها و افزودن به قوانین">به قوانین</button>
 			<?php else : ?>
 				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm tcp-edit-rule">ویرایش</button>
 				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tcp-move-rule" data-to="exc" title="خارج کردن از همهٔ قوانین و افزودن به استثناها">به استثنا</button>
@@ -567,6 +568,7 @@ $tcp_ex_count = array(
 			</div>
 			<div class="tcp-modal__switches">
 				<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-m-enabled"><span class="tisa-switch__track" aria-hidden="true"></span><span>فعال</span></label>
+				<label class="tisa-switch tcp-toggle"><input type="checkbox" id="tcp-m-exclude"><span class="tisa-switch__track" aria-hidden="true"></span><span>استثنا <span class="tcp-muted">— از همهٔ قوانین خارج شود (با خاموش بودن، قانون خاص این مورد اعمال می‌شود)</span></span></label>
 			</div>
 			<p class="tcp-modal__hint" id="tcp-modal-hint"></p>
 		</div>
