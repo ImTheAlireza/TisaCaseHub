@@ -277,10 +277,13 @@
 				return;
 			}
 
+			// تعداد متغیرهای هر ویژگی هم می‌آید تا ویژگی‌های هم‌نام (مثل «مدل» و «مدلِ کدشده») از هم تفکیک شوند.
 			var html = '<option value="">' + this.esc(this.i18n('modelTermPick')) + '</option>';
 			for (var i = 0; i < list.length; i++) {
 				html += '<option value="' + this.esc(list[i].attr) + '">'
-					+ this.esc(this.catLabel(list[i].label)) + '</option>';
+					+ this.esc(this.catLabel(list[i].label))
+					+ (list[i].count ? ' (' + this.fmt(list[i].count) + ')' : '')
+					+ '</option>';
 			}
 			$sel.html(html).val('');
 			this.renderModelTerms('');
@@ -852,31 +855,219 @@
 		},
 
 		/**
-		 * بازیابی عنوان ویژگیِ percent-encoded: برخی افزونه‌ها taxonomy ویژگی‌های
-		 * فارسی را با نام URL-encoded می‌سازند (مثل «d9%85d8%af%d9%84» به‌جای «مدل»).
-		 * این encoding گاه ناقص است (نه هر بایت % دارد) و decodeURIComponent از
-		 * آن خطا می‌دهد؛ پس %ها را حذف، hex می‌کنیم و به‌صورت UTF-8 decode می‌کنیم.
+		 * بازیابی برچسبِ کدشده: برخی افزونه‌ها نام/برچسب ویژگی‌ها و مقادیر فارسی را
+		 * percent-encoded می‌سازند — آن هم به شکل «ناقص»:
+		 *   - نه هر بایت % دارد: d9%85d8%af%d9%84
+		 *   - پیشوند داخلی چسبیده است: pa_d9%85d8%af%d9%84 / attribute_…
+		 *   - جداکننده‌ها (_ - + فاصله) جای فاصله نشسته‌اند
+		 *   - رشته ممکن است وسط یک نویسهٔ چندبایتی بریده باشد
+		 *   - گاهی دو بار کد شده است (double-encoding)
+		 * decode فقط وقتی تلاش می‌شود که رشته واقعاً «شبیه blobِ hexی» باشد و خروجی
+		 * هم UTF-8 معتبر و متنِ چاپ‌پذیر باشد؛ برچسب‌های عادی دست‌نخورده می‌مانند.
 		 */
 		catLabel: function (label) {
-			var s = String(label || '');
-			if (s.indexOf('%') !== -1 && /^[0-9a-fA-F%]+$/.test(s)) {
-				var hex = s.replace(/%/g, '');
-				if (hex.length >= 2 && hex.length % 2 === 0) {
-					try {
-						var bin = '';
-						for (var i = 0; i < hex.length; i += 2) {
-							bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-						}
-						var d = decodeURIComponent(escape(bin));
-						if (d && d !== s) {
-							s = d;
-						}
-					} catch (e) {
-						// بایت‌ها UTF-8 معتبر نبودند — همان چیزی که بود می‌ماند
+			var s = this.stripInvisible(String(label === null || label === undefined ? '' : label));
+			if (!s || !this.looksEncoded(s)) {
+				return s;
+			}
+
+			// پیشوندهای داخلی (pa_/attribute_) بخشی از برچسب نمایشی نیستند.
+			var body = s.replace(/^attribute_/i, '').replace(/^pa_/i, '');
+			var out = '';
+			if (body && body !== s) {
+				out = this.decodeLabelText(body);
+			}
+			if (!out) {
+				out = this.decodeLabelText(s);
+			}
+
+			return out || s;
+		},
+
+		/** حذف کاراکترهای صفرعرض/کنترلی — پیش از هر decode ای. */
+		stripInvisible: function (s) {
+			return String(s === null || s === undefined ? '' : s)
+				.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+		},
+
+		/** آیا رشته شبیه blobِ کدشدهٔ hexی است؟ */
+		looksEncoded: function (s) {
+			s = String(s || '');
+			if (s.indexOf('%') === -1 || s.length < 4) {
+				return false;
+			}
+			var hexed = (s.match(/[0-9a-fA-F]/g) || []).length;
+			var seps = (s.match(/[%+ _\-.~]/g) || []).length;
+			return (hexed + seps) >= Math.ceil(s.length * 0.9);
+		},
+
+		/**
+		 * یک یا چند پاس decode (پشتیبانی از double-encoding).
+		 * @param {string} text
+		 * @return {string} متنِ بازیابی‌شده یا '' اگر قابل‌بازیابی نبود
+		 */
+		decodeLabelText: function (text) {
+			text = String(text || '');
+			if (!this.looksEncoded(text)) {
+				return '';
+			}
+
+			var current = text;
+			for (var pass = 0; pass < 3; pass++) {
+				var decoded = this.decodeLabelOnce(current);
+				if (!decoded) {
+					return (pass > 0) ? current : '';
+				}
+				current = decoded;
+				if (!this.looksEncoded(current)) {
+					break;
+				}
+			}
+
+			return current;
+		},
+
+		/** یک پاس decode (+ نجات رشته‌ای که وسط نویسهٔ چندبایتی بریده شده). */
+		decodeLabelOnce: function (text) {
+			text = String(text);
+			var marks = (text.match(/%/g) || []).length;
+			var len = text.length;
+
+			// ۱) decode استاندارد (فقط %xx بایت می‌شود و بقیه دست‌نخورده می‌ماند) —
+			//    لازم برای کدشده‌های کامل و double-encoded مثل %25d9%2585…
+			var strict = this.strictDecode(text);
+			if (strict && strict !== text) {
+				var strictOut = this.bytesToText(strict, marks);
+				if (strictOut) {
+					return strictOut.trim();
+				}
+			}
+
+			// ۲) decode جفت‌های hex (کدشدهٔ ناقص) + نجات رشتهٔ بریده‌شده
+			for (var drop = 0; drop <= 6; drop++) {
+				var src = (drop > 0) ? String(text).slice(0, Math.max(0, len - drop)) : String(text);
+				if (!src) {
+					break;
+				}
+				var bytes = this.hexStream(src);
+				if (!bytes || !bytes.length) {
+					continue;
+				}
+				var out = this.bytesToText(bytes, marks);
+				if (!out) {
+					continue;
+				}
+				return out.trim();
+			}
+
+			return '';
+		},
+
+		/**
+		 * decode استاندارد (معادل rawurldecode): فقط `%xx` بایت می‌شود و بقیهٔ
+		 * نویسه‌ها دست‌نخورده می‌مانند. برای `%25d9%2585…` و کدشده‌های کامل.
+		 *
+		 * @param {string} src
+		 * @return {number[]|null}
+		 */
+		strictDecode: function (src) {
+			src = String(src || '');
+			var out = [];
+			for (var i = 0; i < src.length; i++) {
+				var c = src.charAt(i);
+				if (c === '%') {
+					var pair = src.substr(i + 1, 2);
+					if (/^[0-9a-fA-F]{2}$/.test(pair)) {
+						out.push(parseInt(pair, 16));
+						i += 2;
+						continue;
+					}
+					out.push(37); // % بدون بایت معتبر
+					continue;
+				}
+				var code = src.charCodeAt(i);
+				if (code < 128) {
+					out.push(code);
+				} else {
+					// نویسهٔ غیر-ASCII را دست‌نخورده با بایت‌های UTF-8 نگه می‌داریم
+					var enc = unescape(encodeURIComponent(c));
+					for (var k = 0; k < enc.length; k++) {
+						out.push(enc.charCodeAt(k) & 0xFF);
 					}
 				}
 			}
-			return s;
+			return out;
+		},
+
+		/**
+		 * جریان کدشده → آرایهٔ بایت‌ها: `%xx` و جفت‌های hex بدون `%` هر دو بایت
+		 * می‌شوند، جداکننده‌ها (_ - + فاصله) فاصله می‌شوند و بقیه دور ریخته می‌شود.
+		 */
+		hexStream: function (src) {
+			src = String(src || '');
+			var out = [];
+			var i = 0;
+			var n = src.length;
+
+			while (i < n) {
+				var c = src.charAt(i);
+
+				if (c === '%') {
+					var pair = src.substr(i + 1, 2);
+					if (/^[0-9a-fA-F]{2}$/.test(pair)) {
+						out.push(parseInt(pair, 16));
+						i += 3;
+						continue;
+					}
+					i++;
+					continue;
+				}
+
+				if (/[0-9a-fA-F]/.test(c) && (i + 1) < n && /[0-9a-fA-F]/.test(src.charAt(i + 1))) {
+					out.push(parseInt(src.substr(i, 2), 16));
+					i += 2;
+					continue;
+				}
+
+				if (c === ' ' || c === '\t' || c === '+' || c === '-' || c === '_') {
+					out.push(32);
+					i++;
+					continue;
+				}
+
+				i++;
+			}
+
+			return out;
+		},
+
+		/**
+		 * بایت‌ها → متن (فقط اگر UTF-8 معتبر و نمایشی باشد).
+		 * @param {number[]} bytes
+		 * @param {number}   marks تعداد % در ورودی
+		 * @return {string}
+		 */
+		bytesToText: function (bytes, marks) {
+			try {
+				var bin = '';
+				for (var i = 0; i < bytes.length; i++) {
+					bin += String.fromCharCode(bytes[i]);
+				}
+				var text = decodeURIComponent(escape(bin));
+				if (!text) {
+					return '';
+				}
+				if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(text)) {
+					return ''; // نویسهٔ کنترلی → احتمالاً آشغال hex است
+				}
+				var hasHigh = /[\u0080-\uFFFF]/.test(text);
+				if (!hasHigh && !(marks >= 3 && /[A-Za-z0-9]/.test(text))) {
+					return ''; // خروجی لاتین فقط با نشانهٔ قویِ کدشدگی
+				}
+				return text;
+			} catch (e) {
+				return '';
+			}
 		},
 
 		/** رنگ باکس عددی بر اساس مقدار: سبز (بیش از صفر) / قرمز (صفر). */

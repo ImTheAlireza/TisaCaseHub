@@ -19,7 +19,9 @@
 		<strong>پیش‌نمایش زنده (بدون وردپرس)</strong> — همین <code>admin.css</code> و <code>admin.js</code> افزونهٔ
 		<code>tisacase-bulk-stock-manager</code> بار شده‌اند؛ فقط داده‌ها و AJAX ماک هستند.
 		حالت «تک‌محصول»: جست‌وجوی «اسپیس» یا «CH184». حالت «گروهی با مدل»: مدل <code>iPhone 15 Pro Max</code> +
-		شناسهٔ <code>CH</code> ← ۶ متغیر در ۲ محصول (هر دو قاب آیفون)؛ «اعمال موجودی» فقط گزارش نمایش می‌دهد و چیزی نمی‌نویسد.
+		شناسهٔ <code>CH</code> ← ۶ متغیر در ۲ محصول (هر دو قاب آیفون)؛ محصول «قاب مگ‌سیف» عمداً ویژگی‌های
+		کدشده (<code>%d9%85%d8%af%d9%84</code>، <code>pa_…</code>، double-encoded، بریده) دارد تا بازیابی برچسب‌ها را نشان دهد.
+		«اعمال موجودی» فقط گزارش نمایش می‌دهد و چیزی نمی‌نویسد.
 	</div>
 
 	<!-- همین مارکاپی است که render_page() می‌سازد -->
@@ -31,7 +33,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید، یا با «گروهی با مدل» یک مدل متغیر و بازهٔ شناسه (مثلاً CH) را بدهید تا موجودی همان متغیر در همهٔ آن محصولات — تکی یا یک‌جا — تغییر کند.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.2.0</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.2.1</span>
 			</div>
 		</div>
 
@@ -187,6 +189,16 @@
 			{ label: 'نقره‌ای', slug: 'negare-i' }
 		];
 
+		// ویژگی‌های «کدشدهٔ» فروشگاه واقعی — نام‌ها/برچسب‌های percent-encoded و ناقص:
+		// پیشوند pa_، جداکننده، double-encoding و رشتهٔ بریده‌شده وسط نویسهٔ چندبایتی.
+		var ENC = {
+			model: '%d9%85%d8%af%d9%84',                              // «مدل»
+			color: 'd8%b1%d9%86%da%af',                               // «رنگ»
+			kind:  'pa_d9%86%d9%88%d8%b9-%d8%a8%d9%86%d8%af%db%8c',   // «نوع بندی» (با پیشوند و -)
+			model2: '%25d9%2585%25d8%25af%25d9%2584',                // «مدل» (دو بار کدشده)
+			ground: 'd8%b2%d9%85%db%8c%d9%86%d9%87%d9'               // «زمینه» (بریده وسط نویسه)
+		};
+
 		function buildVars(pid, models, colors) {
 			var out = [], id = pid * 100;
 			models.forEach(function (m, mi) {
@@ -253,6 +265,28 @@
 				}
 			},
 			{
+				// همان «ویژگی‌های کدشده» سایت واقعی: کلید و برچسب ویژگی‌ها percent-encoded
+				// است، مقدارها هم کدشده‌اند و باید فارسی نمایش بگیرند ولی خام تطبیق بخورند.
+				id: 205, name: 'قاب مگ‌سیف آیفون (ویژگی کدشده)', sku: 'CH550', type: 'variable',
+				status: 'publish', image: '',
+				vars: [
+					{ id: 20501, name: 'iphone-15 · مشکی', sku: 'CH550-1', stock: 4, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: ENC.model + ':iphone-15|' + ENC.color + ':d9%85%d8%b4%da%a9%db%8c' },
+					{ id: 20502, name: 'iphone-15 · sabz', sku: 'CH550-2', stock: 0, status: 'outofstock', manage_stock: true, mode: 'qty', image: '', cat: ENC.model + ':iphone-15|' + ENC.color + ':sabz' }
+				],
+				cats: (function () {
+					var c = {};
+					c[ENC.model] = { label: ENC.model, values: [{ label: 'iphone-15', slug: 'iphone-15', count: 2 }] };
+					c[ENC.color] = { label: ENC.color, values: [
+						{ label: 'd9%85%d8%b4%da%a9%db%8c', slug: 'd9%85%d8%b4%da%a9%db%8c', count: 1 },
+						{ label: 'sabz', slug: 'sabz', count: 1 }
+					] };
+					c[ENC.kind] = { label: ENC.kind, values: [{ label: 'asli', slug: 'asli', count: 2 }] };
+					c[ENC.model2] = { label: ENC.model2, values: [{ label: 'iphone-15', slug: 'iphone-15', count: 1 }] };
+					c[ENC.ground] = { label: ENC.ground, values: [{ label: 'zamine', slug: 'zamine', count: 1 }] };
+					return c;
+				})()
+			},
+			{
 				id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SB050', type: 'simple',
 				status: 'publish', image: '',
 				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SB050', stock: 12, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: '' }],
@@ -290,10 +324,14 @@
 				});
 			});
 			return Object.keys(map).map(function (attr) {
+				var values = Object.keys(map[attr].values).map(function (slug) { return map[attr].values[slug]; });
+				var total = 0;
+				values.forEach(function (v) { total += v.count || 0; });
 				return {
 					attr: map[attr].attr,
 					label: map[attr].label,
-					values: Object.keys(map[attr].values).map(function (slug) { return map[attr].values[slug]; })
+					count: total,
+					values: values
 				};
 			});
 		}

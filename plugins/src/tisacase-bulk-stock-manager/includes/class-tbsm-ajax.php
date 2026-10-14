@@ -193,7 +193,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					$counts[ $tax ][ $slug ]++;
 
 					$label = $variation->get_attribute( $tax );
-					$clean = TBSM_Stock::clean_label( ( '' !== (string) $label ) ? (string) $label : $slug );
+					$clean = TBSM_Stock::clean_label( TBSM_Stock::maybe_decode_label( ( '' !== (string) $label ) ? (string) $label : $slug ) );
 					if ( '' !== $clean && ! in_array( $clean, $labels, true ) ) {
 						$labels[] = $clean;
 					}

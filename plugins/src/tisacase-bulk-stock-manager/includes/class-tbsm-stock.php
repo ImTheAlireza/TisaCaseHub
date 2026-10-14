@@ -358,12 +358,14 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 
 				$values = array();
+				$total  = 0;
 				foreach ( (array) $rows as $row ) {
 					$values[] = array(
 						'value' => (string) $row['value'],
 						'label' => self::clean_label( self::maybe_decode_label( (string) $row['value'] ) ),
 						'count' => (int) $row['total'],
 					);
+					$total += (int) $row['total'];
 				}
 
 				if ( empty( $values ) ) {
@@ -373,6 +375,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$attributes[ $attr ] = array(
 					'attr'   => (string) $attr,
 					'label'  => self::attribute_display_label( $attr ),
+					'count'  => $total,
 					'values' => $values,
 				);
 			}
@@ -618,7 +621,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					continue;
 				}
 				$label = $product->get_attribute( $tax );
-				$clean = self::clean_label( ( '' !== (string) $label ) ? (string) $label : (string) $value );
+				$clean = self::clean_label( self::maybe_decode_label( ( '' !== (string) $label ) ? (string) $label : (string) $value ) );
 				if ( '' !== $clean && ! in_array( $clean, $parts, true ) ) {
 					$parts[] = $clean;
 				}
@@ -639,10 +642,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @return string
 		 */
 		public static function clean_label( $label ) {
-			$label = (string) $label;
-
-			// کاراکترهای صفرعرض (RTL marks، ZWNJ و BOM).
-			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}]/u', '', $label );
+			$label = self::strip_invisible( (string) $label );
 
 			// جداکننده‌ها و فاصله‌های آویزان از ابتدا و انتها.
 			$label = (string) preg_replace( '/^[\s\p{P}\p{S}]+/u', '', $label );
@@ -652,35 +652,222 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		}
 
 		/**
-		 * بازیابی برچسبِ percent-encoded: برخی افزونه‌ها taxonomy ویژگی‌های
-		 * فارسی را با نام URL-encoded می‌سازند (مثلاً d9%85d8%af%d9%84 به‌جای «مدل»).
-		 * این encoding گاه ناقص است (نه هر بایت % دارد) و rawurldecode از آن UTF-8
-		 * معتبر نمی‌سازد؛ پس اگر کلِ برچسب فقط از hex و % باشد، %ها را حذف، hex
-		 * می‌کنیم و به‌صورت UTF-8 decode می‌کنیم. برچسب‌های عادی دست‌نخورده می‌مانند.
+		 * حذف کاراکترهای صفرعرض/کنترلی (RTL marks، ZWNJ، BOM) — بدون دست‌زدن
+		 * به `%` و نویسه‌های داده، چون پیش از decode استفاده می‌شود.
 		 *
-		 * @param string $label برچسب (ممکن است percent-encoded باشد).
+		 * @param string $label برچسب خام.
+		 * @return string
+		 */
+		public static function strip_invisible( $label ) {
+			$label = (string) $label;
+			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $label );
+			return $label;
+		}
+
+		/**
+		 * بازیابی برچسبِ کدشده: برخی افزونه‌ها نام/برچسب ویژگی‌ها و مقادیر فارسی را
+		 * percent-encoded می‌سازند — آن هم به شکل «ناقص»:
+		 *   - نه هر بایت `%` دارد: d9%85d8%af%d9%84 (mdl)
+		 *   - پیشوند داخلی ووکامرس چسبیده است: pa_d9%85d8%af%d9%84 / attribute_…
+		 *   - جداکننده‌ها (`_`، `-`، `+`، فاصله) جای فاصله نشسته‌اند
+		 *   - رشته ممکن است وسط یک نویسهٔ چندبایتی بریده باشد (طول فرد/UTF-8 ناتمام)
+		 *   - گاهی دو بار کد شده است (double-encoding)
+		 *
+		 * decode فقط وقتی تلاش می‌شود که رشته واقعاً «شبیه blobِ hexی» باشد
+		 * (حداقل یک `%` و ≥۹۰٪ نویسه‌های hex/جداکننده) و خروجی هم UTF-8 معتبر و
+		 * متنِ چاپ‌پذیر باشد؛ در غیر این‌صورت برچسب عادی دست‌نخورده برمی‌گردد.
+		 *
+		 * @param string $label برچسب (ممکن است کدشده باشد).
 		 * @return string
 		 */
 		public static function maybe_decode_label( $label ) {
-			$label = (string) $label;
-			if ( '' === $label || false === strpos( $label, '%' ) ) {
-				return $label;
+			$raw = (string) $label;
+			if ( '' === $raw ) {
+				return $raw;
 			}
-			if ( 1 !== preg_match( '/^[0-9a-fA-F%]+$/', $label ) ) {
-				return $label;
+
+			$work = self::strip_invisible( $raw );
+			if ( '' === $work ) {
+				return $raw;
 			}
-			$hex = str_replace( '%', '', $label );
-			if ( '' === $hex || ( strlen( $hex ) % 2 ) !== 0 ) {
-				return $label;
+			if ( false === strpos( $work, '%' ) ) {
+				return $work;
 			}
-			$bytes = '';
-			for ( $i = 0, $n = strlen( $hex ); $i < $n; $i += 2 ) {
-				$bytes .= chr( (int) hexdec( substr( $hex, $i, 2 ) ) );
+
+			// پیشوندهای داخلی (pa_/attribute_) بخشی از برچسب نمایشی نیستند.
+			$body = $work;
+			if ( 0 === stripos( $body, 'attribute_' ) ) {
+				$body = substr( $body, 10 );
 			}
-			if ( '' !== $bytes && $bytes !== $label && self::is_valid_utf8( $bytes ) ) {
-				return $bytes;
+			if ( 0 === stripos( $body, 'pa_' ) ) {
+				$body = substr( $body, 3 );
 			}
-			return $label;
+
+			if ( '' !== $body && $body !== $work ) {
+				$decoded = self::decode_label_text( $body );
+				if ( '' !== $decoded ) {
+					return $decoded;
+				}
+			}
+
+			// تلاش با خود رشتهٔ کامل (شاید پیشوند هم بخشی از دادهٔ کدشده باشد).
+			$decoded = self::decode_label_text( $work );
+			if ( '' !== $decoded ) {
+				return $decoded;
+			}
+
+			return $work;
+		}
+
+		/**
+		 * تبدیل یک رشتهٔ کدشده به متن؛ رشتهٔ خالی یعنی «کدشده نبود/قابل‌بازیابی نبود».
+		 *
+		 * @param string $text رشته.
+		 * @return string
+		 */
+		private static function decode_label_text( $text ) {
+			$text = (string) $text;
+			if ( ! self::looks_encoded( $text ) ) {
+				return '';
+			}
+
+			$current = $text;
+			for ( $pass = 0; $pass < 3; $pass++ ) {
+				$decoded = self::decode_label_once( $current );
+				if ( '' === $decoded ) {
+					return ( $pass > 0 ) ? $current : '';
+				}
+				$current = $decoded;
+				if ( ! self::looks_encoded( $current ) ) {
+					break;
+				}
+			}
+
+			return $current;
+		}
+
+		/**
+		 * آیا رشته شبیه blobِ کدشدهٔ hexی است؟
+		 *
+		 * @param string $text رشته.
+		 * @return bool
+		 */
+		private static function looks_encoded( $text ) {
+			$text = (string) $text;
+			if ( false === strpos( $text, '%' ) || strlen( $text ) < 4 ) {
+				return false;
+			}
+			$hexed = (int) preg_match_all( '/[0-9a-fA-F]/', $text );
+			$seps  = (int) preg_match_all( '/[%+ _\-\.~]/', $text );
+			return ( $hexed + $seps ) >= (int) ceil( strlen( $text ) * 0.9 );
+		}
+
+		/**
+		 * یک پاس decode (+ تلاش برای نجات رشته‌ای که وسط نویسهٔ چندبایتی بریده شده).
+		 *
+		 * @param string $text رشتهٔ کدشده.
+		 * @return string
+		 */
+		private static function decode_label_once( $text ) {
+			$marks = substr_count( $text, '%' );
+			$len   = strlen( $text );
+
+			// ۱) decode استاندارد (فقط %xx بایت می‌شود و بقیه دست‌نخورده می‌ماند) —
+			//    لازم برای کدشده‌های کامل و double-encoded مثل %25d9%2585…
+			$strict = rawurldecode( $text );
+			if ( $strict !== $text && self::is_valid_utf8( $strict ) && self::is_displayable_text( $strict, $marks ) ) {
+				$clean = self::clean_label( $strict );
+				if ( '' !== $clean ) {
+					return $clean;
+				}
+			}
+
+			// ۲) decode جفت‌های hex (کدشدهٔ ناقص) + نجات رشتهٔ بریده‌شده
+			for ( $drop = 0; $drop <= 6; $drop++ ) {
+				$src = ( $drop > 0 ) ? substr( $text, 0, max( 0, $len - $drop ) ) : $text;
+				if ( '' === $src ) {
+					break;
+				}
+				$bytes = self::hex_stream( (string) $src );
+				if ( '' === $bytes || ! self::is_valid_utf8( $bytes ) ) {
+					continue;
+				}
+				if ( ! self::is_displayable_text( $bytes, $marks ) ) {
+					continue;
+				}
+				$clean = self::clean_label( $bytes );
+				if ( '' !== $clean ) {
+					return $clean;
+				}
+			}
+
+			return '';
+		}
+
+		/**
+		 * جریان کدشده → بایت‌ها: `%xx` و جفت‌های hex بدون `%` هر دو بایت می‌شوند،
+		 * جداکننده‌ها (`_ - +` و فاصله) فاصله می‌شوند و بقیه دور ریخته می‌شود.
+		 *
+		 * @param string $src رشتهٔ کدشده.
+		 * @return string
+		 */
+		private static function hex_stream( $src ) {
+			$out = '';
+			$len = strlen( $src );
+			$i   = 0;
+
+			while ( $i < $len ) {
+				$c = $src[ $i ];
+
+				if ( '%' === $c ) {
+					$pair = substr( $src, $i + 1, 2 );
+					if ( 2 === strlen( $pair ) && ctype_xdigit( $pair ) ) {
+						$out .= chr( (int) hexdec( $pair ) );
+						$i   += 3;
+						continue;
+					}
+					$i++;
+					continue;
+				}
+
+				if ( ctype_xdigit( $c ) && ( $i + 1 ) < $len && ctype_xdigit( $src[ $i + 1 ] ) ) {
+					$out .= chr( (int) hexdec( substr( $src, $i, 2 ) ) );
+					$i   += 2;
+					continue;
+				}
+
+				if ( ' ' === $c || "\t" === $c || '+' === $c || '-' === $c || '_' === $c ) {
+					$out .= ' ';
+					$i++;
+					continue;
+				}
+
+				$i++;
+			}
+
+			return $out;
+		}
+
+		/**
+		 * آیا بایت‌های decode‌شده متنِ نمایشی‌اند؟ (کنترل‌کاراکتر/آشغال نباشند)
+		 *
+		 * @param string $bytes بایت‌ها.
+		 * @param int    $marks تعداد `%` در ورودی (برای پذیرش متن لاتینِ کدشده).
+		 * @return bool
+		 */
+		private static function is_displayable_text( $bytes, $marks = 0 ) {
+			$bytes = (string) $bytes;
+			if ( '' === $bytes ) {
+				return false;
+			}
+			if ( preg_match( '/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', $bytes ) ) {
+				return false;
+			}
+			if ( preg_match( '/[\x80-\xFF]/', $bytes ) ) {
+				return true;
+			}
+			// خروجی کاملاً ASCII: فقط با نشانهٔ قویِ کدشدگی می‌پذیریم.
+			return ( $marks >= 3 && 1 === preg_match( '/[A-Za-z0-9]/', $bytes ) );
 		}
 
 		/** آیا رشتهٔ ورودی UTF-8 معتبر است؟ */
