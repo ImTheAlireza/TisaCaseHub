@@ -772,6 +772,8 @@
 				groupTruncated: 'تنها %d مورد نخست فهرست شد؛ برای دیدن و اعمال بقیه، دکمهٔ «نمایش موارد بعدی» زیر فهرست را بزنید.',
 				groupMoreBtn: 'نمایش %d مورد بعدی',
 				groupMoreLoading: 'در حال آوردن صفحهٔ بعدی…',
+				applyProgress: 'اعمال دسته‌ای: تا مورد %1$d از %2$d…',
+				applyStopped: 'اعمال در دستهٔ %d متوقف شد (خطای سرور)؛ موارد تا اینجا اعمال شدند و در گزارش آمده‌اند — بقیه را دوباره اعمال کنید.',
 				groupApplyConfirm: 'تأیید: اعمال روی %d متغیر گروهی؟',
 				parentsSynced: 'وضعیت موجودی %d محصول والد همگام شد.'
 			}
@@ -881,7 +883,7 @@
 									});
 									return { id: c.id, name: c.name, parent: c.parent, depth: depth, count: count };
 								}),
-								limits: { products: 200, rows: 300 }
+								limits: { products: 200, rows: 150 }
 							}
 						});
 						return;
@@ -936,7 +938,7 @@
 							d.resolve({ success: false, data: { message: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' } });
 							return;
 						}
-												var page = window.tbsmMockPageSize || 300;
+												var page = window.tbsmMockPageSize || 150;
 						var off = Math.max(0, parseInt(data.offset || 0, 10));
 						var all = scopeRows(data, data.attr_keys, data.term_values).rows;
 						var rows = all.slice(off, off + page);
@@ -954,6 +956,7 @@
 					}
 
 					if (data.action === 'tbsm_apply_stock' || data.action === 'tbsm_apply_scope_stock') {
+						window.tbsmMockApplyCalls = (window.tbsmMockApplyCalls || 0) + 1;
 						var isModel = (data.action === 'tbsm_apply_scope_stock');
 						var targets = [];
 						PRODUCTS.forEach(function (item) {
@@ -983,6 +986,7 @@
 							var wasManaged = !!t.variation.manage_stock;
 							if (!applySpec(t.variation, wanted[vid], report, errors)) { return; }
 							report[report.length - 1].product = t.product.name;
+							report[report.length - 1].sync_id = t.product.id;
 							if (!wasManaged && t.variation.manage_stock) { enabled++; }
 							touched[t.product.id] = true;
 						});

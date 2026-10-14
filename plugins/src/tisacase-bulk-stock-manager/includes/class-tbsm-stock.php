@@ -1155,10 +1155,6 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		private static function model_row( $parent, $variation ) {
 			$managed  = (bool) $variation->get_manage_stock();
 			$status   = (string) $variation->get_stock_status();
-			$image_id = $variation->get_image_id();
-			if ( ! $image_id ) {
-				$image_id = $parent->get_image_id();
-			}
 
 			return array(
 				'id'           => (int) $variation->get_id(),
@@ -1171,7 +1167,6 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'status'       => $status,
 				'manage_stock' => $managed,
 				'mode'         => $managed ? 'qty' : ( 'instock' === $status ? 'in_stock' : 'out_of_stock' ),
-				'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
 				'cat'          => '',
 			);
 		}

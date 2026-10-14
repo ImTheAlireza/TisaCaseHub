@@ -289,6 +289,21 @@ ok('شمارش تجمعی کامل شد (۶ متغیر در ۲ محصول)', /۶
 ok('شمارنده‌ها کل موارد بارگیری‌شده را نشان می‌دهند', /۶ از ۶/.test(text('#tbsm-counts')), text('#tbsm-counts'));
 delete window.tbsmMockPageSize;
 
+/* ------------------------------------------------ اعمال دسته‌ای: دسته‌های کوچک، گزارش تجمعی (۱٫۴٫۰) */
+window.tbsmMockApplyCalls = 0;
+window.TBSM.applyChunk = 2;
+await type(doc.getElementById('tbsm-quickset'), '9');
+await click('#tbsm-quickset-btn');
+await click('#tbsm-apply'); // حالت تأیید
+await click('#tbsm-apply'); // اجرای دسته‌ای
+await waitFor('گزارش اعمال دسته‌ای', () => qa('#tbsm-report .tbsm-report-row').length === 6);
+ok('اعمال ۶ مورد در ۳ دستهٔ ۲تایی فرستاده شد', window.tbsmMockApplyCalls === 3, String(window.tbsmMockApplyCalls));
+ok('گزارش تجمعی هر ۶ ردیف را دارد', qa('#tbsm-report .tbsm-report-row').length === 6);
+ok('همگام‌سازی والد بدون شمارش مضاعف (۲ محصول، نه ۶)', /۲ محصول والد/.test(text('#tbsm-report')), text('#tbsm-report').slice(0, 200));
+ok('پیشرفت دسته‌ای پس از پایان پاک شده', q('#tbsm-notice').hasAttribute('hidden') || !/اعمال دسته‌ای/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+window.TBSM.applyChunk = 25;
+delete window.tbsmMockApplyCalls;
+
 /* ------------------------------------------------ محدوده با شناسه (SKU) */
 await click('.tbsm-seg-btn[data-scope="sku"]');
 ok('پنل شناسه آشکار شد', visible('#tbsm-scope-pane-sku'));

@@ -49,6 +49,7 @@
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
+		applyChunk: 25,     // سقف هر درخواست اعمال؛ دسته‌ای رفتن جلوی timeout/HTTP 500 را می‌گیرد
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -2189,6 +2190,95 @@
 		 * اعمال موجودی
 		 * ---------------------------------------------------------- */
 
+		/**
+		 * اعمال را در دسته‌های کوچک و پشت‌سرهم می‌فرستد.
+		 * چرا؟ ذخیرهٔ صدها متغیر ووکامرس در «یک» درخواست روی هاست اشتراکی
+		 * به timeout و HTTP 500 می‌خورد؛ دسته‌های ۲۵تایی هر درخواست را سبک نگه می‌دارند.
+		 * گزارش‌ها تجمیع می‌شوند و همگام‌سازی والد بدون شمارش مضاعف (با sync_id).
+		 */
+		applyChunks: function (items) {
+			var self = this;
+			var size = Math.max(1, this.applyChunk || 25);
+			var ids = Object.keys(items);
+			var chunks = [];
+
+			for (var i = 0; i < ids.length; i += size) {
+				var part = {};
+				for (var j = i; j < ids.length && j < i + size; j++) {
+					part[ids[j]] = items[ids[j]];
+				}
+				chunks.push(part);
+			}
+
+			var agg = {
+				ok: true,
+				applied: 0,
+				enabled_manage: 0,
+				parent_status: null,
+				parents_synced: 0,
+				report: [],
+				errors: [],
+				pids: {},
+				stopped: 0
+			};
+
+			var step = function (idx) {
+				var def = $.Deferred();
+
+				if (idx >= chunks.length) {
+					def.resolve(agg);
+					return def.promise();
+				}
+
+				if (chunks.length > 1) {
+					self.notice(self.i18n('applyProgress')
+						.replace('%1$d', self.fmt(Math.min((idx + 1) * size, ids.length)))
+						.replace('%2$d', self.fmt(ids.length)), 'info');
+				}
+
+				self.api(self.applyPayload(chunks[idx]))
+					.done(function (res) {
+						if (!res || !res.success) {
+							agg.errors.push(self.applyMsg(res && res.data));
+							agg.stopped = idx + 1;
+							def.resolve(agg);
+							return;
+						}
+
+						var d = res.data || {};
+						agg.applied += d.applied || 0;
+						agg.enabled_manage += d.enabled_manage || 0;
+						agg.report = agg.report.concat(d.report || []);
+						agg.errors = agg.errors.concat(d.errors || []);
+						(d.report || []).forEach(function (row) {
+							if (row.sync_id) {
+								agg.pids[row.sync_id] = 1;
+							}
+						});
+						if (d.parent_status) {
+							agg.parent_status = d.parent_status;
+						}
+						step(idx + 1).done(function (a) {
+							def.resolve(a);
+						});
+					})
+					.fail(function (xhr) {
+						agg.errors.push(self.applyFailMsg(xhr));
+						agg.stopped = idx + 1;
+						def.resolve(agg);
+					});
+
+				return def.promise();
+			};
+
+			return step(0).done(function (a) {
+				a.parents_synced = Object.keys(a.pids).length;
+				if (a.parents_synced !== 1) {
+					a.parent_status = null;
+				}
+			}).promise();
+		},
+
 		apply: function () {
 			var self = this;
 			if (this.busy || !this.readyContext()) {
@@ -2250,16 +2340,9 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
-				.done(function (res) {
-					if (res && res.success) {
-						self.renderReport(res.data);
-					} else {
-						self.notice(self.i18n('applyError').replace('%s', self.applyMsg(res.data)), 'error');
-					}
-				})
-				.fail(function (xhr) {
-					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
+			this.applyChunks(items)
+				.done(function (data) {
+					self.finishApply(data);
 				})
 				.always(function () {
 					self.busy = false;
@@ -2414,21 +2497,32 @@
 				}
 			});
 
-			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
-				.done(function (res) {
-					if (res && res.success) {
-						self.renderReport(res.data);
-					} else {
-						self.notice(self.i18n('applyError').replace('%s', self.applyMsg(res.data)), 'error');
-					}
-				})
-				.fail(function (xhr) {
-					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
+			this.applyChunks(items)
+				.done(function (data) {
+					self.finishApply(data);
 				})
 				.always(function () {
 					self.busy = false;
 					self.refreshCounts();
 				});
+		},
+
+		/**
+		 * پایان اعمال دسته‌ای: پاک‌کردن پیشرفت، رندر گزارش تجمعی و خطاهای جزئی.
+		 * (data اینجا «آبجکت تجمعی سمت کلاینت» است، نه پاسخ خام سرور.)
+		 */
+		finishApply: function (data) {
+			if (!data.stopped) {
+				this.notice('');
+			}
+			if (data.applied > 0 || data.report.length) {
+				this.renderReport(data);
+			}
+			if (data.stopped) {
+				this.notice(this.i18n('applyStopped').replace('%d', this.fmt(data.stopped)), 'error');
+			} else if (!data.applied && data.errors.length) {
+				this.notice(this.i18n('applyError').replace('%s', data.errors[0]), 'error');
+			}
 		},
 
 		/** گزارش نتیجهٔ اعمال + به‌روزرسانی کارت‌ها. */
