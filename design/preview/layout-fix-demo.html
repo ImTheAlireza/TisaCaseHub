@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>TisaCase — چرا صفحه تمام‌عرض شده بود؟</title>
+<style>
+	:root { --ink:#1F2A2E; --muted:#6B7A80; --line:#DAD5C9; --bg:#F4F2EC; --card:#fff; --accent:#0E7C6B; --bad:#C0392B; }
+	* { box-sizing: border-box; }
+	body { margin:0; padding:24px; background:#EDEAE2; color:var(--ink);
+		font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif; }
+	h1 { font-size:22px; margin:0 0 6px; }
+	.lead { color:var(--muted); font-size:14px; margin:0 0 22px; line-height:1.9; max-width:900px; }
+	.grid { display:grid; grid-template-columns:1fr; gap:22px; max-width:1180px; margin-inline:auto; }
+	.panel { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+	.panel > header { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); font-weight:700; }
+	.tag { font-size:12px; padding:3px 9px; border-radius:999px; font-weight:700; }
+	.tag.bad { background:#FDECEA; color:var(--bad); }
+	.tag.good { background:#E6F4F1; color:var(--accent); }
+	.panel > p { margin:0; padding:10px 16px 14px; color:var(--muted); font-size:13px; line-height:1.85; }
+	code { background:#F2EFE7; border-radius:5px; padding:1px 5px; font-family:"SF Mono", Consolas, monospace; direction:ltr; display:inline-block; font-size:12px; }
+
+	/* ---------- قاب مینیاتوری پیشخوان وردپرس ---------- */
+	.frame { position:relative; height:210px; background:#F0F0F1; display:flex; margin:0 16px 4px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+	.frame .menu { width:150px; flex:0 0 150px; background:#1D2327; color:#C3C4C7; font-size:11px; padding:10px 0; }
+	.frame .menu i { display:block; padding:7px 12px; font-style:normal; }
+	.frame .menu i.on { background:var(--accent); color:#fff; }
+	.frame .menu i.hidden { opacity:.25; text-decoration:line-through; }
+	.frame .content { position:relative; flex:1; background:#fff; }
+	/* پدینگ/مارجین چارچوب با متغیر عوض می‌شود تا هر دو حالت با یک مارک‌آپ دیده شوند */
+	.frame .wpcontent { position:absolute; inset:0; padding-inline-start:var(--pad,20px); }
+	.frame .wrap { max-width:var(--w-max,1180px); margin-inline-start:var(--m-start,24px); margin-inline-end:var(--m-end,24px); margin-block-start:10px;
+		background:#fff; border:2px dashed #B9B3A6; border-radius:8px; padding:12px; }
+	.frame .wrap b { font-size:13px; }
+	.frame .card { height:56px; margin-top:10px; border-radius:7px; background:linear-gradient(180deg,#0E7C6B,#0B6357); }
+	.frame .card + .card { margin-top:8px; height:34px; background:#EFEDE6; }
+	.frame .void { position:absolute; inset-block:0; inset-inline-start:0; width:var(--void,0); background:repeating-linear-gradient(45deg,#F5E9E7,#F5E9E7 8px,#FBEFED 8px,#FBEFED 16px); border-inline-start:1px dashed #DCB7B1; }
+	.frame .void span { position:absolute; top:50%; inset-inline-start:50%; transform:translate(50%,-50%); font-size:11px; color:var(--bad); white-space:nowrap; }
+	.frame .footer { position:absolute; inset-block-end:6px; inset-inline-start:14px; font-size:10px; color:#787C82; }
+
+	.before .content { --pad:0px; }
+	.after  .content { --pad:20px; }
+	.after  .wrap { --m-start:auto; --m-end:auto; margin-inline:auto; max-width:calc(100% - 48px); }
+
+	table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; font-size:13.5px; max-width:1180px; margin-inline:auto; }
+	caption { text-align:right; padding:14px 16px 10px; font-weight:700; font-size:15px; }
+	th, td { padding:10px 14px; border-top:1px solid var(--line); text-align:right; vertical-align:top; line-height:1.8; }
+	th { background:#F7F5EF; font-weight:700; }
+	.fix { color:var(--accent); font-weight:700; }
+</style>
+</head>
+<body>
+	<h1>چرا صفحه «تمام‌عرض» شده بود؟ — توضیح یک‌نگاهی</h1>
+	<p class="lead">دو قاعده در <b>لایهٔ مشترک TisaCase</b> (<code>tisacase-ui.css</code>) باعث می‌شد کارت وسط ننشیند و فضای خالی همه در یک طرف جمع شود. اختصاصی‌بودن قاعدهٔ <code>.tisa-scope .wrap</code> از <code>.tbsm-wrap</code> بیشتر بود، پس چیدمان خودِ صفحهٔ افزونه هم بی‌صدا بازنویسی می‌شد. هر دو اصلاح شدند و صفحهٔ افزونه حالا با شناسه (<code>#wpbody-content .tbsm-wrap</code>) در برابر بازنویسی بیرونی مقاوم است.</p>
+
+	<div class="grid">
+		<div class="panel before">
+			<header>وضعیت پیش از ۱٫۳٫۸ / ۱٫۹٫۱۵ <span class="tag bad">تمام‌عرض · کج</span></header>
+			<p><code>#wpcontent { padding-inline-start: 0 }</code> — پدینگ کنار صفر؛ کارت به منو چسبیده. و <code>.wrap { margin-inline: 24px }</code> — ثابت، نه <code>auto</code>؛ پس بازهٔ خالی (حدود ۳۰۰px) همه یک‌طرفه جمع می‌شود و صفحه در مرکز نمی‌نشیند.</p>
+			<div class="frame">
+				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
+				<div class="content">
+					<div class="wpcontent">
+						<div class="wrap"><b>مدیریت انبوه موجودی</b><div class="card"></div><div class="card"></div><div class="card"></div></div>
+					</div>
+					<div class="void" style="--void:180px"><span>بازهٔ خالی — یک‌طرفه</span></div>
+					<div class="footer">نگارش ۷.۱.۳</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="panel after">
+			<header>وضعیت ۱٫۳٫۸ / ۱٫۹٫۱۵ <span class="tag good">وسط‌چین</span></header>
+			<p>پدینگ پیش‌فرض وردپرس دست‌نخورده است و مارجین کنارِ کارت <code>auto</code> شده: <code>.tisa-scope .wrap { margin-inline: auto }</code> و در خود افزونه <code>#wpbody-content .tbsm-wrap { margin-inline: auto; max-width: var(--tisa-max-w, 1280px) }</code> — بازهٔ خالی دو طرف برابر می‌شود.</p>
+			<div class="frame">
+				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
+				<div class="content">
+					<div class="wpcontent">
+						<div class="wrap" style="margin-inline-start:auto;margin-inline-end:auto;max-width:calc(100% - 48px)"><b>مدیریت انبوه موجودی</b><div class="card"></div><div class="card"></div><div class="card"></div></div>
+					</div>
+					<div class="footer">نگارش ۷.۱.۳</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<table>
+		<caption>سه قاعده‌ای که عوض شد</caption>
+		<thead><tr><th style="width:38%">قاعده</th><th>تغییر</th></tr></thead>
+		<tbody>
+			<tr><td><code>body.tisa-scope #wpcontent</code></td><td><span class="fix">کل قاعده حذف شد</span> — پدینگ هستهٔ وردپرس (فاصلهٔ منوی کنار) دیگر صفر نمی‌شود.</td></tr>
+			<tr><td><code>.tisa-scope .wrap</code></td><td><span class="fix">margin-inline: auto</span> به‌جای مارجین ثابت ۲۴px — کارت وسط می‌نشیند.</td></tr>
+			<tr><td><code>body.tisa-hub-page #wpcontent</code></td><td><span class="fix">padding-inline-start: 0 حذف شد</span> — همان اصلاحِ ۱٫۲٫۰، این بار در لایهٔ مشترک هم.</td></tr>
+		</tbody>
+	</table>
+</body>
+</html>

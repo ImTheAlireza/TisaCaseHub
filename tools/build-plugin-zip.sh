@@ -18,6 +18,10 @@ if node -e "require.resolve('php-parser')" >/dev/null 2>&1; then
 else
   echo "⚠ php-parser نصب نیست — بررسی سینتکس واقعی PHP رد شد (npm install php-parser)." >&2
 fi
+# قرارداد چیدمان صفحه (پدینگ #wpcontent، مرکزچینی .wrap، هم‌گامی لایهٔ مشترک).
+if [ -f tools/layout-guard.mjs ]; then
+  node tools/layout-guard.mjs || { echo "✗ قرارداد چیدمان نقض شده — زیپ ساخته نشد." >&2; exit 1; }
+fi
 # قرارداد AJAX بین PHP و JS: جلوی باگ‌هایی مثل «آرایهٔ کلیددار در برابر آرایهٔ
 # تخت» و «کلیدی که لایهٔ AJAX می‌خواند ولی متد برنمی‌گرداند» را می‌گیرد.
 if [ -f tools/ajax-contract-check.mjs ]; then

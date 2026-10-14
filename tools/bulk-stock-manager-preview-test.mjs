@@ -611,6 +611,30 @@ ok('کد خطای PHP هم در پیام هست', /php_exception|TypeError/.test
 window.TBSM_PREVIEW_FAULT = null;
 
 
+/* ------------------------------------------------ چیدمان صفحه (۱٫۳٫۸) */
+// ریشهٔ باگ واقعی «صفحه تمام‌عرض شد / نوار خاکستری پهن در یک طرف»:
+//  ۱) لایهٔ مشترک پدینگ #wpcontent را صفر می‌کرد (فاصلهٔ منوی کنار می‌رفت)،
+//  ۲) مارجین .wrap ثابت بود (نه auto) → کارت وسط نمی‌نشست.
+// این سنجه‌ها همان قرارداد را قفل می‌کنند (به‌ازای فایل، نه فقط پیش‌نمایش).
+{
+	const stripComments = (css) => css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const shared = stripComments(fs.readFileSync(path.join(ROOT, 'design/tisacase-ui.css'), 'utf8'));
+	const hubCopy = stripComments(fs.readFileSync(path.join(ROOT, 'plugins/tisacase-hub/assets/tisacase-ui.css'), 'utf8'));
+	const hubOwn = stripComments(fs.readFileSync(path.join(ROOT, 'plugins/tisacase-hub/assets/hub.css'), 'utf8'));
+	const admin = stripComments(fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css'), 'utf8'));
+
+	ok('لایهٔ مشترک پدینگ کنارِ #wpcontent را صفر نمی‌کند', !/#wpcontent\s*\{[^}]*padding-(inline-start|inline-end|left|right)\s*:\s*0/.test(shared));
+	ok('پوستهٔ هاب هم پدینگ #wpcontent را صفر نمی‌کند', !/#wpcontent\s*\{[^}]*padding-(inline-start|inline-end|left|right)\s*:\s*0/.test(hubOwn));
+	ok('قاعدهٔ .wrap لایهٔ مشترک، مارجین auto دارد (وسط‌چین)', /\.tisa-scope\s+\.wrap\s*\{[^}]*margin-inline\s*:\s*auto/.test(shared), (shared.match(/\.tisa-scope\s+\.wrap\s*\{[^}]*\}/) || ['—'])[0].slice(0, 80));
+	ok('صفحهٔ ما وسط‌چین است و سقف عرض دارد (قاعدهٔ عمومی — پیش‌نمایش)', /\.tbsm-wrap\s*\{[^}]*max-width\s*:\s*var\(--tisa-max-w/.test(admin) && /\.tbsm-wrap\s*\{[^}]*margin-inline\s*:\s*auto/.test(admin));
+	{
+		const both = (admin.match(/(?:^|\n)(\.tbsm-wrap[^{]*#[\w-]*|\.tbsm-wrap\s*,[^\n]*#wpbody-content[^{]*|#wpbody-content[^{]*)\{([^}]*)\}/g) || []).join(' ');
+		ok('قاعدهٔ شناسه‌دار (#wpbody-content .tbsm-wrap) هم هست تا بازنویسی بیرونی اثر نکند', /#wpbody-content\s+\.tbsm-wrap/.test(admin) && /margin-inline\s*:\s*auto/.test(both) && /max-width/.test(both));
+	}
+	ok('دو نسخهٔ tisacase-ui.css (مرجع و کپی هاب) یکی هستند', shared.replace(/\s+/g, ' ').trim() === hubCopy.replace(/\s+/g, ' ').trim());
+}
+
+
 /* ------------------------------------------------ هم‌خوانی نسخه در همهٔ فایل‌ها */
 // جلوی یک اشتباه واقعی را می‌گیرد: بامپ نسخه در فایل اصلی PHP و جا ماندن
 // پیش‌نمایش/readme یا برعکس — همان چیزی که «ناهم‌خوانی نسخه» را می‌سازد.

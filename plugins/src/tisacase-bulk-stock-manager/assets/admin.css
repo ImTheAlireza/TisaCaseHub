@@ -5,11 +5,22 @@
  * @package TisaCase_Bulk_Stock_Manager
  */
 
-.tbsm-wrap {
+/*
+ * دو قاعدهٔ هم‌معنی، عمداً:
+ *  ۱) قاعدهٔ عمومی — برای پیش‌نمایشِ بدون وردپرس (که #wpbody-content ندارد)
+ *     و برای هر محیطی که مارک‌آپ ما را در جای دیگری بگذارد.
+ *  ۲) قاعدهٔ با شناسه — برای پیشخوان وردپرس. اختصاصی‌بودنش (۱-۱-۰) از
+ *     قاعده‌های کلاس‌محورِ بیرونی مثل `.tisa-scope .wrap` (۰-۲-۰) بیشتر است،
+ *     پس چیدمان ما بی‌صدا بازنویسی نمی‌شود — حتی اگر هابِ روی سایت قدیمی باشد.
+ */
+.tbsm-wrap,
+#wpbody-content .tbsm-wrap {
 	max-width: var(--tisa-max-w, 1280px);
-	margin-top: var(--tisa-sp-4, 16px);
-	margin-inline-end: auto;
-	margin-inline-start: 0;
+	margin-inline: auto;
+	margin-block-start: var(--tisa-sp-4, 16px);
+}
+
+.tbsm-wrap {
 	font-family: var(--tisa-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif);
 	color: var(--tisa-ink, #1F2A2E);
 }

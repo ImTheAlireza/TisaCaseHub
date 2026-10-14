@@ -1750,13 +1750,17 @@ body.tisa-scope {
 	background-color: var(--tisa-bg);
 }
 
-body.tisa-scope #wpcontent {
-	padding-inline-start: 0;
-}
-
+/*
+ * چیدمان صفحه‌ها — دو نکتهٔ مهم (باگ «نوار خاکستری پهن در یک طرف»):
+ *  ۱) پدینگ `#wpcontent` را دست نمی‌زنیم؛ همان پدینگ، فاصلهٔ منوی کنار و لبهٔ
+ *     صفحه است. صفرکردنِ `padding-inline-start` کارت را به منو می‌چسباند و
+ *     مرکزچینی را به‌هم می‌ریزد (مخصوصاً در RTL).
+ *  ۲) margin باید `auto` باشد تا کارت واقعاً وسط بنشیند. با margin ثابت
+ *     (مثل ۲۴px) فضای خالی همه در یک طرف جمع می‌شود و صفحه «تمام‌عرض و
+ *     کج‌شده» به نظر می‌رسد.
+ */
 .tisa-scope .wrap {
-	margin-inline-start: var(--tisa-sp-5);
-	margin-inline-end: var(--tisa-sp-5);
+	margin-inline: auto;
 	padding-top: var(--tisa-sp-3);
 	max-width: var(--tisa-max-w);
 	font-family: var(--tisa-font);
