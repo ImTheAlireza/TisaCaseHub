@@ -882,7 +882,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @param array $values     مقدارهای خام هم‌معنا.
 		 * @return array {rows, products, truncated, error?}
 		 */
-		public static function find_scope_rows( $scope, array $attr_keys, array $values ) {
+		public static function find_scope_rows( $scope, array $attr_keys, array $values, $offset = 0 ) {
 			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
 			$values    = self::sanitize_value_list( $values, TBSM_Core::MAX_MODEL_VALUES );
 
@@ -910,6 +910,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 			$sql    = self::scope_sql( $scope );
 			$limit  = TBSM_Core::MAX_MODEL_ROWS + 1; // یکی بیشتر برای تشخیص بریدگی فهرست.
+			$offset = max( 0, absint( $offset ) );   // صفحه‌بندی سرور برای فهرست‌های بلند.
 			$params = array();
 
 			$meta_keys = array();
@@ -922,6 +923,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			$values_ph = implode( ', ', array_fill( 0, count( $values ), '%s' ) );
 			$params    = array_merge( $params, $sql['params'] );
 			$params[]  = $limit;
+			$params[]  = $offset;
 
 			// شناسهٔ والد با LEFT JOIN می‌آید تا محصول بدون SKU هم (در حالت «همه») حذف نشود.
 			$query = "SELECT DISTINCT v.ID AS vid, v.post_parent AS pid, sk.meta_value AS psku, (sk.meta_value IS NULL) AS psku_null
@@ -932,7 +934,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				LEFT JOIN {$wpdb->postmeta} sk ON sk.post_id = p.ID AND sk.meta_key = '_sku'
 				WHERE am.meta_key IN ({$keys_ph}) AND am.meta_value IN ({$values_ph}) {$sql['where']}
 				ORDER BY psku_null ASC, psku ASC, vid ASC
-				LIMIT %d";
+				LIMIT %d OFFSET %d";
 
 			$found = $wpdb->get_results( $wpdb->prepare( $query, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$found = is_array( $found ) ? $found : array();

@@ -861,6 +861,13 @@ body.tbsm-page #wpfooter {
 /* ------------------------------------------------------------------
    گام ۳ — کارت‌های متغیر (شبکهٔ انتخاب)
    ------------------------------------------------------------------ */
+/* صفحه‌بندی سرور: دکمهٔ «نمایش موارد بعدی» زیر فهرست کارت‌ها */
+.tbsm-more-wrap {
+	display: flex;
+	justify-content: center;
+	margin: var(--tisa-sp-4, 16px) 0 0;
+}
+
 .tbsm-grid {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(178px, 1fr));

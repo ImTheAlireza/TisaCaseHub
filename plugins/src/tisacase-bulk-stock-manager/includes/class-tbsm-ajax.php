@@ -664,12 +664,13 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			$scope  = TBSM_Stock::normalize_scope( self::scope_params() );
 			$keys   = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
 			$values = self::model_raw_list( 'term_values', TBSM_Core::MAX_MODEL_VALUES );
+			$offset = isset( $_POST['offset'] ) ? absint( wp_unslash( $_POST['offset'] ) ) : 0;
 
 			if ( empty( $keys ) || empty( $values ) ) {
 				self::send_error( 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.', 'no_model' );
 			}
 
-			$found = TBSM_Stock::find_scope_rows( $scope, $keys, $values );
+			$found = TBSM_Stock::find_scope_rows( $scope, $keys, $values, $offset );
 
 			if ( ! empty( $found['error'] ) ) {
 				self::send_error( (string) $found['error'], 'scope_rows_error' );
@@ -682,6 +683,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					'products'  => (int) $found['products'],
 					'truncated' => ! empty( $found['truncated'] ),
 					'limit'     => TBSM_Core::MAX_MODEL_ROWS,
+					'offset'    => $offset,
 					'scope'     => self::scope_payload( $scope ),
 					'attr_keys' => $keys,
 					'values'    => $values,

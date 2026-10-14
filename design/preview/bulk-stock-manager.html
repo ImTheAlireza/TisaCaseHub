@@ -769,7 +769,9 @@
 				groupSearching: 'در حال فهرست‌کردن متغیرها…',
 				groupEmpty: 'برای این مدل در این محدوده متغیری پیدا نشد.',
 				groupNote: '%1$s • %2$s — %3$d متغیر در %4$d محصول',
-				groupTruncated: 'فهرست به %d مورد محدود شد؛ محدوده یا مقدار مدل را دقیق‌تر کنید.',
+				groupTruncated: 'تنها %d مورد نخست فهرست شد؛ برای دیدن و اعمال بقیه، دکمهٔ «نمایش موارد بعدی» زیر فهرست را بزنید.',
+				groupMoreBtn: 'نمایش %d مورد بعدی',
+				groupMoreLoading: 'در حال آوردن صفحهٔ بعدی…',
 				groupApplyConfirm: 'تأیید: اعمال روی %d متغیر گروهی؟',
 				parentsSynced: 'وضعیت موجودی %d محصول والد همگام شد.'
 			}
@@ -934,17 +936,21 @@
 							d.resolve({ success: false, data: { message: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' } });
 							return;
 						}
-						var found = scopeRows(data, data.attr_keys, data.term_values);
+												var page = window.tbsmMockPageSize || 300;
+						var off = Math.max(0, parseInt(data.offset || 0, 10));
+						var all = scopeRows(data, data.attr_keys, data.term_values).rows;
+						var rows = all.slice(off, off + page);
+						var pids = {};
+						rows.forEach(function (r) { pids[r.pid] = 1; });
 						d.resolve({
 							success: true,
 							data: {
-								rows: found.rows, total: found.rows.length, products: found.products,
-								truncated: false, limit: 300,
+								rows: rows, total: rows.length, products: Object.keys(pids).length,
+								truncated: (off + page) < all.length, limit: page, offset: off,
 								scope: scopePayload(data),
 								attr_keys: data.attr_keys, values: data.term_values
 							}
 						});
-						return;
 					}
 
 					if (data.action === 'tbsm_apply_stock' || data.action === 'tbsm_apply_scope_stock') {

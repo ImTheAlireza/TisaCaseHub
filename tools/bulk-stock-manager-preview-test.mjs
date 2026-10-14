@@ -269,6 +269,26 @@ await click('#tbsm-apply');
 await waitFor('گزارش اعمال تکی', () => /۵۵/.test(text('#tbsm-report')));
 ok('گزارش اعمال تکی یک ردیف دارد', qa('#tbsm-report .tbsm-report-row').length === 1, text('#tbsm-report').slice(0, 120));
 
+/* ------------------------------------------------ فهرست بلند: صفحه‌بندی سرور (۱٫۴٫۰) */
+window.tbsmMockPageSize = 4;
+await change('#tbsm-group-term', proMax.value);
+await waitFor('صفحهٔ نخست فهرست صفحه‌بندی‌شده', () => qa('#tbsm-grid .tbsm-var').length === 4);
+ok('با سقف ۴، فقط صفحهٔ نخست (۴ کارت) می‌آید', qa('#tbsm-grid .tbsm-var').length === 4);
+ok('دکمهٔ «نمایش موارد بعدی» آمد', !!q('#tbsm-more'), text('#tbsm-more'));
+ok('برچسب دکمه سقف صفحه را دارد', /۴/.test(text('#tbsm-more')), text('#tbsm-more'));
+ok('خط اطلاعات دربارهٔ صفحه‌بندی هشدار می‌دهد', /نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارش متغیر در خط اطلاعات تجمعی است', /۴ متغیر در/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('کارت‌های صفحهٔ نخست هم پیش‌فرض تیک‌خورده‌اند', qa('#tbsm-grid .tbsm-var.is-selected').length === 4);
+ok('شمارنده‌ها فقط موارد بارگیری‌شده را می‌شمارند', /۴ از ۴/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+await click('#tbsm-more');
+await waitFor('الحاق صفحهٔ دوم', () => qa('#tbsm-grid .tbsm-var').length === 6);
+ok('صفحهٔ دوم الحاق شد (۶ کارت، بدون بازسازی فهرست)', qa('#tbsm-grid .tbsm-var').length === 6);
+ok('پس از بارگیری کامل، دکمهٔ ادامه رفت', !q('#tbsm-more'));
+ok('هشدار صفحه‌بندی از خط اطلاعات رفت', !/نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارش تجمعی کامل شد (۶ متغیر در ۲ محصول)', /۶ متغیر در ۲ محصول/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارنده‌ها کل موارد بارگیری‌شده را نشان می‌دهند', /۶ از ۶/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+delete window.tbsmMockPageSize;
+
 /* ------------------------------------------------ محدوده با شناسه (SKU) */
 await click('.tbsm-seg-btn[data-scope="sku"]');
 ok('پنل شناسه آشکار شد', visible('#tbsm-scope-pane-sku'));

@@ -48,6 +48,7 @@
 		valueFilter: '',    // عبارت جست‌وجوی مقدارها
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
+		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -371,6 +372,11 @@
 
 			$('#tbsm-apply').on('click', function () {
 				self.apply();
+			});
+
+			// صفحه‌بندی سرورِ فهرست‌های بلند گروهی
+			$('#tbsm-step-cards').on('click', '#tbsm-more', function () {
+				self.loadMore();
 			});
 
 			// تب‌ها: تک‌محصول ↔ گروهی با مدل
@@ -1200,6 +1206,7 @@
 			this.clearSelection(true);
 			this.notice('');
 			this.busy = true;
+			$('#tbsm-more-wrap').remove();
 			$('#tbsm-grid').prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(this.i18n('groupSearching')) + '</div>');
 
 			var payload = this.scopePayload();
@@ -1231,6 +1238,12 @@
 					}
 					self.variations = data.rows || [];
 					self.categories = {};
+					self.scopePids = {};
+					self.variations.forEach(function (r) {
+						if (r.pid) {
+							self.scopePids[r.pid] = 1;
+						}
+					});
 
 					if (!self.variations.length) {
 						self.renderGrid();
@@ -1240,6 +1253,7 @@
 						$('#tbsm-step-cards').removeClass('tbsm-step-locked');
 					}
 
+					self.renderMore(data);
 					self.renderGroupNote(data);
 					self.refreshCounts();
 				})
@@ -1267,8 +1281,9 @@
 				return;
 			}
 
-			var total = (data && typeof data.total !== 'undefined') ? data.total : this.variations.length;
-			var products = (data && typeof data.products !== 'undefined') ? data.products : 0;
+			// شمارش تجمعی صفحه‌های بارگیری‌شده (فهرست گروهی صفحه‌بندی سرور دارد).
+			var total = this.variations.length;
+			var products = Object.keys(this.scopePids || {}).length;
 
 			var html = '<span class="tbsm-group-note-main">'
 				+ this.esc(this.i18n('groupNote')
@@ -1288,12 +1303,92 @@
 			$note.prop('hidden', false).html(html);
 		},
 
+		/** دکمهٔ «نمایش موارد بعدی» وقتی سرور هنوز صفحهٔ بعدی فهرست را دارد. */
+		renderMore: function (data) {
+			$('#tbsm-more-wrap').remove();
+
+			if (this.mode !== 'group' || !data || !data.truncated || !this.variations.length) {
+				return;
+			}
+
+			var label = this.i18n('groupMoreBtn').replace('%d', this.fmt(data.limit || 300));
+			var $wrap = $('<div class="tbsm-more-wrap" id="tbsm-more-wrap"></div>');
+			$('<button type="button" class="tisa-btn tisa-btn--secondary" id="tbsm-more"></button>')
+				.text(label)
+				.appendTo($wrap);
+			$('#tbsm-grid').after($wrap);
+		},
+
+		/** صفحهٔ بعدی متغیرهای همان مدل/محدوده را می‌گیرد و به فهرست اضافه می‌کند. */
+		loadMore: function () {
+			if (this.busy || this.mode !== 'group' || !this.group || !this.scope) {
+				return;
+			}
+
+			var self = this;
+			var seq = this.loadSeq;
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_find_scope';
+			payload.attr_keys = this.group.keys || [];
+			payload.term_values = this.group.values || [];
+			payload.offset = this.variations.length;
+
+			this.busy = true;
+			$('#tbsm-more').prop('disabled', true).text(this.i18n('groupMoreLoading'));
+
+			this.api(payload)
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						self.notice(self.apiError(res), 'error');
+						self.renderMore({ truncated: true, limit: 300 }); // دکمه برای تلاش دوباره
+						return;
+					}
+
+					var data = res.data || {};
+					var rows = data.rows || [];
+
+					if (rows.length) {
+						self.variations = self.variations.concat(rows);
+						rows.forEach(function (r) {
+							if (r.pid) {
+								self.scopePids[r.pid] = 1;
+							}
+						});
+						self.appendGrid(rows);
+					}
+
+					self.renderGroupNote(data);
+					self.renderMore(data);
+					self.refreshCounts();
+					self.updateBottomHint();
+				})
+				.fail(function (why) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.notice(why || self.i18n('groupFindError'), 'error');
+					self.renderMore({ truncated: true, limit: 300 });
+				})
+				.always(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.busy = false;
+					self.refreshCounts();
+				});
+		},
+
 		/** بازنشانی حالت گروهی (محدوده دست‌نخورده می‌ماند اگر keepScope باشد). */
 		resetGroup: function (keepScope) {
 			this.group = null;
 			this.groupNoteHtml = '';
 			this.variations = [];
+			this.scopePids = {};
 
+			$('#tbsm-more-wrap').remove();
 			$('#tbsm-grid').prop('hidden', true).empty();
 			$('#tbsm-group-note').prop('hidden', true).empty();
 			$('#tbsm-counts').empty();
@@ -1558,6 +1653,62 @@
 		 * گام ۳ — کارت‌ها
 		 * ---------------------------------------------------------- */
 
+		/** HTML یک کارت متغیر؛ مشترک بین رندر کامل و الحاق صفحهٔ تازه. */
+		cardHtml: function (v) {
+			var html = '';
+			var mode = (v.mode === 'in_stock' || v.mode === 'out_of_stock') ? v.mode : 'qty';
+
+			// بج وضعیت
+			var stockBadge;
+			if (mode === 'qty') {
+				stockBadge = (v.stock > 0 || v.status === 'instock')
+					? '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>'
+					: '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>';
+			} else if (mode === 'in_stock') {
+				stockBadge = '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('inStockLabel')) + '</span>';
+			} else {
+				stockBadge = '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('outOfStockLabel')) + '</span>';
+			}
+
+			// یادداشت «موجودی‌گیری خاموش» فقط در حالت عددی (وقتی با اعمال روشن می‌شود)
+			var manageNote = (!v.manage_stock && mode === 'qty')
+				? '<span class="tbsm-var-manage" title="' + this.esc(this.i18n('manageOffNote')) + '">' + this.esc(this.i18n('manageOffNote')) + '</span>'
+				: '';
+
+			var selQty = mode === 'qty' ? ' selected' : '';
+			var selIn  = mode === 'in_stock' ? ' selected' : '';
+			var selOut = mode === 'out_of_stock' ? ' selected' : '';
+
+			// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
+			var title = v.pname ? v.pname : v.name;
+			var sub = v.pname
+				? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
+				: (v.sku ? v.sku : '#' + v.id);
+
+			html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
+				+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
+				+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
+				+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
+				+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
+				+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
+				+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
+				+   '<option value="in_stock"' + selIn + '>' + this.esc(this.i18n('modeInStock')) + '</option>'
+				+   '<option value="out_of_stock"' + selOut + '>' + this.esc(this.i18n('modeOutOfStock')) + '</option>'
+				+ '</select>'
+				+ '<span class="tbsm-var-stockbox" dir="ltr"' + (mode === 'qty' ? '' : ' hidden') + '>'
+				+   '<button type="button" class="tbsm-stepbtn tbsm-step-down" aria-label="-1">−</button>'
+				+   '<input type="number" class="tbsm-var-stock" min="0" step="1" inputmode="numeric" value="' + v.stock + '"' + (mode === 'qty' ? '' : ' disabled') + ' aria-label="' + this.esc(this.i18n('stockLabel')) + '">'
+				+   '<button type="button" class="tbsm-stepbtn tbsm-step-up" aria-label="+1">+</button>'
+				+ '</span>'
+				+ (mode === 'in_stock'
+					? '<span class="tbsm-var-status-chip tbsm-var-status-chip--in">' + this.esc(this.i18n('modeInStock')) + '</span>'
+					: mode === 'out_of_stock'
+						? '<span class="tbsm-var-status-chip tbsm-var-status-chip--out">' + this.esc(this.i18n('modeOutOfStock')) + '</span>'
+						: '<span class="tbsm-var-status-chip" hidden></span>')
+				+ '</div>';
+			return html;
+		},
+
 		renderGrid: function () {
 			var $grid = $('#tbsm-grid');
 
@@ -1569,67 +1720,32 @@
 
 			var html = '';
 			for (var i = 0; i < this.variations.length; i++) {
-				var v = this.variations[i];
-				var mode = (v.mode === 'in_stock' || v.mode === 'out_of_stock') ? v.mode : 'qty';
-
-				// بج وضعیت
-				var stockBadge;
-				if (mode === 'qty') {
-					stockBadge = (v.stock > 0 || v.status === 'instock')
-						? '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>'
-						: '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>';
-				} else if (mode === 'in_stock') {
-					stockBadge = '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('inStockLabel')) + '</span>';
-				} else {
-					stockBadge = '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('outOfStockLabel')) + '</span>';
-				}
-
-				// یادداشت «موجودی‌گیری خاموش» فقط در حالت عددی (وقتی با اعمال روشن می‌شود)
-				var manageNote = (!v.manage_stock && mode === 'qty')
-					? '<span class="tbsm-var-manage" title="' + this.esc(this.i18n('manageOffNote')) + '">' + this.esc(this.i18n('manageOffNote')) + '</span>'
-					: '';
-
-				var selQty = mode === 'qty' ? ' selected' : '';
-				var selIn  = mode === 'in_stock' ? ' selected' : '';
-				var selOut = mode === 'out_of_stock' ? ' selected' : '';
-
-				// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
-				var title = v.pname ? v.pname : v.name;
-				var sub = v.pname
-					? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
-					: (v.sku ? v.sku : '#' + v.id);
-
-				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
-					+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
-					+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
-					+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
-					+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
-					+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
-					+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
-					+   '<option value="in_stock"' + selIn + '>' + this.esc(this.i18n('modeInStock')) + '</option>'
-					+   '<option value="out_of_stock"' + selOut + '>' + this.esc(this.i18n('modeOutOfStock')) + '</option>'
-					+ '</select>'
-					+ '<span class="tbsm-var-stockbox" dir="ltr"' + (mode === 'qty' ? '' : ' hidden') + '>'
-					+   '<button type="button" class="tbsm-stepbtn tbsm-step-down" aria-label="-1">−</button>'
-					+   '<input type="number" class="tbsm-var-stock" min="0" step="1" inputmode="numeric" value="' + v.stock + '"' + (mode === 'qty' ? '' : ' disabled') + ' aria-label="' + this.esc(this.i18n('stockLabel')) + '">'
-					+   '<button type="button" class="tbsm-stepbtn tbsm-step-up" aria-label="+1">+</button>'
-					+ '</span>'
-					+ (mode === 'in_stock'
-						? '<span class="tbsm-var-status-chip tbsm-var-status-chip--in">' + this.esc(this.i18n('modeInStock')) + '</span>'
-						: mode === 'out_of_stock'
-							? '<span class="tbsm-var-status-chip tbsm-var-status-chip--out">' + this.esc(this.i18n('modeOutOfStock')) + '</span>'
-							: '<span class="tbsm-var-status-chip" hidden></span>')
-					+ '</div>';
-				}
+				html += this.cardHtml(this.variations[i]);
+			}
 
 			$grid.prop('hidden', false).html(html);
+			this.paintCards($grid.find('.tbsm-var'));
+		},
 
-			// رنگ اولیهٔ باکس‌های عددی (سبز/قرمز بر اساس مقدار)
+		/** کارت‌های صفحهٔ تازه را به فهرست اضافه می‌کند؛ انتخاب/ویرایش صفحه‌های قبلی دست‌نخورده می‌ماند. */
+		appendGrid: function (rows) {
+			var html = '';
+			for (var i = 0; i < rows.length; i++) {
+				html += this.cardHtml(rows[i]);
+			}
+			var $new = $(html);
+			$('#tbsm-grid').append($new);
+			this.paintCards($new);
+		},
+
+		/** رنگ اولیهٔ باکس‌های عددی (سبز/قرمز بر اساس مقدار). */
+		paintCards: function ($cards) {
 			var self = this;
-			$grid.find('.tbsm-var').each(function () {
+			$cards.each(function () {
 				self.paintStockbox($(this));
 			});
 		},
+
 
 		toggleCard: function ($card) {
 			$card.toggleClass('is-selected');
