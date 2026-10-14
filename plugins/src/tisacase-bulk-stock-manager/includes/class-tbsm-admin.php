@@ -176,6 +176,8 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'scopeSummary'       => '%1$s — %2$d محصول · %3$d متغیر',
 						'scopeProductsUnit'  => 'محصول',
 						'scopeTooMany'       => 'حداکثر %d محصول را می‌توانید دستی انتخاب کنید.',
+						'scopeAllLoading'    => 'در حال شمارش محصولات و متغیرهای فروشگاه…',
+						'scopeAllEmpty'      => 'هنوز محصولی در فروشگاه ثبت نشده است.',
 						'groupAttrEmpty'     => 'در محدودهٔ انتخابی هیچ ویژگی متغیری پیدا نشد؛ محدوده را تغییر دهید.',
 						'groupAttrLoading'   => 'در حال بارگذاری…',
 						'groupValuesError'   => 'بارگذاری مقدارهای این ویژگی ناموفق بود.',
@@ -299,6 +301,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 							<button type="button" class="tbsm-seg-btn is-active" data-scope="products" role="tab" aria-selected="true">چند محصول</button>
 							<button type="button" class="tbsm-seg-btn" data-scope="category" role="tab" aria-selected="false">دسته‌بندی</button>
 							<button type="button" class="tbsm-seg-btn" data-scope="sku" role="tab" aria-selected="false">شناسهٔ (SKU)</button>
+							<button type="button" class="tbsm-seg-btn" data-scope="all" role="tab" aria-selected="false">همهٔ محصولات</button>
 						</div>
 
 						<!-- محدوده: چند محصول با جست‌وجو -->
@@ -330,7 +333,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 
 						<!-- محدوده: شناسه -->
 						<div class="tbsm-scope-pane" id="tbsm-scope-pane-sku" hidden>
-							<p class="tbsm-hint-line">مثلاً CH — خالی بگذارید تا همهٔ محصولات بررسی شوند.</p>
+							<p class="tbsm-hint-line">مثلاً CH یا «CH184» — با «شامل می‌شود» هر شناسه‌ای که این متن را داشته باشد پیدا می‌شود.</p>
 							<div class="tbsm-form-row">
 								<label class="tbsm-field tbsm-field--grow" for="tbsm-scope-sku">
 									<span class="tbsm-field-label">شناسهٔ (SKU) محصول</span>
@@ -344,6 +347,12 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 									</select>
 								</label>
 							</div>
+						</div>
+
+						<!-- محدوده: همهٔ محصولات -->
+						<div class="tbsm-scope-pane" id="tbsm-scope-pane-all" hidden>
+							<p class="tbsm-hint-line">همهٔ محصولات فروشگاه یک‌جا بررسی می‌شوند و ویژگی‌های مدلشان فهرست می‌شود؛ مناسب وقتی می‌خواهید روی کل فروشگاه کار کنید و نمی‌خواهید محصول‌ها را دستی انتخاب کنید.</p>
+							<div class="tbsm-scope-stat" id="tbsm-scope-all-stat" aria-live="polite"></div>
 						</div>
 
 						<div class="tbsm-scope-actions">

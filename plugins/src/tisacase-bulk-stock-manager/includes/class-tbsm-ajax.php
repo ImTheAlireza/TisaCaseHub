@@ -39,6 +39,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				'tbsm_apply_stock'      => 'ajax_apply_stock',
 				// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل ← اعمال.
 				'tbsm_scope_options'    => 'ajax_scope_options',
+				'tbsm_scope_stats'      => 'ajax_scope_stats',
 				'tbsm_scope_attributes' => 'ajax_scope_attributes',
 				'tbsm_scope_values'     => 'ajax_scope_values',
 				'tbsm_find_scope'       => 'ajax_find_scope',
@@ -608,6 +609,23 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					'attributes' => $attributes,
 				)
 			);
+		}
+
+		/**
+		 * شمارش سبک یک محدوده (محصول/متغیر) — برای نشان‌دادن «همهٔ محصولات»
+		 * پیش از محاسبهٔ سنگین ویژگی‌ها.
+		 */
+		public static function ajax_scope_stats() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
+			$error = TBSM_Stock::scope_error( $scope );
+			if ( '' !== $error ) {
+				self::send_error( (string) $error, 'bad_scope' );
+			}
+
+			self::send_success( array( 'scope' => self::scope_payload( $scope ) ) );
 		}
 
 		/**

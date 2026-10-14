@@ -28,12 +28,14 @@
 		mode: 'single',     // 'single' = تک‌محصول | 'group' = گروهی (چند محصول)
 
 		// حالت گروهی — گام ۱: محدودهٔ محصولات
-		scopeType: 'products',   // products | category | sku
+		scopeType: 'products',   // products | category | sku | all
 		scopeProducts: {},       // id => {id, name, sku} محصولات تیک‌خورده
 		scopeResults: [],        // آخرین نتایج جست‌وجوی گام محدوده
 		scopeCategory: 0,        // شناسهٔ دستهٔ انتخابی
 		scopeLimit: 200,         // سقف محصولات انتخابی (از سرور می‌آید)
 		scopeOptionsLoaded: false,
+		scopeAllLoaded: false,   // آمار «همهٔ محصولات» فقط یک بار گرفته می‌شود
+		scopeAllBusy: false,
 		scopeCategories: [],     // فهرست کامل دسته‌ها (برای فیلتر جست‌وجو)
 		categoryFilter: '',      // عبارت جست‌وجوی دسته‌ها
 
@@ -593,9 +595,9 @@
 			$('#tbsm-scope-category-hint').prop('hidden', !hint).html(hint ? this.esc(hint) : '');
 		},
 
-		/** تغییر روش انتخاب محدوده (چند محصول / دسته / شناسه). */
+		/** تغییر روش انتخاب محدوده (چند محصول / دسته / شناسه / همهٔ محصولات). */
 		setScopeType: function (type) {
-			if (type !== 'products' && type !== 'category' && type !== 'sku') {
+			if (type !== 'products' && type !== 'category' && type !== 'sku' && type !== 'all') {
 				type = 'products';
 			}
 			this.scopeType = type;
@@ -614,6 +616,8 @@
 				$('#tbsm-scope-search').trigger('focus');
 			} else if (type === 'sku') {
 				$('#tbsm-scope-sku').trigger('focus');
+			} else if (type === 'all') {
+				this.loadScopeAllStats();
 			}
 
 			this.refreshScopeApply();
@@ -766,6 +770,72 @@
 			$box.prop('hidden', false).html(html);
 		},
 
+		/**
+		 * آمار محدودهٔ «همهٔ محصولات»: چند محصول و چند متغیر بررسی می‌شود.
+		 *
+		 * فقط یک بار (اولین باری که کاربر این گزینه را انتخاب می‌کند) و از سرور
+		 * گرفته می‌شود؛ همان تابع `scope_summary()` که هنگام «نمایش ویژگی‌ها»
+		 * هم اجرا می‌شود. اگر ناموفق باشد، خطای واقعی سرور نشان داده می‌شود ولی
+		 * دکمهٔ ادامه غیرفعال نمی‌شود — کاربر باید بتواند رد شود.
+		 */
+		loadScopeAllStats: function () {
+			var self = this;
+			var $box = $('#tbsm-scope-all-stat');
+
+			if (this.scopeAllLoaded || this.scopeAllBusy) {
+				return;
+			}
+			if (!$box.length) {
+				return;
+			}
+
+			this.scopeAllBusy = true;
+			$box.removeClass('is-error').addClass('is-loading').text(this.i18n('scopeAllLoading'));
+
+			$.post(window.tbsmData.ajaxUrl, $.extend(this.scopePayload(), {
+				action: 'tbsm_scope_stats',
+				nonce: window.tbsmData.nonce,
+				scope_type: 'all'
+			}))
+				.done(function (res) {
+					if (!res || !res.success || !res.data || !res.data.scope) {
+						$box.removeClass('is-loading').addClass('is-error')
+							.text(self.i18n('scopeError') + ' ' + self.apiError(res));
+						return;
+					}
+
+					var scope = res.data.scope;
+					self.scopeAllLoaded = true;
+					$box.removeClass('is-loading').removeClass('is-error');
+					if (!scope.products) {
+						$box.text(self.i18n('scopeAllEmpty'));
+						return;
+					}
+					$box.html(self.esc(self.i18n('scopeSummary')
+						.replace('%1$s', scope.label || 'همهٔ محصولات')
+						.replace('%2$d', self.fmt(scope.products))
+						.replace('%3$d', self.fmt(scope.variations))));
+				})
+				.fail(function (xhr, status) {
+					var raw, code = (xhr && xhr.status) || 0;
+					if (code) {
+						raw = self.embeddedError(xhr && xhr.responseText);
+					} else if (status === 'timeout') {
+						raw = self.i18n('scopeErrorTimeout');
+					} else {
+						raw = self.i18n('scopeErrorNet');
+					}
+					if (!raw) {
+						raw = self.apiError(xhr && xhr.responseText);
+					}
+					$box.removeClass('is-loading').addClass('is-error')
+						.text(self.i18n('scopeError') + ' ' + raw);
+				})
+				.always(function () {
+					self.scopeAllBusy = false;
+				});
+		},
+
 		/** دکمهٔ «نمایش ویژگی‌ها» بر اساس وضعیت محدوده. */
 		refreshScopeApply: function () {
 			var ready = false;
@@ -774,7 +844,7 @@
 			} else if (this.scopeType === 'category') {
 				ready = this.scopeCategory > 0;
 			} else {
-				ready = true; // شناسهٔ خالی = همهٔ محصولات
+				ready = true; // شناسهٔ خالی یا «همهٔ محصولات» = کل فروشگاه
 			}
 			$('#tbsm-scope-apply').prop('disabled', !ready || this.busy);
 		},

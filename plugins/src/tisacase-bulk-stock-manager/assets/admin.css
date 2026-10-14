@@ -1359,6 +1359,33 @@ body.tbsm-page #wpfooter {
 	background: var(--tisa-primary-soft, #E8F0EE);
 }
 
+/* خط آمار گزینهٔ «همهٔ محصولات» (چند محصول · چند متغیر) */
+.tbsm-scope-stat {
+	font-size: 12.5px;
+	line-height: 1.8;
+	color: var(--tisa-primary-ink, #0A5F52);
+	padding: 9px 13px;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: 11px;
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tbsm-scope-stat.is-loading {
+	color: var(--tisa-muted, #77828A);
+	background: var(--tisa-surface-2, #FAFAF8);
+	border-color: var(--tisa-border, #E3E1DA);
+}
+
+.tbsm-scope-stat.is-error {
+	color: var(--tisa-danger-strong, #8A2424);
+	background: var(--tisa-danger-soft, #FBECEA);
+	border-color: var(--tisa-danger, #B5453A);
+}
+
+.tbsm-scope-stat:empty {
+	display: none;
+}
+
 /* ------------------------------------------------------------------
    ریسپانسیو
    ------------------------------------------------------------------ */

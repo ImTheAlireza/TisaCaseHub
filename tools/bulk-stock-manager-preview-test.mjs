@@ -117,6 +117,8 @@ ok('با سوئیچ، کارت‌ها پاک شدند', qa('#tbsm-grid .tbsm-var
 ok('پنل «چند محصول» پیش‌فرض آشکار است', visible('#tbsm-scope-pane-products'));
 ok('پنل دسته پنهان است', !visible('#tbsm-scope-pane-category'));
 ok('پنل شناسه پنهان است', !visible('#tbsm-scope-pane-sku'));
+ok('پنل «همهٔ محصولات» پنهان است', !visible('#tbsm-scope-pane-all'));
+ok('گزینهٔ «همهٔ محصولات» در دکمه‌های محدوده هست', qa('.tbsm-seg-btn').map((b) => b.getAttribute('data-scope')).join(',') === 'products,category,sku,all');
 ok('دکمهٔ نمایش ویژگی‌ها بدون محصول غیرفعال است', q('#tbsm-scope-apply').disabled === true);
 ok('گام ۲ (ویژگی‌ها) قفل است', q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
 
@@ -610,6 +612,68 @@ ok('متن HTML خطای وردپرس در پیام نمی‌آید', !/critical
 ok('کد خطای PHP هم در پیام هست', /php_exception|TypeError/.test(text('#tbsm-notice') || ''));
 window.TBSM_PREVIEW_FAULT = null;
 
+
+/* ------------------------------------------------ محدودهٔ «همهٔ محصولات» (۱٫۳٫۱۲) */
+// کاربر: «ی اپشن هم بزار: همه محصولات — همرو انتخاب کنه ی جا و ویژگی‌هارو لیست کنه»
+{
+	// از حالت هرچه هست به تب گروهی برگرد و گزینهٔ «همهٔ محصولات» را بزن.
+	await click('#tbsm-tab-group');
+	await click('.tbsm-seg-btn[data-scope="all"]');
+
+	ok('پنل «همهٔ محصولات» آشکار شد', visible('#tbsm-scope-pane-all'));
+	ok('پنل چند-محصول پنهان شد', !visible('#tbsm-scope-pane-products'));
+	ok('پنل دسته پنهان شد', !visible('#tbsm-scope-pane-category'));
+	ok('پنل شناسه پنهان شد', !visible('#tbsm-scope-pane-sku'));
+	ok('دکمهٔ «نمایش ویژگی‌ها» با همهٔ محصولات فعال است', q('#tbsm-scope-apply').disabled === false);
+	ok('دکمهٔ انتخاب‌شده حالت فعال دارد', q('.tbsm-seg-btn[data-scope="all"]').classList.contains('is-active'));
+
+	// آمار (auto-fetch در اولین انتخاب گزینه)
+	await waitFor('آمار همهٔ محصولات', () => /—/.test(text('#tbsm-scope-all-stat')));
+	const stat = text('#tbsm-scope-all-stat');
+	ok('خط آمار پر شد (برچسب + شمار محصول و متغیر)', /^همهٔ محصولات — [۰-۹]+ محصول · [۰-۹]+ متغیر$/.test(stat), stat);
+	ok('شمار متغیرها هم آمده (نه صفر)', /· [۰-۹]+ متغیر/.test(stat) && !/· ۰ متغیر/.test(stat), stat);
+
+	// «همه‌رو ی جا» — با یک کلیک، ویژگی‌های کل فروشگاه فهرست می‌شود.
+	await click('#tbsm-scope-apply');
+	await waitFor('ویژگی‌های همهٔ محصولات', () => !q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
+	ok('گام ۲ با محدودهٔ «همهٔ محصولات» باز شد', !q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
+	const allAttrs = attrOptions();
+	ok('ویژگی‌های مدل فهرست شدند', allAttrs.length > 1, allAttrs.join(' | '));
+	ok('برچسب‌ها خوانا مانده‌اند (بدون درصد کدشده)', !allAttrs.some((t) => /%[0-9a-fA-F]{2}/.test(t)), allAttrs.join(' | '));
+	ok('خلاصهٔ محدوده «همهٔ محصولات» را نام می‌برد', /همهٔ محصولات/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+
+	// اثبات «کل فروشگاه»: ویژگی‌هایی که در محدودهٔ چند-محصول (فقط آیفون) هرگز نمی‌آمدند
+	// حالا هستند — «زمینه» و «نوع بندی» از محصولات بیرون آن محدوده‌اند.
+	ok('ویژگی محصولات بیرون محدودهٔ قبلی هم آمد (زمینه/نوع بندی)', allAttrs.some((t) => /^زمینه/.test(t)) && allAttrs.some((t) => /^نوع بندی/.test(t)), allAttrs.join(' | '));
+	const allModel = allAttrs.filter((t) => /^مدل/.test(t))[0] || '';
+	const allModelCount = (allModel.match(/([۰-۹]+) محصول/) || [])[1];
+	ok('شمار محصولِ ویژگی «مدل» بزرگ‌تر از محدودهٔ چند-محصول (۳) است', allModelCount && ['۴', '۵', '۶', '۷', '۸', '۹'].includes(allModelCount[0]), allModel);
+
+	// انتخاب مدل و ساخت کارت‌ها
+	const anyModel = qa('#tbsm-group-attr option').filter((o) => /^مدل/.test(o.textContent.trim()))[0];
+	await change('#tbsm-group-attr', anyModel.value);
+	await waitFor('مقدارهای مدل — همه', () => qa('#tbsm-group-term option').length > 1);
+	ok('مقدارهای مدل برای کل فروشگاه آمدند', qa('#tbsm-group-term option').length > 1, termOptions().join(' | '));
+
+	const firstTerm = qa('#tbsm-group-term option').filter((o) => o.value)[0];
+	await change('#tbsm-group-term', firstTerm.value);
+	await waitFor('کارت‌های همهٔ محصولات', () => qa('#tbsm-grid .tbsm-var').length > 0);
+	const allCards = qa('#tbsm-grid .tbsm-var');
+	ok('کارت متغیرها ساخته شد', allCards.length > 0, String(allCards.length));
+	const parents = new Set(allCards.map((c) => (c.querySelector('.tbsm-var-name') || {}).textContent || ''));
+	ok('هر کارت نام محصول والدش را دارد', [...parents].every((t) => t.trim().length > 0), [...parents].join(' | '));
+	ok('گام ۳ باز شد', !q('#tbsm-step-cards').classList.contains('tbsm-step-locked'));
+	ok('شمارندهٔ کارت‌ها به‌روز است', /[۰-۹]+ از [۰-۹]+/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+
+	// اعمال تکی روی یک کارت از نتیجهٔ «همهٔ محصولات» — کافی است جریان سالم بماند
+	const firstSub = qa('#tbsm-grid .tbsm-var .tbsm-var-stock')[0];
+	await type(firstSub, '9');
+	await click('#tbsm-apply');
+	await click('#tbsm-apply');
+	await waitFor('گزارش اعمال همه', () => qa('#tbsm-report .tbsm-report-row').length > 0);
+	ok('گزارش اعمال برای محدودهٔ کل فروشگاه آمد', qa('#tbsm-report .tbsm-report-row').length > 0, String(qa('#tbsm-report .tbsm-report-row').length));
+	ok('گزارش «قبل ← بعد» دارد', text('#tbsm-report').includes('←'), text('#tbsm-report').slice(0, 90));
+}
 
 /* ------------------------------------------------ چیدمان صفحه (۱٫۳٫۸) */
 // ریشهٔ باگ واقعی «صفحه تمام‌عرض شد / نوار خاکستری پهن در یک طرف»:
