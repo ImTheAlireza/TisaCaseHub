@@ -1,0 +1,381 @@
+/**
+ * تست jsdom پیش‌نمایش «مدیریت انبوه موجودی» —
+ * تک‌محصول (رگرسیون) + گروهی «محدودهٔ محصولات ← ویژگی/مقدار مدل».
+ *
+ * اجرا (از ریشهٔ مخزن):
+ *     npm install jsdom jquery@3.7.1        # پیش‌نیاز
+ *     node tools/bulk-stock-manager-preview-test.mjs
+ *
+ * چرا این تست در مخزن است: هر تغییری در `assets/admin.js` باید با پیش‌نمایشِ
+ * `design/preview/bulk-stock-manager.html` (که فیکسچرها و ماکِ AJAX را دارد)
+ * سنجیده شود؛ اگر در پوشهٔ موقت بماند، در سشن بعدی از دست می‌رود و همان
+ * خطاهای رگرسیون برمی‌گردد.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const require = createRequire(path.join(ROOT, 'package.json'));
+const { JSDOM } = require('jsdom');
+
+const PREVIEW = path.join(ROOT, 'design/preview/bulk-stock-manager.html');
+const ADMIN_JS = path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js');
+
+const html = fs.readFileSync(PREVIEW, 'utf8');
+const mockJs = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])[0];
+const htmlNoScripts = html.replace(/<script[\s\S]*?<\/script>/g, '<!-- script -->');
+
+const dom = new JSDOM(htmlNoScripts, { runScripts: 'dangerously', pretendToBeVisual: true, url: 'https://preview.local/' });
+const { window } = dom;
+const $ = require('jquery')(window);
+window.jQuery = window.$ = $;
+window.Element.prototype.scrollIntoView = function () {};
+
+const errors = [];
+window.addEventListener('error', (e) => errors.push(String(e.message || e.error)));
+
+window.eval(mockJs);
+window.eval(fs.readFileSync(ADMIN_JS, 'utf8'));
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const doc = window.document;
+
+let pass = 0, fail = 0;
+const results = [];
+function ok(name, cond, extra) {
+	results.push({ name, cond: !!cond, extra });
+	if (cond) pass++; else fail++;
+}
+async function waitFor(label, fn, timeout = 2500) {
+	const start = Date.now();
+	while (Date.now() - start < timeout) {
+		try { if (fn()) return true; } catch (e) { /* ignore */ }
+		await sleep(25);
+	}
+	ok('timeout: ' + label, false);
+	return false;
+}
+const q = (sel) => doc.querySelector(sel);
+const qa = (sel) => [...doc.querySelectorAll(sel)];
+const text = (sel) => (q(sel) ? q(sel).textContent.trim() : '—MISSING—');
+const visible = (sel) => !!q(sel) && !q(sel).hasAttribute('hidden');
+const attrOptions = () => qa('#tbsm-group-attr option').map((o) => o.textContent.trim());
+const termOptions = () => qa('#tbsm-group-term option').map((o) => o.textContent.trim());
+async function click(sel) {
+	const el = typeof sel === 'string' ? q(sel) : sel;
+	el.dispatchEvent(new window.MouseEvent('click', { bubbles: true, cancelable: true }));
+	await sleep(20);
+}
+async function change(sel, value) {
+	const el = typeof sel === 'string' ? q(sel) : sel;
+	el.value = value;
+	el.dispatchEvent(new window.Event('change', { bubbles: true }));
+	await sleep(20);
+}
+async function type(el, value) {
+	el.value = value;
+	el.dispatchEvent(new window.Event('input', { bubbles: true }));
+	await sleep(20);
+}
+
+await sleep(120); // document ready
+
+/* ------------------------------------------------ ساختار و تب‌ها */
+ok('دو تب وجود دارد', qa('.tbsm-tab').length === 2);
+ok('تب پیش‌فرض تک‌محصول فعال است', q('#tbsm-tab-single').classList.contains('is-active'));
+ok('پنل تک‌محصول آشکار است', visible('#tbsm-panel-single'));
+ok('پنل گروهی پنهان است', !visible('#tbsm-panel-group'));
+ok('گام کارت‌ها قفل است', q('#tbsm-step-cards').classList.contains('tbsm-step-locked'));
+
+/* ------------------------------------------------ تک‌محصول (رگرسیون) */
+await type(doc.getElementById('tbsm-search'), 'اسپیس');
+await waitFor('نتایج جست‌وجو', () => qa('#tbsm-results .tbsm-result').length === 1);
+ok('جست‌وجو نتیجه داد', qa('#tbsm-results .tbsm-result').length === 1);
+await click('#tbsm-results .tbsm-result');
+await waitFor('کارت‌های تک‌محصول', () => qa('#tbsm-grid .tbsm-var').length === 33);
+ok('۳۳ کارت متغیر رندر شد', qa('#tbsm-grid .tbsm-var').length === 33);
+ok('سلکت دسته پر شد', qa('#tbsm-cat-select optgroup').length === 2);
+ok('گام کارت‌ها باز شد', !q('#tbsm-step-cards').classList.contains('tbsm-step-locked'));
+await change('#tbsm-cat-select', 'pa_model:iphone-15-pro-max');
+ok('فیلتر دسته اعمال شد', qa('#tbsm-grid .tbsm-var:not(.is-hidden)').length === 3);
+
+/* ------------------------------------------------ سوئیچ به حالت گروهی */
+await click('#tbsm-tab-group');
+ok('تب گروهی فعال شد', q('#tbsm-tab-group').classList.contains('is-active'));
+ok('پنل گروهی آشکار شد', visible('#tbsm-panel-group'));
+ok('پنل تک‌محصول پنهان شد', !visible('#tbsm-panel-single'));
+ok('با سوئیچ، کارت‌ها پاک شدند', qa('#tbsm-grid .tbsm-var').length === 0);
+ok('پنل «چند محصول» پیش‌فرض آشکار است', visible('#tbsm-scope-pane-products'));
+ok('پنل دسته پنهان است', !visible('#tbsm-scope-pane-category'));
+ok('پنل شناسه پنهان است', !visible('#tbsm-scope-pane-sku'));
+ok('دکمهٔ نمایش ویژگی‌ها بدون محصول غیرفعال است', q('#tbsm-scope-apply').disabled === true);
+ok('گام ۲ (ویژگی‌ها) قفل است', q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
+
+/* ------------------------------------------------ گام ۱: محدودهٔ چند محصول */
+await type(doc.getElementById('tbsm-scope-search'), 'آیفون');
+await waitFor('نتایج محدوده', () => qa('#tbsm-scope-results .tbsm-scope-row').length === 3);
+ok('۳ محصول آیفون در فهرست محدوده آمد', qa('#tbsm-scope-results .tbsm-scope-row').length === 3);
+ok('دکمهٔ «افزودن همهٔ نتایج» هست', q('#tbsm-scope-addall') !== null);
+
+await click('#tbsm-scope-results .tbsm-scope-row');
+ok('ردیف انتخاب‌شده تیک خورد', qa('#tbsm-scope-results .tbsm-scope-row.is-picked').length === 1);
+ok('چیپ محصول انتخاب‌شده ساخته شد', qa('#tbsm-scope-picked .tbsm-pick-chip').length === 1);
+ok('متن تعداد انتخاب درست است', /۱ محصول/.test(text('#tbsm-scope-picked')), text('#tbsm-scope-picked'));
+ok('دکمهٔ نمایش ویژگی‌ها فعال شد', q('#tbsm-scope-apply').disabled === false);
+
+await click('#tbsm-scope-addall');
+ok('همهٔ نتایج اضافه شدند', qa('#tbsm-scope-picked .tbsm-pick-chip').length === 3);
+ok('همهٔ ردیف‌ها تیک‌خورده‌اند', qa('#tbsm-scope-results .tbsm-scope-row.is-picked').length === 3);
+
+await click('#tbsm-scope-picked .tbsm-pick-chip');
+ok('کلیک روی چیپ محصول را حذف کرد', qa('#tbsm-scope-picked .tbsm-pick-chip').length === 2);
+await click('#tbsm-scope-addall');
+ok('دوباره سه محصول انتخاب‌شده', qa('#tbsm-scope-picked .tbsm-pick-chip').length === 3);
+
+/* ------------------------------------------------ گام ۲: ویژگی‌های همان محدوده */
+await click('#tbsm-scope-apply');
+await waitFor('فهرست ویژگی‌های محدوده', () => qa('#tbsm-group-attr option').length > 1);
+ok('گام ۲ باز شد', !q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
+ok('سلکت ویژگی فعال شد', q('#tbsm-group-attr').disabled === false);
+
+const labels = attrOptions();
+ok('ویژگی‌های هم‌نام ادغام شدند (۴ ردیف نه ۷)', qa('#tbsm-group-attr option').length === 5, labels.join(' | '));
+ok('برچسب «مدل» خوانا شد', labels.some((t) => /^مدل/.test(t)), labels.join(' | '));
+ok('برچسب «رنگ» خوانا شد', labels.some((t) => /^رنگ/.test(t)), labels.join(' | '));
+ok('هیچ رشتهٔ کدشده‌ای در سلکت نمانده', !labels.some((t) => /%[0-9a-fA-F]{2}/.test(t)), labels.join(' | '));
+ok('تعداد محصول کنار هر ویژگی آمده', labels.slice(1).every((t) => /\(?[۰-۹]+ محصول\)?/.test(t) || /\s[۰-۹]+ محصول/.test(t)), labels.join(' | '));
+ok('شمار کلیدهای ادغام‌شده نشان داده می‌شود', labels.some((t) => /۳ کلید ادغام‌شده/.test(t)), labels.join(' | '));
+ok('«رنگ» هم ۲ کلید ادغام‌شده دارد', labels.some((t) => /^رنگ.*۲ کلید ادغام‌شده/.test(t)), labels.join(' | '));
+ok('شمارش محصولِ ادغام‌شده دقیق است (۳ محصول)', /۳ محصول/.test(labels.filter((t) => /^مدل/.test(t))[0]), labels.filter((t) => /^مدل/.test(t))[0]);
+ok('شمارش متغیرهای ادغام‌شده دقیق است (۴۱ = ۳۳+۶+۲)', /۴۱ متغیر/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+ok('کلیدهای خام در data-keys می‌مانند (برای تطبیق سرور)', (q('#tbsm-group-attr option[data-keys]').getAttribute('data-keys') || '').split('|').length >= 2, q('#tbsm-group-attr option[data-keys]').getAttribute('data-keys'));
+
+const summary = text('#tbsm-scope-summary');
+ok('خط خلاصهٔ محدوده نمایش گرفت', visible('#tbsm-scope-summary'), summary);
+ok('خلاصه «۳ محصول انتخابی» را نشان می‌دهد', /۳ محصول انتخابی/.test(summary), summary);
+
+// مقدارهای ویژگی «مدل» (تازه از سرور)
+const modelAttr = qa('#tbsm-group-attr option').filter((o) => /^مدل/.test(o.textContent.trim()))[0];
+await change('#tbsm-group-attr', modelAttr.value);
+await waitFor('مقدارهای مدل', () => qa('#tbsm-group-term option').length > 1);
+const terms = termOptions();
+ok('۱۱ مدل در سلکت مقدار است', qa('#tbsm-group-term option').length === 12, terms.join(' | '));
+ok('مقدارها هم خوانا شده‌اند (بدون درصد)', !terms.some((t) => /%[0-9a-fA-F]{2}/.test(t)), terms.join(' | '));
+const groupOf = (i) => [...qa('#tbsm-group-term optgroup')[i].querySelectorAll('option')].map((o) => o.textContent.trim());
+ok('ترتیب طبیعی داخل گروه سامسونگ (A06 < A11 < A21s < A55)', /^A06/.test(groupOf(1)[0]) && /^A11/.test(groupOf(1)[1]) && /^A21s/.test(groupOf(1)[2]) && /^A55/.test(groupOf(1)[3]), groupOf(1).join(' | '));
+ok('ترتیب طبیعی داخل گروه شیائومی (Poco قبل از Redmi)', /^Poco/.test(groupOf(2)[0]) && /^Redmi/.test(groupOf(2)[1]), groupOf(2).join(' | '));
+ok('تعداد محصول کنار مقدار آمده', /[۰-۹]+ محصول/.test(terms[1]), terms[1]);
+ok('نوشتار خام مقدار در data-values می‌ماند', (qa('#tbsm-group-term option[data-values]').filter((o) => /^iPhone 15 —/.test(o.textContent.trim()))[0].getAttribute('data-values') || '').indexOf('iphone-15') !== -1, 'data-values');
+
+// گروه‌بندی برند (مثل صفحهٔ محصول): سه گروه + ترتیب داخل گروه
+const groupLabels = qa('#tbsm-group-term optgroup').map((g) => g.getAttribute('label'));
+ok('مقدارها بر اساس برند گروه شدند (۳ گروه)', groupLabels.length === 3, groupLabels.join(' | '));
+ok('گروه‌ها: آیفون (۵)، سامسونگ (۴)، شیائومی (۲)', /^آیفون \(۵\)$/.test(groupLabels[0]) && /^سامسونگ \(۴\)$/.test(groupLabels[1]) && /^شیائومی \(۲\)$/.test(groupLabels[2]), groupLabels.join(' | '));
+ok('داخل گروه آیفون ترتیب طبیعی است (۱۳ < ۱۴ < ۱۵ < ۱۵ Pro Max < ۱۶ Pro Max)', ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 15 Pro Max', 'iPhone 16 Pro Max'].every((name, i) => groupOf(0)[i].indexOf(name + ' —') === 0), groupOf(0).join(' | '));
+ok('هیچ مدلی بیرون از گروه‌ها نمانده', qa('#tbsm-group-term optgroup option').length === 11, String(qa('#tbsm-group-term optgroup option').length));
+
+// جست‌وجوی مقدار: «a55» باید به یک نتیجه برسد
+await type(doc.getElementById('tbsm-group-term-search'), 'a55');
+await waitFor('فیلتر مقدار', () => qa('#tbsm-group-term option').length === 2);
+ok('جست‌وجوی «a55» یک مقدار آورد', qa('#tbsm-group-term option').length === 2, termOptions().join(' | '));
+ok('همان «A55» است', /^A55/.test(termOptions()[1]), termOptions()[1]);
+ok('در حالت فیلتر گروه‌بندی برداشته می‌شود', qa('#tbsm-group-term optgroup').length === 0);
+ok('شمار نتیجه‌ها نشان داده می‌شود', /نمایش ۱ از ۱۱ مقدار/.test(text('#tbsm-group-term-hint')), text('#tbsm-group-term-hint'));
+
+// جست‌وجو با ارقام فارسی/عربی و با فاصله هم کار می‌کند
+await type(doc.getElementById('tbsm-group-term-search'), '۱۴');
+await waitFor('فیلتر ارقام فارسی', () => qa('#tbsm-group-term option').length === 2);
+ok('«۱۴» (ارقام فارسی) همان iPhone 14 را می‌آورد', /^iPhone 14/.test(termOptions()[1]), termOptions().join(' | '));
+
+await type(doc.getElementById('tbsm-group-term-search'), 'iphone 15 pro');
+await waitFor('فیلتر چندکلمه‌ای', () => qa('#tbsm-group-term option').length === 2);
+ok('جست‌وجوی «iphone 15 pro» فقط Pro Max را می‌آورد', /^iPhone 15 Pro Max/.test(termOptions()[1]), termOptions()[1]);
+
+await type(doc.getElementById('tbsm-group-term-search'), '');
+await waitFor('پاک‌شدن فیلتر', () => qa('#tbsm-group-term option').length === 12);
+ok('با خالی‌شدن جست‌وجو همهٔ ۱۱ مقدار برمی‌گردند', qa('#tbsm-group-term option').length === 12);
+ok('گروه‌بندی برمی‌گردد', qa('#tbsm-group-term optgroup').length === 3);
+ok('راهنمای شمارش پاک می‌شود', text('#tbsm-group-term-hint').length === 0 || q('#tbsm-group-term-hint').hasAttribute('hidden'), text('#tbsm-group-term-hint'));
+
+// «رنگ»: مقدار کدشدهٔ «مشکی» باید با «مشکی» سالم در یک گزینه ادغام شود
+const colorAttr = qa('#tbsm-group-attr option').filter((o) => /^رنگ/.test(o.textContent.trim()))[0];
+await change('#tbsm-group-attr', colorAttr.value);
+await waitFor('مقدارهای رنگ', () => qa('#tbsm-group-term option').length > 1);
+const colorTerms = qa('#tbsm-group-term option').slice(1).map((o) => o.textContent.trim());
+ok('«مشکی» کدشده با «مشکی» سالم یکی شد (۳ محصول)', colorTerms.some((t) => /^مشکی.*۳ محصول/.test(t)), colorTerms.join(' | '));
+ok('«سبز» از دو کلید یک گزینه شد (۳ محصول)', colorTerms.some((t) => /^سبز.*۳ محصول/.test(t)), colorTerms.join(' | '));
+ok('«نقره‌ای» فقط دو محصول دارد', colorTerms.some((t) => /^نقره.ای.*۲ محصول/.test(t)), colorTerms.join(' | '));
+ok('«رنگ» (۳ مقدار) گروه‌بندی برند نمی‌گیرد', qa('#tbsm-group-term optgroup').length === 0);
+const blackOpt = qa('#tbsm-group-term option').filter((o) => /^مشکی/.test(o.textContent.trim()))[0];
+ok('هر دو نوشتار خام «مشکی» در یک گزینه‌اند', (blackOpt.getAttribute('data-values') || '').split('|').length === 2, blackOpt.getAttribute('data-values'));
+ok('نوشتار کدشدهٔ «مشکی» هم داخل گزینه است', /d9%85%d8%b4%da%a9%db%8c/.test(blackOpt.getAttribute('data-values') || ''), blackOpt.getAttribute('data-values'));
+
+/* ------------------------------------------------ گام ۳: کارت‌های همان مدل */
+// برگشت به ویژگی «مدل» و انتخاب مقدار پرتکرار آن
+await change('#tbsm-group-attr', modelAttr.value);
+await waitFor('مقدارهای مدل (بار دوم)', () => qa('#tbsm-group-term option').length > 1);
+const proMax = qa('#tbsm-group-term option').filter((o) => /iPhone 15 Pro Max/.test(o.textContent.trim()))[0];
+await change('#tbsm-group-term', proMax.value);
+await waitFor('کارت‌های مدل', () => qa('#tbsm-grid .tbsm-var').length > 0);
+ok('۶ متغیر در ۲ محصول فهرست شد', qa('#tbsm-grid .tbsm-var').length === 6);
+ok('نام کارت = نام محصول والد', text('#tbsm-grid .tbsm-var .tbsm-var-name') === 'قاب اسپیس آیفون (سری کامل)', text('#tbsm-grid .tbsm-var .tbsm-var-name'));
+ok('خط دوم = برچسب متغیر + شناسه', /iPhone 15 Pro Max/.test(text('#tbsm-grid .tbsm-var .tbsm-var-sku')), text('#tbsm-grid .tbsm-var .tbsm-var-sku'));
+ok('همهٔ کارت‌ها پیش‌فرض تیک‌خورده‌اند', qa('#tbsm-grid .tbsm-var.is-selected').length === 6);
+ok('گام کارت‌ها باز شد', !q('#tbsm-step-cards').classList.contains('tbsm-step-locked'));
+
+const note = text('#tbsm-group-note');
+ok('خط اطلاعات گروهی نمایش گرفت', visible('#tbsm-group-note'), note);
+ok('خط اطلاعات محدوده را دارد', /۳ محصول انتخابی/.test(note), note);
+ok('خط اطلاعات مدل را دارد', /iPhone 15 Pro Max/.test(note), note);
+ok('شمارش «۶ متغیر در ۲ محصول» درست است', /۶ متغیر در ۲ محصول/.test(note), note);
+ok('شمارنده‌ها به‌روز شد', /۶ از ۶/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+ok('دکمهٔ اعمال فعال شد', q('#tbsm-apply').disabled === false);
+
+/* ------------------------------------------------ موجودی همگانی (کلی) */
+await type(doc.getElementById('tbsm-quickset'), '7');
+await click('#tbsm-quickset-btn');
+ok('مقدار همگانی روی هر ۶ کارت درج شد', qa('#tbsm-grid .tbsm-var-stock').every((i) => i.value === '7'));
+await click('#tbsm-unified');
+ok('دکمهٔ اعمال همگانی به حالت تأیید رفت', q('#tbsm-unified').classList.contains('tisa-btn--confirm'));
+await click('#tbsm-unified');
+await waitFor('گزارش اعمال همگانی', () => qa('#tbsm-report .tbsm-report-row').length > 0);
+ok('گزارش ۶ ردیف دارد', qa('#tbsm-report .tbsm-report-row').length === 6);
+const reportText = text('#tbsm-report');
+ok('گزارش نام محصول والد را دارد', /قاب اسپیس آیفون/.test(reportText), reportText.slice(0, 160));
+ok('گزارش «قبل ← بعد» دارد', reportText.includes('←'));
+ok('همگام‌سازی «۲ محصول والد» گزارش شد', /۲ محصول والد/.test(reportText), reportText.slice(0, 260));
+ok('هر دو محصول در گزارش تفکیک شده‌اند', /قاب شفاف آیفون/.test(reportText) && /قاب اسپیس آیفون/.test(reportText));
+
+/* ------------------------------------------------ ویرایش تکی (یک کارت) */
+const boxes = qa('#tbsm-grid .tbsm-var .tbsm-var-check');
+for (const i of [0, 1, 3, 4, 5]) { await click(boxes[i]); }
+ok('فقط یک کارت تیک‌خورده ماند', qa('#tbsm-grid .tbsm-var.is-selected').length === 1);
+await type(qa('#tbsm-grid .tbsm-var:nth-child(3) .tbsm-var-stock')[0], '55');
+await click('#tbsm-apply');
+ok('دکمهٔ اعمال به حالت تأیید رفت', q('#tbsm-apply').classList.contains('tisa-btn--confirm'));
+ok('متن تأیید مخصوص حالت گروهی است', /گروهی/.test(text('#tbsm-apply')), text('#tbsm-apply'));
+await click('#tbsm-apply');
+await waitFor('گزارش اعمال تکی', () => /۵۵/.test(text('#tbsm-report')));
+ok('گزارش اعمال تکی یک ردیف دارد', qa('#tbsm-report .tbsm-report-row').length === 1, text('#tbsm-report').slice(0, 120));
+
+/* ------------------------------------------------ محدوده با شناسه (SKU) */
+await click('.tbsm-seg-btn[data-scope="sku"]');
+ok('پنل شناسه آشکار شد', visible('#tbsm-scope-pane-sku'));
+ok('پنل محصولات پنهان شد', !visible('#tbsm-scope-pane-products'));
+await type(doc.getElementById('tbsm-scope-sku'), 'CH2');
+await click('#tbsm-scope-apply');
+await waitFor('خلاصهٔ محدودهٔ CH2', () => /CH2/.test(text('#tbsm-scope-summary')));
+ok('«شروع می‌شود با CH2» فقط قاب گلکسی را آورد', /۱ محصول/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+ok('ویژگی‌های محدودهٔ جدید فهرست شد (۲ ردیف)', qa('#tbsm-group-attr option').length === 3, attrOptions().join(' | '));
+
+await change('#tbsm-scope-sku-mode', 'contains');
+await type(doc.getElementById('tbsm-scope-sku'), 'CH5');
+await click('#tbsm-scope-apply');
+await waitFor('محدودهٔ CH5', () => /CH5/.test(text('#tbsm-scope-summary')));
+ok('حالت «شامل» با CH5 درست کار کرد', /۱ محصول/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+
+/* ------------------------------------------------ محدودهٔ دارای ویژگی کدشده */
+await change('#tbsm-scope-sku-mode', 'prefix');
+await type(doc.getElementById('tbsm-scope-sku'), 'CH5');
+await click('#tbsm-scope-apply');
+await waitFor('ویژگی‌های محصول کدشده', () => qa('#tbsm-group-attr option').length > 1);
+const encLabels = attrOptions();
+ok('ویژگی‌های کدشده به فارسی خوانا شدند', encLabels.slice(1).every((t) => !/%[0-9a-fA-F]{2}/.test(t)), encLabels.join(' | '));
+ok('دو «مدل» کدشده در یک ردیف ادغام شدند (۴ ویژگی)', qa('#tbsm-group-attr option').length === 5, encLabels.join(' | '));
+await change('#tbsm-group-attr', qa('#tbsm-group-attr option').filter((o) => /^مدل/.test(o.textContent.trim()))[0].value);
+await waitFor('مقدارهای ویژگی کدشده', () => qa('#tbsm-group-term option').length > 1);
+ok('مقدار مدل این ویژگی فهرست شد', qa('#tbsm-group-term option').length === 2, termOptions().join(' | '));
+await change('#tbsm-group-term', qa('#tbsm-group-term option')[1].value);
+await waitFor('کارت‌های محصول کدشده', () => qa('#tbsm-grid .tbsm-var').length === 2);
+ok('محصول با ویژگی کدشده فهرست شد', qa('#tbsm-grid .tbsm-var').length === 2);
+ok('نام کارت همان محصول کدشده است', text('#tbsm-grid .tbsm-var .tbsm-var-name') === 'قاب مگ‌سیف آیفون (ویژگی کدشده)', text('#tbsm-grid .tbsm-var .tbsm-var-name'));
+ok('برچسب متغیر هم فارسی شد', !/%/.test(text('#tbsm-grid .tbsm-var .tbsm-var-sku')), text('#tbsm-grid .tbsm-var .tbsm-var-sku'));
+
+/* ------------------------------------------------ محدودهٔ بدون ویژگی (محصول ساده) */
+await type(doc.getElementById('tbsm-scope-sku'), 'SB');
+await click('#tbsm-scope-apply');
+await waitFor('پیام نبود ویژگی', () => /ویژگی متغیری/.test(text('#tbsm-notice')));
+ok('پیام «ویژگی متغیری پیدا نشد» آمد', /ویژگی متغیری/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('گام ۲ قفل ماند', q('#tbsm-step-model').classList.contains('tbsm-step-locked'));
+ok('کارت‌ها خالی ماندند', qa('#tbsm-grid .tbsm-var').length === 0);
+
+/* ------------------------------------------------ محدودهٔ دسته‌بندی */
+await click('.tbsm-seg-btn[data-scope="category"]');
+ok('پنل دسته آشکار شد', visible('#tbsm-scope-pane-category'));
+ok('سلکت دسته پر شد (۴ دسته)', qa('#tbsm-scope-category option').length === 5, qa('#tbsm-scope-category option').map((o) => o.textContent.trim()).join(' | '));
+ok('زیردسته با تورفتگی آمده', /^\u00A0\u00A0قاب آیفون/.test(qa('#tbsm-scope-category option')[2].textContent), JSON.stringify(qa('#tbsm-scope-category option')[2].textContent));
+
+// جست‌وجوی دسته: «آیفون» → فقط «قاب آیفون» (و والدش برای زمینه)
+await type(doc.getElementById('tbsm-scope-category-search'), 'آیفون');
+await waitFor('فیلتر دسته‌ها', () => qa('#tbsm-scope-category option').length === 3);
+ok('جست‌وجوی «آیفون» دو گزینه می‌گذارد (والد + قاب آیفون)', qa('#tbsm-scope-category option').length === 3, qa('#tbsm-scope-category option').map((o) => o.textContent.trim()).join(' | '));
+ok('والد «قاب موبایل» برای زمینه مانده', /قاب موبایل/.test(qa('#tbsm-scope-category option')[1].textContent), qa('#tbsm-scope-category option')[1].textContent);
+ok('شمار نتیجه‌ها نشان داده می‌شود', /نمایش ۱ دسته از ۴/.test(text('#tbsm-scope-category-hint')), text('#tbsm-scope-category-hint'));
+
+await type(doc.getElementById('tbsm-scope-category-search'), 'چیز ناموجود');
+await waitFor('فیلتر بی‌نتیجه', () => /پیدا نشد/.test(text('#tbsm-scope-category-hint')));
+ok('پیام «دسته‌ای پیدا نشد» می‌آید', /دسته‌ای با این نام پیدا نشد/.test(text('#tbsm-scope-category-hint')), text('#tbsm-scope-category-hint'));
+
+await type(doc.getElementById('tbsm-scope-category-search'), '');
+await waitFor('پاک‌شدن فیلتر دسته', () => qa('#tbsm-scope-category option').length === 5);
+ok('با پاک‌شدن جست‌وجو همهٔ ۴ دسته برمی‌گردند', qa('#tbsm-scope-category option').length === 5);
+ok('راهنمای دسته پاک می‌شود', q('#tbsm-scope-category-hint').hasAttribute('hidden'), text('#tbsm-scope-category-hint'));
+
+await change('#tbsm-scope-category', '31');
+await click('#tbsm-scope-apply');
+await waitFor('محدودهٔ دسته', () => /دستهٔ/.test(text('#tbsm-scope-summary')));
+ok('خلاصه نام دسته را دارد', /دستهٔ «قاب موبایل»/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+ok('محصولات دسته و زیردسته‌ها آمدند (۴ محصول)', /۴ محصول/.test(text('#tbsm-scope-summary')), text('#tbsm-scope-summary'));
+ok('ویژگی‌های محدودهٔ دسته (۴ ردیف ادغام‌شده)', qa('#tbsm-group-attr option').length === 5, attrOptions().join(' | '));
+
+await change('#tbsm-scope-category', '34');
+await click('#tbsm-scope-apply');
+await waitFor('محدودهٔ لوازم جانبی', () => /لوازم جانبی/.test(text('#tbsm-scope-summary')));
+ok('دستهٔ بدون ویژگی: پیام آمد', /ویژگی متغیری/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+
+/* ------------------------------------------------ بازگشت به تک‌محصول */
+await click('#tbsm-tab-single');
+ok('تب تک‌محصول فعال شد', q('#tbsm-tab-single').classList.contains('is-active'));
+ok('پنل تک‌محصول آشکار شد', visible('#tbsm-panel-single'));
+ok('کارت‌های گروهی پاک شدند', qa('#tbsm-grid .tbsm-var').length === 0);
+ok('خط اطلاعات گروهی پنهان شد', !visible('#tbsm-group-note'));
+await type(doc.getElementById('tbsm-search'), 'گلکسی');
+await waitFor('جست‌وجوی دوم', () => qa('#tbsm-results .tbsm-result').length === 1);
+await click('#tbsm-results .tbsm-result');
+await waitFor('کارت‌های محصول دوم', () => qa('#tbsm-grid .tbsm-var').length === 6);
+ok('۶ کارت محصول گلکسی رندر شد', qa('#tbsm-grid .tbsm-var').length === 6);
+
+/* ------------------------------------------------ پاسخ دیررس نادیده گرفته می‌شود */
+await click('#tbsm-tab-group');
+await type(doc.getElementById('tbsm-scope-search'), 'آیفون');
+await waitFor('نتایج محدوده دوم', () => qa('#tbsm-scope-results .tbsm-scope-row').length === 3);
+await click('#tbsm-scope-results .tbsm-scope-row');
+await click('#tbsm-scope-apply');
+await click('#tbsm-tab-single');
+await sleep(600);
+ok('پاسخ دیررس کارت گروهی نساخت', qa('#tbsm-grid .tbsm-var').length === 0);
+ok('خط اطلاعات گروهی پنهان ماند', !visible('#tbsm-group-note'));
+
+/* ------------------------------------------------ واحد: هشدار بریدگی فهرست مقدارها */
+const TBSM = window.TBSM;
+ok('موتور TBSM روی window است', !!TBSM && typeof TBSM.renderGroupValues === 'function');
+if (TBSM) {
+	const many = Array.from({ length: 305 }, (_, i) => ({ label: 'مدل ' + (i + 1), values: ['v' + i], products: 1, variations: 1 }));
+	TBSM.renderGroupValues({ values: many, groups: [], truncated: true });
+	ok('۳۰۵ مقدار بدون خطا رندر شد', qa('#tbsm-group-term option').length === 306, String(qa('#tbsm-group-term option').length));
+	ok('هشدار «فهرست بریده شد» نمایش داده می‌شود', /بریده شد/.test(text('#tbsm-group-term-hint')), text('#tbsm-group-term-hint'));
+	ok('ترتیب Server دست‌نخورده رندر می‌شود (JS خودش مرتب نمی‌کند)', /^مدل 1 —/.test(termOptions()[1]) && /^مدل 305 —/.test(termOptions()[305]), termOptions().slice(1, 4).join(' | '));
+	TBSM.renderGroupValues({ values: [], groups: [], truncated: false });
+	ok('فهرست خالی: سلکت غیرفعال و راهنما پاک', q('#tbsm-group-term').disabled === true && q('#tbsm-group-term-hint').hasAttribute('hidden'));
+}
+
+ok('هیچ خطای صفحه‌ای ثبت نشد', errors.length === 0, errors.slice(0, 3).join(' | '));
+
+console.log('\n' + '─'.repeat(72));
+for (const r of results) {
+	if (!r.cond) console.log('✗ ' + r.name + (r.extra ? '  «' + r.extra + '»' : ''));
+}
+console.log('\nنتیجه: ' + pass + ' سبز · ' + fail + ' قرمز · مجموع ' + (pass + fail) + ' سنجه');
+process.exit(fail ? 1 : 0);

@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.3.3
+Stable tag: 1.3.4
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.3.4 =
+* **سخت‌ترکردن مسیرهای پرخطر** (پس از حادثهٔ ۱٫۳٫۲): گروه‌بندی برند که با کد افزونهٔ «گروه‌بندی متغیرها» تماس می‌گیرد، حالا **گارد امضای متد** (Reflection) و **try/catch روی Throwable** دارد — اگر نسخهٔ آن افزونه امضای دیگری داشته باشد یا خطا بدهد، به‌جای خطای کشنده، فهرست تختِ مرتب نمایش داده می‌شود.
+* `mb_strlen` هم مثل بقیهٔ توابع mbstring با `function_exists` گارد شد تا روی هاست بدون mbstring خطای کشنده ندهد.
+* **گیت انتشار:** `tools/build-plugin-zip.sh` حالا پیش از بسته‌بندی، سینتکس واقعی PHP (`tools/php-parse.mjs`) و تست رگرسیون پیش‌نمایش (۱۳۰ سنجهٔ jsdom) را اجرا می‌کند و با هر خطایی زیپ نمی‌سازد. تست jsdom هم از پوشهٔ موقت به `tools/bulk-stock-manager-preview-test.mjs` منتقل شد تا در مخزن بماند.
 
 = 1.3.3 =
 * **رفع خطای کشندهٔ ۱٫۳٫۲** که سایت را از کار می‌انداخت: در آرایهٔ متن‌های رابط کاربری (`class-tbsm-admin.php`) یک **کاما جا افتاده بود** و PHP با خطای سینتکس، افزونه را کامل بارگذاری نمی‌کرد («خطای بحرانی در این سایت»). اگر سایت شما با ۱٫۳٫۲ خوابیده، فقط فایل‌های ۱٫۳٫۳ را جایگزین کنید.

@@ -627,11 +627,23 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			}
 
 			$attr = isset( $attr_keys[0] ) ? (string) $attr_keys[0] : '';
-			if ( method_exists( 'TCBV_Rules', 'should_group' ) && ! TCBV_Rules::should_group( $attr, $labels ) ) {
+
+			// تماس با کد افزونهٔ سوم: هم امضای سازگار لازم است و هم هیچ خطای
+			// احتمالی‌اش نباید این درخواست را بیندازد — گارد امضا + try/catch.
+			try {
+				if ( ! self::tcbv_arity( 'should_group' ) || ! self::tcbv_arity( 'group', 1 ) ) {
+					return array();
+				}
+
+				if ( method_exists( 'TCBV_Rules', 'should_group' ) && ! TCBV_Rules::should_group( $attr, $labels ) ) {
+					return array();
+				}
+
+				$buckets = TCBV_Rules::group( $labels );
+			} catch ( \Throwable $e ) {
 				return array();
 			}
 
-			$buckets = TCBV_Rules::group( $labels );
 			if ( ! is_array( $buckets ) || empty( $buckets ) ) {
 				return array();
 			}
@@ -1179,11 +1191,38 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @return string
 		 */
 		private static function richer_label( $current, $candidate ) {
-			if ( mb_strlen( (string) $candidate ) > mb_strlen( (string) $current ) ) {
+			$len_a = function_exists( 'mb_strlen' ) ? mb_strlen( (string) $candidate, 'UTF-8' ) : strlen( (string) $candidate );
+			$len_b = function_exists( 'mb_strlen' ) ? mb_strlen( (string) $current, 'UTF-8' ) : strlen( (string) $current );
+			if ( $len_a > $len_b ) {
 				return (string) $candidate;
 			}
 
 			return (string) $current;
+		}
+
+		/**
+		 * آیا متد افزونهٔ سوم با تعداد پارامترهای اجباریِ سازگار تعریف شده است؟
+		 *
+		 * اگر نسخهٔ نصب‌شدهٔ آن افزونه امضای دیگری داشته باشد، فراخوانی ما
+		 * `ArgumentCountError` می‌دهد و درخواست می‌خوابد؛ این گارد جلوی آن را
+		 * می‌گیرد و در بدترین حالت فهرست تختِ مرتب نمایش داده می‌شود.
+		 *
+		 * @param string $method       نام متد در TCBV_Rules.
+		 * @param int    $max_required بیشترین پارامتر اجباری قابل‌قبول.
+		 * @return bool
+		 */
+		private static function tcbv_arity( $method, $max_required = 2 ) {
+			if ( ! class_exists( 'TCBV_Rules' ) || ! method_exists( 'TCBV_Rules', $method ) ) {
+				return false;
+			}
+
+			try {
+				$ref = new \ReflectionMethod( 'TCBV_Rules', $method );
+			} catch ( \ReflectionException $e ) {
+				return false;
+			}
+
+			return $ref->getNumberOfRequiredParameters() <= (int) $max_required;
 		}
 
 		/**

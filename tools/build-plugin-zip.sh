@@ -18,6 +18,12 @@ if node -e "require.resolve('php-parser')" >/dev/null 2>&1; then
 else
   echo "⚠ php-parser نصب نیست — بررسی سینتکس واقعی PHP رد شد (npm install php-parser)." >&2
 fi
+# تست رگرسیون پیش‌نمایش (jsdom) — اگر پیش‌نیازهایش نصب باشند اجرا می‌شود.
+if [ -f tools/bulk-stock-manager-preview-test.mjs ] && node -e "require.resolve('jsdom')" >/dev/null 2>&1; then
+  node tools/bulk-stock-manager-preview-test.mjs | tail -1
+else
+  echo "⚠ jsdom نصب نیست — تست رگرسیون پیش‌نمایش رد شد (npm install jsdom jquery@3.7.1)." >&2
+fi
 js=$(find "$src" -name "*.js" -not -name "*.min.js" | head -20 || true)
 for f in $js; do node --check "$f" >/dev/null || { echo "JS خطا دارد: $f" >&2; exit 1; }; done
 
