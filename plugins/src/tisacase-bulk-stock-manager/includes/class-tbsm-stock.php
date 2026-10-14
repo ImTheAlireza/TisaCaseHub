@@ -124,7 +124,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			}
 
 			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
-				return self::run_apply_sql( $clean, $allowed );
+				return self::run_apply_sql( $items, $allowed );
 			}
 
 			return self::run_apply( $items, $allowed, true, 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.' );
