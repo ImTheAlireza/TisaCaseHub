@@ -290,7 +290,7 @@ ok('شمارنده‌ها کل موارد بارگیری‌شده را نشان 
 delete window.tbsmMockPageSize;
 
 /* ------------------------------------------------ اعمال دسته‌ای: دسته‌های کوچک، گزارش تجمعی (۱٫۴٫۰) */
-ok('سقف پیش‌فرض هر دستهٔ اعمال ۴۰ است (کش‌گذاری سرور)', window.TBSM.applyChunk === 40, String(window.TBSM.applyChunk));
+ok('سقف پیش‌فرض هر دستهٔ اعمال ۵۰ است (موتور SQL انبوه)', window.TBSM.applyChunk === 150, String(window.TBSM.applyChunk));
 window.tbsmMockApplyCalls = 0;
 window.TBSM.applyChunk = 2;
 await type(doc.getElementById('tbsm-quickset'), '9');

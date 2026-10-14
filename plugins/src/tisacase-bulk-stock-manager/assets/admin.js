@@ -49,7 +49,7 @@
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
-		applyChunk: 40,     // سقف هر درخواست اعمال؛ با کش‌گذاری سرور هر آیتم سبک‌تر شد، پس دسته‌ها بزرگ‌تر
+		applyChunk: 150,    // سقف هر درخواست اعمال؛ با موتور SQL انبوه هر دسته فقط چند کوئری کل است
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -2214,7 +2214,7 @@
 		 */
 		applyChunks: function (items) {
 			var self = this;
-			var size = Math.max(1, this.applyChunk || 40);
+			var size = Math.max(1, this.applyChunk || 150);
 			var ids = Object.keys(items);
 			var queue = [];
 			var total = ids.length;

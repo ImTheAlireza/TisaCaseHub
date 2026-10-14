@@ -58,6 +58,11 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
+			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
+				self::prime_caches( array_keys( $items ) );
+				return self::run_apply_sql( $items, $allowed_ids );
+			}
+
 			return self::run_apply( $items, $allowed_ids, false );
 		}
 
@@ -118,6 +123,10 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				}
 			}
 
+			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
+				return self::run_apply_sql( $clean, $allowed );
+			}
+
 			return self::run_apply( $items, $allowed, true, 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.' );
 		}
 
@@ -130,6 +139,366 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @param string $reject_template الگوی پیام رد شدن (sprintf با شناسه).
 		 * @return array
 		 */
+		/* ----------------------------------------------------------
+		 * موتور اعمال انبوه SQL (سیستم تازهٔ ۱٫۴٫۰)
+		 *
+		 * چرا؟ موتور WC CRUD به ازای هر متغیر چند کوئری + هوک می‌زند؛ روی
+		 * هاست اشتراکی یعنی دقیقه‌ها برای چند صد متغیر. این موتور کل یک
+		 * دسته را با چند کوئقی دسته‌ای می‌نویسد:
+		 *   ۱) متای موجودی: DELETE + INSERT یک‌جا (بدون ردیف تکراری)
+		 *   ۲) جدول lookup: یک UPDATE با CASE به ازای هر ستون
+		 *   ۳) وضعیت والد‌ها: محاسبه از متای فرزندان + نوشتن دسته‌ای
+		 *   ۴) ترم‌های product_visibility: الحاق/حذف انبوه
+		 * هوک‌های per-آیتم عمداً رد می‌شوند؛ به‌جایشان یک اکشن per-دسته
+		 * شلیک می‌شود. برای سازگاری کامل، فیلتر `tbsm_apply_engine`
+		 * با مقدار 'wc' به موتور قدیمی برمی‌گردد.
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * آیا جدول lookup ووکامرس هست؟ (یک بار per درخواست)
+		 */
+		private static function has_lookup_table() {
+			static $has = null;
+			if ( null === $has ) {
+				global $wpdb;
+				$has = (bool) $wpdb->get_var( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+					$wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->prefix . 'wc_product_meta_lookup' )
+				);
+			}
+			return $has;
+		}
+
+		/**
+		 * نوشتن دسته‌ای متا: DELETE ردیف‌های کهنه + INSERT یک‌جا (ایمن در برابر متای تکراری).
+		 *
+		 * @param array $triples [[post_id, meta_key, value], ...]
+		 */
+		private static function bulk_write_meta( array $triples ) {
+			global $wpdb;
+			if ( empty( $triples ) ) {
+				return;
+			}
+
+			$ids  = array();
+			$keys = array();
+			foreach ( $triples as $t ) {
+				$ids[ (int) $t[0] ]  = 1;
+				$keys[ $t[1] ]      = 1;
+			}
+			$ids  = array_map( 'intval', array_keys( $ids ) );
+			$keys = array_map( 'strval', array_keys( $keys ) );
+
+			$ph_id  = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+			$ph_key = implode( ',', array_fill( 0, count( $keys ), '%s' ) );
+			$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$wpdb->prepare(
+					"DELETE FROM {$wpdb->postmeta} WHERE post_id IN ({$ph_id}) AND meta_key IN ({$ph_key})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+					array_merge( $ids, $keys )
+				)
+			);
+
+			$values = array();
+			$ph     = array();
+			foreach ( $triples as $t ) {
+				$values[] = (int) $t[0];
+				$values[] = (string) $t[1];
+				$values[] = (string) $t[2];
+				$ph[]     = '(%d,%s,%s)';
+			}
+			// درشت‌بودن دسته‌ها مشکلی نیست: هر ۵۰۰ ردیف یک INSERT.
+			foreach ( array_chunk( array_keys( $ph ), 500 ) as $chunk_idx ) {
+				$part_ph = implode( ',', array_slice( $ph, $chunk_idx[0], count( $chunk_idx ) ) );
+				$part_v  = array();
+				foreach ( $chunk_idx as $i ) {
+					$part_v = array_merge( $part_v, array_slice( $values, $i * 3, 3 ) );
+				}
+				$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->prepare(
+						"INSERT INTO {$wpdb->postmeta} (post_id, meta_key, meta_value) VALUES {$part_ph}", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+						$part_v
+					)
+				);
+			}
+
+			// کش متا (اگر کش شیء پایدار باشد) برای این پست‌ها باطل شود.
+			foreach ( $ids as $id ) {
+				wp_cache_delete( $id, 'post_meta' );
+			}
+		}
+
+		/**
+		 * موتور انبوه SQL: نوشتن موجودی مجموعه‌ای از متغیرها با چند کوئری کل.
+		 *
+		 * @param array $items       [ var_id => spec ].
+		 * @param array $allowed_ids شناسه‌های مجاز (اعتبارسنجی‌شده).
+		 * @return array همان شکل پاسخ run_apply.
+		 */
+		private static function run_apply_sql( array $items, array $allowed_ids ) {
+			global $wpdb;
+
+			$report         = array();
+			$errors         = array();
+			$enabled_manage = 0;
+
+			$triples   = array();
+			$new_state = array(); // vid => [qty|null, status]
+			$parents   = array();
+
+			foreach ( $items as $raw_id => $raw_spec ) {
+				$var_id = absint( $raw_id );
+
+				if ( ! in_array( $var_id, $allowed_ids, true ) ) {
+					$errors[] = sprintf( 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.', $var_id );
+					continue;
+				}
+
+				$mode = 'qty';
+				$qty  = null;
+				if ( is_array( $raw_spec ) ) {
+					$m = isset( $raw_spec['mode'] ) ? (string) $raw_spec['mode'] : 'qty';
+					if ( in_array( $m, array( 'qty', 'in_stock', 'out_of_stock' ), true ) ) {
+						$mode = $m;
+					}
+					if ( 'qty' === $mode ) {
+						$q = isset( $raw_spec['qty'] ) ? $raw_spec['qty'] : null;
+						if ( ! is_numeric( $q ) ) {
+							$errors[] = sprintf( 'موجودی متغیر #%d عدد معتبر نبود؛ رد شد.', $var_id );
+							continue;
+						}
+						$qty = max( 0, min( 99999999, (int) $q ) );
+					}
+				} elseif ( is_numeric( $raw_spec ) ) {
+					$qty = max( 0, min( 99999999, (int) $raw_spec ) );
+				} else {
+					$errors[] = sprintf( 'مقدار متغیر #%d نامعتبر است؛ رد شد.', $var_id );
+					continue;
+				}
+
+				// وضعیت فعلی از کش متا (prime شده) — بدون کوئری.
+				$from        = (int) get_post_meta( $var_id, '_stock', true );
+				$from_status = (string) get_post_meta( $var_id, '_stock_status', true );
+				if ( '' === $from_status ) {
+					$from_status = 'instock';
+				}
+				$was_managed = 'yes' === (string) get_post_meta( $var_id, '_manage_stock', true );
+
+				$to_qty    = null;
+				$to_status = $from_status;
+
+				if ( 'in_stock' === $mode ) {
+					$to_status = 'instock';
+					$triples[] = array( $var_id, '_manage_stock', 'no' );
+					$triples[] = array( $var_id, '_stock_status', 'instock' );
+				} elseif ( 'out_of_stock' === $mode ) {
+					$to_status = 'outofstock';
+					$triples[] = array( $var_id, '_manage_stock', 'no' );
+					$triples[] = array( $var_id, '_stock_status', 'outofstock' );
+				} else {
+					if ( ! $was_managed ) {
+						$enabled_manage++;
+					}
+					$to_status = $qty > 0 ? 'instock' : 'outofstock';
+					$to_qty    = $qty;
+					$triples[] = array( $var_id, '_manage_stock', 'yes' );
+					$triples[] = array( $var_id, '_stock', (string) $qty );
+					$triples[] = array( $var_id, '_stock_status', $to_status );
+				}
+
+				$new_state[ $var_id ] = array( $to_qty, $to_status );
+
+				$variation = wc_get_product( $var_id ); // از کش پست‌ها
+				$parent_id = (int) wp_get_post_parent_id( $var_id );
+				$parents[ $parent_id > 0 ? $parent_id : $var_id ] = 1;
+
+				$report[] = array(
+					'id'          => $var_id,
+					'name'        => $variation ? self::variation_label( $variation ) : '#' . $var_id,
+					'sku'         => $variation ? (string) $variation->get_sku() : '',
+					'mode'        => $mode,
+					'from'        => $from,
+					'to'          => $to_qty,
+					'from_status' => $from_status,
+					'to_status'   => $to_status,
+					'enabled'     => ! $was_managed,
+					'parent_id'   => $parent_id,
+					'sync_id'     => $parent_id > 0 ? $parent_id : $var_id,
+				);
+			}
+
+			if ( empty( $report ) ) {
+				return array(
+					'ok'             => false,
+					'applied'        => 0,
+					'enabled_manage' => 0,
+					'parent_status'  => null,
+					'parents_synced' => 0,
+					'report'         => array(),
+					'errors'         => $errors,
+					'error'          => $errors ? 'هیچ متغیری اعمال نشد: ' . implode( ' ', $errors ) : '',
+				);
+			}
+
+			$ids = array_map( 'intval', array_keys( $new_state ) );
+
+			// ۱) متای موجودی: دو کوئری کل.
+			self::bulk_write_meta( $triples );
+
+			// ۲) جدول lookup: یک UPDATE با CASE برای مقدار و وضعیت.
+			if ( self::has_lookup_table() ) {
+				$case_qty    = array();
+				$case_status = array();
+				foreach ( $new_state as $vid => $st ) {
+					$case_status[] = 'WHEN ' . (int) $vid . " THEN '" . esc_sql( $st[1] ) . "'";
+					if ( null !== $st[0] ) {
+						$case_qty[] = 'WHEN ' . (int) $vid . ' THEN ' . (int) $st[0];
+					}
+				}
+				$set = array( "stock_status = CASE product_id " . implode( ' ', $case_status ) . ' ELSE stock_status END' );
+				if ( $case_qty ) {
+					$set[] = "stock_quantity = CASE product_id " . implode( ' ', $case_qty ) . ' ELSE stock_quantity END';
+				}
+				$ph = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+				$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->prepare(
+						"UPDATE {$wpdb->prefix}wc_product_meta_lookup SET " . implode( ', ', $set ) . " WHERE product_id IN ({$ph})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+						$ids
+					)
+				);
+			}
+
+			// ۳) وضعیت والد‌ها: از متای «همهٔ فرزندان» پس از نوشتن محاسبه می‌شود.
+			$parent_ids   = array_map( 'intval', array_keys( $parents ) );
+			$child_ids    = array();
+			foreach ( $parent_ids as $pid ) {
+				foreach ( self::children_of( $pid ) as $cid ) {
+					$child_ids[ $cid ] = 1;
+				}
+			}
+			$child_ids = array_map( 'intval', array_keys( $child_ids ) );
+			$has_stock = array();
+			if ( $child_ids ) {
+				$ph    = implode( ',', array_fill( 0, count( $child_ids ), '%d' ) );
+				$metas = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->prepare(
+						"SELECT post_id, meta_key, meta_value FROM {$wpdb->postmeta} WHERE meta_key IN ('_manage_stock','_stock','_stock_status') AND post_id IN ({$ph})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+						$child_ids
+					),
+					ARRAY_A
+				);
+				$by = array();
+				foreach ( (array) $metas as $mrow ) {
+					$by[ (int) $mrow['post_id'] ][ $mrow['meta_key'] ] = $mrow['meta_value'];
+				}
+				$kid_parent = array();
+				foreach ( $parent_ids as $pid ) {
+					foreach ( self::children_of( $pid ) as $cid ) {
+						$kid_parent[ $cid ] = $pid;
+					}
+				}
+				foreach ( $by as $cid => $mv ) {
+					$managed = 'yes' === ( $mv['_manage_stock'] ?? '' );
+					$ok      = $managed
+						? ( (int) ( $mv['_stock'] ?? 0 ) > 0 )
+						: ( 'instock' === ( $mv['_stock_status'] ?? 'instock' ) );
+					if ( $ok && isset( $kid_parent[ $cid ] ) ) {
+						$has_stock[ $kid_parent[ $cid ] ] = true;
+					}
+				}
+			}
+
+			$statuses       = array();
+			$parent_triples = array();
+			$lookup_parent  = array();
+			foreach ( $parent_ids as $pid ) {
+				// محصول ساده/بدون فرزند: وضعیت خودِ آیتم؛ والد متغیر: از وضعیت فرزندان.
+				$status = isset( $new_state[ $pid ] )
+					? $new_state[ $pid ][1]
+					: ( ! empty( $has_stock[ $pid ] ) ? 'instock' : 'outofstock' );
+				$statuses[]         = $status;
+				$parent_triples[]   = array( $pid, '_stock_status', $status );
+				$lookup_parent[ $status ][] = $pid;
+			}
+			if ( $parent_triples ) {
+				self::bulk_write_meta( $parent_triples );
+			}
+			if ( self::has_lookup_table() ) {
+				foreach ( $lookup_parent as $st => $pids ) {
+					$ph = implode( ',', array_fill( 0, count( $pids ), '%d' ) );
+					$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+						$wpdb->prepare(
+							"UPDATE {$wpdb->prefix}wc_product_meta_lookup SET stock_status = %s WHERE product_id IN ({$ph})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+							array_merge( array( $st ), $pids )
+						)
+					);
+				}
+			}
+			foreach ( $parent_ids as $pid ) {
+				if ( function_exists( 'wc_delete_product_transients' ) ) {
+					wc_delete_product_transients( $pid );
+				}
+			}
+
+			// ۴) ترم‌های product_visibility: انبوه (برای فیلترهای «موجودی» فروشگاه).
+			if ( taxonomy_exists( 'product_visibility' ) ) {
+				$t_in  = get_term_by( 'slug', 'instock', 'product_visibility' );
+				$t_out = get_term_by( 'slug', 'outofstock', 'product_visibility' );
+				if ( $t_in && $t_out ) {
+					$to_out = array();
+					$to_in  = array();
+					foreach ( $new_state as $vid => $st ) {
+						if ( 'outofstock' === $st[1] ) {
+							$to_out[] = (int) $vid;
+						} else {
+							$to_in[] = (int) $vid;
+						}
+					}
+					if ( $to_out ) {
+						$ph = implode( ',', array_fill( 0, count( $to_out ), '%d' ) );
+						$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+							$wpdb->prepare(
+								"DELETE FROM {$wpdb->term_relationships} WHERE term_taxonomy_id = %d AND object_id IN ({$ph})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+								array_merge( array( (int) $t_in->term_taxonomy_id ), $to_out )
+							)
+						);
+						$ins = array();
+						foreach ( $to_out as $vid ) {
+							$ins[] = '(' . (int) $vid . ',' . (int) $t_out->term_taxonomy_id . ',0)';
+						}
+						$wpdb->query( "INSERT IGNORE INTO {$wpdb->term_relationships} (object_id, term_taxonomy_id, term_order) VALUES " . implode( ',', $ins ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					}
+					if ( $to_in ) {
+						$ph = implode( ',', array_fill( 0, count( $to_in ), '%d' ) );
+						$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+							$wpdb->prepare(
+								"DELETE FROM {$wpdb->term_relationships} WHERE term_taxonomy_id = %d AND object_id IN ({$ph})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+								array_merge( array( (int) $t_out->term_taxonomy_id ), $to_in )
+							)
+						);
+						$ins = array();
+						foreach ( $to_in as $vid ) {
+							$ins[] = '(' . (int) $vid . ',' . (int) $t_in->term_taxonomy_id . ',0)';
+						}
+						$wpdb->query( "INSERT IGNORE INTO {$wpdb->term_relationships} (object_id, term_taxonomy_id, term_order) VALUES " . implode( ',', $ins ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					}
+				}
+			}
+
+			$result = array(
+				'ok'             => true,
+				'applied'        => count( $report ),
+				'enabled_manage' => $enabled_manage,
+				'parent_status'  => ( 1 === count( $statuses ) ) ? $statuses[0] : null,
+				'parents_synced' => count( $statuses ),
+				'report'         => $report,
+				'errors'         => $errors,
+			);
+
+			// یک هوک per دسته به‌جای هوک per آیتم (سرعت).
+			do_action( 'tbsm_bulk_stock_sql_applied', $ids, $parent_ids, $new_state );
+
+			return $result;
+		}
+
 		private static function run_apply( array $items, array $allowed_ids, $with_product = false, $reject_template = '' ) {
 			if ( '' === $reject_template ) {
 				$reject_template = 'متغیر #%d متعلق به این محصول نیست؛ رد شد.';
