@@ -158,6 +158,12 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'groupAttrLoading'   => 'در حال بارگذاری…',
 						'groupValuesError'   => 'بارگذاری مقدارهای این ویژگی ناموفق بود.',
 						'groupMergedKeys'    => '%d کلید ادغام‌شده',
+						'groupTermSearch'    => 'جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)',
+						'groupTermFound'     => 'نمایش %1$d از %2$d مقدار',
+						'groupTermTruncated' => 'فهرست مقدارها بریده شد؛ محدودهٔ کوچک‌تری انتخاب کنید تا همهٔ مقدارها بیاید.',
+						'scopeCategorySearch' => 'جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)',
+						'scopeCategoryFound'  => 'نمایش %1$d دسته از %2$d',
+						'scopeCategoryEmpty'  => 'دسته‌ای با این نام پیدا نشد.'
 						'groupTermPick'      => '— انتخاب کنید —',
 						'groupFindError'     => 'فهرست‌کردن متغیرها ناموفق بود.',
 						'groupNeedSelection' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -282,12 +288,17 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<!-- محدوده: دسته‌بندی -->
 						<div class="tbsm-scope-pane" id="tbsm-scope-pane-category" hidden>
 							<p class="tbsm-hint-line">همهٔ محصولات این دسته و زیردسته‌هایش بررسی می‌شوند.</p>
+							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category-search">
+								<span class="tbsm-field-label">جست‌وجوی دسته</span>
+								<input type="text" id="tbsm-scope-category-search" class="tbsm-input" placeholder="جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)" autocomplete="off">
+							</label>
 							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category">
 								<span class="tbsm-field-label">دسته‌بندی محصول</span>
 								<select id="tbsm-scope-category" class="tbsm-input tbsm-select">
 									<option value="">در حال بارگذاری…</option>
 								</select>
 							</label>
+							<p class="tbsm-hint-line" id="tbsm-scope-category-hint" hidden></p>
 						</div>
 
 						<!-- محدوده: شناسه -->
@@ -330,13 +341,17 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 									<option value="">— ابتدا محدوده را مشخص کنید —</option>
 								</select>
 							</label>
+						</div>
+						<div class="tbsm-form-row">
 							<label class="tbsm-field tbsm-field--grow" for="tbsm-group-term">
 								<span class="tbsm-field-label">مقدار مدل</span>
+								<input type="text" id="tbsm-group-term-search" class="tbsm-input tbsm-term-search" placeholder="جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)" autocomplete="off" disabled>
 								<select id="tbsm-group-term" class="tbsm-input tbsm-select" disabled>
 									<option value="">— انتخاب کنید —</option>
 								</select>
 							</label>
 						</div>
+						<p class="tbsm-hint-line" id="tbsm-group-term-hint" hidden></p>
 						<p class="tbsm-hint-line" id="tbsm-group-hint" hidden></p>
 					</div>
 

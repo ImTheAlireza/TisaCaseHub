@@ -569,34 +569,135 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$groups[ $gid ]['variations'] = $count['variations'];
 			}
 
-			$list = array_values( $groups );
+			$list = self::sort_labels_naturally( array_values( $groups ) );
+
+			return array(
+				'values'    => $list,
+				'groups'    => self::brand_groups( $list, $attr_keys ),
+				'truncated' => $truncated,
+			);
+		}
+
+		/**
+		 * مرتب‌سازی طبیعی (عددی) بر اساس برچسب: «A06» قبل از «A11» و «iPhone 9»
+		 * قبل از «iPhone 12» می‌ایستد — همان ترتیبی که کاربر انتظار دارد.
+		 *
+		 * @param array $rows ردیف‌های دارای `label`.
+		 * @return array
+		 */
+		private static function sort_labels_naturally( array $rows ) {
 			usort(
-				$list,
+				$rows,
 				static function ( $a, $b ) {
-					if ( $a['products'] === $b['products'] ) {
-						return strcmp( (string) $a['label'], (string) $b['label'] );
+					$la = self::label_identity( (string) $a['label'] );
+					$lb = self::label_identity( (string) $b['label'] );
+					$cmp = strnatcasecmp( $la, $lb );
+					if ( 0 === $cmp ) {
+						$cmp = strcmp( (string) $a['label'], (string) $b['label'] );
 					}
-					return ( $a['products'] > $b['products'] ) ? -1 : 1;
+
+					return $cmp;
 				}
 			);
 
-			return $list;
+			return array_values( $rows );
+		}
+
+		/**
+		 * گروه‌بندی برندی مقدارها با موتور افزونهٔ «گروه‌بندی متغیرها بر اساس برند»
+		 * (اگر فعال باشد) — همان تجربهٔ صفحهٔ محصول: گروه آیفون/سامسونگ/… .
+		 * وقتی آن افزونه نباشد یا گروه‌بندی برای این ویژگی معنی نداشته باشد،
+		 * فهرست تختِ مرتب‌شده برگردانده می‌شود.
+		 *
+		 * @param array $list      فهرست مقدارهای ادغام‌شده (دارای `label`).
+		 * @param array $attr_keys کلیدهای ویژگی همان ردیف.
+		 * @return array [{label, indexes}]
+		 */
+		private static function brand_groups( array $list, array $attr_keys ) {
+			if ( ! class_exists( 'TCBV_Rules' ) || ! class_exists( 'TCBV_Settings' ) ) {
+				return array();
+			}
+			if ( ! method_exists( 'TCBV_Rules', 'group' ) || count( $list ) < 2 ) {
+				return array();
+			}
+
+			$labels = array();
+			foreach ( $list as $row ) {
+				$labels[] = (string) $row['label'];
+			}
+
+			$attr = isset( $attr_keys[0] ) ? (string) $attr_keys[0] : '';
+			if ( method_exists( 'TCBV_Rules', 'should_group' ) && ! TCBV_Rules::should_group( $attr, $labels ) ) {
+				return array();
+			}
+
+			$buckets = TCBV_Rules::group( $labels );
+			if ( ! is_array( $buckets ) || empty( $buckets ) ) {
+				return array();
+			}
+
+			// نگاشت «هویت برچسب ← اندیس‌های فهرست» (برچسب تکراری هم پوشش داده می‌شود).
+			$index_of = array();
+			foreach ( $list as $index => $row ) {
+				$index_of[ self::label_identity( (string) $row['label'] ) ][] = (int) $index;
+			}
+
+			$groups = array();
+			foreach ( $buckets as $bucket ) {
+				$indexes = array();
+				foreach ( (array) $bucket['values'] as $label ) {
+					$key = self::label_identity( (string) $label );
+					if ( empty( $index_of[ $key ] ) ) {
+						continue;
+					}
+					$index     = (int) array_shift( $index_of[ $key ] );
+					$indexes[] = $index;
+				}
+
+				if ( empty( $indexes ) ) {
+					continue;
+				}
+
+				$groups[] = array(
+					'label'   => (string) $bucket['label'],
+					'indexes' => array_values( array_unique( $indexes ) ),
+				);
+			}
+
+			// گروه‌بندی فقط وقتی سودمند است که همهٔ مقدارها را پوشش دهد.
+			$covered = 0;
+			foreach ( $groups as $group ) {
+				$covered += count( $group['indexes'] );
+			}
+
+			return ( $covered === count( $list ) ) ? $groups : array();
 		}
 
 		/**
 		 * مقدارهای یک ویژگی (یا مجموعهٔ کلیدهای یک ویژگی ادغام‌شده) در محدوده.
 		 *
-		 * مقدارهایی که برچسب یکسان دارند (نوشتارهای مختلف یک مقدار) هم ادغام
+		 * مقدارهایی که نوشتار خام یکسان یا برچسب یکسان دارند در **یک گزینه** ادغام
 		 * می‌شوند و `values` همهٔ نوشتارهای خام را نگه می‌دارد.
+		 *
+		 * ترتیب فهرست **طبیعی/الفبایی** است نه بر اساس تعداد: در فهرست‌های بلند
+		 * (مثل ۱۵۰+ مدل گوشی) مرتب‌سازی بر پایهٔ عددِ تکراری عملاً تصادفی به نظر
+		 * می‌رسد و پیدا کردن مدل را سخت می‌کند. اگر افزونهٔ «گروه‌بندی متغیرها بر
+		 * اساس برند» فعال باشد، همان گروه‌بندی برندِ صفحهٔ محصول (آیفون/سامسونگ/…)
+		 * هم برگردانده می‌شود تا گزینه‌ها با `optgroup` دسته‌بندی شوند.
 		 *
 		 * @param array $scope     محدوده.
 		 * @param array $attr_keys کلیدهای ویژگی.
-		 * @return array [{label, values, products, variations}]
+		 * @return array {values: array, groups: array, truncated: bool}
 		 */
 		public static function list_scope_values( $scope, $attr_keys ) {
+			$empty     = array(
+				'values'    => array(),
+				'groups'    => array(),
+				'truncated' => false,
+			);
 			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
 			if ( empty( $attr_keys ) ) {
-				return array();
+				return $empty;
 			}
 
 			global $wpdb;
@@ -615,7 +716,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				),
 				$sql['params']
 			);
-			$params[] = TBSM_Core::MAX_MODEL_VALUES;
+			$params[] = TBSM_Core::MAX_MODEL_VALUES + 1; // یکی بیشتر برای تشخیص بریدگی.
 
 			$rows = $wpdb->get_results(
 				$wpdb->prepare(
@@ -632,6 +733,11 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				ARRAY_A
 			);
 			$rows = is_array( $rows ) ? $rows : array();
+
+			$truncated = count( $rows ) > TBSM_Core::MAX_MODEL_VALUES;
+			if ( $truncated ) {
+				$rows = array_slice( $rows, 0, TBSM_Core::MAX_MODEL_VALUES );
+			}
 
 			$term_labels = self::global_term_labels( $attr_keys );
 

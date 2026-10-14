@@ -35,7 +35,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید و موجودی متغیرهایش را تغییر دهید؛ یا در تب «گروهی» اول محدودهٔ محصولات را مشخص کنید (چند محصول، دسته‌بندی یا شناسه)، بعد ویژگی و مقدار مدل را از میان ویژگی‌های همان محدوده انتخاب کنید و موجودی را تکی یا یک‌جا روی همهٔ آن‌ها اعمال کنید.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.3.1</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.3.2</span>
 			</div>
 		</div>
 
@@ -115,12 +115,17 @@
 						<!-- محدوده: دسته‌بندی -->
 						<div class="tbsm-scope-pane" id="tbsm-scope-pane-category" hidden>
 							<p class="tbsm-hint-line">همهٔ محصولات این دسته و زیردسته‌هایش بررسی می‌شوند.</p>
+							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category-search">
+								<span class="tbsm-field-label">جست‌وجوی دسته</span>
+								<input type="text" id="tbsm-scope-category-search" class="tbsm-input" placeholder="جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)" autocomplete="off">
+							</label>
 							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category">
 								<span class="tbsm-field-label">دسته‌بندی محصول</span>
 								<select id="tbsm-scope-category" class="tbsm-input tbsm-select">
 									<option value="">در حال بارگذاری…</option>
 								</select>
 							</label>
+							<p class="tbsm-hint-line" id="tbsm-scope-category-hint" hidden></p>
 						</div>
 
 						<!-- محدوده: شناسه -->
@@ -163,13 +168,17 @@
 									<option value="">— ابتدا محدوده را مشخص کنید —</option>
 								</select>
 							</label>
+						</div>
+						<div class="tbsm-form-row">
 							<label class="tbsm-field tbsm-field--grow" for="tbsm-group-term">
 								<span class="tbsm-field-label">مقدار مدل</span>
+								<input type="text" id="tbsm-group-term-search" class="tbsm-input tbsm-term-search" placeholder="جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)" autocomplete="off" disabled>
 								<select id="tbsm-group-term" class="tbsm-input tbsm-select" disabled>
 									<option value="">— انتخاب کنید —</option>
 								</select>
 							</label>
 						</div>
+						<p class="tbsm-hint-line" id="tbsm-group-term-hint" hidden></p>
 						<p class="tbsm-hint-line" id="tbsm-group-hint" hidden></p>
 					</div>
 
@@ -217,8 +226,23 @@
 			{ label: 'iPhone 14', slug: 'iphone-14' },
 			{ label: 'iPhone 15', slug: 'iphone-15' },
 			{ label: 'iPhone 15 Pro Max', slug: 'iphone-15-pro-max' },
-			{ label: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' }
+			{ label: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' },
+			{ label: 'A06', slug: 'a06' },
+			{ label: 'A11', slug: 'a11' },
+			{ label: 'A21s', slug: 'a21s' },
+			{ label: 'A55', slug: 'a55' },
+			{ label: 'Redmi Note 13', slug: 'redmi-note-13' },
+			{ label: 'Poco F6 Pro', slug: 'poco-f6-pro' }
 		];
+
+		// نگاشت برند برای پیش‌نمایش (هم‌رفتار با افزونهٔ «گروه‌بندی متغیرها بر اساس
+		// برند» در سرور: گروه‌بندی فقط برای ویژگی‌های بلند و چندبرندی).
+		var BRANDS = [
+			{ id: 'apple', label: 'آیفون', test: /^iphone/i },
+			{ id: 'samsung', label: 'سامسونگ', test: /^(a\d|galaxy|s\d)/i },
+			{ id: 'xiaomi', label: 'شیائومی', test: /^(redmi|poco|mi\s)/i }
+		];
+		var UNKNOWN_BRAND = 'سایر مدل‌ها';
 		var GALAXY = [
 			{ label: 'Galaxy S24 Ultra', slug: 'galaxy-s24-ultra' },
 			{ label: 'Galaxy S24', slug: 'galaxy-s24' }
@@ -505,8 +529,62 @@
 					variations: variations
 				};
 			}).sort(function (a, b) {
-				return (b.products - a.products) || String(a.label).localeCompare(String(b.label));
+				// مرتب‌سازی طبیعی (عددی) — هم‌منطق با TBSM_Stock::sort_labels_naturally()
+				return naturalCompare(labelIdentity(a.label), labelIdentity(b.label)) || String(a.label).localeCompare(String(b.label));
 			});
+		}
+
+		/** مقایسهٔ طبیعی روی متن نرمال‌شده: A06 < A11 < A21s و iPhone 9 < iPhone 12. */
+		function naturalCompare(a, b) {
+			var re = /(\d+)|(\D+)/g;
+			var ax = String(a).match(re) || [];
+			var bx = String(b).match(re) || [];
+			var len = Math.max(ax.length, bx.length);
+			for (var i = 0; i < len; i++) {
+				var x = ax[i] || '';
+				var y = bx[i] || '';
+				if (x === y) { continue; }
+				var nx = parseInt(x, 10);
+				var ny = parseInt(y, 10);
+				if (!isNaN(nx) && !isNaN(ny)) { return nx - ny; }
+				return x < y ? -1 : 1;
+			}
+			return 0;
+		}
+
+		/** گروه برند یک مقدار (پیش‌نمایشی از TCBV_Rules::group). */
+		function brandOf(label) {
+			for (var i = 0; i < BRANDS.length; i++) {
+				if (BRANDS[i].test.test(String(label))) { return BRANDS[i]; }
+			}
+			return { id: 'unknown', label: UNKNOWN_BRAND, test: null };
+		}
+
+		/**
+		 * گروه‌های برندی مقدارها — فقط برای فهرست‌های بلندِ چندبرندی (مثل «مدل»)،
+		 * همان‌طور که افزونهٔ «گروه‌بندی متغیرها بر اساس برند» روی صفحهٔ محصول
+		 * انجام می‌دهد. برای فهرست‌های کوتاه (مثل «رنگ») خالی برمی‌گردد.
+		 */
+		function brandGroups(list) {
+			if (list.length < 6) { return []; }
+			var buckets = {}, branded = 0;
+			list.forEach(function (row, index) {
+				var brand = brandOf(row.label);
+				if (!buckets[brand.id]) { buckets[brand.id] = { label: brand.label, indexes: [] }; }
+				buckets[brand.id].indexes.push(index);
+			});
+			// ترتیب گروه‌ها = ترتیب برندهای تنظیم‌شده (مثل TCBV_Settings)، نه ترتیب داده.
+			var groups = [];
+			BRANDS.forEach(function (brand) {
+				if (!buckets[brand.id]) { return; }
+				branded++;
+				groups.push(buckets[brand.id]);
+			});
+			if (buckets['unknown']) { groups.push(buckets['unknown']); }
+			if (branded < 2) { return []; }
+			var covered = 0;
+			groups.forEach(function (g) { covered += g.indexes.length; });
+			return covered === list.length ? groups : [];
 		}
 
 		/** ردیف‌های کارت برای مجموعهٔ کلید/مقدارها. */
@@ -633,6 +711,12 @@
 				groupAttrLoading: 'در حال بارگذاری…',
 				groupValuesError: 'بارگذاری مقدارهای این ویژگی ناموفق بود.',
 				groupMergedKeys: '%d کلید ادغام‌شده',
+				groupTermSearch: 'جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)',
+				groupTermFound: 'نمایش %1$d از %2$d مقدار',
+				groupTermTruncated: 'فهرست مقدارها بریده شد؛ محدودهٔ کوچک‌تری انتخاب کنید تا همهٔ مقدارها بیاید.',
+				scopeCategorySearch: 'جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)',
+				scopeCategoryFound: 'نمایش %1$d دسته از %2$d',
+				scopeCategoryEmpty: 'دسته‌ای با این نام پیدا نشد.',
 				groupTermPick: '— انتخاب کنید —',
 				groupFindError: 'فهرست‌کردن متغیرها ناموفق بود.',
 				groupNeedSelection: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -765,7 +849,10 @@
 						}
 						d.resolve({
 							success: true,
-							data: { attr_keys: data.attr_keys, values: scopeValues(data, data.attr_keys) }
+							data: (function () {
+								var values = scopeValues(data, data.attr_keys);
+								return { attr_keys: data.attr_keys, values: values, groups: brandGroups(values), truncated: false };
+							})()
 						});
 						return;
 					}

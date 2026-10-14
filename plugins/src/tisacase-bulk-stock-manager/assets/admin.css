@@ -1095,6 +1095,11 @@
 	color: var(--tisa-muted, #77828A);
 }
 
+/* جست‌وجوی روی فهرست‌های بلند (مقدار مدل) — بالای سلکت. */
+.tbsm-term-search {
+	margin-bottom: 8px;
+}
+
 .tbsm-field--wide {
 	min-width: 100%;
 	flex: 1 1 100%;

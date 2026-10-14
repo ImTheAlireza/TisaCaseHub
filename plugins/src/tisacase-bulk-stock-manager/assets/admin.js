@@ -34,11 +34,17 @@
 		scopeCategory: 0,        // شناسهٔ دستهٔ انتخابی
 		scopeLimit: 200,         // سقف محصولات انتخابی (از سرور می‌آید)
 		scopeOptionsLoaded: false,
+		scopeCategories: [],     // فهرست کامل دسته‌ها (برای فیلتر جست‌وجو)
+		categoryFilter: '',      // عبارت جست‌وجوی دسته‌ها
 
 		// حالت گروهی — گام ۲ و ۳
 		scope: null,        // محدودهٔ تأییدشده از سرور {type, label, products, variations, ...}
 		scopeAttrs: [],     // ویژگی‌های همان محدوده [{label, keys[], products, variations}]
 		valueGroups: [],    // مقدارهای ویژگی انتخاب‌شده [{label, values[], products, variations}]
+		valueGroupIndex: [],// گروه‌های برندِ مقدارها [{label, indexes[]}] (اختیاری)
+		valueTruncated: false,
+		valueFilter: '',    // عبارت جست‌وجوی مقدارها
+		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		groupNoteHtml: '',
 
@@ -49,6 +55,28 @@
 		i18n: function (key) {
 			var t = window.tbsmData && window.tbsmData.i18n ? window.tbsmData.i18n : {};
 			return t[key] || key;
+		},
+
+		/**
+		 * نرمال‌سازی متن برای جست‌وجو: نیم‌فاصله/نشانه‌های نامرئی حذف، «ي/ك»
+		 * عربی و ارقام فارسی/عربی به شکل لاتین، حروف کوچک — تا «A55»، «a55» و
+		 * «a۵۵» یک نتیجه بدهند و «iphone 11» با «iPhone 11» بخواند.
+		 *
+		 * @param {string} text متن خام.
+		 * @return {string}
+		 */
+		normalizeQuery: function (text) {
+			var fa = '۰۱۲۳۴۵۶۷۸۹';
+			var ar = '٠١٢٣٤٥٦٧٨٩';
+			return String(text === null || text === undefined ? '' : text)
+				.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+				.replace(/[يﻯﻰ]/g, 'ی')
+				.replace(/[كﻙ]/g, 'ک')
+				.replace(/[۰-۹]/g, function (d) { return String(fa.indexOf(d)); })
+				.replace(/[٠-٩]/g, function (d) { return String(ar.indexOf(d)); })
+				.toLowerCase()
+				.replace(/\s+/g, ' ')
+				.trim();
 		},
 
 		/** ارقام به فارسی. */
@@ -220,6 +248,10 @@
 				self.scopeCategory = parseInt($(this).val(), 10) || 0;
 				self.refreshScopeApply();
 			});
+			$('#tbsm-scope-category-search').on('input', function () {
+				self.categoryFilter = self.normalizeQuery(this.value);
+				self.paintScopeCategories();
+			});
 			$('#tbsm-scope-sku').on('input', function () {
 				self.refreshScopeApply();
 			});
@@ -239,6 +271,10 @@
 			});
 			$('#tbsm-group-term').on('change', function () {
 				self.findGroup(parseInt(this.value, 10));
+			});
+			$('#tbsm-group-term-search').on('input', function () {
+				self.valueFilter = self.normalizeQuery(this.value);
+				self.paintGroupValues(true);
 			});
 		},
 
@@ -313,9 +349,63 @@
 
 		/** پرکردن سلکت دسته‌بندی‌ها (با تورفتگی سلسله‌مراتب). */
 		renderScopeCategories: function (list) {
+			this.scopeCategories = list || [];
+			this.paintScopeCategories();
+		},
+
+		/**
+		 * سلکت دسته‌ها با فیلتر جست‌وجو. در حالت فیلتر، والدهای نتیجه‌ها هم
+		 * می‌مانند تا تورفتگی سلسله‌مراتب معنی‌دار بماند و انتخاب فعلی کاربر
+		 * هم از دست نرود.
+		 */
+		paintScopeCategories: function () {
+			var list = this.scopeCategories || [];
+			var filter = this.categoryFilter || '';
+			var keep = {};
+			var matches = 0;
+			var i;
+
+			for (i = 0; i < list.length; i++) {
+				keep[list[i].id] = !filter;
+			}
+
+			if (filter) {
+				var byId = {};
+				for (i = 0; i < list.length; i++) {
+					byId[list[i].id] = list[i];
+				}
+
+				var mark = function (id) {
+					var guard = 0;
+					while (id && byId[id] && !keep[id] && guard < 30) {
+						keep[id] = true;
+						id = byId[id].parent;
+						guard++;
+					}
+				};
+
+				for (i = 0; i < list.length; i++) {
+					if (this.normalizeQuery(this.catLabel(list[i].name)).indexOf(filter) === -1) {
+						continue;
+					}
+					matches++;
+					keep[list[i].id] = true;
+					mark(list[i].parent);
+				}
+
+				// انتخاب فعلی کاربر با فیلتر پاک نشود.
+				if (this.scopeCategory && byId[this.scopeCategory]) {
+					keep[this.scopeCategory] = true;
+					mark(byId[this.scopeCategory].parent);
+				}
+			}
+
 			var html = '<option value="">— انتخاب کنید —</option>';
-			for (var i = 0; i < list.length; i++) {
+			for (i = 0; i < list.length; i++) {
 				var row = list[i];
+				if (!keep[row.id]) {
+					continue;
+				}
 				var pad = '';
 				for (var d = 0; d < (row.depth || 0); d++) {
 					pad += '\u00A0\u00A0';
@@ -325,7 +415,19 @@
 					+ (row.count ? ' (' + this.fmt(row.count) + ')' : '')
 					+ '</option>';
 			}
-			$('#tbsm-scope-category').html(html);
+
+			$('#tbsm-scope-category').html(html).val(this.scopeCategory ? String(this.scopeCategory) : '');
+
+			var hint = '';
+			if (filter && !matches) {
+				hint = this.i18n('scopeCategoryEmpty');
+			} else if (filter) {
+				// شمار «نتیجه»ها می‌آید، نه چیزهایی که فقط برای زمینه (والدها) مانده‌اند.
+				hint = this.i18n('scopeCategoryFound')
+					.replace('%1$d', this.fmt(matches))
+					.replace('%2$d', this.fmt(list.length));
+			}
+			$('#tbsm-scope-category-hint').prop('hidden', !hint).html(hint ? this.esc(hint) : '');
 		},
 
 		/** تغییر روش انتخاب محدوده (چند محصول / دسته / شناسه). */
@@ -684,7 +786,7 @@
 						self.notice(self.i18n('groupValuesError'), 'error');
 						return;
 					}
-					self.renderGroupValues((res.data && res.data.values) ? res.data.values : []);
+					self.renderGroupValues(res.data || {});
 				})
 				.fail(function () {
 					if (seq === self.loadSeq) {
@@ -694,29 +796,128 @@
 				});
 		},
 
-		/** پرکردن سلکت مقدار مدل (مقدارهای هم‌معنا یک گزینه‌اند). */
-		renderGroupValues: function (values) {
-			var $term = $('#tbsm-group-term');
-			this.valueGroups = values || [];
+		/**
+		 * مقدارهای مدل: `{values, groups, truncated}` از سرور می‌آید.
+		 * `groups` گروه‌های برندِ صفحهٔ محصول است (آیفون/سامسونگ/…) و به شکل
+		 * `optgroup` رندر می‌شود؛ `data-values` نوشتارهای خامِ هر گزینه را
+		 * نگه می‌دارد تا هر دو نوشتار (کدشده و سالم) پوشش داده شوند.
+		 */
+		renderGroupValues: function (payload) {
+			if (Array.isArray(payload)) {
+				payload = { values: payload };
+			}
+			payload = payload || {};
 
-			if (!this.valueGroups.length) {
-				$term.prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>');
-				this.resetGroupCards();
-				return;
+			this.valueGroups = payload.values || [];
+			this.valueGroupIndex = payload.groups || [];
+			this.valueTruncated = !!payload.truncated;
+			this.valueFilter = '';
+			this.valueHay = this.valueGroups.map(this.termHaystack, this); // یک‌بار، برای فیلتر زنده
+
+			$('#tbsm-group-term-search')
+				.val('')
+				.prop('disabled', !this.valueGroups.length);
+
+			this.paintGroupValues(false);
+			this.resetGroupCards();
+		},
+
+		/** متن و گزینهٔ یک مقدار (بر پایهٔ اندیس ثابت در فهرست کامل). */
+		termOptionHtml: function (index) {
+			var v = (this.valueGroups || [])[index];
+			if (!v) {
+				return '';
+			}
+			var label = this.catLabel(v.label);
+			return '<option value="' + index + '" data-label="' + this.esc(label) + '"'
+				+ ' data-values="' + this.esc((v.values || []).join('|')) + '">'
+				+ this.esc(label + ' — ' + this.fmt(v.products) + ' ' + this.i18n('scopeProductsUnit'))
+				+ '</option>';
+		},
+
+		/** متن قابل جست‌وجوی یک مقدار: برچسب + نوشتارهای خام. */
+		termHaystack: function (group) {
+			group = group || {};
+			return this.normalizeQuery(this.catLabel(group.label) + ' ' + (group.values || []).join(' '));
+		},
+
+		/**
+		 * رندر گزینه‌های مقدار با فیلتر جست‌وجو؛ با فیلتر، فهرست تخت می‌شود و
+		 * بدون فیلتر، اگر گروه برند داشته باشیم `optgroup`ها می‌آیند.
+		 *
+		 * @param {boolean} keepSelection انتخاب فعلی حفظ شود؟ (برای فیلتر زنده)
+		 */
+		paintGroupValues: function (keepSelection) {
+			var $term = $('#tbsm-group-term');
+			var list = this.valueGroups || [];
+			var groups = this.valueGroupIndex || [];
+			var filter = this.valueFilter || '';
+			var previous = keepSelection ? String($term.val() || '') : '';
+			var found = [];
+			var i;
+
+			for (i = 0; i < list.length; i++) {
+				var hay = this.valueHay && this.valueHay[i] !== undefined ? this.valueHay[i] : this.termHaystack(list[i]);
+				if (!filter || hay.indexOf(filter) !== -1) {
+					found.push(i);
+				}
 			}
 
 			var html = '<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>';
-			for (var i = 0; i < this.valueGroups.length; i++) {
-				var v = this.valueGroups[i];
-				var label = this.catLabel(v.label);
-				html += '<option value="' + i + '" data-label="' + this.esc(label) + '"'
-					+ ' data-values="' + this.esc((v.values || []).join('|')) + '">'
-					+ this.esc(label + ' — ' + this.fmt(v.products) + ' ' + this.esc(this.i18n('scopeProductsUnit')))
-					+ '</option>';
+
+			if (filter || !groups.length) {
+				for (i = 0; i < found.length; i++) {
+					html += this.termOptionHtml(found[i]);
+				}
+			} else {
+				var used = {};
+				for (var g = 0; g < groups.length; g++) {
+					var group = groups[g] || {};
+					var indexes = group.indexes || [];
+					var inner = '';
+					for (var k = 0; k < indexes.length; k++) {
+						inner += this.termOptionHtml(indexes[k]);
+						used[indexes[k]] = true;
+					}
+					if (!inner) {
+						continue;
+					}
+					html += '<optgroup label="' + this.esc(this.catLabel(group.label) + ' (' + this.fmt(indexes.length) + ')') + '">'
+						+ inner + '</optgroup>';
+				}
+				// مقدارهایی که در هیچ گروهی جا نگرفته‌اند (نباید پیش بیاید) در پایان.
+				for (i = 0; i < found.length; i++) {
+					if (!used[found[i]]) {
+						html += this.termOptionHtml(found[i]);
+					}
+				}
 			}
 
-			$term.prop('disabled', false).html(html).val('');
-			this.resetGroupCards();
+			$term.prop('disabled', !list.length).html(html);
+
+			if (previous && $term.find('option[value="' + previous + '"]').length) {
+				$term.val(previous);
+			} else {
+				$term.val('');
+				if (previous) {
+					this.resetGroupCards();
+				}
+			}
+
+			var hint = [];
+			if (this.valueTruncated) {
+				hint.push(this.i18n('groupTermTruncated'));
+			}
+			if (filter) {
+				hint.push(
+					this.i18n('groupTermFound')
+						.replace('%1$d', this.fmt(found.length))
+						.replace('%2$d', this.fmt(list.length))
+				);
+			}
+			$('#tbsm-group-term-hint')
+				.prop('hidden', !hint.length)
+				.html(hint.length ? this.esc(hint.join(' — ')) : '');
 		},
 
 		/** پاک‌کردن کارت‌ها وقتی مقدار مدل ناتمام است. */

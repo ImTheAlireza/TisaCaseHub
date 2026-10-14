@@ -461,10 +461,14 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'ابتدا ویژگی مدل را انتخاب کنید.' ) );
 			}
 
+			$pack = TBSM_Stock::list_scope_values( $scope, $keys );
+
 			wp_send_json_success(
 				array(
 					'attr_keys' => $keys,
-					'values'    => TBSM_Stock::list_scope_values( $scope, $keys ),
+					'values'    => isset( $pack['values'] ) ? $pack['values'] : array(),
+					'groups'    => isset( $pack['groups'] ) ? $pack['groups'] : array(),
+					'truncated' => ! empty( $pack['truncated'] ),
 				)
 			);
 		}
