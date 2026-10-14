@@ -136,6 +136,23 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'errorCount'         => '%d مورد خطا داشت:',
 						'applyError'         => 'اعمال ناموفق بود: %s',
 						'errorApplyEmpty'    => 'مقداری برای اعمال پیدا نشد.',
+
+						// حالت گروهی «مدل متغیر در بازهٔ شناسه».
+						'modelTermPick'      => '— انتخاب کنید —',
+						'modelAttrEmpty'     => 'ویژگی متغیری پیدا نشد؛ ابتدا برای محصولات متغیر بسازید.',
+						'modelAttrError'     => 'بارگذاری فهرست ویژگی‌ها ناموفق بود.',
+						'modelSkuModeContains' => 'شامل می‌شود',
+						'modelFindBtn'       => 'نمایش محصولات',
+						'modelSearching'     => 'در حال فهرست‌کردن محصولات…',
+						'modelNeedSelection' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
+						'modelFindError'     => 'فهرست‌کردن محصولات ناموفق بود.',
+						'modelEmpty'         => 'محصولی با این مدل و بازهٔ شناسه پیدا نشد.',
+						'modelNote'          => 'مدل «%1$s» • شناسه: %2$s — %3$d متغیر در %4$d محصول',
+						'modelNoteAll'       => 'همهٔ محصولات',
+						'modelTruncated'     => 'فهرست به %d مورد محدود شد؛ بازه را دقیق‌تر کنید.',
+						'modelHintEmpty'     => 'ابتدا مدل و بازهٔ شناسه را انتخاب کنید و «نمایش محصولات» را بزنید.',
+						'modelApplyConfirm'  => 'تأیید: اعمال روی %d متغیر گروهی؟',
+						'parentsSynced'      => 'وضعیت موجودی %d محصول والد همگام شد.',
 					),
 				)
 			);
@@ -169,13 +186,21 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<span class="tbsm-hero-mark"><?php echo self::icon( 'box' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
 						<div class="tbsm-hero-text">
 							<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
-							<p class="tbsm-hero-sub">محصول را با جست‌وجو انتخاب کنید، دستهٔ متغیرها را با سلکت فیلتر کنید، موجودی را روی کارت‌ها تغییر دهید و یک‌جا اعمال کنید.</p>
+							<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید، یا با «گروهی با مدل» یک مدل متغیر و بازهٔ شناسه (مثلاً CH) را بدهید تا موجودی همان متغیر در همهٔ آن محصولات — تکی یا یک‌جا — تغییر کند.</p>
 						</div>
 						<span class="tbsm-hero-ver" dir="ltr">v<?php echo esc_html( TBSM_VERSION ); ?></span>
 					</div>
 				</div>
 
 				<div class="tbsm-notice" id="tbsm-notice" hidden role="alert"></div>
+
+				<!-- انتخاب حالت کار: تک‌محصول یا گروهی بر اساس مدل -->
+				<div class="tbsm-tabs" role="tablist" aria-label="حالت کار">
+					<button type="button" class="tbsm-tab is-active" id="tbsm-tab-single" data-mode="single" role="tab" aria-selected="true">تک‌محصول</button>
+					<button type="button" class="tbsm-tab" id="tbsm-tab-model" data-mode="model" role="tab" aria-selected="false">گروهی با مدل</button>
+				</div>
+
+				<div class="tbsm-panel" id="tbsm-panel-single">
 
 				<!-- گام ۱: انتخاب محصول -->
 				<div class="tbsm-card">
@@ -208,6 +233,63 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 					</select>
 				</div>
 
+				</div><!-- /#tbsm-panel-single -->
+
+				<!-- حالت گروهی: مدل متغیر در بازهٔ شناسه -->
+				<div class="tbsm-panel" id="tbsm-panel-model" hidden>
+
+					<!-- گام ۱ گروهی: انتخاب مدل متغیر -->
+					<div class="tbsm-card">
+						<div class="tbsm-step-head">
+							<span class="tbsm-step-num">۱</span>
+							<div class="tbsm-step-titles">
+								<h2 class="tbsm-step-title">مدل متغیر</h2>
+								<p class="tbsm-step-sub">ویژگی و مقدار مدل را انتخاب کنید؛ بعد از «نمایش محصولات»، فقط همین متغیر در همهٔ محصولات بازه فهرست می‌شود.</p>
+							</div>
+						</div>
+						<div class="tbsm-model-form">
+							<label class="tbsm-field" for="tbsm-model-attr">
+								<span class="tbsm-field-label">ویژگی مدل</span>
+								<select id="tbsm-model-attr" class="tbsm-input tbsm-select">
+									<option value="">در حال بارگذاری…</option>
+								</select>
+							</label>
+							<label class="tbsm-field" for="tbsm-model-term">
+								<span class="tbsm-field-label">مقدار مدل</span>
+								<select id="tbsm-model-term" class="tbsm-input tbsm-select" disabled>
+									<option value="">— انتخاب کنید —</option>
+								</select>
+							</label>
+						</div>
+					</div>
+
+					<!-- گام ۲ گروهی: بازهٔ شناسهٔ محصولات -->
+					<div class="tbsm-card">
+						<div class="tbsm-step-head">
+							<span class="tbsm-step-num">۲</span>
+							<div class="tbsm-step-titles">
+								<h2 class="tbsm-step-title">بازهٔ شناسهٔ محصولات</h2>
+								<p class="tbsm-step-sub">مثلاً همهٔ محصولات با شناسهٔ CH — خالی بگذارید تا همهٔ محصولات بررسی شوند.</p>
+							</div>
+						</div>
+						<div class="tbsm-model-form">
+							<label class="tbsm-field tbsm-field--grow" for="tbsm-model-sku">
+								<span class="tbsm-field-label">شناسهٔ (SKU) محصول</span>
+								<input type="text" id="tbsm-model-sku" class="tbsm-input" placeholder="مثلاً CH" autocomplete="off">
+							</label>
+							<label class="tbsm-field" for="tbsm-model-sku-mode">
+								<span class="tbsm-field-label">نوع تطبیق</span>
+								<select id="tbsm-model-sku-mode" class="tbsm-input tbsm-select">
+									<option value="prefix">شروع می‌شود با</option>
+									<option value="contains">شامل می‌شود</option>
+								</select>
+							</label>
+							<button type="button" class="tisa-btn tisa-btn--primary tbsm-model-find" id="tbsm-model-find" disabled>نمایش محصولات</button>
+						</div>
+					</div>
+
+				</div><!-- /#tbsm-panel-model -->
+
 				<!-- گام ۳: کارت‌های متغیرها -->
 				<div class="tbsm-card tbsm-step-locked" id="tbsm-step-cards">
 					<div class="tbsm-step-head">
@@ -226,6 +308,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 						</div>
 					</div>
+					<div class="tbsm-model-note" id="tbsm-model-note" hidden></div>
 					<div class="tbsm-grid" id="tbsm-grid" hidden></div>
 					<div class="tbsm-bottombar">
 						<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>

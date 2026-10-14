@@ -16,6 +16,11 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			add_action( 'wp_ajax_tbsm_search_products', array( __CLASS__, 'ajax_search_products' ) );
 			add_action( 'wp_ajax_tbsm_load_product', array( __CLASS__, 'ajax_load_product' ) );
 			add_action( 'wp_ajax_tbsm_apply_stock', array( __CLASS__, 'ajax_apply_stock' ) );
+
+			// حالت گروهی: مدل متغیر در بازهٔ شناسهٔ محصولات.
+			add_action( 'wp_ajax_tbsm_model_options', array( __CLASS__, 'ajax_model_options' ) );
+			add_action( 'wp_ajax_tbsm_find_model', array( __CLASS__, 'ajax_find_model' ) );
+			add_action( 'wp_ajax_tbsm_apply_model_stock', array( __CLASS__, 'ajax_apply_model_stock' ) );
 		}
 
 		/**
@@ -292,6 +297,130 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				$result = array(
 					'ok'    => false,
 					'error' => 'خطای پیش‌بینی‌نشده هنگام اعمال: ' . $e->getMessage(),
+				);
+			}
+
+			if ( ! empty( $result['ok'] ) ) {
+				wp_send_json_success( $result );
+			}
+			wp_send_json_error( $result );
+		}
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی — «مدل متغیر در بازهٔ شناسهٔ محصولات»
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * پاک‌سازی نام ویژگی/مقدار مدل بدون آسیب به کاراکترهای percent-encoded و فاصله‌ها.
+		 *
+		 * `sanitize_text_field()` توالی‌های %xx را حذف می‌کند و همین باعث می‌شد
+		 * ویژگی‌های کدشده (مثل d9%85d8%af%d9%84 = «مدل») با هیچ متغیری تطبیق نکنند؛
+		 * فاصله‌ها هم بخشی از مقدار واقعی‌اند (مثل «iPhone 15 Pro Max»). این مقادیر
+		 * هرگز مستقیم در SQL نمی‌نشینند (پارامترِ $wpdb->prepare) و در خروجی هم
+		 * escape می‌شوند؛ پس فقط کاراکترهای کنترلی حذف و طول محدود می‌شود.
+		 *
+		 * @param mixed $raw مقدار خام درخواست.
+		 * @return string
+		 */
+		private static function model_raw_text( $raw ) {
+			$text = (string) wp_unslash( (string) $raw );
+			$text = (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', $text );
+			return substr( $text, 0, 190 );
+		}
+
+		/**
+		 * خواندن پارامترهای مشترک حالت گروهی از درخواست.
+		 *
+		 * @return array {attr, value, sku, sku_mode}
+		 */
+		private static function model_params() {
+			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$sku   = isset( $_POST['sku'] ) ? sanitize_text_field( wp_unslash( $_POST['sku'] ) ) : '';
+			$mode  = isset( $_POST['sku_mode'] ) ? sanitize_key( wp_unslash( $_POST['sku_mode'] ) ) : 'prefix';
+
+			return array(
+				'attr'     => $attr,
+				'value'    => $value,
+				'sku'      => $sku,
+				'sku_mode' => $mode,
+			);
+		}
+
+		/**
+		 * فهرست ویژگی‌های متغیرها و مقادیرشان (برای سلکت «مدل متغیر»).
+		 */
+		public static function ajax_model_options() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			wp_send_json_success(
+				array(
+					'attributes' => TBSM_Stock::list_model_attributes(),
+				)
+			);
+		}
+
+		/**
+		 * فهرست متغیرهای یک مدل در میان محصولات بازهٔ شناسه.
+		 */
+		public static function ajax_find_model() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$params = self::model_params();
+
+			if ( '' === $params['attr'] || '' === $params['value'] ) {
+				wp_send_json_error( array( 'message' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' ) );
+			}
+
+			$found = TBSM_Stock::find_model_rows( $params['attr'], $params['value'], $params['sku'], $params['sku_mode'] );
+
+			if ( ! empty( $found['error'] ) ) {
+				wp_send_json_error( array( 'message' => (string) $found['error'] ) );
+			}
+
+			wp_send_json_success(
+				array(
+					'rows'      => $found['rows'],
+					'total'     => count( $found['rows'] ),
+					'products'  => (int) $found['products'],
+					'truncated' => ! empty( $found['truncated'] ),
+					'limit'     => TBSM_Core::MAX_MODEL_ROWS,
+					'attr'      => $params['attr'],
+					'term'      => $params['value'],
+					'sku'       => $params['sku'],
+					'sku_mode'  => $params['sku_mode'],
+				)
+			);
+		}
+
+		/**
+		 * اعمال موجودی گروهی روی متغیرهای همان مدل و همان بازهٔ شناسه.
+		 */
+		public static function ajax_apply_model_stock() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$params = self::model_params();
+			$items  = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
+				? wp_unslash( $_POST['items'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				: array();
+
+			// کلید‌ها باید ایدی باشند؛ مقادیر بعداً در موتور اعتبارسنجی می‌شوند.
+			$clean = array();
+			foreach ( $items as $key => $value ) {
+				if ( ctype_digit( (string) $key ) ) {
+					$clean[ absint( $key ) ] = $value;
+				}
+			}
+
+			try {
+				$result = TBSM_Stock::apply_model_stock( $clean, $params['attr'], $params['value'], $params['sku'], $params['sku_mode'] );
+			} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				$result = array(
+					'ok'    => false,
+					'error' => 'خطای پیش‌بینی‌نشده هنگام اعمال گروهی: ' . $e->getMessage(),
 				);
 			}
 

@@ -18,7 +18,8 @@
 	<div class="preview-note">
 		<strong>پیش‌نمایش زنده (بدون وردپرس)</strong> — همین <code>admin.css</code> و <code>admin.js</code> افزونهٔ
 		<code>tisacase-bulk-stock-manager</code> بار شده‌اند؛ فقط داده‌ها و AJAX ماک هستند.
-		جست‌وجو (مثل «اسپیس» یا «TS184» یا «201») را امتحان کنید؛ «اعمال موجودی» فقط گزارش نمایش می‌دهد و چیزی نمی‌نویسد.
+		حالت «تک‌محصول»: جست‌وجوی «اسپیس» یا «CH184». حالت «گروهی با مدل»: مدل <code>iPhone 15 Pro Max</code> +
+		شناسهٔ <code>CH</code> ← ۶ متغیر در ۲ محصول (هر دو قاب آیفون)؛ «اعمال موجودی» فقط گزارش نمایش می‌دهد و چیزی نمی‌نویسد.
 	</div>
 
 	<!-- همین مارکاپی است که render_page() می‌سازد -->
@@ -28,46 +29,111 @@
 				<span class="tbsm-hero-mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/></svg></span>
 				<div class="tbsm-hero-text">
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
-					<p class="tbsm-hero-sub">محصول را با جست‌وجو انتخاب کنید، دستهٔ متغیرها را با سلکت فیلتر کنید، موجودی را روی کارت‌ها تغییر دهید و یک‌جا اعمال کنید.</p>
+					<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید، یا با «گروهی با مدل» یک مدل متغیر و بازهٔ شناسه (مثلاً CH) را بدهید تا موجودی همان متغیر در همهٔ آن محصولات — تکی یا یک‌جا — تغییر کند.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.1.5</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.2.0</span>
 			</div>
 		</div>
 
 		<div class="tbsm-notice" id="tbsm-notice" hidden role="alert"></div>
 
-		<!-- گام ۱: انتخاب محصول -->
-		<div class="tbsm-card">
-			<div class="tbsm-step-head">
-				<span class="tbsm-step-num">۱</span>
-				<div class="tbsm-step-titles">
-					<h2 class="tbsm-step-title">انتخاب محصول</h2>
-					<p class="tbsm-step-sub">جست‌وجو بر اساس نام، SKU یا شناسه</p>
-				</div>
-			</div>
-			<div class="tbsm-search">
-				<span class="tbsm-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.5-4.5"/></svg></span>
-				<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
-			</div>
-			<div id="tbsm-results" class="tbsm-results" hidden></div>
-			<div id="tbsm-selected" class="tbsm-selected" hidden></div>
+		<!-- انتخاب حالت کار -->
+		<div class="tbsm-tabs" role="tablist" aria-label="حالت کار">
+			<button type="button" class="tbsm-tab is-active" id="tbsm-tab-single" data-mode="single" role="tab" aria-selected="true">تک‌محصول</button>
+			<button type="button" class="tbsm-tab" id="tbsm-tab-model" data-mode="model" role="tab" aria-selected="false">گروهی با مدل</button>
 		</div>
 
-		<!-- گام ۲: دستهٔ متغیرها -->
-		<div class="tbsm-card tbsm-step-locked" id="tbsm-step-category">
-			<div class="tbsm-step-head">
-				<span class="tbsm-step-num">۲</span>
-				<div class="tbsm-step-titles">
-					<h2 class="tbsm-step-title">دستهٔ متغیرها</h2>
-					<p class="tbsm-step-sub">با انتخاب دسته، فقط همان متغیرها نشان داده و تیک می‌خورند؛ می‌توانید تیک‌ها را دستی جابه‌جا کنید.</p>
+		<div class="tbsm-panel" id="tbsm-panel-single">
+
+			<!-- گام ۱: انتخاب محصول -->
+			<div class="tbsm-card">
+				<div class="tbsm-step-head">
+					<span class="tbsm-step-num">۱</span>
+					<div class="tbsm-step-titles">
+						<h2 class="tbsm-step-title">انتخاب محصول</h2>
+						<p class="tbsm-step-sub">جست‌وجو بر اساس نام، SKU یا شناسه</p>
+					</div>
+				</div>
+				<div class="tbsm-search">
+					<span class="tbsm-search-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.5-4.5"/></svg></span>
+					<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
+				</div>
+				<div id="tbsm-results" class="tbsm-results" hidden></div>
+				<div id="tbsm-selected" class="tbsm-selected" hidden></div>
+			</div>
+
+			<!-- گام ۲: دستهٔ متغیرها -->
+			<div class="tbsm-card tbsm-step-locked" id="tbsm-step-category">
+				<div class="tbsm-step-head">
+					<span class="tbsm-step-num">۲</span>
+					<div class="tbsm-step-titles">
+						<h2 class="tbsm-step-title">دستهٔ متغیرها</h2>
+						<p class="tbsm-step-sub">با انتخاب دسته، فقط همان متغیرها نشان داده و تیک می‌خورند؛ می‌توانید تیک‌ها را دستی جابه‌جا کنید.</p>
+					</div>
+				</div>
+				<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
+					<option value="all">—</option>
+				</select>
+			</div>
+
+		</div><!-- /#tbsm-panel-single -->
+
+		<!-- حالت گروهی: مدل متغیر در بازهٔ شناسه -->
+		<div class="tbsm-panel" id="tbsm-panel-model" hidden>
+
+			<!-- گام ۱ گروهی: انتخاب مدل متغیر -->
+			<div class="tbsm-card">
+				<div class="tbsm-step-head">
+					<span class="tbsm-step-num">۱</span>
+					<div class="tbsm-step-titles">
+						<h2 class="tbsm-step-title">مدل متغیر</h2>
+						<p class="tbsm-step-sub">ویژگی و مقدار مدل را انتخاب کنید؛ بعد از «نمایش محصولات»، فقط همین متغیر در همهٔ محصولات بازه فهرست می‌شود.</p>
+					</div>
+				</div>
+				<div class="tbsm-model-form">
+					<label class="tbsm-field" for="tbsm-model-attr">
+						<span class="tbsm-field-label">ویژگی مدل</span>
+						<select id="tbsm-model-attr" class="tbsm-input tbsm-select">
+							<option value="">در حال بارگذاری…</option>
+						</select>
+					</label>
+					<label class="tbsm-field" for="tbsm-model-term">
+						<span class="tbsm-field-label">مقدار مدل</span>
+						<select id="tbsm-model-term" class="tbsm-input tbsm-select" disabled>
+							<option value="">— انتخاب کنید —</option>
+						</select>
+					</label>
 				</div>
 			</div>
-			<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
-				<option value="all">—</option>
-			</select>
-		</div>
 
-		<!-- گام ۳: کارت‌های متغیرها -->
+			<!-- گام ۲ گروهی: بازهٔ شناسهٔ محصولات -->
+			<div class="tbsm-card">
+				<div class="tbsm-step-head">
+					<span class="tbsm-step-num">۲</span>
+					<div class="tbsm-step-titles">
+						<h2 class="tbsm-step-title">بازهٔ شناسهٔ محصولات</h2>
+						<p class="tbsm-step-sub">مثلاً همهٔ محصولات با شناسهٔ CH — خالی بگذارید تا همهٔ محصولات بررسی شوند.</p>
+					</div>
+				</div>
+				<div class="tbsm-model-form">
+					<label class="tbsm-field tbsm-field--grow" for="tbsm-model-sku">
+						<span class="tbsm-field-label">شناسهٔ (SKU) محصول</span>
+						<input type="text" id="tbsm-model-sku" class="tbsm-input" placeholder="مثلاً CH" autocomplete="off">
+					</label>
+					<label class="tbsm-field" for="tbsm-model-sku-mode">
+						<span class="tbsm-field-label">نوع تطبیق</span>
+						<select id="tbsm-model-sku-mode" class="tbsm-input tbsm-select">
+							<option value="prefix">شروع می‌شود با</option>
+							<option value="contains">شامل می‌شود</option>
+						</select>
+					</label>
+					<button type="button" class="tisa-btn tisa-btn--primary tbsm-model-find" id="tbsm-model-find" disabled>نمایش محصولات</button>
+				</div>
+			</div>
+
+		</div><!-- /#tbsm-panel-model -->
+
+		<!-- گام ۳ (مشترک): کارت‌های متغیرها -->
 		<div class="tbsm-card tbsm-step-locked" id="tbsm-step-cards">
 			<div class="tbsm-step-head">
 				<span class="tbsm-step-num">۳</span>
@@ -85,6 +151,7 @@
 					<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 				</div>
 			</div>
+			<div class="tbsm-model-note" id="tbsm-model-note" hidden></div>
 			<div class="tbsm-grid" id="tbsm-grid" hidden></div>
 			<div class="tbsm-bottombar">
 				<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
@@ -102,8 +169,18 @@
 	(function () {
 		'use strict';
 
-		// دادهٔ نمونه: ۳ محصول
-		var MODELS = ['iPhone 13', 'iPhone 14', 'iPhone 15', 'iPhone 15 Pro Max', 'iPhone 16 Pro Max'];
+		// دادهٔ نمونه: ۳ محصول (دو متغیر + یک ساده)
+		var MODELS = [
+			{ label: 'iPhone 13', slug: 'iphone-13' },
+			{ label: 'iPhone 14', slug: 'iphone-14' },
+			{ label: 'iPhone 15', slug: 'iphone-15' },
+			{ label: 'iPhone 15 Pro Max', slug: 'iphone-15-pro-max' },
+			{ label: 'iPhone 16 Pro Max', slug: 'iphone-16-pro-max' }
+		];
+		var GALAXY = [
+			{ label: 'Galaxy S24 Ultra', slug: 'galaxy-s24-ultra' },
+			{ label: 'Galaxy S24', slug: 'galaxy-s24' }
+		];
 		var COLORS = [
 			{ label: 'مشکی', slug: 'sorkh-meshki' },
 			{ label: 'سبز', slug: 'sabz' },
@@ -112,35 +189,35 @@
 
 		function buildVars(pid, models, colors) {
 			var out = [], id = pid * 100;
-		models.forEach(function (m, mi) {
-			colors.forEach(function (c, ci) {
-				id++;
-				var stock = (mi + ci) % 3 === 0 ? 0 : ((mi * 7 + ci * 3 + pid) % 23);
-				var status = ((mi + ci) % 3 === 0) ? 'outofstock' : 'instock';
-				var managed = (mi % 2 === 0);
-				out.push({
-					id: id,
-					name: m + ' · ' + c.label,
-					sku: 'TS' + (8400 + id),
-					stock: stock,
-					status: status,
-					manage_stock: managed,
-					mode: managed ? 'qty' : (status === 'instock' ? 'in_stock' : 'out_of_stock'),
-					image: '',
-					cat: 'pa_model:m' + mi + '|' + 'pa_color:' + c.slug
+			models.forEach(function (m, mi) {
+				colors.forEach(function (c, ci) {
+					id++;
+					var stock = (mi + ci) % 3 === 0 ? 0 : ((mi * 7 + ci * 3 + pid) % 23);
+					var status = ((mi + ci) % 3 === 0) ? 'outofstock' : 'instock';
+					var managed = (mi % 2 === 0);
+					out.push({
+						id: id,
+						name: m.label + ' · ' + c.label,
+						sku: 'CH' + (8400 + id),
+						stock: stock,
+						status: status,
+						manage_stock: managed,
+						mode: managed ? 'qty' : (status === 'instock' ? 'in_stock' : 'out_of_stock'),
+						image: '',
+						cat: 'pa_model:' + m.slug + '|' + 'pa_color:' + c.slug
+					});
 				});
 			});
-		});
-		return out;
-	}
+			return out;
+		}
 
 		var PRODUCTS = [
 			{
-				id: 201, name: 'قاب اسپیس آیفون (سری کامل)', sku: 'TS184', type: 'variable',
+				id: 201, name: 'قاب اسپیس آیفون (سری کامل)', sku: 'CH184', type: 'variable',
 				status: 'publish', image: '', vars: buildVars(201, MODELS, COLORS),
 				cats: {
-					pa_model: { label: 'مدل', values: MODELS.map(function (m, i) {
-						return { label: m, slug: 'm' + i, count: COLORS.length };
+					pa_model: { label: 'مدل', values: MODELS.map(function (m) {
+						return { label: m.label, slug: m.slug, count: COLORS.length };
 					}) },
 					pa_color: { label: 'رنگ', values: COLORS.map(function (c) {
 						return { label: c.label, slug: c.slug, count: MODELS.length };
@@ -148,14 +225,14 @@
 				}
 			},
 			{
-				id: 202, name: 'قاب چرمی سامسونگ گلکسی', sku: 'SB210', type: 'variable',
-				status: 'draft', image: '', vars: buildVars(202, ['Galaxy S24 Ultra', 'Galaxy S24'], COLORS),
+				id: 202, name: 'قاب چرمی سامسونگ گلکسی', sku: 'CH210', type: 'variable',
+				status: 'draft', image: '', vars: buildVars(202, GALAXY, COLORS),
 				cats: {
 					// این محصول عمداً عنوان دسته‌ها را percent-encoded دارد (بازتولید باگ واقعی:
 					// برخی افزونه‌ها taxonomy ویژگی‌های فارسی را با نام URL-encoded می‌سازند).
 					pa_model: { label: 'd9%85d8%af%d9%84', values: [
-						{ label: 'Galaxy S24 Ultra', slug: 'm0', count: COLORS.length },
-						{ label: 'Galaxy S24', slug: 'm1', count: COLORS.length }
+						{ label: 'Galaxy S24 Ultra', slug: 'galaxy-s24-ultra', count: COLORS.length },
+						{ label: 'Galaxy S24', slug: 'galaxy-s24', count: COLORS.length }
 					] },
 					pa_color: { label: 'd8%b1d9%86da%af', values: COLORS.map(function (c) {
 						return { label: c.label, slug: c.slug, count: 2 };
@@ -163,9 +240,22 @@
 				}
 			},
 			{
-				id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', type: 'simple',
+				// محصول هم‌مدل با ۲۰۱ اما با شناسهٔ CH300 — برای دیدن «چند محصول در یک مدل».
+				id: 204, name: 'قاب شفاف آیفون', sku: 'CH300', type: 'variable',
+				status: 'publish', image: '', vars: buildVars(204, [MODELS[3], MODELS[4]], COLORS),
+				cats: {
+					pa_model: { label: 'مدل', values: [MODELS[3], MODELS[4]].map(function (m) {
+						return { label: m.label, slug: m.slug, count: COLORS.length };
+					}) },
+					pa_color: { label: 'رنگ', values: COLORS.map(function (c) {
+						return { label: c.label, slug: c.slug, count: 2 };
+					}) }
+				}
+			},
+			{
+				id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SB050', type: 'simple',
 				status: 'publish', image: '',
-				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SM050', stock: 12, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: '' }],
+				vars: [{ id: 203, name: 'قاب ساده شیائومی ردمی', sku: 'SB050', stock: 12, status: 'instock', manage_stock: true, mode: 'qty', image: '', cat: '' }],
 				cats: {}
 			}
 		];
@@ -184,6 +274,53 @@
 					p.name.toLowerCase().indexOf(t) !== -1 ||
 					p.sku.toLowerCase().indexOf(t) !== -1;
 			}).map(brief);
+		}
+
+		/** فهرست ویژگی‌ها و مقادیرشان — همان کاری که سرور از متای متغیرها می‌کند. */
+		function modelOptions() {
+			var map = {};
+			PRODUCTS.forEach(function (p) {
+				if (p.type !== 'variable') { return; }
+				Object.keys(p.cats || {}).forEach(function (attr) {
+					var group = map[attr] || (map[attr] = { attr: attr, label: p.cats[attr].label, values: {} });
+					p.cats[attr].values.forEach(function (val) {
+						var v = group.values[val.slug] || (group.values[val.slug] = { value: val.slug, label: val.label, count: 0 });
+						v.count += val.count;
+					});
+				});
+			});
+			return Object.keys(map).map(function (attr) {
+				return {
+					attr: map[attr].attr,
+					label: map[attr].label,
+					values: Object.keys(map[attr].values).map(function (slug) { return map[attr].values[slug]; })
+				};
+			});
+		}
+
+		/** آیا این متغیر با مدل/بازهٔ انتخاب‌شده می‌خواند؟ (هم‌منطق با سرور) */
+		function matchesModel(p, v, attr, term, sku, skuMode) {
+			if (p.type !== 'variable') { return false; }
+			if (('|' + (v.cat || '') + '|').indexOf('|' + attr + ':' + term + '|') === -1) { return false; }
+			if (!sku) { return true; }
+			var psku = String(p.sku || '').toLowerCase(), needle = String(sku).toLowerCase();
+			return (skuMode === 'contains') ? (psku.indexOf(needle) !== -1) : (psku.indexOf(needle) === 0);
+		}
+
+		function findModelRows(attr, term, sku, skuMode) {
+			var rows = [], products = {};
+			PRODUCTS.forEach(function (p) {
+				p.vars.forEach(function (v) {
+					if (!matchesModel(p, v, attr, term, sku, skuMode)) { return; }
+					rows.push({
+						id: v.id, pid: p.id, pname: p.name, psku: p.sku, name: v.name, sku: v.sku,
+						stock: v.stock, status: v.status, manage_stock: v.manage_stock, mode: v.mode,
+						image: '', cat: ''
+					});
+					products[p.id] = true;
+				});
+			});
+			return { rows: rows, products: Object.keys(products).length };
 		}
 
 		// قرارداد tbsmData (مثل wp_localize_script)
@@ -229,9 +366,66 @@
 				enabledManage: 'موجودی‌گیری برای %d متغیر خاموش بود و هنگام اعمال روشن شد.',
 				errorCount: '%d مورد خطا داشت:',
 				applyError: 'اعمال ناموفق بود: %s',
-				errorApplyEmpty: 'مقداری برای اعمال پیدا نشد.'
+				errorApplyEmpty: 'مقداری برای اعمال پیدا نشد.',
+
+				modelTermPick: '— انتخاب کنید —',
+				modelAttrEmpty: 'ویژگی متغیری پیدا نشد؛ ابتدا برای محصولات متغیر بسازید.',
+				modelAttrError: 'بارگذاری فهرست ویژگی‌ها ناموفق بود.',
+				modelSkuModeContains: 'شامل می‌شود',
+				modelFindBtn: 'نمایش محصولات',
+				modelSearching: 'در حال فهرست‌کردن محصولات…',
+				modelNeedSelection: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
+				modelFindError: 'فهرست‌کردن محصولات ناموفق بود.',
+				modelEmpty: 'محصولی با این مدل و بازهٔ شناسه پیدا نشد.',
+				modelNote: 'مدل «%1$s» • شناسه: %2$s — %3$d متغیر در %4$d محصول',
+				modelNoteAll: 'همهٔ محصولات',
+				modelTruncated: 'فهرست به %d مورد محدود شد؛ بازه را دقیق‌تر کنید.',
+				modelHintEmpty: 'ابتدا مدل و بازهٔ شناسه را انتخاب کنید و «نمایش محصولات» را بزنید.',
+				modelApplyConfirm: 'تأیید: اعمال روی %d متغیر گروهی؟',
+				parentsSynced: 'وضعیت موجودی %d محصول والد همگام شد.'
 			}
 		};
+
+		/** اعمال ماک روی یک متغیر — همان منطق TBSM_Stock::apply_one(). */
+		function applySpec(v, spec, report, errors) {
+			var mode = 'qty', to = null;
+			if (spec && typeof spec === 'object') {
+				mode = (spec.mode === 'in_stock' || spec.mode === 'out_of_stock') ? spec.mode : 'qty';
+				if (mode === 'qty') { to = Number(spec.qty); }
+			} else if (spec !== '' && spec !== null && spec !== undefined) {
+				to = Number(spec);
+			}
+			if (mode === 'qty' && (!isFinite(to) || to < 0)) {
+				errors.push('موجودی متغیر #' + v.id + ' عدد معتبر نبود؛ رد شد.');
+				return false;
+			}
+
+			var from = v.stock, fromStatus = v.status, wasManaged = !!v.manage_stock, enabled = false;
+
+			if (mode === 'in_stock') {
+				v.manage_stock = false;
+				v.status = 'instock';
+				v.mode = 'in_stock';
+			} else if (mode === 'out_of_stock') {
+				v.manage_stock = false;
+				v.status = 'outofstock';
+				v.mode = 'out_of_stock';
+			} else {
+				enabled = !wasManaged;
+				v.manage_stock = true;
+				v.stock = to;
+				v.status = to > 0 ? 'instock' : 'outofstock';
+				v.mode = 'qty';
+			}
+
+			report.push({
+				id: v.id, name: v.name, sku: v.sku, mode: mode,
+				from: from, to: (mode === 'qty' ? to : null),
+				from_status: fromStatus, to_status: v.status,
+				enabled: enabled
+			});
+			return true;
+		}
 
 		// ماک $.get / $.post با همان شیوایی (Deferred)
 		$(document).ready(function () {
@@ -250,6 +444,7 @@
 						d.resolve({ success: false, data: { error: 'بدون اکشن' } });
 						return;
 					}
+
 					if (data.action === 'tbsm_load_product') {
 						var p = null;
 						for (var i = 0; i < PRODUCTS.length; i++) {
@@ -262,69 +457,90 @@
 						d.resolve({ success: true, data: { product: brief(p), variations: p.vars, categories: p.cats } });
 						return;
 					}
-					if (data.action === 'tbsm_apply_stock') {
-						var p2 = null;
-						for (var j = 0; j < PRODUCTS.length; j++) {
-							if (PRODUCTS[j].id === data.product_id) { p2 = PRODUCTS[j]; break; }
+
+					if (data.action === 'tbsm_model_options') {
+						d.resolve({ success: true, data: { attributes: modelOptions() } });
+						return;
+					}
+
+					if (data.action === 'tbsm_find_model') {
+						if (!data.attr || !data.term) {
+							d.resolve({ success: false, data: { message: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' } });
+							return;
 						}
-					var report = [], errors = [], enabled = 0, anyStock = false;
-					Object.keys(data.items || {}).forEach(function (vid) {
-						var v = null;
-						for (var k = 0; k < p2.vars.length; k++) {
-							if (p2.vars[k].id === Number(vid)) { v = p2.vars[k]; break; }
-						}
-						if (!v) { errors.push('متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.'); return; }
-						// مقدار: عدد (قدیمی) یا { mode, qty }
-						var spec = data.items[vid];
-						var mode = 'qty', to = null;
-						if (spec && typeof spec === 'object') {
-							mode = (spec.mode === 'in_stock' || spec.mode === 'out_of_stock') ? spec.mode : 'qty';
-							if (mode === 'qty') { to = Number(spec.qty); }
-						} else if (spec !== '' && spec !== null && spec !== undefined) {
-							to = Number(spec);
-						}
-						if (mode === 'qty' && (!isFinite(to) || to < 0)) { errors.push('موجودی متغیر #' + vid + ' عدد معتبر نبود؛ رد شد.'); return; }
-						var from = v.stock;
-						var from_status = v.status;
-						var wasManaged = !!v.manage_stock;
-						if (mode === 'in_stock') {
-							v.manage_stock = false;
-							v.status = 'instock';
-							v.mode = 'in_stock';
-							if (v.stock > 0) { anyStock = true; }
-						} else if (mode === 'out_of_stock') {
-							v.manage_stock = false;
-							v.status = 'outofstock';
-							v.mode = 'out_of_stock';
-						} else {
-							if (!wasManaged) { enabled++; }
-							v.manage_stock = true;
-							v.stock = to;
-							v.status = to > 0 ? 'instock' : 'outofstock';
-							v.mode = 'qty';
-							if (to > 0) { anyStock = true; }
-						}
-						report.push({
-							id: v.id, name: v.name, sku: v.sku, mode: mode,
-							from: from, to: (mode === 'qty' ? to : null),
-							from_status: from_status, to_status: v.status,
-							enabled: !wasManaged
+						var found = findModelRows(data.attr, data.term, data.sku, data.sku_mode);
+						d.resolve({
+							success: true,
+							data: {
+								rows: found.rows, total: found.rows.length, products: found.products,
+								truncated: false, limit: 300,
+								attr: data.attr, term: data.term, sku: data.sku, sku_mode: data.sku_mode
+							}
 						});
-					});
-						p2.vars.forEach(function (v) { if (v.stock > 0) { anyStock = true; } });
+						return;
+					}
+
+					if (data.action === 'tbsm_apply_stock' || data.action === 'tbsm_apply_model_stock') {
+						var isModel = (data.action === 'tbsm_apply_model_stock');
+						var targets = [];
+						PRODUCTS.forEach(function (item) {
+							if (!isModel && item.id !== data.product_id) { return; }
+							item.vars.forEach(function (v) {
+								if (isModel && !matchesModel(item, v, data.attr, data.term, data.sku, data.sku_mode)) { return; }
+								targets.push({ product: item, variation: v });
+							});
+						});
+
+						var report = [], errors = [], enabled = 0, touched = {}, anyStock = false;
+						var wanted = data.items || {};
+
+						targets.forEach(function (t) {
+							var vid = String(t.variation.id);
+							if (!Object.prototype.hasOwnProperty.call(wanted, vid)) { return; }
+							var wasManaged = !!t.variation.manage_stock;
+							if (!applySpec(t.variation, wanted[vid], report, errors)) { return; }
+							report[report.length - 1].product = t.product.name;
+							if (!wasManaged && t.variation.manage_stock) { enabled++; }
+							touched[t.product.id] = true;
+						});
+
+						Object.keys(wanted).forEach(function (vid) {
+							var hit = false;
+							for (var i = 0; i < targets.length; i++) {
+								if (String(targets[i].variation.id) === String(vid)) { hit = true; break; }
+							}
+							if (!hit) {
+								errors.push(isModel
+									? 'متغیر #' + vid + ' با مدل/بازهٔ شناسهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.'
+									: 'متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.');
+							}
+						});
+
+						var touchedIds = Object.keys(touched);
+						touchedIds.forEach(function (pid) {
+							var prod = null;
+							for (var j = 0; j < PRODUCTS.length; j++) {
+								if (String(PRODUCTS[j].id) === String(pid)) { prod = PRODUCTS[j]; break; }
+							}
+							if (!prod) { return; }
+							prod.vars.forEach(function (v) { if (v.stock > 0) { anyStock = true; } });
+						});
+
 						d.resolve({
 							success: true,
 							data: {
 								ok: report.length > 0,
 								applied: report.length,
 								enabled_manage: enabled,
-								parent_status: p2.type === 'variable' ? (anyStock ? 'instock' : 'outofstock') : (p2.vars[0].stock > 0 ? 'instock' : 'outofstock'),
+								parent_status: (touchedIds.length === 1) ? (anyStock ? 'instock' : 'outofstock') : null,
+								parents_synced: touchedIds.length,
 								report: report,
 								errors: errors
 							}
 						});
 						return;
 					}
+
 					d.resolve({ success: false, data: { error: 'اکشن ناشناخته' } });
 				}, 260);
 				return d;

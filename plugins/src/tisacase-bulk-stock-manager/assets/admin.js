@@ -21,6 +21,12 @@
 		unifiedConfirmTimer: null,
 		loadSeq: 0,
 
+		mode: 'single',     // 'single' = تک‌محصول | 'model' = گروهی با مدل
+		model: null,        // {attr, term, sku, skuMode} — بافت آخرین جست‌وجوی گروهی
+		modelOptions: null, // [{attr, label, values: [{value, label, count}]}]
+		modelLoaded: false,
+		modelNoteHtml: '',
+
 		/* ----------------------------------------------------------
 		 * ابزارها
 		 * ---------------------------------------------------------- */
@@ -162,6 +168,290 @@
 			$('#tbsm-apply').on('click', function () {
 				self.apply();
 			});
+
+			// تب‌ها: تک‌محصول ↔ گروهی با مدل
+			$('.tbsm-tab').on('click', function () {
+				self.setMode($(this).attr('data-mode'));
+			});
+
+			// حالت گروهی: ویژگی/مقدار مدل و بازهٔ شناسه
+			$('#tbsm-model-attr').on('change', function () {
+				self.renderModelTerms(this.value);
+			});
+			$('#tbsm-model-term').on('change', function () {
+				self.refreshModelFind();
+			});
+			$('#tbsm-model-sku-mode').on('change', function () {
+				self.refreshModelFind();
+			});
+			$('#tbsm-model-sku').on('input', function () {
+				self.refreshModelFind();
+			});
+			$('#tbsm-model-sku').on('keydown', function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					self.findModel();
+				}
+			});
+			$('#tbsm-model-find').on('click', function () {
+				self.findModel();
+			});
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت کار (تب): تک‌محصول / گروهی با مدل
+		 * ---------------------------------------------------------- */
+
+		setMode: function (mode) {
+			mode = (mode === 'model') ? 'model' : 'single';
+			if (mode === this.mode) {
+				return;
+			}
+			this.mode = mode;
+			this.loadSeq++; // پاسخ‌های دیررس بی‌اثر می‌شوند
+
+			$('.tbsm-tab')
+				.removeClass('is-active')
+				.attr('aria-selected', 'false')
+				.filter('[data-mode="' + mode + '"]')
+				.addClass('is-active')
+				.attr('aria-selected', 'true');
+
+			$('#tbsm-panel-single').prop('hidden', mode !== 'single');
+			$('#tbsm-panel-model').prop('hidden', mode !== 'model');
+
+			this.clearSelection(true);
+			this.notice('');
+
+			if (mode === 'model') {
+				this.loadModelOptions();
+				this.refreshModelFind();
+				$('#tbsm-model-sku').trigger('focus');
+			} else {
+				$('#tbsm-model-note').prop('hidden', true).empty();
+				$('#tbsm-search').trigger('focus');
+			}
+
+			this.updateBottomHint();
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی: مدل متغیر + بازهٔ شناسه
+		 * ---------------------------------------------------------- */
+
+		/** بارگذاری یک‌بارهٔ فهرست ویژگی‌ها و مقادیرشان. */
+		loadModelOptions: function () {
+			var self = this;
+			if (this.modelLoaded) {
+				return;
+			}
+			this.modelLoaded = true;
+
+			$.post(window.tbsmData.ajaxUrl, {
+				action: 'tbsm_model_options',
+				nonce: window.tbsmData.nonce
+			})
+				.done(function (res) {
+					if (!res || !res.success) {
+						self.modelLoaded = false;
+						self.notice(self.i18n('modelAttrError'), 'error');
+						return;
+					}
+					self.modelOptions = (res.data && res.data.attributes) ? res.data.attributes : [];
+					self.renderModelAttrSelect();
+				})
+				.fail(function () {
+					self.modelLoaded = false;
+					self.notice(self.i18n('modelAttrError'), 'error');
+				});
+		},
+
+		renderModelAttrSelect: function () {
+			var $sel = $('#tbsm-model-attr');
+			var list = this.modelOptions || [];
+
+			if (!list.length) {
+				$sel.html('<option value="">—</option>');
+				this.notice(this.i18n('modelAttrEmpty'), 'error');
+				this.renderModelTerms('');
+				return;
+			}
+
+			var html = '<option value="">' + this.esc(this.i18n('modelTermPick')) + '</option>';
+			for (var i = 0; i < list.length; i++) {
+				html += '<option value="' + this.esc(list[i].attr) + '">'
+					+ this.esc(this.catLabel(list[i].label)) + '</option>';
+			}
+			$sel.html(html).val('');
+			this.renderModelTerms('');
+		},
+
+		/** پرکردن سلکت مقدار مدل بر اساس ویژگی انتخاب‌شده. */
+		renderModelTerms: function (attr) {
+			var $term = $('#tbsm-model-term');
+			var list = this.modelOptions || [];
+			var picked = null;
+
+			for (var i = 0; i < list.length; i++) {
+				if (list[i].attr === attr) {
+					picked = list[i];
+					break;
+				}
+			}
+
+			if (!picked) {
+				$term.prop('disabled', true).html('<option value="">' + this.esc(this.i18n('modelTermPick')) + '</option>');
+				this.refreshModelFind();
+				return;
+			}
+
+			var html = '<option value="">' + this.esc(this.i18n('modelTermPick')) + '</option>';
+			for (var j = 0; j < picked.values.length; j++) {
+				var v = picked.values[j];
+				var vLabel = this.catLabel(v.label);
+				html += '<option value="' + this.esc(v.value) + '" data-label="' + this.esc(vLabel) + '">'
+					+ this.esc(vLabel) + (v.count ? ' (' + this.fmt(v.count) + ')' : '') + '</option>';
+			}
+			$term.prop('disabled', false).html(html).val('');
+			this.refreshModelFind();
+		},
+
+		/** دکمهٔ «نمایش محصولات» فقط با مدل کامل فعال می‌شود. */
+		refreshModelFind: function () {
+			var ready = !!$('#tbsm-model-attr').val() && !!$('#tbsm-model-term').val();
+			$('#tbsm-model-find').prop('disabled', !ready || this.busy);
+		},
+
+		/** فهرست‌کردن متغیرهای مدل انتخاب‌شده در بازهٔ شناسه. */
+		findModel: function () {
+			var self = this;
+			if (this.busy) {
+				return;
+			}
+
+			var attr = $('#tbsm-model-attr').val();
+			var term = $('#tbsm-model-term').val();
+			if (!attr || !term) {
+				this.notice(this.i18n('modelNeedSelection'), 'error');
+				return;
+			}
+
+			var sku = $.trim($('#tbsm-model-sku').val() || '');
+			var skuMode = $('#tbsm-model-sku-mode').val() || 'prefix';
+			if (!sku) {
+				skuMode = 'prefix';
+			}
+
+			var seq = ++this.loadSeq;
+			var attrLabel = $.trim($('#tbsm-model-attr option:selected').text());
+			var termLabel = $('#tbsm-model-term option:selected').attr('data-label');
+			if (!termLabel) {
+				termLabel = $.trim($('#tbsm-model-term option:selected').text());
+			}
+
+			this.clearSelection(true);
+			this.notice('');
+			this.busy = true;
+			$('#tbsm-model-find').prop('disabled', true).text(this.i18n('modelSearching'));
+			$('#tbsm-grid').prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(this.i18n('modelSearching')) + '</div>');
+
+			$.post(window.tbsmData.ajaxUrl, {
+				action: 'tbsm_find_model',
+				nonce: window.tbsmData.nonce,
+				attr: attr,
+				term: term,
+				sku: sku,
+				sku_mode: skuMode
+			})
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						var errMsg = (res && res.data && (res.data.message || res.data.error))
+							? (res.data.message || res.data.error)
+							: self.i18n('modelFindError');
+						self.notice(errMsg, 'error');
+						self.renderGrid();
+						return;
+					}
+					var data = res.data || {};
+					self.model = { attr: attr, term: term, sku: sku, skuMode: skuMode };
+					self.variations = data.rows || [];
+					self.categories = {};
+
+					if (!self.variations.length) {
+						self.renderGrid();
+						self.notice(self.i18n('modelEmpty'), 'info');
+					} else {
+						self.renderGrid();
+						$('#tbsm-step-cards').removeClass('tbsm-step-locked');
+					}
+
+					self.renderModelNote(data, attrLabel, termLabel, sku);
+					self.refreshCounts();
+				})
+				.fail(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.notice(self.i18n('modelFindError'), 'error');
+					self.renderGrid();
+				})
+				.always(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.busy = false;
+					$('#tbsm-model-find').text(self.i18n('modelFindBtn'));
+					self.refreshModelFind();
+					self.refreshCounts();
+				});
+		},
+
+		/** خط اطلاعات بالای کارت‌ها: مدل، بازهٔ شناسه و شمارش. */
+		renderModelNote: function (data, attrLabel, termLabel, sku) {
+			var $note = $('#tbsm-model-note');
+			if (this.mode !== 'model' || !this.model) {
+				$note.prop('hidden', true).empty();
+				return;
+			}
+
+			var total = (data && typeof data.total !== 'undefined') ? data.total : this.variations.length;
+			var products = (data && typeof data.products !== 'undefined') ? data.products : 0;
+			var range = sku
+				? (sku + (this.model.skuMode === 'contains' ? ' (' + this.i18n('modelSkuModeContains') + ')' : ''))
+				: this.i18n('modelNoteAll');
+
+			var html = '<span class="tbsm-model-note-main">'
+				+ this.esc(this.i18n('modelNote')
+					.replace('%1$s', $.trim(attrLabel + ' · ' + termLabel))
+					.replace('%2$s', range)
+					.replace('%3$d', this.fmt(total))
+					.replace('%4$d', this.fmt(products)))
+				+ '</span>';
+
+			if (data && data.truncated) {
+				html += '<span class="tbsm-model-note-warn">'
+					+ this.esc(this.i18n('modelTruncated').replace('%d', this.fmt(data.limit || 0)))
+					+ '</span>';
+			}
+
+			this.modelNoteHtml = html;
+			$note.prop('hidden', false).html(html);
+		},
+
+		/** راهنمای نوار پایین بر اساس حالت و وضعیت فهرست. */
+		updateBottomHint: function () {
+			var $cards = $('#tbsm-grid .tbsm-var');
+			var selected = $cards.filter(':not(.is-hidden).is-selected').length;
+			if (selected > 0) {
+				$('#tbsm-bottombar-hint').text(this.i18n('bottomHint'));
+			} else if (this.mode === 'model' && !$cards.length) {
+				$('#tbsm-bottombar-hint').text(this.i18n('modelHintEmpty'));
+			} else {
+				$('#tbsm-bottombar-hint').text(this.i18n('selectAtLeastOne'));
+			}
 		},
 
 		/* ----------------------------------------------------------
@@ -323,6 +613,8 @@
 			this.product = null;
 			this.variations = [];
 			this.categories = {};
+			this.model = null;
+			this.modelNoteHtml = '';
 			this.confirmMode = false;
 			clearTimeout(this.confirmTimer);
 			this.unifiedConfirm = false;
@@ -331,6 +623,7 @@
 			$('#tbsm-selected').prop('hidden', true).empty();
 			$('#tbsm-grid').prop('hidden', true).empty();
 			$('#tbsm-report').prop('hidden', true).empty();
+			$('#tbsm-model-note').prop('hidden', true).empty();
 			$('#tbsm-counts').empty();
 			$('#tbsm-cat-select').prop('disabled', true).html('<option value="all">—</option>');
 			$('#tbsm-step-category').addClass('tbsm-step-locked');
@@ -339,7 +632,7 @@
 			$('#tbsm-quickset').val('');
 			$('#tbsm-quickset-btn').prop('disabled', true);
 			$('#tbsm-unified').prop('disabled', true).removeClass('tisa-btn--confirm').text(this.i18n('unifiedBtn'));
-			$('#tbsm-bottombar-hint').text(this.i18n('selectAtLeastOne'));
+			this.updateBottomHint();
 			if (!keepSearch) {
 				$('#tbsm-search').val('').trigger('focus');
 			}
@@ -399,7 +692,8 @@
 			var $grid = $('#tbsm-grid');
 
 			if (!this.variations.length) {
-				$grid.prop('hidden', false).html('<div class="tbsm-grid-empty">—</div>');
+				var emptyText = (this.mode === 'model') ? this.i18n('modelEmpty') : '—';
+				$grid.prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(emptyText) + '</div>');
 				return;
 			}
 
@@ -429,10 +723,16 @@
 				var selIn  = mode === 'in_stock' ? ' selected' : '';
 				var selOut = mode === 'out_of_stock' ? ' selected' : '';
 
-				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat) + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
+				// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
+				var title = v.pname ? v.pname : v.name;
+				var sub = v.pname
+					? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
+					: (v.sku ? v.sku : '#' + v.id);
+
+				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
 					+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
-					+ '<span class="tbsm-var-name">' + this.esc(v.name) + '</span>'
-					+ (v.sku ? '<span class="tbsm-var-sku">' + this.esc(v.sku) + '</span>' : '<span class="tbsm-var-sku">#' + v.id + '</span>')
+					+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
+					+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
 					+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
 					+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
 					+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
@@ -668,7 +968,7 @@
 				}
 			}
 
-			$('#tbsm-bottombar-hint').text(selected > 0 ? this.i18n('bottomHint') : this.i18n('selectAtLeastOne'));
+			this.updateBottomHint();
 		},
 
 		/* ----------------------------------------------------------
@@ -677,7 +977,7 @@
 
 		apply: function () {
 			var self = this;
-			if (this.busy || !this.product) {
+			if (this.busy || !this.readyContext()) {
 				return;
 			}
 
@@ -721,7 +1021,7 @@
 			var $btn = $('#tbsm-apply');
 			if (!this.confirmMode) {
 				this.confirmMode = true;
-				$btn.addClass('tisa-btn--confirm').text(this.i18n('applyConfirm').replace('%d', this.fmt(count)));
+				$btn.addClass('tisa-btn--confirm').text(this.applyConfirmText(count));
 				clearTimeout(this.confirmTimer);
 				this.confirmTimer = setTimeout(function () {
 					TBSM.confirmMode = false;
@@ -736,12 +1036,7 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			$.post(window.tbsmData.ajaxUrl, {
-				action: 'tbsm_apply_stock',
-				nonce: window.tbsmData.nonce,
-				product_id: this.product.id,
-				items: items
-			})
+			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
 				.done(function (res) {
 					if (res && res.success) {
 						self.renderReport(res.data);
@@ -750,21 +1045,58 @@
 					}
 				})
 				.fail(function (xhr) {
-					var msg = '';
-					try {
-						var parsed = xhr.responseJSON;
-						if (parsed) {
-							msg = self.applyMsg(parsed.data);
-						}
-					} catch (e) {
-						// پاسخ غیر-JSON
-					}
-					self.notice(self.i18n('applyError').replace('%s', msg || 'HTTP ' + (xhr.status || 0)), 'error');
+					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
 				})
 				.always(function () {
 					self.busy = false;
 					self.refreshCounts();
 				});
+		},
+
+		/** متن تأیید دکمهٔ اعمال بر اساس حالت کار. */
+		applyConfirmText: function (count) {
+			var key = (this.mode === 'model') ? 'modelApplyConfirm' : 'applyConfirm';
+			return this.i18n(key).replace('%d', this.fmt(count));
+		},
+
+		/** آیا بافت لازم برای اعمال آماده است؟ (محصول در حالت تکی، مدل در حالت گروهی) */
+		readyContext: function () {
+			return (this.mode === 'model') ? !!this.model : !!this.product;
+		},
+
+		/** بدنهٔ درخواست اعمال بر اساس حالت کار. */
+		applyPayload: function (items) {
+			var payload = {
+				nonce: window.tbsmData.nonce,
+				items: items
+			};
+
+			if (this.mode === 'model') {
+				payload.action = 'tbsm_apply_model_stock';
+				payload.attr = this.model.attr;
+				payload.term = this.model.term;
+				payload.sku = this.model.sku;
+				payload.sku_mode = this.model.skuMode;
+			} else {
+				payload.action = 'tbsm_apply_stock';
+				payload.product_id = this.product.id;
+			}
+
+			return payload;
+		},
+
+		/** پیام خطای درخواست اعمال از پاسخ (JSON یا HTTP). */
+		applyFailMsg: function (xhr) {
+			var msg = '';
+			try {
+				var parsed = xhr && xhr.responseJSON;
+				if (parsed) {
+					msg = this.applyMsg(parsed.data);
+				}
+			} catch (e) {
+				// پاسخ غیر-JSON
+			}
+			return msg || ('HTTP ' + ((xhr && xhr.status) || 0));
 		},
 
 		/**
@@ -794,7 +1126,7 @@
 		 */
 		applyUnified: function () {
 			var self = this;
-			if (this.busy || !this.product) {
+			if (this.busy || !this.readyContext()) {
 				return;
 			}
 
@@ -851,12 +1183,7 @@
 				self.paintStockbox($card);
 			});
 
-			$.post(window.tbsmData.ajaxUrl, {
-				action: 'tbsm_apply_stock',
-				nonce: window.tbsmData.nonce,
-				product_id: this.product.id,
-				items: items
-			})
+			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
 				.done(function (res) {
 					if (res && res.success) {
 						self.renderReport(res.data);
@@ -865,16 +1192,7 @@
 					}
 				})
 				.fail(function (xhr) {
-					var msg = '';
-					try {
-						var parsed = xhr.responseJSON;
-						if (parsed) {
-							msg = self.applyMsg(parsed.data);
-						}
-					} catch (e) {
-						// پاسخ غیر-JSON
-					}
-					self.notice(self.i18n('applyError').replace('%s', msg || 'HTTP ' + (xhr.status || 0)), 'error');
+					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
 				})
 				.always(function () {
 					self.busy = false;
@@ -895,8 +1213,11 @@
 					? this.fmt(it.from) + ' \u2190 ' + this.fmt(it.to)
 					: this.statusLabel(it.from_status) + ' \u2190 ' + this.statusLabel(it.to_status);
 
+				// در حالت گروهی، نام محصول والد هم پشت نام متغیر می‌آید تا ردیف‌ها قابل تفکیک باشند.
+				var rowLabel = it.product ? (it.product + ' — ' + it.name) : it.name;
+
 				rows += '<div class="tbsm-report-row">'
-					+ '<span>' + this.esc(it.name) + '</span>'
+					+ '<span>' + this.esc(rowLabel) + '</span>'
 					+ (it.sku ? '<span class="tbsm-report-sku">' + this.esc(it.sku) + '</span>' : '')
 					+ '<span class="tbsm-report-diff">' + this.esc(diff) + '</span>'
 					+ '</div>';
@@ -929,6 +1250,8 @@
 					? this.i18n('inStockLabel')
 					: this.i18n('outOfStockLabel');
 				html += '<div>' + this.esc(this.i18n('parentSynced').replace('%s', label)) + '</div>';
+			} else if (data.parents_synced) {
+				html += '<div>' + this.esc(this.i18n('parentsSynced').replace('%d', this.fmt(data.parents_synced))) + '</div>';
 			}
 
 			if (data.enabled_manage) {
