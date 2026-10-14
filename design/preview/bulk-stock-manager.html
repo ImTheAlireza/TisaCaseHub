@@ -773,7 +773,9 @@
 				groupMoreBtn: 'نمایش %d مورد بعدی',
 				groupMoreLoading: 'در حال آوردن صفحهٔ بعدی…',
 				applyProgress: 'اعمال دسته‌ای: تا مورد %1$d از %2$d…',
-				applyStopped: 'اعمال در دستهٔ %d متوقف شد (خطای سرور)؛ موارد تا اینجا اعمال شدند و در گزارش آمده‌اند — بقیه را دوباره اعمال کنید.',
+				applyAllDone: 'همهٔ کارت‌های انتخابی همین الان موفق اعمال شده‌اند؛ برای اعمال دوباره، مقدار/حالت را عوض کنید یا تیک را بردارید و دوباره بزنید.',
+				applySomeFailed: 'اعمال پایان یافت ولی %d مورد به خطای سرور خورد و رد شد (در گزارش آمده)؛ برای فرستادن دوبارهٔ همان‌ها، «اعمال» را بزنید.',
+				applyItemFailed: 'متغیر #%s پس از تلاش دوباره اعمال نشد (خطای سرور).',
 				groupApplyConfirm: 'تأیید: اعمال روی %d متغیر گروهی؟',
 				parentsSynced: 'وضعیت موجودی %d محصول والد همگام شد.'
 			}
@@ -957,6 +959,15 @@
 
 					if (data.action === 'tbsm_apply_stock' || data.action === 'tbsm_apply_scope_stock') {
 						window.tbsmMockApplyCalls = (window.tbsmMockApplyCalls || 0) + 1;
+						if (window.tbsmMockApplyFail) {
+							var badHit = Object.keys(data.items || {}).some(function (id) {
+								return window.tbsmMockApplyFail.indexOf(String(id)) !== -1;
+							});
+							if (badHit) {
+								d.resolve({ success: false, data: { message: 'خطای ساختگی سرور برای تست' } });
+								return;
+							}
+						}
 						var isModel = (data.action === 'tbsm_apply_scope_stock');
 						var targets = [];
 						PRODUCTS.forEach(function (item) {

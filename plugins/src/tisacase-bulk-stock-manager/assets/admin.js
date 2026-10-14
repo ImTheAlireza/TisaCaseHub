@@ -346,9 +346,12 @@
 			}).on('input', '.tbsm-var-stock', function () {
 				var $card = $(this).closest('.tbsm-var');
 				$card.removeClass('is-invalid');
+				$card.removeAttr('data-applied');
 				self.paintStockbox($card);
 			}).on('change', '.tbsm-var-mode', function () {
-				self.setCardMode($(this).closest('.tbsm-var'), this.value);
+				var $card = $(this).closest('.tbsm-var');
+				$card.removeAttr('data-applied');
+				self.setCardMode($card, this.value);
 			});
 
 			$('#tbsm-quickset-btn').on('click', function () {
@@ -1751,6 +1754,7 @@
 		toggleCard: function ($card) {
 			$card.toggleClass('is-selected');
 			$card.attr('data-touched', '1');
+			$card.removeAttr('data-applied');
 			this.refreshCounts();
 		},
 
@@ -1773,6 +1777,7 @@
 				next = 0;
 			}
 			$input.val(next).removeClass('is-invalid').trigger('focus');
+			$card.removeAttr('data-applied');
 			this.paintStockbox($card);
 		},
 
@@ -2108,6 +2113,7 @@
 
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
 				var $card = $(this);
+				$card.removeAttr('data-applied');
 				if (mode === 'qty') {
 					if ($card.attr('data-mode') !== 'qty') {
 						self.setCardMode($card, 'qty');
@@ -2196,18 +2202,31 @@
 		 * به timeout و HTTP 500 می‌خورد؛ دسته‌های ۲۵تایی هر درخواست را سبک نگه می‌دارند.
 		 * گزارش‌ها تجمیع می‌شوند و همگام‌سازی والد بدون شمارش مضاعف (با sync_id).
 		 */
+		/**
+		 * اعمال را در دسته‌های کوچک و پشت‌سرهم می‌فرستد.
+		 * چرا؟ ذخیرهٔ صدها متغیر ووکامرس در «یک» درخواست روی هاست اشتراکی
+		 * به timeout و HTTP 500 می‌خورد؛ دسته‌های کوچک هر درخواست را سبک نگه می‌دارند.
+		 *
+		 * تاب‌آوری: دستهٔ خطادار نصف می‌شود تا مورد خراب جدا بیفتد؛ تک‌موردِ خراب
+		 * یک بار تلاش دوباره می‌شود و بعد با خطا در گزارش رد می‌شود (بقیه ادامه می‌یابد).
+		 * کارت‌های پردازش‌شده نشان «data-applied» می‌گیرند تا «اعمال» بعدی فقط
+		 * باقی‌مانده را بفرستد (ادامه از همان‌جا که ماند).
+		 */
 		applyChunks: function (items) {
 			var self = this;
 			var size = Math.max(1, this.applyChunk || 25);
 			var ids = Object.keys(items);
-			var chunks = [];
+			var queue = [];
+			var total = ids.length;
+			var sent = 0;
 
 			for (var i = 0; i < ids.length; i += size) {
 				var part = {};
 				for (var j = i; j < ids.length && j < i + size; j++) {
 					part[ids[j]] = items[ids[j]];
 				}
-				chunks.push(part);
+				// پرچم تلاش روی خودِ «ایتم‌ها» نباشد: همان آبجکت payload درخواست است
+				queue.push({ it: part, retried: 0 });
 			}
 
 			var agg = {
@@ -2219,29 +2238,62 @@
 				report: [],
 				errors: [],
 				pids: {},
-				stopped: 0
+				failed: 0
+			};
+
+			var markDone = function (chunkIds) {
+				for (var k = 0; k < chunkIds.length; k++) {
+					$('#tbsm-grid .tbsm-var[data-id="' + chunkIds[k] + '"]').attr('data-applied', '1');
+				}
 			};
 
 			var step = function (idx) {
 				var def = $.Deferred();
 
-				if (idx >= chunks.length) {
+				if (idx >= queue.length) {
 					def.resolve(agg);
 					return def.promise();
 				}
 
-				if (chunks.length > 1) {
+				var entry = queue[idx];
+				var chunk = entry.it;
+				var cids = Object.keys(chunk);
+
+				if (total > size) {
 					self.notice(self.i18n('applyProgress')
-						.replace('%1$d', self.fmt(Math.min((idx + 1) * size, ids.length)))
-						.replace('%2$d', self.fmt(ids.length)), 'info');
+						.replace('%1$d', self.fmt(Math.min(sent + cids.length, total)))
+						.replace('%2$d', self.fmt(total)), 'info');
 				}
 
-				self.api(self.applyPayload(chunks[idx]))
+				var retryOrSplit = function () {
+					if (cids.length > 1) {
+						// دستهٔ خطادار را نصف کن تا مورد خراب جدا بیفتد
+						var half = Math.ceil(cids.length / 2);
+						var a = {};
+						var b = {};
+						for (var n = 0; n < cids.length; n++) {
+							if (n < half) { a[cids[n]] = chunk[cids[n]]; } else { b[cids[n]] = chunk[cids[n]]; }
+						}
+						queue.splice(idx, 1, { it: a, retried: 0 }, { it: b, retried: 0 });
+						step(idx).done(function (x) { def.resolve(x); });
+						return;
+					}
+					if (!entry.retried) {
+						entry.retried = 1;
+						step(idx).done(function (x) { def.resolve(x); });
+						return;
+					}
+					// تک‌مورد خراب: رد می‌شود بقیه ادامه دهند؛ در اعمال بعدی دوباره فرستاده می‌شود
+					agg.errors.push(self.i18n('applyItemFailed').replace('%s', self.fmt(cids[0])));
+					agg.failed += 1;
+					sent += 1;
+					step(idx + 1).done(function (x) { def.resolve(x); });
+				};
+
+				self.api(self.applyPayload(chunk))
 					.done(function (res) {
 						if (!res || !res.success) {
-							agg.errors.push(self.applyMsg(res && res.data));
-							agg.stopped = idx + 1;
-							def.resolve(agg);
+							retryOrSplit();
 							return;
 						}
 
@@ -2258,14 +2310,12 @@
 						if (d.parent_status) {
 							agg.parent_status = d.parent_status;
 						}
-						step(idx + 1).done(function (a) {
-							def.resolve(a);
-						});
+						sent += cids.length;
+						markDone(cids);
+						step(idx + 1).done(function (a) { def.resolve(a); });
 					})
 					.fail(function (xhr) {
-						agg.errors.push(self.applyFailMsg(xhr));
-						agg.stopped = idx + 1;
-						def.resolve(agg);
+						retryOrSplit();
 					});
 
 				return def.promise();
@@ -2294,6 +2344,10 @@
 					if (!$card.hasClass('is-selected')) {
 						return;
 					}
+					// همین الان موفق اعمال شده؛ «اعمال» بعدی فقط باقی‌مانده را می‌فرستد
+					if ($card.attr('data-applied')) {
+						return;
+					}
 					var mode = $card.attr('data-mode') || 'qty';
 					if (mode === 'qty') {
 						var $in = $('.tbsm-var-stock', this);
@@ -2317,7 +2371,11 @@
 
 			var count = Object.keys(items).length;
 			if (!count) {
-				this.notice(this.i18n('selectAtLeastOne'), 'error');
+				if ($('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected[data-applied]').length) {
+					this.notice(this.i18n('applyAllDone'), 'info');
+				} else {
+					this.notice(this.i18n('selectAtLeastOne'), 'error');
+				}
 				return;
 			}
 
@@ -2512,14 +2570,12 @@
 		 * (data اینجا «آبجکت تجمعی سمت کلاینت» است، نه پاسخ خام سرور.)
 		 */
 		finishApply: function (data) {
-			if (!data.stopped) {
-				this.notice('');
-			}
-			if (data.applied > 0 || data.report.length) {
+			this.notice('');
+			if (data.report.length || data.errors.length) {
 				this.renderReport(data);
 			}
-			if (data.stopped) {
-				this.notice(this.i18n('applyStopped').replace('%d', this.fmt(data.stopped)), 'error');
+			if (data.failed) {
+				this.notice(this.i18n('applySomeFailed').replace('%d', this.fmt(data.failed)), 'error');
 			} else if (!data.applied && data.errors.length) {
 				this.notice(this.i18n('applyError').replace('%s', data.errors[0]), 'error');
 			}

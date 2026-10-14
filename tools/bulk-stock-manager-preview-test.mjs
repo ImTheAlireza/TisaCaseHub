@@ -301,8 +301,36 @@ ok('اعمال ۶ مورد در ۳ دستهٔ ۲تایی فرستاده شد', w
 ok('گزارش تجمعی هر ۶ ردیف را دارد', qa('#tbsm-report .tbsm-report-row').length === 6);
 ok('همگام‌سازی والد بدون شمارش مضاعف (۲ محصول، نه ۶)', /۲ محصول والد/.test(text('#tbsm-report')), text('#tbsm-report').slice(0, 200));
 ok('پیشرفت دسته‌ای پس از پایان پاک شده', q('#tbsm-notice').hasAttribute('hidden') || !/اعمال دسته‌ای/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('کارت‌های اعمال‌شده نشان «اعمال‌شده» گرفتند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 6);
+await click('#tbsm-apply');
+ok('اعمال دوباره بدون باقی‌مانده → پیام «همه اعمال شده‌اند»', /اعمال شده/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('برای اعمال دوبارهٔ بی‌مورد، درخواستی نرفت', window.tbsmMockApplyCalls === 3, String(window.tbsmMockApplyCalls));
+
+// جداسازی مورد خراب: دو کارت وسطی خطای سرور می‌گیرند
+const badIds = qa('#tbsm-grid .tbsm-var').slice(2, 4).map((c) => c.getAttribute('data-id'));
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+window.tbsmMockApplyFail = badIds;
+window.tbsmMockApplyCalls = 0;
+await type(doc.getElementById('tbsm-quickset'), '8');
+await click('#tbsm-quickset-btn');
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('اعمال با جداسازی مورد خراب', () => qa('#tbsm-report .tbsm-report-row').length === 4);
+ok('۴ سالم اعمال شد، ۲ خراب جدا افتاد', qa('#tbsm-report .tbsm-report-row').length === 4);
+ok('تلاش‌ها: دسته‌ها + نصف‌شدن + تلاش دوبارهٔ تک‌مورد = ۷ درخواست', window.tbsmMockApplyCalls === 7, String(window.tbsmMockApplyCalls));
+ok('پیام خطای جزئی «۲ مورد» آمد', /۲ مورد/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('کارت‌های خراب نشان «اعمال‌شده» نگرفتند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 4);
+
+// ادامه از نقطهٔ توقف: فقط ۲ باقی‌مانده فرستاده می‌شود
+window.tbsmMockApplyFail = null;
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرای باقی‌مانده
+await waitFor('ادامهٔ اعمال از نقطهٔ توقف', () => qa('#tbsm-report .tbsm-report-row').length === 2);
+ok('ادامه، فقط ۲ مورد باقی‌مانده را فرستاد', qa('#tbsm-report .tbsm-report-row').length === 2);
+ok('پس از ادامه، هر ۶ کارت نشان دارند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 6);
 window.TBSM.applyChunk = 25;
 delete window.tbsmMockApplyCalls;
+delete window.tbsmMockApplyFail;
 
 /* ------------------------------------------------ محدوده با شناسه (SKU) */
 await click('.tbsm-seg-btn[data-scope="sku"]');
