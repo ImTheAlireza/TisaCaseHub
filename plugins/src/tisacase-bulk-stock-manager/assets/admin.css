@@ -13,12 +13,20 @@
  *     قاعده‌های کلاس‌محورِ بیرونی مثل `.tisa-scope .wrap` (۰-۲-۰) بیشتر است،
  *     پس چیدمان ما بی‌صدا بازنویسی نمی‌شود — حتی اگر هابِ روی سایت قدیمی باشد.
  */
+/*
+ * سلکتور `.tbsm-wrap.wrap` عمدی است: div ما کلاس `wrap` وردپرس را هم دارد، پس
+ * قاعده‌های کلاس‌محورِ بیرونی (`.tisa-scope .wrap` = ۰-۲-۰ یا حتی ۰-۳-۰) باید
+ * ببازند. با شناسه + دو کلاس (۱-۲-۰) هیچ قاعدهٔ بیرونی‌ای جز `!important`
+ * نمی‌تواند این چیدمان را بازنویسی کند.
+ */
 .tbsm-wrap,
-#wpbody-content .tbsm-wrap {
+#wpbody-content .tbsm-wrap,
+#wpbody-content .tbsm-wrap.wrap {
 	max-width: var(--tisa-max-w, 1280px);
 	margin-inline: auto;
 	margin-block-start: var(--tisa-sp-4, 16px);
 }
+
 
 .tbsm-wrap {
 	font-family: var(--tisa-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif);
@@ -44,12 +52,23 @@ body.tbsm-page #wpfooter {
 }
 
 /*
- * قفل عرض کارت‌های گام: هر دو کارت (گام ۲ و گام ۳) در یک ردیف چیده می‌شوند و
- * نباید هیچ قاعدهٔ بیرونی بتواند یکی را باریک‌تر/پهن‌تر کند.
+ * قفل اندازه در سطح **خودِ کارت** (و هیرو) — مستقل از پدرها.
+ *
+ * چرا: اگر روزی یک قاعدهٔ بیرونی (افزونهٔ دیگر، ترکیب‌کنندهٔ CSS، قالب) عرض
+ * `.tbsm-wrap` را باز کند، کارت‌ها می‌توانند از هم جدا بیفتند و «بخش پایین»
+ * پهن‌تر/کج دیده شود. با سقف عرض و وسط‌چینی روی خودِ کارت، همهٔ کارت‌ها — هیرو،
+ * گام‌ها و گام ۳ — همیشه هم‌اندازه و متقارن می‌مانند.
+ * یک‌جا با قاعده‌های عمومی نوشته شده تا اگر شناسه هم نبود (پیش‌نمایش بدون
+ * وردپرس) همان نتیجه گرفته شود.
  */
-.tbsm-wrap .tbsm-card {
+.tbsm-wrap .tbsm-card,
+.tbsm-wrap .tbsm-hero,
+#wpbody-content .tbsm-wrap > .tbsm-card,
+#wpbody-content .tbsm-wrap .tbsm-panel > .tbsm-card,
+#wpbody-content .tbsm-wrap > .tbsm-hero {
 	width: 100%;
-	max-width: 100%;
+	max-width: min(100%, var(--tisa-max-w, 1280px));
+	margin-inline: auto;
 }
 
 /* ------------------------------------------------------------------

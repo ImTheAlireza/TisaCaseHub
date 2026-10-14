@@ -108,8 +108,9 @@ for (const file of SHARED) {
 	if (!/body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(css)) {
 		problems.push(`${file} — قاعدهٔ پنهان‌کردن فوتر پیشخوان (body.tbsm-page #wpfooter) نیست؛ «نگارش وردپرس» وسط صفحه می‌افتد.`);
 	}
-	if (!/\.tbsm-wrap\s+\.tbsm-card\s*\{[^}]*max-width\s*:\s*100%/.test(css)) {
-		problems.push(`${file} — قفل عرض کارت‌های گام (.tbsm-wrap .tbsm-card) نیست؛ دو کارت می‌توانند ناهم‌عرض شوند.`);
+	if (!/\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*max-width\s*:\s*min\(\s*100%\s*,\s*var\(--tisa-max-w/.test(css) ||
+		!/\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*margin-inline\s*:\s*auto/.test(css)) {
+		problems.push(`${file} — قفل اندازهٔ کارت‌ها در سطح خودِ کارت نیست (max-width: min(100%, var(--tisa-max-w)) + margin-inline: auto)؛ اگر قاعدهٔ بیرونی عرض پدر را باز کند، کارت‌ها ناهم‌اندازه می‌شوند.`);
 	}
 	const php = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php'), 'utf8');
 	if (!/add_filter\(\s*'admin_body_class'/.test(php) || !/' tbsm-page'/.test(php)) {

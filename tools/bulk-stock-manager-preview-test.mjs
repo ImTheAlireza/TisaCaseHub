@@ -626,10 +626,12 @@ window.TBSM_PREVIEW_FAULT = null;
 	ok('لایهٔ مشترک پدینگ کنارِ #wpcontent را صفر نمی‌کند', !/#wpcontent\s*\{[^}]*padding-(inline-start|inline-end|left|right)\s*:\s*0/.test(shared));
 	ok('پوستهٔ هاب هم پدینگ #wpcontent را صفر نمی‌کند', !/#wpcontent\s*\{[^}]*padding-(inline-start|inline-end|left|right)\s*:\s*0/.test(hubOwn));
 	ok('قاعدهٔ .wrap لایهٔ مشترک، مارجین auto دارد (وسط‌چین)', /\.tisa-scope\s+\.wrap\s*\{[^}]*margin-inline\s*:\s*auto/.test(shared), (shared.match(/\.tisa-scope\s+\.wrap\s*\{[^}]*\}/) || ['—'])[0].slice(0, 80));
-	ok('صفحهٔ ما وسط‌چین است و سقف عرض دارد (قاعدهٔ عمومی — پیش‌نمایش)', /\.tbsm-wrap\s*\{[^}]*max-width\s*:\s*var\(--tisa-max-w/.test(admin) && /\.tbsm-wrap\s*\{[^}]*margin-inline\s*:\s*auto/.test(admin));
+	// پوستهٔ صفحه: اولین قاعدهٔ CSS که سلکتورش .tbsm-wrap دارد (لیست سلکتور مجاز است).
 	{
-		const both = (admin.match(/(?:^|\n)(\.tbsm-wrap[^{]*#[\w-]*|\.tbsm-wrap\s*,[^\n]*#wpbody-content[^{]*|#wpbody-content[^{]*)\{([^}]*)\}/g) || []).join(' ');
-		ok('قاعدهٔ شناسه‌دار (#wpbody-content .tbsm-wrap) هم هست تا بازنویسی بیرونی اثر نکند', /#wpbody-content\s+\.tbsm-wrap/.test(admin) && /margin-inline\s*:\s*auto/.test(both) && /max-width/.test(both));
+		const shell = (admin.match(/\.tbsm-wrap[^{]*\{([^}]*)\}/) || [null, ''])[1];
+		ok('پوستهٔ صفحه وسط‌چین است و سقف عرض دارد (قاعدهٔ عمومی — پیش‌نمایش)', /max-width\s*:\s*var\(--tisa-max-w/.test(shell) && /margin-inline\s*:\s*auto/.test(shell), shell.trim().split('\n')[0]);
+		ok('قاعدهٔ شناسه‌دارِ مقاوم هم هست (#wpbody-content .tbsm-wrap / .tbsm-wrap.wrap) تا بازنویسی بیرونی اثر نکند',
+			/#wpbody-content\s+\.tbsm-wrap\s*,/.test(admin) && /#wpbody-content\s+\.tbsm-wrap\.wrap\s*\{/.test(admin));
 	}
 	ok('دو نسخهٔ tisacase-ui.css (مرجع و کپی هاب) یکی هستند', shared.replace(/\s+/g, ' ').trim() === hubCopy.replace(/\s+/g, ' ').trim());
 
@@ -637,7 +639,8 @@ window.TBSM_PREVIEW_FAULT = null;
 	const php = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php'), 'utf8');
 	ok('قاعدهٔ پنهان‌کردن فوتر پیشخوان هست', /body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(admin));
 	ok('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود', /add_filter\(\s*'admin_body_class',\s*array\(\s*__CLASS__,\s*'body_class'\s*\)\s*\)/.test(php) && /if \( self::is_our_screen\(\) \)/.test(php));
-	ok('عرض کارت‌های گام قفل شده (max-width:100%)', /\.tbsm-wrap\s+\.tbsm-card\s*\{[^}]*max-width\s*:\s*100%/.test(admin));
+	ok('اندازهٔ کارت‌ها در سطح خودِ کارت قفل شده (سقف عرض + وسط‌چینی)', /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*max-width\s*:\s*min\(\s*100%\s*,\s*var\(--tisa-max-w/.test(admin) && /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*margin-inline\s*:\s*auto/.test(admin));
+	ok('کارت‌های داخل پنل هم سقف عرض دارند (شناسه‌دار)', /#wpbody-content \.tbsm-wrap \.tbsm-panel > \.tbsm-card/.test(admin));
 }
 
 

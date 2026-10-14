@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>TisaCase — چرا صفحه تمام‌عرض شده بود؟ (۱٫۳٫۹)</title>
+<title>TisaCase — چیدمان صفحه: تشخیص و رفع (۱٫۳٫۱۰)</title>
 <style>
 	:root { --ink:#1F2A2E; --muted:#6B7A80; --line:#DAD5C9; --card:#fff; --accent:#0E7C6B; --bad:#C0392B; }
 	* { box-sizing: border-box; }
@@ -49,12 +49,12 @@
 </style>
 </head>
 <body>
-	<h1>چرا صفحه «تمام‌عرض / کج» شده بود؟ — و دو ایراد آخر</h1>
+	<h1>چرا صفحه «تمام‌عرض / کج» شده بود؟ — و چرا کارت پایین جدا می‌شد</h1>
 	<p class="lead">دو قاعده در <b>لایهٔ مشترک TisaCase</b> (<code>tisacase-ui.css</code>) باعث می‌شد کارت وسط ننشیند: مارجین کنارِ <b>ثابت</b> (۲۴px، به‌جای <code>auto</code>) و پدینگ کنارِ <code>#wpcontent</code> که صفر شده بود. هرچه پنجره پهن‌تر، فضای خالی بیشتر همه یک‌طرفه جمع می‌شد — همین حسِ «تمام‌عرض شدن» و ناهم‌اندازه دیدنِ بخش پایین. عرض خودِ دو کارت از اول برابر بود؛ بعدِ اصلاح، صفحه متقارن شد و دو ایراد باقی‌مانده هم درست شد: خط «نگارش وردپرس» پنهان و عرض کارت‌ها قفل.</p>
 
 	<div class="grid">
 		<div class="panel before">
-			<header>قبل از ۱٫۳٫۹ / ۱٫۹٫۱۵ <span class="tag bad">کج · انحراف ۵۳۲px در پنجرهٔ ۱۹۲۰</span></header>
+			<header>قبل از ۱٫۳٫۹ <span class="tag bad">کج · انحراف ۵۳۲px در پنجرهٔ ۱۹۲۰</span></header>
 			<p><code>.wrap { margin-inline: 24px; max-width: 1180px }</code> با <code>#wpcontent { padding-inline-start: 0 }</code> — کارت به منو می‌چسبد و باقیِ فضا همه سمت دیگر می‌ریزد.</p>
 			<div class="frame">
 				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
@@ -69,7 +69,7 @@
 		</div>
 
 		<div class="panel after">
-			<header>۱٫۳٫۹ / ۱٫۹٫۱۵ <span class="tag good">متقارن · ۲۸۰/۲۸۰</span></header>
+			<header>۱٫۳٫۱۰ / ۱٫۹٫۱۵ <span class="tag good">متقارن · ۲۸۰/۲۸۰</span></header>
 			<p><code>.tisa-scope .wrap { margin-inline: auto }</code> + در خود افزونه <code>.tbsm-wrap, #wpbody-content .tbsm-wrap { max-width: var(--tisa-max-w,1280px); margin-inline: auto }</code> — پدینگ پیش‌فرض وردپرس دست‌نخورده، کارت وسط، و خط نگارش فوتر روی این صفحه پنهان.</p>
 			<div class="frame">
 				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
@@ -83,23 +83,26 @@
 		</div>
 	</div>
 
-	<h2>سنجش با مرورگر واقعی (Chromium) — <code>tools/layout-geometry.mjs</code></h2>
+	<h2>سنجش با مرورگر واقعی (Chromium + CSS خودِ وردپرس) — <code>tools/layout-geometry.mjs</code></h2>
 	<table>
-		<thead><tr><th style="width:34%">حالت</th><th>پنجرهٔ ۱۴۴۰px</th><th>پنجرهٔ ۱۹۲۰px</th></tr></thead>
+		<thead><tr><th style="width:30%">حالت</th><th>چه چیزی را شبیه‌سازی می‌کند</th><th>نتیجه</th></tr></thead>
 		<tbody>
-			<tr><td>قبل — فاصلهٔ کارت تا لبه‌ها</td><td class="num bad2">راست ۲۴ · چپ ۷۶ (۵۲px انحراف)</td><td class="num bad2">راست ۲۴ · چپ ۵۵۶ (۵۳۲px انحراف)</td></tr>
-			<tr><td>بعد — فاصلهٔ کارت تا لبه‌ها</td><td class="num fix">۴۰ · ۴۰ (۰px)</td><td class="num fix">۲۸۰ · ۲۸۰ (۰px)</td></tr>
-			<tr><td>عرض کارت گام ۲ / گام ۳</td><td class="num">۱۱۸۰ / ۱۱۸۰ — برابر</td><td class="num">۱۱۸۰ / ۱۱۸۰ — برابر</td></tr>
-			<tr><td>خط «نگارش وردپرس» در فوتر</td><td class="num bad2">دیده می‌شد</td><td class="num fix">پنهان ✓</td></tr>
+			<tr><td><code>after</code></td><td>فقط CSS فعلی افزونه</td><td class="num fix">۵ کارت: ۱۱۸۰px · ۴۰/۴۰ و ۲۸۰/۲۸۰ · انحراف ۰</td></tr>
+			<tr><td><code>hostile</code></td><td>افزونه/قالب دیگر با قاعده‌های کلاس‌محور (<code>.wrap</code>، <code>.tisa-scope .wrap</code>)</td><td class="num fix">بی‌تغییر: ۱۱۸۰px و متقارن</td></tr>
+			<tr><td><code>extreme</code></td><td><code>!important</code> که قفل‌های ما را باطل می‌کند</td><td class="num fix">همه با هم باز می‌شوند — هیچ کارتی تنها پهن نمی‌شود</td></tr>
+			<tr><td><code>control</code></td><td>انحراف عمدی (خودآزماییِ سنجه)</td><td class="num">دیده شد: ۲۴۰px و ۵۶۰px ✓</td></tr>
+			<tr><td>خط «نگارش وردپرس»</td><td>در همهٔ حالت‌ها</td><td class="num fix">پنهان ✓</td></tr>
 		</tbody>
 	</table>
+	<p class="lead" style="margin-top:12px">درسِ اصلی: قفل اندازه باید روی <b>خودِ عنصر</b> بنشیند نه پدرش. کارت «گام ۳» فرزند مستقیم <code>.tbsm-wrap</code> است و در شبیه‌سازیِ مزاحم، تنها عنصری بود که می‌توانست پهن شود — یعنی همان چیزی که در اسکرین‌شات دیده شد. حالا سقف عرض و وسط‌چینی روی خودِ کارت‌ها و هیرو است.</p>
 
 	<h2>سه قاعده‌ای که اضافه/اصلاح شد</h2>
 	<table>
 		<thead><tr><th style="width:44%">قاعده</th><th>کار</th></tr></thead>
 		<tbody>
 			<tr><td><code>body.tbsm-page #wpfooter { display: none }</code></td><td><span class="fix">تازه</span> — کلاس <code>tbsm-page</code> فقط روی همین صفحه اضافه می‌شود (فیلتر <code>admin_body_class</code>)، پس خط «نگارش ۷٫۱٫۳» و متن سپاسگزاری فقط اینجا پنهان می‌شوند؛ هیچ صفحهٔ دیگری از پیشخوان دست نمی‌خورد.</td></tr>
-			<tr><td><code>.tbsm-wrap .tbsm-card { width: 100%; max-width: 100% }</code></td><td><span class="fix">تازه</span> — قفل عرض کارت‌های گام تا هیچ قاعدهٔ بیرونی نتواند یکی را ناهم‌عرض کند.</td></tr>
+			<tr><td><code>.tbsm-wrap .tbsm-card, .tbsm-wrap .tbsm-hero, #wpbody-content … .tbsm-card { width:100%; max-width: min(100%, var(--tisa-max-w,1280px)); margin-inline: auto }</code></td><td><span class="fix">تازه (۱٫۳٫۱۰)</span> — قفل اندازه روی خودِ کارت‌ها و هیرو، مستقل از پدر؛ سلکتورهای شناسه‌دار (۱‑۲‑۰) تا قاعده‌های بیرونی بازنویسی نکنند.</td></tr>
+			<tr><td><code>#wpbody-content .tbsm-wrap.wrap</code></td><td><span class="fix">تازه (۱٫۳٫۱۰)</span> — سلکتور مقاوم برای خودِ پوسته؛ `.tisa-scope .wrap` (۰‑۲‑۰) یا حتی ۰‑۳‑۰ نمی‌تواند مارجین/عرض را عوض کند.</td></tr>
 			<tr><td><code>.tisa-scope .wrap { margin-inline: auto }</code></td><td><span class="fix">اصلاح‌شده</span> — در لایهٔ مشترک (و کپی هاب)؛ مارجین ثابت ۲۴px برداشته شد. <code>padding-inline-start: 0</code> هم از <code>hub.css</code> حذف شد.</td></tr>
 		</tbody>
 	</table>

@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.3.9
+Stable tag: 1.3.10
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,12 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.3.10 =
+* **قفل اندازهٔ کارت‌ها از پدر جدا شد (ضد هر CSS بیرونی):** سقف عرض و وسط‌چینی حالا روی خودِ کارت‌ها و هیرو نشسته است — `.tbsm-wrap .tbsm-card, .tbsm-wrap .tbsm-hero, #wpbody-content .tbsm-wrap > .tbsm-card, #wpbody-content .tbsm-wrap .tbsm-panel > .tbsm-card { width:100%; max-width:min(100%, var(--tisa-max-w,1280px)); margin-inline:auto }`. یعنی اگر افزونه/قالب/ترکیب‌کنندهٔ CSS عرض پدر را باز کند یا پدینگ‌ها را صفر کند، باز هم هیچ کارتی از کارت دیگر جدا نمی‌افتد.
+* **سلکتور مقاوم‌تر برای پوسته:** `#wpbody-content .tbsm-wrap.wrap` (اختصاصی‌بودن ۱-۲-۰) تا قاعده‌های کلاس‌محورِ بیرونی مثل `.tisa-scope .wrap` حتی با سه کلاس هم نتوانند چیدمان را بازنویسی کنند.
+* **سنجهٔ هندسهٔ واقعی با CSS خودِ وردپرس:** `tools/layout-geometry.mjs` حالا با فیکسچرهای `tools/fixtures/wp-7.1.3/` صفحه را در Chromium می‌سازد و چهار حالت را می‌سنجد: عادی، مزاحمِ واقع‌بینانه، مزاحمِ افراطی، و کنترل مثبت (انحراف عمدی که باید دیده شود).
+* تست jsdom: **۱۸۷ سنجه**.
 
 = 1.3.9 =
 * **«نگارش وردپرس» دیگر روی این صفحه دیده نمی‌شود:** خط «نگارش ۷٫۱٫۳» (فوتر پیشخوان) در پایین `#wpbody-content` چاپ می‌شد و وسط ابزارها/نوار چسبانِ پایین می‌افتاد. حالا `admin_body_class` فقط روی همین صفحه کلاس `tbsm-page` را اضافه می‌کند و `body.tbsm-page #wpfooter { display:none }` آن را پنهان می‌کند — **هیچ صفحهٔ دیگری از پیشخوان دست نمی‌خورد**.
