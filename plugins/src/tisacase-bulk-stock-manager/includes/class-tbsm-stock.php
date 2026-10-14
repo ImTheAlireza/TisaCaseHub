@@ -13,6 +13,9 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 	final class TBSM_Stock {
+		// نگه‌دارندهٔ فرزندان هر والد در جریان یک درخواست (جلوگیری از کوئری تکراری
+		// get_children در همگام‌سازی هر دسته).
+		private static $children_map = null;
 
 		/* ----------------------------------------------------------
 		 * اعمال موجودی
@@ -104,6 +107,9 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
+			// پرکردن کش‌ها پیش از موتور: اعتبارسنجی و همگام‌سازی حافظه‌محور می‌شوند.
+			self::prime_caches( array_keys( $items ) );
+
 			$allowed = array();
 			foreach ( array_keys( $items ) as $raw_id ) {
 				$var_id = absint( $raw_id );
@@ -132,6 +138,9 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			$report         = array();
 			$errors         = array();
 			$enabled_manage = 0;
+
+			// شمارش ترم‌ها تا پایان درخواست عقب بیفتد (نوشته‌های sync_parent سبک‌تر).
+			wp_defer_term_counting( true );
 
 			foreach ( $items as $raw_id => $raw_spec ) {
 				$var_id = absint( $raw_id );
@@ -185,6 +194,8 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			if ( empty( $report ) && ! empty( $errors ) ) {
 				$result['error'] = 'هیچ متغیری اعمال نشد: ' . implode( ' ', $errors );
 			}
+
+			wp_defer_term_counting( false );
 
 			return $result;
 		}
@@ -299,7 +310,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			}
 
 			$has_stock = false;
-			foreach ( (array) $product->get_children() as $child_id ) {
+			foreach ( self::children_of( (int) $product->get_id() ) as $child_id ) {
 				$child = wc_get_product( (int) $child_id );
 				if ( $child && $child->is_in_stock() ) {
 					$has_stock = true;
@@ -944,6 +955,16 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$found = array_slice( $found, 0, TBSM_Core::MAX_MODEL_ROWS );
 			}
 
+			// کش پست/متا برای کل صفحه: wc_get_product هر ردیف بدون کوئری تازه.
+			$prime = array();
+			foreach ( $found as $item ) {
+				$prime[] = (int) $item['vid'];
+				$prime[] = (int) $item['pid'];
+			}
+			if ( $prime ) {
+				_prime_post_caches( array_values( array_unique( $prime ) ), false, false );
+			}
+
 			$rows     = array();
 			$products = array();
 
@@ -962,6 +983,77 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'products'  => count( $products ),
 				'truncated' => $truncated,
 			);
+		}
+
+		/**
+		 * فرزندان یک محصول والد: از نقشهٔ درخواست اگر باشد، وگرنه کوئری تک‌مثیلی.
+		 */
+		private static function children_of( $parent_id ) {
+			$parent_id = (int) $parent_id;
+			if ( null !== self::$children_map && isset( self::$children_map[ $parent_id ] ) ) {
+				return self::$children_map[ $parent_id ];
+			}
+			$parent = wc_get_product( $parent_id );
+			$kids   = ( $parent && $parent->exists() ) ? (array) $parent->get_children() : array();
+			return array_map( 'intval', $kids );
+		}
+
+		/**
+		 * کش‌ها را برای یک مجموعه متغیر یک‌جا پر می‌کند تا اعتبارسنجی و همگام‌سازی
+		 * «حافظه‌محور» شوند: به‌جای چند کوئری به ازای هر متغیر، چند کوئری کل.
+		 *
+		 * @param array $ids شناسهٔ متغیرها.
+		 * @return array شناسهٔ والد‌ها (برای نگه‌داشتن مرجع).
+		 */
+		private static function prime_caches( array $ids ) {
+			$ids = array_values( array_unique( array_map( 'absint', $ids ) ) );
+			if ( empty( $ids ) ) {
+				return array();
+			}
+
+			// پست‌ها + متای متغیرها (۲ کوئری کل به‌جای ۲ کوئری per متغیر).
+			_prime_post_caches( $ids, false, false );
+
+			$parent_ids = array();
+			foreach ( $ids as $vid ) {
+				$pid = wp_get_post_parent_id( $vid ); // از کش پست‌ها
+				if ( $pid > 0 ) {
+					$parent_ids[ $pid ] = 1;
+				}
+			}
+			$parent_ids = array_map( 'intval', array_keys( $parent_ids ) );
+			if ( $parent_ids ) {
+				_prime_post_caches( $parent_ids, false, false );
+				// ترم‌های دسته‌بندی والد‌ها (برای has_term در اعتبارسنجی محدوده).
+				update_object_term_cache( $parent_ids, 'product_cat' );
+
+				// فرزندان والد‌ها + متایشان: همگام‌سازی والد دیگر کوئری children نمی‌زند.
+				global $wpdb;
+				$ph    = implode( ',', array_fill( 0, count( $parent_ids ), '%d' ) );
+				$kids  = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$wpdb->prepare(
+						"SELECT ID, post_parent FROM {$wpdb->posts} WHERE post_parent IN ({$ph}) AND post_type = 'product_variation'", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedTable
+						$parent_ids
+					),
+					ARRAY_A
+				);
+				self::$children_map = array();
+				$child_ids          = array();
+				foreach ( (array) $kids as $k ) {
+					self::$children_map[ (int) $k['post_parent'] ][] = (int) $k['ID'];
+					$child_ids[]                                     = (int) $k['ID'];
+				}
+				foreach ( $parent_ids as $pid ) {
+					if ( ! isset( self::$children_map[ $pid ] ) ) {
+						self::$children_map[ $pid ] = array();
+					}
+				}
+				if ( $child_ids ) {
+					_prime_post_caches( array_values( array_unique( $child_ids ) ), false, false );
+				}
+			}
+
+			return $parent_ids;
 		}
 
 		/**

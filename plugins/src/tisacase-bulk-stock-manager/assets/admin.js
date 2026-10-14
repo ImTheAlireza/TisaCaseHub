@@ -49,7 +49,7 @@
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
-		applyChunk: 25,     // سقف هر درخواست اعمال؛ دسته‌ای رفتن جلوی timeout/HTTP 500 را می‌گیرد
+		applyChunk: 40,     // سقف هر درخواست اعمال؛ با کش‌گذاری سرور هر آیتم سبک‌تر شد، پس دسته‌ها بزرگ‌تر
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -2214,7 +2214,7 @@
 		 */
 		applyChunks: function (items) {
 			var self = this;
-			var size = Math.max(1, this.applyChunk || 25);
+			var size = Math.max(1, this.applyChunk || 40);
 			var ids = Object.keys(items);
 			var queue = [];
 			var total = ids.length;
