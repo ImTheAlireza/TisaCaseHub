@@ -15,6 +15,25 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 			add_action( 'admin_menu', array( __CLASS__, 'register_menus' ), 30 );
 			add_action( 'admin_enqueue_scripts', array( __CLASS__, 'enqueue_assets' ), 20 );
 			add_action( 'admin_notices', array( __CLASS__, 'woocommerce_check_notice' ) );
+			add_filter( 'admin_body_class', array( __CLASS__, 'body_class' ) );
+		}
+
+		/**
+		 * کلاس `tbsm-page` فقط روی صفحهٔ خودمان.
+		 *
+		 * چرا: فوترِ پیشخوان (خط «نگارش ۷٫۱٫۳» و متن سپاسگزاری) در پایین
+		 * `#wpbody-content` چاپ می‌شود و روی این صفحه، وسط ابزارها/نوار چسبانِ
+		 * پایین می‌افتد. با همین کلاس، فقط در همین صفحه پنهان می‌شود؛ هیچ صفحهٔ
+		 * دیگری از پیشخوان وردپرس دست نمی‌خورد.
+		 *
+		 * @param string $classes کلاس‌های بدنه (رشتهٔ جداشده با فاصله).
+		 * @return string
+		 */
+		public static function body_class( $classes ) {
+			if ( self::is_our_screen() ) {
+				$classes .= ' tbsm-page';
+			}
+			return $classes;
 		}
 
 		/**

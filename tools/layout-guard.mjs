@@ -101,6 +101,24 @@ for (const file of SHARED) {
 	}
 }
 
+/* C۲) صفحهٔ ما باید فوتر پیشخوان را پنهان کند و عرض کارت‌ها را قفل کند */
+{
+	const file = 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css';
+	const css = fs.readFileSync(path.join(ROOT, file), 'utf8');
+	if (!/body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(css)) {
+		problems.push(`${file} — قاعدهٔ پنهان‌کردن فوتر پیشخوان (body.tbsm-page #wpfooter) نیست؛ «نگارش وردپرس» وسط صفحه می‌افتد.`);
+	}
+	if (!/\.tbsm-wrap\s+\.tbsm-card\s*\{[^}]*max-width\s*:\s*100%/.test(css)) {
+		problems.push(`${file} — قفل عرض کارت‌های گام (.tbsm-wrap .tbsm-card) نیست؛ دو کارت می‌توانند ناهم‌عرض شوند.`);
+	}
+	const php = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php'), 'utf8');
+	if (!/add_filter\(\s*'admin_body_class'/.test(php) || !/' tbsm-page'/.test(php)) {
+		problems.push('class-tbsm-admin.php — کلاس بدنهٔ tbsm-page روی صفحهٔ ما اضافه نمی‌شود.');
+	} else {
+		notes.push('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود ✓');
+	}
+}
+
 /* D) دو نسخهٔ لایهٔ مشترک باید یکی باشند */
 {
 	const a = fs.readFileSync(path.join(ROOT, SHARED[0]), 'utf8');

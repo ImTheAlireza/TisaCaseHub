@@ -632,6 +632,12 @@ window.TBSM_PREVIEW_FAULT = null;
 		ok('قاعدهٔ شناسه‌دار (#wpbody-content .tbsm-wrap) هم هست تا بازنویسی بیرونی اثر نکند', /#wpbody-content\s+\.tbsm-wrap/.test(admin) && /margin-inline\s*:\s*auto/.test(both) && /max-width/.test(both));
 	}
 	ok('دو نسخهٔ tisacase-ui.css (مرجع و کپی هاب) یکی هستند', shared.replace(/\s+/g, ' ').trim() === hubCopy.replace(/\s+/g, ' ').trim());
+
+	// فوتر پیشخوان («نگارش ۷٫۱٫۳») روی صفحهٔ ما پنهان می‌شود — با کلاس بدنهٔ مخصوص همین صفحه.
+	const php = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php'), 'utf8');
+	ok('قاعدهٔ پنهان‌کردن فوتر پیشخوان هست', /body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(admin));
+	ok('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود', /add_filter\(\s*'admin_body_class',\s*array\(\s*__CLASS__,\s*'body_class'\s*\)\s*\)/.test(php) && /if \( self::is_our_screen\(\) \)/.test(php));
+	ok('عرض کارت‌های گام قفل شده (max-width:100%)', /\.tbsm-wrap\s+\.tbsm-card\s*\{[^}]*max-width\s*:\s*100%/.test(admin));
 }
 
 
