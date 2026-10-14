@@ -776,6 +776,7 @@
 				applyAllDone: 'همهٔ کارت‌های انتخابی همین الان موفق اعمال شده‌اند؛ برای اعمال دوباره، مقدار/حالت را عوض کنید یا تیک را بردارید و دوباره بزنید.',
 				applySomeFailed: 'اعمال پایان یافت ولی %d مورد به خطای سرور خورد و رد شد (در گزارش آمده)؛ برای فرستادن دوبارهٔ همان‌ها، «اعمال» را بزنید.',
 				applyItemFailed: 'متغیر #%s پس از تلاش دوباره اعمال نشد (خطای سرور).',
+				reportSkipped: '%d مورد بدون تغییر رد شد (از قبل همین مقدار/وضعیت را داشتند).',
 				groupApplyConfirm: 'تأیید: اعمال روی %d متغیر گروهی؟',
 				parentsSynced: 'وضعیت موجودی %d محصول والد همگام شد.'
 			}
@@ -988,12 +989,20 @@
 							});
 						});
 
-						var report = [], errors = [], enabled = 0, touched = {}, anyStock = false;
+						var report = [], errors = [], enabled = 0, touched = {}, anyStock = false, skipped = 0;
 						var wanted = data.items || {};
 
 						targets.forEach(function (t) {
 							var vid = String(t.variation.id);
 							if (!Object.prototype.hasOwnProperty.call(wanted, vid)) { return; }
+							// پرش از موارد هم‌خوان (مثل موتور SQL سرور)
+							var sp = wanted[vid];
+							var sm = (sp && typeof sp === 'object' && (sp.mode === 'in_stock' || sp.mode === 'out_of_stock')) ? sp.mode : 'qty';
+							var sq = (sm === 'qty' && sp && typeof sp === 'object') ? Number(sp.qty) : null;
+							var unchanged = (sm === 'qty')
+								? (!!t.variation.manage_stock && t.variation.stock === sq)
+								: (!t.variation.manage_stock && t.variation.status === (sm === 'in_stock' ? 'instock' : 'outofstock'));
+							if (unchanged) { skipped++; return; }
 							var wasManaged = !!t.variation.manage_stock;
 							if (!applySpec(t.variation, wanted[vid], report, errors)) { return; }
 							report[report.length - 1].product = t.product.name;
@@ -1032,6 +1041,7 @@
 								enabled_manage: enabled,
 								parent_status: (touchedIds.length === 1) ? (anyStock ? 'instock' : 'outofstock') : null,
 								parents_synced: touchedIds.length,
+								skipped: skipped,
 								report: report,
 								errors: errors
 							}

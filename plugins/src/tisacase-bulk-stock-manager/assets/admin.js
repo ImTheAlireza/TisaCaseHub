@@ -49,7 +49,7 @@
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
-		applyChunk: 150,    // سقف هر درخواست اعمال؛ با موتور SQL انبوه هر دسته فقط چند کوئری کل است
+		applyChunk: 300,    // سقف هر درخواست اعمال؛ با موتور SQL انبوه + پرش از هم‌خوان‌ها، هزینهٔ هر دسته تقریباً ثابت است
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -2214,7 +2214,7 @@
 		 */
 		applyChunks: function (items) {
 			var self = this;
-			var size = Math.max(1, this.applyChunk || 150);
+			var size = Math.max(1, this.applyChunk || 300);
 			var ids = Object.keys(items);
 			var queue = [];
 			var total = ids.length;
@@ -2238,7 +2238,8 @@
 				report: [],
 				errors: [],
 				pids: {},
-				failed: 0
+				failed: 0,
+				skipped: 0
 			};
 
 			var markDone = function (chunkIds) {
@@ -2302,6 +2303,7 @@
 						agg.enabled_manage += d.enabled_manage || 0;
 						agg.report = agg.report.concat(d.report || []);
 						agg.errors = agg.errors.concat(d.errors || []);
+						agg.skipped += d.skipped || 0;
 						(d.report || []).forEach(function (row) {
 							if (row.sync_id) {
 								agg.pids[row.sync_id] = 1;
@@ -2576,6 +2578,8 @@
 			}
 			if (data.failed) {
 				this.notice(this.i18n('applySomeFailed').replace('%d', this.fmt(data.failed)), 'error');
+			} else if (!data.report.length && !data.errors.length && data.skipped) {
+				this.notice(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)), 'info');
 			} else if (!data.applied && data.errors.length) {
 				this.notice(this.i18n('applyError').replace('%s', data.errors[0]), 'error');
 			}
@@ -2623,8 +2627,16 @@
 
 			var html = '<div class="tbsm-report-title">'
 				+ this.esc(this.i18n('reportTitle').replace('%d', this.fmt(data.applied)))
-				+ '</div>'
-				+ '<div class="tbsm-report-list">' + rows + '</div>';
+				+ '</div>';
+
+			// موارد هم‌خوان که بدون نوشتن رد شدند
+			if (data.skipped) {
+				html += '<div class="tbsm-report-skip">'
+					+ this.esc(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)))
+					+ '</div>';
+			}
+
+			html += '<div class="tbsm-report-list">' + rows + '</div>';
 
 			if (data.parent_status) {
 				var label = data.parent_status === 'instock'

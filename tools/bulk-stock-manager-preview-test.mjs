@@ -290,7 +290,7 @@ ok('شمارنده‌ها کل موارد بارگیری‌شده را نشان 
 delete window.tbsmMockPageSize;
 
 /* ------------------------------------------------ اعمال دسته‌ای: دسته‌های کوچک، گزارش تجمعی (۱٫۴٫۰) */
-ok('سقف پیش‌فرض هر دستهٔ اعمال ۵۰ است (موتور SQL انبوه)', window.TBSM.applyChunk === 150, String(window.TBSM.applyChunk));
+ok('سقف پیش‌فرض هر دستهٔ اعمال ۳۰۰ است (موتور SQL انبوه + پرش)', window.TBSM.applyChunk === 300, String(window.TBSM.applyChunk));
 window.tbsmMockApplyCalls = 0;
 window.TBSM.applyChunk = 2;
 await type(doc.getElementById('tbsm-quickset'), '9');
@@ -329,7 +329,19 @@ await click('#tbsm-apply'); // اجرای باقی‌مانده
 await waitFor('ادامهٔ اعمال از نقطهٔ توقف', () => qa('#tbsm-report .tbsm-report-row').length === 2);
 ok('ادامه، فقط ۲ مورد باقی‌مانده را فرستاد', qa('#tbsm-report .tbsm-report-row').length === 2);
 ok('پس از ادامه، هر ۶ کارت نشان دارند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 6);
-window.TBSM.applyChunk = 25;
+// اجرای دوباره با همان مقدارها: همه هم‌خوان‌اند → پرش، بدون نوشتن
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('پیام پرش از موارد هم‌خوان', () => /بدون تغییر/.test(text('#tbsm-notice')));
+ok('اعمال دوبارهٔ همان مقدارها: همه پرش شدند', /۶ مورد بدون تغییر/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('گزارشی برای موارد پرش‌شده ساخته نشد', !visible('#tbsm-report') || qa('#tbsm-report .tbsm-report-row').length === 0);
+
+// خط «بدون تغییر» داخل گزارش وقتی فقط بعضی پرش می‌شوند
+window.TBSM.renderReport({ report: [], applied: 0, skipped: 5, errors: [], parents_synced: 0, parent_status: null });
+ok('خط «بدون تغییر» در گزارش رندر شد', /۵ مورد بدون تغییر/.test(text('#tbsm-report')), text('#tbsm-report'));
+
+window.TBSM.applyChunk = 300;
 delete window.tbsmMockApplyCalls;
 delete window.tbsmMockApplyFail;
 

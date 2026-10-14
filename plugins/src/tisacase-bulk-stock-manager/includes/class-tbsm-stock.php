@@ -240,9 +240,11 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			$errors         = array();
 			$enabled_manage = 0;
 
-			$triples   = array();
-			$new_state = array(); // vid => [qty|null, status]
-			$parents   = array();
+			$triples        = array();
+			$new_state      = array(); // vid => [qty|null, status]
+			$status_changed = array(); // vid => status جدید (فقط عوض‌شده‌ها)
+			$parents        = array();
+			$skipped        = 0;
 
 			foreach ( $items as $raw_id => $raw_spec ) {
 				$var_id = absint( $raw_id );
@@ -287,24 +289,37 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 				if ( 'in_stock' === $mode ) {
 					$to_status = 'instock';
-					$triples[] = array( $var_id, '_manage_stock', 'no' );
-					$triples[] = array( $var_id, '_stock_status', 'instock' );
 				} elseif ( 'out_of_stock' === $mode ) {
 					$to_status = 'outofstock';
-					$triples[] = array( $var_id, '_manage_stock', 'no' );
-					$triples[] = array( $var_id, '_stock_status', 'outofstock' );
 				} else {
+					$to_status = $qty > 0 ? 'instock' : 'outofstock';
+					$to_qty    = $qty;
+				}
+
+				// پرش از موارد هم‌خوان: فقط آنچه واقعاً عوض می‌شود نوشته/گزارش می‌شود.
+				$unchanged = ( 'qty' === $mode )
+					? ( $was_managed && $from === $qty && $from_status === $to_status )
+					: ( ! $was_managed && $from_status === $to_status );
+				if ( $unchanged ) {
+					$skipped++;
+					continue;
+				}
+
+				if ( 'qty' === $mode ) {
 					if ( ! $was_managed ) {
 						$enabled_manage++;
 					}
-					$to_status = $qty > 0 ? 'instock' : 'outofstock';
-					$to_qty    = $qty;
 					$triples[] = array( $var_id, '_manage_stock', 'yes' );
 					$triples[] = array( $var_id, '_stock', (string) $qty );
-					$triples[] = array( $var_id, '_stock_status', $to_status );
+				} else {
+					$triples[] = array( $var_id, '_manage_stock', 'no' );
 				}
+				$triples[] = array( $var_id, '_stock_status', $to_status );
 
 				$new_state[ $var_id ] = array( $to_qty, $to_status );
+				if ( $from_status !== $to_status ) {
+					$status_changed[ $var_id ] = $to_status;
+				}
 
 				$variation = wc_get_product( $var_id ); // از کش پست‌ها
 				$parent_id = (int) wp_get_post_parent_id( $var_id );
@@ -332,6 +347,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					'enabled_manage' => 0,
 					'parent_status'  => null,
 					'parents_synced' => 0,
+					'skipped'        => $skipped,
 					'report'         => array(),
 					'errors'         => $errors,
 					'error'          => $errors ? 'هیچ متغیری اعمال نشد: ' . implode( ' ', $errors ) : '',
@@ -414,9 +430,18 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$status = isset( $new_state[ $pid ] )
 					? $new_state[ $pid ][1]
 					: ( ! empty( $has_stock[ $pid ] ) ? 'instock' : 'outofstock' );
-				$statuses[]         = $status;
-				$parent_triples[]   = array( $pid, '_stock_status', $status );
+				// والدی که وضعیتش عوض نمی‌شود، بازنویسی/ترنسینت نمی‌خواهد.
+				$cur = (string) get_post_meta( $pid, '_stock_status', true );
+				if ( '' !== $cur && $cur === $status ) {
+					continue;
+				}
+
+				$statuses[]                 = $status;
+				$parent_triples[]           = array( $pid, '_stock_status', $status );
 				$lookup_parent[ $status ][] = $pid;
+				if ( function_exists( 'wc_delete_product_transients' ) ) {
+					wc_delete_product_transients( $pid );
+				}
 			}
 			if ( $parent_triples ) {
 				self::bulk_write_meta( $parent_triples );
@@ -432,12 +457,6 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					);
 				}
 			}
-			foreach ( $parent_ids as $pid ) {
-				if ( function_exists( 'wc_delete_product_transients' ) ) {
-					wc_delete_product_transients( $pid );
-				}
-			}
-
 			// ۴) ترم‌های product_visibility: انبوه (برای فیلترهای «موجودی» فروشگاه).
 			if ( taxonomy_exists( 'product_visibility' ) ) {
 				$t_in  = get_term_by( 'slug', 'instock', 'product_visibility' );
@@ -445,8 +464,8 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				if ( $t_in && $t_out ) {
 					$to_out = array();
 					$to_in  = array();
-					foreach ( $new_state as $vid => $st ) {
-						if ( 'outofstock' === $st[1] ) {
+					foreach ( $status_changed as $vid => $st ) {
+						if ( 'outofstock' === $st ) {
 							$to_out[] = (int) $vid;
 						} else {
 							$to_in[] = (int) $vid;
@@ -489,6 +508,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'enabled_manage' => $enabled_manage,
 				'parent_status'  => ( 1 === count( $statuses ) ) ? $statuses[0] : null,
 				'parents_synced' => count( $statuses ),
+				'skipped'        => $skipped,
 				'report'         => $report,
 				'errors'         => $errors,
 			);
@@ -555,6 +575,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'enabled_manage' => $enabled_manage,
 				'parent_status'  => ( 1 === count( $statuses ) ) ? $statuses[0] : null,
 				'parents_synced' => count( $statuses ),
+				'skipped'        => 0,
 				'report'         => $report,
 				'errors'         => $errors,
 			);
