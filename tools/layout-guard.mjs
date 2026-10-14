@@ -120,6 +120,26 @@ for (const file of SHARED) {
 	}
 }
 
+/* C۳) منوی پیشخوان روی صفحهٔ ما خکوب شود + رفعِ بریدگی زیرمنوها در JS */
+{
+	const cssPath = 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css';
+	const css = fs.readFileSync(path.join(ROOT, cssPath), 'utf8');
+	const pin = /@media screen and \(min-width: 783px\)[\s\S]{0,400}body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}position:\s*fixed/.test(css);
+	if (!pin || !/body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}overflow-y:\s*auto/.test(css)) {
+		problems.push(`${cssPath} — بلوک خکوب‌کردن منو (body.tbsm-page #adminmenuwrap: fixed + overflow-y:auto از ۷۸۳px) نیست؛ ارتفاع صفحه به بلندی منو کشیده می‌شود.`);
+	} else {
+		notes.push('منوی پیشخوان روی صفحهٔ ما خکوب است (صفحه = محتوا) ✓');
+	}
+	const js = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js'), 'utf8');
+	if (!/function menuFlyoutEscape/.test(js) || !/\$\(menuFlyoutEscape\)/.test(js)) {
+		problems.push('admin.js — تابع menuFlyoutEscape (رفع بریدگی زیرمنوها زیر overflow) نیست یا صدا زده نمی‌شود.');
+	} else if (!/'fixed' !== window\.getComputedStyle\(wrap\)\.position/.test(js)) {
+		problems.push('admin.js — menuFlyoutEscape بدون بررسی «منو خکوب است» اجرا می‌شود؛ باید روی صفحه‌های دیگر بی‌اثر باشد.');
+	} else {
+		notes.push('زیرمنوهای کشویی از قید overflow بیرون می‌آیند (و فقط وقتی منو خکوب است) ✓');
+	}
+}
+
 /* D) دو نسخهٔ لایهٔ مشترک باید یکی باشند */
 {
 	const a = fs.readFileSync(path.join(ROOT, SHARED[0]), 'utf8');

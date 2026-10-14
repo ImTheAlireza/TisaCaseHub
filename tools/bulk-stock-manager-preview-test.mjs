@@ -640,6 +640,11 @@ window.TBSM_PREVIEW_FAULT = null;
 	ok('قاعدهٔ پنهان‌کردن فوتر پیشخوان هست', /body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(admin));
 	ok('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود', /add_filter\(\s*'admin_body_class',\s*array\(\s*__CLASS__,\s*'body_class'\s*\)\s*\)/.test(php) && /if \( self::is_our_screen\(\) \)/.test(php));
 	ok('اندازهٔ کارت‌ها در سطح خودِ کارت قفل شده (سقف عرض + وسط‌چینی)', /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*max-width\s*:\s*min\(\s*100%\s*,\s*var\(--tisa-max-w/.test(admin) && /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*margin-inline\s*:\s*auto/.test(admin));
+	// ارتفاع صفحه: منوی پیشخوانِ بلند نباید صفحه را به بلندی خودش بکشد (۱٫۳٫۱۱)
+	const jsSrc = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js'), 'utf8');
+	ok('منو روی صفحهٔ ما خکوب می‌شود (fixed + اسکرول داخلی، از ۷۸۳px)', /@media screen and \(min-width: 783px\)[\s\S]{0,400}body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}position:\s*fixed[\s\S]{0,300}overflow-y:\s*auto/.test(admin));
+	ok('زیرمنوهای کشویی از قید overflow بیرون می‌آیند', /function menuFlyoutEscape/.test(jsSrc) && /\$\(menuFlyoutEscape\)/.test(jsSrc));
+	ok('رفعِ زیرمنو فقط وقتی منو خکوب است اجرا می‌شود (صفحه‌های دیگر دست‌نخورده)', /'fixed' !== window\.getComputedStyle\(wrap\)\.position/.test(jsSrc) && /li\.classList\.contains\('wp-has-current-submenu'\)/.test(jsSrc));
 	ok('کارت‌های داخل پنل هم سقف عرض دارند (شناسه‌دار)', /#wpbody-content \.tbsm-wrap \.tbsm-panel > \.tbsm-card/.test(admin));
 }
 

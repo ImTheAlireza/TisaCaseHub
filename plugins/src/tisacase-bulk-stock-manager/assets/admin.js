@@ -2319,8 +2319,91 @@
 		}
 	};
 
+	/*
+	 * منوی پیشخوانِ خکوب‌شده — زیرمنوهای کشویی (flyout) از قید overflow بیرون بیایند.
+	 *
+	 * در CSS همین افزونه، `#adminmenuwrap` روی این صفحه `position: fixed` و
+	 * `overflow-y: auto` است تا ارتفاع صفحه به بلندی منو کشیده نشود. عارضهٔ
+	 * جانبی: زیرمنویی که هسته با `position: absolute; right: 160px` بیرون ستون
+	 * نشان می‌دهد، زیر overflow بریده می‌شود. اینجا موقعیتش را با مختصات دیدِ
+	 * کنونی همان آیتم به `position: fixed` منتقل می‌کنیم تا کامل دیده شود.
+	 * روی صفحه‌های دیگر (منو خکوب نیست) هیچ کاری نمی‌کند.
+	 */
+	function menuFlyoutEscape() {
+		var wrap = document.getElementById('adminmenuwrap');
+		if (!wrap || 'fixed' !== window.getComputedStyle(wrap).position) {
+			return;
+		}
+
+		var current = null;
+		var currentLi = null;
+
+		function clear() {
+			currentLi = null;
+			if (!current) {
+				return;
+			}
+			current.style.position = '';
+			current.style.top = '';
+			current.style.bottom = '';
+			current.style.maxHeight = '';
+			current.style.overflowY = '';
+			current = null;
+		}
+
+		function place(li) {
+			// آیتم جاری، زیرمنویش درون جریان است (نه کشویی) — دست نمی‌زنیم.
+			if (!li || li.classList.contains('wp-has-current-submenu')) {
+				clear();
+				return;
+			}
+			var sub = li.querySelector('.wp-submenu');
+			if (!sub) {
+				clear();
+				return;
+			}
+
+			var r = li.getBoundingClientRect();
+			var gap = 8;
+			// اگر زیر آیتم جا نیست، زیرمنو به بالا می‌چرخد (مثل هر دراپ‌داون درست).
+			var below = window.innerHeight - Math.round(r.top) - gap;
+			var above = Math.round(r.bottom) - gap;
+
+			if (current && current !== sub) {
+				clear();
+			}
+			current = sub;
+			currentLi = li;
+			sub.style.position = 'fixed';
+			sub.style.overflowY = 'auto';
+			if (below >= Math.min(200, above)) {
+				var top = Math.max(gap, Math.round(r.top) - 1);
+				sub.style.top = top + 'px';
+				sub.style.bottom = '';
+				sub.style.maxHeight = Math.max(80, window.innerHeight - top - gap) + 'px';
+			} else {
+				sub.style.top = 'auto';
+				sub.style.bottom = Math.max(gap, window.innerHeight - Math.round(r.bottom)) + 'px';
+				sub.style.maxHeight = Math.max(80, above) + 'px';
+			}
+		}
+
+		$(wrap)
+			.on('mouseenter', '#adminmenu > li.menu-top', function () { place(this); })
+			.on('mouseleave', '#adminmenu > li.menu-top', clear)
+			// با اسکرولِ داخلی منو، زیرمنوی باز هم‌جای آیتمش می‌ماند.
+			.on('scroll', function () {
+				if (currentLi) {
+					place(currentLi);
+				}
+			});
+	}
+
+	$(menuFlyoutEscape);
+
 	// در دسترس گذاشتن کنترلر برای پیش‌نمایش/دیباگ (بدون تغییر رفتار افزونه).
 	window.TBSM = TBSM;
+	window.TBSM.menuFlyoutEscape = menuFlyoutEscape;
 
 	$(function () {
 		TBSM.init();

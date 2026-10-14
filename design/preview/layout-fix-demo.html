@@ -2,7 +2,7 @@
 <html lang="fa" dir="rtl">
 <head>
 <meta charset="utf-8">
-<title>TisaCase — چیدمان صفحه: تشخیص و رفع (۱٫۳٫۱۰)</title>
+<title>TisaCase — چیدمان و ارتفاع صفحه: تشخیص و رفع (۱٫۳٫۱۱)</title>
 <style>
 	:root { --ink:#1F2A2E; --muted:#6B7A80; --line:#DAD5C9; --card:#fff; --accent:#0E7C6B; --bad:#C0392B; }
 	* { box-sizing: border-box; }
@@ -96,7 +96,21 @@
 	</table>
 	<p class="lead" style="margin-top:12px">درسِ اصلی: قفل اندازه باید روی <b>خودِ عنصر</b> بنشیند نه پدرش. کارت «گام ۳» فرزند مستقیم <code>.tbsm-wrap</code> است و در شبیه‌سازیِ مزاحم، تنها عنصری بود که می‌توانست پهن شود — یعنی همان چیزی که در اسکرین‌شات دیده شد. حالا سقف عرض و وسط‌چینی روی خودِ کارت‌ها و هیرو است.</p>
 
-	<h2>سه قاعده‌ای که اضافه/اصلاح شد</h2>
+	<h2>چرا صفحه این‌قدر بلند می‌شود؟ (۱٫۳٫۱۱)</h2>
+	<p class="lead" style="max-width:1180px;margin:0 auto 12px">این یکی تقصیر افزونه نبود؛ رفتار خودِ هستهٔ وردپرس است. منوی پیشخوان (<code>#adminmenuwrap</code>) یک <b>فلاوت</b> است — <code>position: relative; float: right</code> — و ارتفاعش به ارتفاع سند اضافه می‌شود. هسته فقط وقتی منو را «خکوب» می‌کند که منو در پنجره جا شود (<code>setPinMenu()</code> / <code>pinMenu()</code> در <code>common.js</code>). روی سایتی که منو با این همه افزونه از پنجره بلندتر است، منو فلاوت می‌ماند و <b>کل صفحه به بلندی منو</b> می‌شود؛ هرچه محتوای بالای صفحه کوتاه‌تر، آن نوار خالی زیرش بیشتر.</p>
+	<table>
+		<thead><tr><th style="width:30%">اندازه‌گیری (منو ۵۵ آیتم · پنجرهٔ ۱۰۰۰px)</th><th>قبل</th><th>بعد (۱٫۳٫۱۱)</th></tr></thead>
+		<tbody>
+			<tr><td>ارتفاع کل صفحه</td><td class="num bad2">۲۷۸۷px</td><td class="num fix">۱۲۱۸px</td></tr>
+			<tr><td>کارت‌ها کجا تمام می‌شوند</td><td class="num">۱۱۳۷px</td><td class="num">۱۱۳۷px</td></tr>
+			<tr><td>نوار خالی زیر کارت‌ها</td><td class="num bad2">۱۶۵۰px</td><td class="num fix">۸۱px (پدینگ خود هسته)</td></tr>
+			<tr><td>منوی پیشخوان</td><td class="num">۲۶۹۹px · فلاوت</td><td class="num fix">ثابت · اسکرول داخلی</td></tr>
+			<tr><td>زیرمنوی کشوییِ آخرین آیتم</td><td class="num bad2">بریده · غیرقابل‌کلیک</td><td class="num fix">کامل در دید · کلیک‌پذیر</td></tr>
+		</tbody>
+	</table>
+	<p class="lead" style="max-width:1180px;margin:12px auto 0">رفع: روی همین صفحه منو خکوب می‌شود و خودش اسکرول می‌گیرد (<code>body.tbsm-page #adminmenuwrap { position: fixed; top: var(--wp-admin--admin-bar--height,32px); bottom:0; overflow-y:auto }</code> از ۷۸۳px به بالا) و زیرمنوهای کشویی با <code>menuFlyoutEscape()</code> از قید <code>overflow</code> بیرون می‌آیند (و اگر زیر آیتم جا نباشد، به بالا می‌چرخند). سنجهٔ <code>tools/page-height.mjs</code> همین‌ها را می‌سنجد — از جمله یک کنترل مثبت که نشان می‌دهد بدون رفعِ JS، زیرمنو بریده و غیرقابل‌کلیک است.</p>
+
+	<h2>سه قاعده‌ای که در ۱٫۳٫۹ و ۱٫۳٫۱۰ اضافه/اصلاح شد</h2>
 	<table>
 		<thead><tr><th style="width:44%">قاعده</th><th>کار</th></tr></thead>
 		<tbody>

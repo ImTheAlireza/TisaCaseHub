@@ -164,3 +164,23 @@ python3 tools/php-check.py plugins/tisacase-hub
 
 درسِ مهندسی: قفل اندازه باید روی **خودِ عنصر** بنشیند نه پدرش؛ وگرنه کوچک‌ترین قاعدهٔ بیرونی روی پدر، فرزندها را از هم جدا می‌کند — دقیقاً همان چیزی که در اسکرین‌شات کاربر دیده شد (کارت گام ۳ که فرزند مستقیم `.tbsm-wrap` است، تنها عنصری بود که می‌توانست پهن شود).
 
+### چرا صفحهٔ پیشخوان با منوی بلند این‌قدر بلند می‌شود؟ (یافتهٔ ۱٫۳٫۱۱)
+
+منوی پیشخوان یک **فلاوت** است (`#adminmenuwrap { position: relative; float: right }` در `admin-menu.css`)، پس ارتفاعش به ارتفاع سند اضافه می‌شود. هسته فقط وقتی منو را خکوب می‌کند که در پنجره جا شود — `wp-admin/js/common.js`:
+
+```js
+function setPinMenu() {
+	// height = { window, wpwrap, adminbar, menu }
+	if ( height.menu + height.adminbar > height.window ) { pinMenu(); $body.removeClass('sticky-menu'); }
+	else { $body.addClass('sticky-menu'); unpinMenu(); }
+}
+function pinMenu() {
+	// اگر منو از پنجره بلندتر باشد ولی صفحه بلندتر باشد، با اسکرول جبران می‌کند
+	if ( height.menu + height.adminbar < height.window || height.menu + height.adminbar + 20 > height.wpwrap ) { unpinMenu(); return; }
+}
+```
+
+روی سایتی با ۵۰+ افزونه، منو (≈۲۷۰۰px) از پنجره (≈۱۰۰۰px) بلندتر است؛ شرط دوم `pinMenu` غالباً برقرار می‌شود و منو در جریان می‌ماند → **ارتفاع صفحه = ارتفاع منو** و زیر محتوای کوتاه، صدها پیکسل فضای خالی می‌ماند. این رفتار روی همهٔ صفحه‌های پیشخوان هست؛ صفحه‌های TisaCase فقط چون محتوای فشرده دارند بیشتر به چشم می‌آید.
+
+**راه‌حل در سطح ابزار (`body.tbsm-page`)**: خکوب‌کردن منو (`position: fixed` + `overflow-y: auto` از ۷۸۳px به بالا) تا صفحه به اندازهٔ محتوا شود؛ به‌همراه `menuFlyoutEscape()` در JS برای اینکه زیرمنوهای کشویی زیر `overflow` بریده نشوند (با چرخش به بالا وقتی زیر آیتم جا نیست). اعداد بازتولید با CSS واقعی هستهٔ ۷٫۱٫۳ و منوی ۵۵ آیتمی: صفحه ۲۷۸۷px → ۱۲۱۸px؛ نوار خالی ۱۶۵۰px → ۸۱px (پدینگ خود هسته).
+

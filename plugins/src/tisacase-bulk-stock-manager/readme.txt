@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.3.10
+Stable tag: 1.3.11
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,12 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.3.11 =
+* **رفع «صفحه این‌قدر بلند می‌شود / زیر کارت‌ها کلی فضای خالی است»:** ریشه در خودِ هستهٔ وردپرس است، نه در افزونه — منوی پیشخوان (`#adminmenuwrap`) یک **فلاوت** است (`position: relative; float: right`) و ارتفاعش به ارتفاع سند اضافه می‌شود. هسته فقط وقتی منو را خکوب می‌کند که در پنجره جا شود (`setPinMenu`/`pinMenu` در `common.js`). روی سایتی که منو با این همه افزونه از پنجره بلندتر است، منو فلاوت می‌ماند و کل صفحه به بلندی منو می‌شود: در بازتولید با CSS واقعی هستهٔ ۷٫۱٫۳ و منوی ۵۵ آیتمی، صفحه **۲۷۸۷px** بود در حالی که کارت‌ها در **۱۱۳۷px** تمام می‌شدند → **۱۶۵۰px فضای خالی**.
+* **رفع:** روی همین صفحه منو خکوب می‌شود و خودش اسکرول می‌گیرد (`body.tbsm-page #adminmenuwrap { position: fixed; top: var(--wp-admin--admin-bar--height, 32px); bottom: 0; overflow-y: auto }` از ۷۸۳px به بالا). نتیجه در همان بازتولید: صفحه **۱۲۱۸px** شد (فقط ۸۱px پدینگ خود هسته) و آیتم‌های پایینی منو با اسکرول داخلی در دسترس‌اند. هیچ صفحهٔ دیگری از پیشخوان تغییر نمی‌کند.
+* **رفع عارضهٔ جانبی (مهم):** زیرمنوهای کشویی (`position: absolute; right: 160px`) زیر `overflow` بریده می‌شدند. تابع `menuFlyoutEscape()` در `admin.js` موقعیتشان را به `position: fixed` با مختصات همان آیتم منتقل می‌کند و اگر زیر آیتم جا نباشد، به بالا می‌چرخاند. کنترل مثبت: بدون این تابع، زیرمنوی آخرین آیتم **بریده و غیرقابل‌کلیک** است؛ با آن، کامل در دید و کلیک‌پذیر.
+* سنجهٔ تازهٔ `tools/page-height.mjs` (Chromium + CSS واقعی هستهٔ ۷٫۱٫۳): ارتفاع صفحه، اسکرول منو، و سالم‌بودن زیرمنوی کشویی را می‌سنجد. تست jsdom: **۱۹۰ سنجه**.
 
 = 1.3.10 =
 * **قفل اندازهٔ کارت‌ها از پدر جدا شد (ضد هر CSS بیرونی):** سقف عرض و وسط‌چینی حالا روی خودِ کارت‌ها و هیرو نشسته است — `.tbsm-wrap .tbsm-card, .tbsm-wrap .tbsm-hero, #wpbody-content .tbsm-wrap > .tbsm-card, #wpbody-content .tbsm-wrap .tbsm-panel > .tbsm-card { width:100%; max-width:min(100%, var(--tisa-max-w,1280px)); margin-inline:auto }`. یعنی اگر افزونه/قالب/ترکیب‌کنندهٔ CSS عرض پدر را باز کند یا پدینگ‌ها را صفر کند، باز هم هیچ کارتی از کارت دیگر جدا نمی‌افتد.
