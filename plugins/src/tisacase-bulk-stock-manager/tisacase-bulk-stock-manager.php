@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       TisaCase — مدیریت انبوه موجودی
  * Plugin URI:        https://tisacase.com
- * Description:       انتخاب محصول با جست‌وجو، نمایش متغیرها به‌صورت کارت‌های کوچک، فیلتر دسته با سلکت و اعمال یکجا موجودی روی متغیرهای انتخاب‌شده.
- * Version:           1.1.5
+ * Description:       دو حالت: (۱) تک‌محصول با جست‌وجو و کارت‌های متغیر، (۲) گروهی — اول محدودهٔ محصولات (چند محصول با جست‌وجو، دسته‌بندی یا بازهٔ شناسه مثل CH)، بعد ویژگی و مقدار مدل از میان ویژگی‌های همان محدوده، و اعمال موجودی تکی یا یک‌جا.
+ * Version:           1.3.12
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 5.0
@@ -13,14 +13,14 @@
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub:      key=bsm; title="مدیریت انبوه موجودی"; icon=box; group=products; page=admin.php?page=tisacase-bulk-stock-manager; screen=woocommerce_page_tisacase-bulk-stock-manager; parent=woocommerce; slug=tisacase-bulk-stock-manager; desc="جست‌وجوی محصول، کارت‌های کوچک متغیرها، فیلتر دسته با سلکت و اعمال یکجا موجودی روی انتخاب‌ها."
+ * TisaCase Hub:      key=bsm; title="مدیریت انبوه موجودی"; icon=box; group=products; page=admin.php?page=tisacase-bulk-stock-manager; screen=woocommerce_page_tisacase-bulk-stock-manager; parent=woocommerce; slug=tisacase-bulk-stock-manager; desc="تک‌محصول با جست‌وجو و کارت‌های متغیر، یا گروهی: اول محدودهٔ محصولات (چند محصول، دسته‌بندی یا بازهٔ شناسه مثل CH) و بعد ویژگی/مقدار مدل از میان ویژگی‌های همان محدوده؛ اعمال موجودی تکی یا یک‌جا."
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TBSM_VERSION', '1.1.5' );
+define( 'TBSM_VERSION', '1.3.12' );
 define( 'TBSM_FILE', __FILE__ );
 define( 'TBSM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TBSM_URL', plugin_dir_url( __FILE__ ) );
@@ -41,7 +41,7 @@ add_filter( 'tisacase_hub_items', function( $items ) {
 	if ( is_array( $items ) && ! isset( $items['bsm'] ) ) {
 		$items['bsm'] = array(
 			'title' => __( 'مدیریت انبوه موجودی', 'tisacase-bsm' ),
-			'desc'  => __( 'جست‌وجوی محصول، کارت‌های کوچک متغیرها، فیلتر دسته با سلکت و اعمال یکجا موجودی روی انتخاب‌ها.', 'tisacase-bsm' ),
+			'desc'  => __( 'تک‌محصول با جست‌وجو و کارت‌های متغیر، یا گروهی با مدل: یک مدل متغیر + بازهٔ شناسهٔ محصولات (مثلاً CH) و اعمال موجودی همان متغیر در همهٔ آن محصولات.', 'tisacase-bsm' ),
 			'group' => 'products',
 			'icon'  => 'box',
 			'dir'   => 'tisacase-bulk-stock-manager',

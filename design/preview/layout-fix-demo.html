@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>TisaCase — چیدمان و ارتفاع صفحه: تشخیص و رفع (۱٫۳٫۱۱)</title>
+<style>
+	:root { --ink:#1F2A2E; --muted:#6B7A80; --line:#DAD5C9; --card:#fff; --accent:#0E7C6B; --bad:#C0392B; }
+	* { box-sizing: border-box; }
+	body { margin:0; padding:24px; background:#EDEAE2; color:var(--ink);
+		font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif; }
+	h1 { font-size:22px; margin:0 0 6px; }
+	h2 { font-size:16px; margin:26px 0 10px; }
+	.lead { color:var(--muted); font-size:14px; margin:0 0 20px; line-height:1.95; max-width:960px; }
+	.grid { display:grid; grid-template-columns:1fr; gap:22px; max-width:1180px; margin-inline:auto; }
+	.panel { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+	.panel > header { display:flex; align-items:center; gap:10px; padding:12px 16px; border-bottom:1px solid var(--line); font-weight:700; }
+	.tag { font-size:12px; padding:3px 9px; border-radius:999px; font-weight:700; }
+	.tag.bad { background:#FDECEA; color:var(--bad); }
+	.tag.good { background:#E6F4F1; color:var(--accent); }
+	.panel > p { margin:0; padding:10px 16px 14px; color:var(--muted); font-size:13px; line-height:1.9; }
+	code { background:#F2EFE7; border-radius:5px; padding:1px 5px; font-family:"SF Mono", Consolas, monospace; direction:ltr; display:inline-block; font-size:12px; }
+
+	.frame { position:relative; height:206px; background:#F0F0F1; display:flex; margin:0 16px 4px; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+	.frame .menu { width:150px; flex:0 0 150px; background:#1D2327; color:#C3C4C7; font-size:11px; padding:10px 0; }
+	.frame .menu i { display:block; padding:7px 12px; font-style:normal; }
+	.frame .menu i.on { background:var(--accent); color:#fff; }
+	.frame .content { position:relative; flex:1; background:#fff; }
+	.frame .wpcontent { position:absolute; inset:0; padding-inline-start:var(--pad,20px); }
+	.frame .wrap { max-width:1180px; background:#fff; border:2px dashed #B9B3A6; border-radius:8px; padding:10px;
+		margin-inline-start:var(--m-start,auto); margin-inline-end:var(--m-end,auto); margin-block-start:8px; }
+	.frame .wrap b { font-size:12.5px; }
+	.frame .card { height:44px; margin-top:8px; border-radius:7px; background:linear-gradient(180deg,#0E7C6B,#0B6357); }
+	.frame .card + .card { margin-top:7px; height:28px; background:#EFEDE6; }
+	.frame .void { position:absolute; inset-block:0; inset-inline-start:0; background:repeating-linear-gradient(45deg,#F5E9E7,#F5E9E7 8px,#FBEFED 8px,#FBEFED 16px); border-inline-start:1px dashed #DCB7B1; }
+	.frame .void span { position:absolute; top:44%; inset-inline-start:50%; transform:translate(50%,-50%); font-size:11px; color:var(--bad); white-space:nowrap; font-weight:700; }
+	.frame .foot { position:absolute; inset-block-end:4px; inset-inline-start:12px; font-size:10.5px; color:#787C82; }
+	.frame .foot.gone { color:#B9B3A6; }
+	.frame .foot.gone s { color:#DCB7B1; }
+	.before .content { --pad:0px; }
+	.before .wrap { --m-start:24px; --m-end:24px; }
+	.after .content { --pad:20px; }
+
+	table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; font-size:13.5px; max-width:1180px; margin-inline:auto; }
+	th, td { padding:10px 14px; border-top:1px solid var(--line); text-align:right; vertical-align:top; line-height:1.85; }
+	th { background:#F7F5EF; font-weight:700; }
+	td.num { font-family:"SF Mono", Consolas, monospace; direction:ltr; text-align:center; }
+	.fix { color:var(--accent); font-weight:700; }
+	.bad2 { color:var(--bad); font-weight:700; }
+</style>
+</head>
+<body>
+	<h1>چرا صفحه «تمام‌عرض / کج» شده بود؟ — و چرا کارت پایین جدا می‌شد</h1>
+	<p class="lead">دو قاعده در <b>لایهٔ مشترک TisaCase</b> (<code>tisacase-ui.css</code>) باعث می‌شد کارت وسط ننشیند: مارجین کنارِ <b>ثابت</b> (۲۴px، به‌جای <code>auto</code>) و پدینگ کنارِ <code>#wpcontent</code> که صفر شده بود. هرچه پنجره پهن‌تر، فضای خالی بیشتر همه یک‌طرفه جمع می‌شد — همین حسِ «تمام‌عرض شدن» و ناهم‌اندازه دیدنِ بخش پایین. عرض خودِ دو کارت از اول برابر بود؛ بعدِ اصلاح، صفحه متقارن شد و دو ایراد باقی‌مانده هم درست شد: خط «نگارش وردپرس» پنهان و عرض کارت‌ها قفل.</p>
+
+	<div class="grid">
+		<div class="panel before">
+			<header>قبل از ۱٫۳٫۹ <span class="tag bad">کج · انحراف ۵۳۲px در پنجرهٔ ۱۹۲۰</span></header>
+			<p><code>.wrap { margin-inline: 24px; max-width: 1180px }</code> با <code>#wpcontent { padding-inline-start: 0 }</code> — کارت به منو می‌چسبد و باقیِ فضا همه سمت دیگر می‌ریزد.</p>
+			<div class="frame">
+				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
+				<div class="content">
+					<div class="wpcontent">
+						<div class="wrap"><b>کارت گام ۲ — ۱۱۸۰px</b><div class="card"></div><div class="card"></div><div class="card"></div></div>
+					</div>
+					<div class="void" style="width:180px"><span>بازهٔ خالی — یک‌طرفه</span></div>
+					<div class="foot"><s>نگارش ۷٫۱٫۳</s></div>
+				</div>
+			</div>
+		</div>
+
+		<div class="panel after">
+			<header>۱٫۳٫۱۰ / ۱٫۹٫۱۵ <span class="tag good">متقارن · ۲۸۰/۲۸۰</span></header>
+			<p><code>.tisa-scope .wrap { margin-inline: auto }</code> + در خود افزونه <code>.tbsm-wrap, #wpbody-content .tbsm-wrap { max-width: var(--tisa-max-w,1280px); margin-inline: auto }</code> — پدینگ پیش‌فرض وردپرس دست‌نخورده، کارت وسط، و خط نگارش فوتر روی این صفحه پنهان.</p>
+			<div class="frame">
+				<div class="menu"><i>پیشخوان</i><i>نوشته‌ها</i><i class="on">ووکامرس</i><i>محصولات</i><i>سفارش‌ها</i><i>مدیریت انبوه موجودی</i></div>
+				<div class="content">
+					<div class="wpcontent">
+						<div class="wrap"><b>کارت گام ۲ و گام ۳ — هم‌عرض ۱۱۸۰px</b><div class="card"></div><div class="card"></div><div class="card"></div></div>
+					</div>
+					<div class="foot gone">نگارش ۷٫۱٫۳ — پنهان روی این صفحه</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<h2>سنجش با مرورگر واقعی (Chromium + CSS خودِ وردپرس) — <code>tools/layout-geometry.mjs</code></h2>
+	<table>
+		<thead><tr><th style="width:30%">حالت</th><th>چه چیزی را شبیه‌سازی می‌کند</th><th>نتیجه</th></tr></thead>
+		<tbody>
+			<tr><td><code>after</code></td><td>فقط CSS فعلی افزونه</td><td class="num fix">۵ کارت: ۱۱۸۰px · ۴۰/۴۰ و ۲۸۰/۲۸۰ · انحراف ۰</td></tr>
+			<tr><td><code>hostile</code></td><td>افزونه/قالب دیگر با قاعده‌های کلاس‌محور (<code>.wrap</code>، <code>.tisa-scope .wrap</code>)</td><td class="num fix">بی‌تغییر: ۱۱۸۰px و متقارن</td></tr>
+			<tr><td><code>extreme</code></td><td><code>!important</code> که قفل‌های ما را باطل می‌کند</td><td class="num fix">همه با هم باز می‌شوند — هیچ کارتی تنها پهن نمی‌شود</td></tr>
+			<tr><td><code>control</code></td><td>انحراف عمدی (خودآزماییِ سنجه)</td><td class="num">دیده شد: ۲۴۰px و ۵۶۰px ✓</td></tr>
+			<tr><td>خط «نگارش وردپرس»</td><td>در همهٔ حالت‌ها</td><td class="num fix">پنهان ✓</td></tr>
+		</tbody>
+	</table>
+	<p class="lead" style="margin-top:12px">درسِ اصلی: قفل اندازه باید روی <b>خودِ عنصر</b> بنشیند نه پدرش. کارت «گام ۳» فرزند مستقیم <code>.tbsm-wrap</code> است و در شبیه‌سازیِ مزاحم، تنها عنصری بود که می‌توانست پهن شود — یعنی همان چیزی که در اسکرین‌شات دیده شد. حالا سقف عرض و وسط‌چینی روی خودِ کارت‌ها و هیرو است.</p>
+
+	<h2>چرا صفحه این‌قدر بلند می‌شود؟ (۱٫۳٫۱۱)</h2>
+	<p class="lead" style="max-width:1180px;margin:0 auto 12px">این یکی تقصیر افزونه نبود؛ رفتار خودِ هستهٔ وردپرس است. منوی پیشخوان (<code>#adminmenuwrap</code>) یک <b>فلاوت</b> است — <code>position: relative; float: right</code> — و ارتفاعش به ارتفاع سند اضافه می‌شود. هسته فقط وقتی منو را «خکوب» می‌کند که منو در پنجره جا شود (<code>setPinMenu()</code> / <code>pinMenu()</code> در <code>common.js</code>). روی سایتی که منو با این همه افزونه از پنجره بلندتر است، منو فلاوت می‌ماند و <b>کل صفحه به بلندی منو</b> می‌شود؛ هرچه محتوای بالای صفحه کوتاه‌تر، آن نوار خالی زیرش بیشتر.</p>
+	<table>
+		<thead><tr><th style="width:30%">اندازه‌گیری (منو ۵۵ آیتم · پنجرهٔ ۱۰۰۰px)</th><th>قبل</th><th>بعد (۱٫۳٫۱۱)</th></tr></thead>
+		<tbody>
+			<tr><td>ارتفاع کل صفحه</td><td class="num bad2">۲۷۸۷px</td><td class="num fix">۱۲۱۸px</td></tr>
+			<tr><td>کارت‌ها کجا تمام می‌شوند</td><td class="num">۱۱۳۷px</td><td class="num">۱۱۳۷px</td></tr>
+			<tr><td>نوار خالی زیر کارت‌ها</td><td class="num bad2">۱۶۵۰px</td><td class="num fix">۸۱px (پدینگ خود هسته)</td></tr>
+			<tr><td>منوی پیشخوان</td><td class="num">۲۶۹۹px · فلاوت</td><td class="num fix">ثابت · اسکرول داخلی</td></tr>
+			<tr><td>زیرمنوی کشوییِ آخرین آیتم</td><td class="num bad2">بریده · غیرقابل‌کلیک</td><td class="num fix">کامل در دید · کلیک‌پذیر</td></tr>
+		</tbody>
+	</table>
+	<p class="lead" style="max-width:1180px;margin:12px auto 0">رفع: روی همین صفحه منو خکوب می‌شود و خودش اسکرول می‌گیرد (<code>body.tbsm-page #adminmenuwrap { position: fixed; top: var(--wp-admin--admin-bar--height,32px); bottom:0; overflow-y:auto }</code> از ۷۸۳px به بالا) و زیرمنوهای کشویی با <code>menuFlyoutEscape()</code> از قید <code>overflow</code> بیرون می‌آیند (و اگر زیر آیتم جا نباشد، به بالا می‌چرخند). سنجهٔ <code>tools/page-height.mjs</code> همین‌ها را می‌سنجد — از جمله یک کنترل مثبت که نشان می‌دهد بدون رفعِ JS، زیرمنو بریده و غیرقابل‌کلیک است.</p>
+
+	<h2>سه قاعده‌ای که در ۱٫۳٫۹ و ۱٫۳٫۱۰ اضافه/اصلاح شد</h2>
+	<table>
+		<thead><tr><th style="width:44%">قاعده</th><th>کار</th></tr></thead>
+		<tbody>
+			<tr><td><code>body.tbsm-page #wpfooter { display: none }</code></td><td><span class="fix">تازه</span> — کلاس <code>tbsm-page</code> فقط روی همین صفحه اضافه می‌شود (فیلتر <code>admin_body_class</code>)، پس خط «نگارش ۷٫۱٫۳» و متن سپاسگزاری فقط اینجا پنهان می‌شوند؛ هیچ صفحهٔ دیگری از پیشخوان دست نمی‌خورد.</td></tr>
+			<tr><td><code>.tbsm-wrap .tbsm-card, .tbsm-wrap .tbsm-hero, #wpbody-content … .tbsm-card { width:100%; max-width: min(100%, var(--tisa-max-w,1280px)); margin-inline: auto }</code></td><td><span class="fix">تازه (۱٫۳٫۱۰)</span> — قفل اندازه روی خودِ کارت‌ها و هیرو، مستقل از پدر؛ سلکتورهای شناسه‌دار (۱‑۲‑۰) تا قاعده‌های بیرونی بازنویسی نکنند.</td></tr>
+			<tr><td><code>#wpbody-content .tbsm-wrap.wrap</code></td><td><span class="fix">تازه (۱٫۳٫۱۰)</span> — سلکتور مقاوم برای خودِ پوسته؛ `.tisa-scope .wrap` (۰‑۲‑۰) یا حتی ۰‑۳‑۰ نمی‌تواند مارجین/عرض را عوض کند.</td></tr>
+			<tr><td><code>.tisa-scope .wrap { margin-inline: auto }</code></td><td><span class="fix">اصلاح‌شده</span> — در لایهٔ مشترک (و کپی هاب)؛ مارجین ثابت ۲۴px برداشته شد. <code>padding-inline-start: 0</code> هم از <code>hub.css</code> حذف شد.</td></tr>
+		</tbody>
+	</table>
+</body>
+</html>

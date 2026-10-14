@@ -1,6 +1,10 @@
 /**
  * TisaCase Bulk Stock Manager — Client Controller
- * جست‌وجوی محصول ← کارت‌های متغیر ← فیلتر دسته ← ویرایش موجودی ← اعمال.
+ *
+ * دو حالت کار:
+ *  ۱) تک‌محصول: جست‌وجوی محصول ← کارت‌های متغیر ← فیلتر دسته ← ویرایش ← اعمال.
+ *  ۲) گروهی: محدودهٔ محصولات (چند محصول / دسته / شناسه) ← ویژگی‌ها و مقدارهای
+ *     همان محدوده ← کارت‌های متغیر همان مدل ← ویرایش تکی یا همگانی ← اعمال.
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
@@ -21,6 +25,31 @@
 		unifiedConfirmTimer: null,
 		loadSeq: 0,
 
+		mode: 'single',     // 'single' = تک‌محصول | 'group' = گروهی (چند محصول)
+
+		// حالت گروهی — گام ۱: محدودهٔ محصولات
+		scopeType: 'products',   // products | category | sku | all
+		scopeProducts: {},       // id => {id, name, sku} محصولات تیک‌خورده
+		scopeResults: [],        // آخرین نتایج جست‌وجوی گام محدوده
+		scopeCategory: 0,        // شناسهٔ دستهٔ انتخابی
+		scopeLimit: 200,         // سقف محصولات انتخابی (از سرور می‌آید)
+		scopeOptionsLoaded: false,
+		scopeAllLoaded: false,   // آمار «همهٔ محصولات» فقط یک بار گرفته می‌شود
+		scopeAllBusy: false,
+		scopeCategories: [],     // فهرست کامل دسته‌ها (برای فیلتر جست‌وجو)
+		categoryFilter: '',      // عبارت جست‌وجوی دسته‌ها
+
+		// حالت گروهی — گام ۲ و ۳
+		scope: null,        // محدودهٔ تأییدشده از سرور {type, label, products, variations, ...}
+		scopeAttrs: [],     // ویژگی‌های همان محدوده [{label, keys[], products, variations}]
+		valueGroups: [],    // مقدارهای ویژگی انتخاب‌شده [{label, values[], products, variations}]
+		valueGroupIndex: [],// گروه‌های برندِ مقدارها [{label, indexes[]}] (اختیاری)
+		valueTruncated: false,
+		valueFilter: '',    // عبارت جست‌وجوی مقدارها
+		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
+		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
+		groupNoteHtml: '',
+
 		/* ----------------------------------------------------------
 		 * ابزارها
 		 * ---------------------------------------------------------- */
@@ -28,6 +57,180 @@
 		i18n: function (key) {
 			var t = window.tbsmData && window.tbsmData.i18n ? window.tbsmData.i18n : {};
 			return t[key] || key;
+		},
+
+		/**
+		 * نرمال‌سازی متن برای جست‌وجو: نیم‌فاصله/نشانه‌های نامرئی حذف، «ي/ك»
+		 * عربی و ارقام فارسی/عربی به شکل لاتین، حروف کوچک — تا «A55»، «a55» و
+		 * «a۵۵» یک نتیجه بدهند و «iphone 11» با «iPhone 11» بخواند.
+		 *
+		 * @param {string} text متن خام.
+		 * @return {string}
+		 */
+		normalizeQuery: function (text) {
+			var fa = '۰۱۲۳۴۵۶۷۸۹';
+			var ar = '٠١٢٣٤٥٦٧٨٩';
+			return String(text === null || text === undefined ? '' : text)
+				.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+				.replace(/[يﻯﻰ]/g, 'ی')
+				.replace(/[كﻙ]/g, 'ک')
+				.replace(/[۰-۹]/g, function (d) { return String(fa.indexOf(d)); })
+				.replace(/[٠-٩]/g, function (d) { return String(ar.indexOf(d)); })
+				.toLowerCase()
+				.replace(/\s+/g, ' ')
+				.trim();
+		},
+
+		/**
+		 * درخواست AJAX با رفتار یکسان برای همهٔ مسیرهای گروهی:
+		 *   - توکن امنیتی را خودش می‌چسباند؛
+		 *   - اگر سرور بگوید توکن منقضی شده (`bad_nonce`)، توکن تازه می‌گیرد و
+		 *     **یک بار** همان درخواست را تکرار می‌کند (صفحه‌های مدتی‌بازمانده)؛
+		 *   - خطا را با علت واقعی برمی‌گرداند (پیام سرور، کد HTTP، متن خام پاسخ)
+		 *     به‌جای پیام مبهم «بررسی محدوده ناموفق بود».
+		 *
+		 * @param {Object} payload بدنهٔ درخواست (بدون nonce).
+		 * @return {Object} promise با متدهای done/fail جی‌کوئری.
+		 */
+		api: function (payload) {
+			var self = this;
+			var dfd = $.Deferred();
+			var attempt = 0;
+
+			var send = function () {
+				attempt++;
+				var body = $.extend({}, payload, { nonce: window.tbsmData.nonce });
+				$.post(window.tbsmData.ajaxUrl, body)
+					.done(function (res) {
+						if (res && res.success === false && res.data && res.data.code === 'bad_nonce' && attempt < 2) {
+							if (res.data.new_nonce) {
+								window.tbsmData.nonce = res.data.new_nonce;
+							}
+							self.refreshNonce().always(send);
+							return;
+						}
+						dfd.resolve(res);
+					})
+					.fail(function (xhr, status) {
+						dfd.reject(self.failReason(xhr, status));
+					});
+			};
+
+			send();
+			return dfd.promise();
+		},
+
+		/** گرفتن توکن تازه از سرور (برای صفحه‌های مدتی‌بازمانده). */
+		refreshNonce: function () {
+			return $.post(window.tbsmData.ajaxUrl, { action: 'tbsm_nonce' })
+				.done(function (res) {
+					if (res && res.success && res.data && res.data.nonce) {
+						window.tbsmData.nonce = res.data.nonce;
+					}
+				});
+		},
+
+		/**
+		 * ساختن پیام خطای قابل‌فهم از یک درخواست شکست‌خورده.
+		 *
+		 * @param {Object} xhr    شیء XHR (اگر باشد).
+		 * @param {string} status open|error|timeout|abort|parsererror.
+		 * @return {string}
+		 */
+		failReason: function (xhr, status) {
+			var code = xhr && xhr.status ? xhr.status : 0;
+			var raw = (xhr && xhr.responseText) ? String(xhr.responseText) : '';
+			var clean = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+			var why;
+
+			if (status === 'timeout' || code === 504) {
+				why = this.i18n('scopeErrorTimeout');
+			} else if (!code) {
+				why = this.i18n('scopeErrorNet');
+			} else {
+				// خطای کشندهٔ PHP دو بخش دارد: صفحهٔ HTML وردپرس + JSONِ خود افزونه.
+				// اول آن JSON را بیرون می‌کشیم تا پیام خوانا و کوتاه Persian به
+				// کاربر برسد، نه متن به‌هم‌ریختهٔ HTML.
+				var json = this.embeddedError(raw);
+				if (json) {
+					why = json;
+				} else if (clean && clean.length > 3) {
+					why = clean.slice(0, 220);
+				} else {
+					why = this.i18n('scopeErrorHttp').replace('%d', this.fmt(code));
+				}
+			}
+
+			return why;
+		},
+
+		/**
+		 * اگر بدنهٔ پاسخ JSONِ خطای افزونه را در خود داشته باشد (حالت خطای
+		 * کشندهٔ PHP که HTML وردپرس + JSON ما با هم می‌آید)، پیام همان JSON را
+		 * برمی‌گرداند؛ وگرنه رشتهٔ خالی.
+		 *
+		 * @param {string} raw بدنهٔ خام پاسخ.
+		 * @return {string}
+		 */
+		embeddedError: function (raw) {
+			if (!raw || raw.indexOf('{') === -1) {
+				return '';
+			}
+
+			// از آخر به اول: JSON افزونه بعد از صفحهٔ HTML می‌آید.
+			for (var start = raw.lastIndexOf('{'); start !== -1; start = raw.lastIndexOf('{', start - 1)) {
+				var slice = raw.slice(start);
+				var end = slice.lastIndexOf('}');
+				if (end === -1) {
+					continue;
+				}
+				var text = slice.slice(0, end + 1);
+				try {
+					var obj = JSON.parse(text);
+					var msg = obj && obj.data && (obj.data.message || obj.data.error);
+					if (msg) {
+						return String(msg).slice(0, 300);
+					}
+				} catch (e) {
+					// دنبال JSON معتبر بعدی می‌گردیم.
+				}
+			}
+
+			return '';
+		},
+
+		/**
+		 * پاسخ سرور را به پیام(های) خطا تبدیل می‌کند.
+		 *
+		 * حالت‌های واقعی که دیده می‌شود: `0` (اندپوینت ثبت نشده/نسخهٔ ناهمخوان)،
+		 * HTML خطای وردپرس، پاسخ موفق نبودن با پیام فارسی، و ناهم‌خوانی نسخه.
+		 *
+		 * @param {*} res پاسخ جی‌کوئری.
+		 * @return {string}
+		 */
+		apiError: function (res) {
+			var msgs = [];
+
+			if (typeof res === 'string') {
+				var clean = res.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+				msgs.push(clean ? clean.slice(0, 220) : this.i18n('scopeErrorBadResponse'));
+			} else if (!res || res === 0) {
+				msgs.push(this.i18n('scopeErrorBadResponse'));
+			} else if (res.data && (res.data.message || res.data.error)) {
+				msgs.push(res.data.message || res.data.error);
+			} else {
+				msgs.push(this.i18n('scopeError'));
+			}
+
+			if (res && res.data && res.data.version && window.tbsmData.version && res.data.version !== window.tbsmData.version) {
+				msgs.push(
+					this.i18n('scopeErrorVersion')
+						.replace('%1$s', window.tbsmData.version)
+						.replace('%2$s', res.data.version)
+				);
+			}
+
+			return msgs.join(' — ');
 		},
 
 		/** ارقام به فارسی. */
@@ -92,6 +295,8 @@
 			}
 			var self = this;
 
+			this.syncBulkMode(); // حالت پیش‌فرض «تعداد» → ورودی عدد فعال
+
 			$('#tbsm-search').on('input', this.debounce(function () {
 				self.doSearch();
 			}, 320));
@@ -148,6 +353,11 @@
 				self.quickSet();
 			});
 
+			// نوع موجودی همگانی: عددی / موجود بدون تعداد / ناموجود
+			$('#tbsm-bulk-mode').on('change', function () {
+				self.syncBulkMode();
+			});
+
 			$('#tbsm-unified').on('click', function () {
 				self.applyUnified();
 			});
@@ -162,6 +372,956 @@
 			$('#tbsm-apply').on('click', function () {
 				self.apply();
 			});
+
+			// تب‌ها: تک‌محصول ↔ گروهی با مدل
+			$('.tbsm-tab').on('click', function () {
+				self.setMode($(this).attr('data-mode'));
+			});
+
+			// حالت گروهی — گام ۱: محدودهٔ محصولات
+			$('.tbsm-seg-btn').on('click', function () {
+				self.setScopeType($(this).attr('data-scope'));
+			});
+
+			$('#tbsm-scope-search').on('input', this.debounce(function () {
+				self.scopeSearch();
+			}, 320));
+			$('#tbsm-scope-search').on('keydown', function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					self.scopeSearch();
+				}
+			});
+			$('#tbsm-scope-results').on('click', '.tbsm-scope-row', function () {
+				self.toggleScopeProduct($(this).data('id'));
+			});
+			$('#tbsm-scope-results').on('click', '#tbsm-scope-addall', function (e) {
+				e.stopPropagation();
+				self.addAllScopeResults();
+			});
+			$('#tbsm-scope-picked').on('click', '.tbsm-pick-chip', function () {
+				self.toggleScopeProduct($(this).data('id'));
+			});
+			$('#tbsm-scope-picked').on('click', '#tbsm-scope-clear', function () {
+				self.clearScopeProducts();
+			});
+			$('#tbsm-scope-category').on('change', function () {
+				self.scopeCategory = parseInt($(this).val(), 10) || 0;
+				self.refreshScopeApply();
+			});
+			$('#tbsm-scope-category-search').on('input', function () {
+				self.categoryFilter = self.normalizeQuery(this.value);
+				self.paintScopeCategories();
+			});
+			$('#tbsm-scope-sku').on('input', function () {
+				self.refreshScopeApply();
+			});
+			$('#tbsm-scope-sku').on('keydown', function (e) {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					self.applyScope();
+				}
+			});
+			$('#tbsm-scope-apply').on('click', function () {
+				self.applyScope();
+			});
+			// حالت گروهی — گام ۲: ویژگی و مقدار مدل
+			$('#tbsm-group-attr').on('change', function () {
+				self.loadGroupValues(parseInt(this.value, 10));
+			});
+			$('#tbsm-group-term').on('change', function () {
+				self.findGroup(parseInt(this.value, 10));
+			});
+			$('#tbsm-group-term-search').on('input', function () {
+				self.valueFilter = self.normalizeQuery(this.value);
+				self.paintGroupValues(true);
+			});
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت کار (تب): تک‌محصول / گروهی با مدل
+		 * ---------------------------------------------------------- */
+
+		setMode: function (mode) {
+			mode = (mode === 'group') ? 'group' : 'single';
+			if (mode === this.mode) {
+				return;
+			}
+			this.mode = mode;
+			this.loadSeq++; // پاسخ‌های دیررس بی‌اثر می‌شوند
+
+			// درخواستی که وسط راه بود (و پاسخش با loadSeq قدیمی نادیده گرفته می‌شود)
+			// نباید دکمه‌ها را برای همیشه قفل کند؛ وگرنه بعد از یک بار سوئیچ تب،
+			// «نمایش ویژگی‌ها» بی‌صدا کار نمی‌کند و کاربر فقط پیام قدیمی را می‌بیند.
+			this.busy = false;
+
+			$('.tbsm-tab')
+				.removeClass('is-active')
+				.attr('aria-selected', 'false')
+				.filter('[data-mode="' + mode + '"]')
+				.addClass('is-active')
+				.attr('aria-selected', 'true');
+
+			$('#tbsm-panel-single').prop('hidden', mode !== 'single');
+			$('#tbsm-panel-group').prop('hidden', mode !== 'group');
+
+			this.clearSelection(true);
+			this.notice('');
+
+			if (mode === 'group') {
+				this.loadScopeOptions();
+				this.refreshScopeApply();
+				$('#tbsm-scope-search').trigger('focus');
+			} else {
+				$('#tbsm-group-note').prop('hidden', true).empty();
+				$('#tbsm-search').trigger('focus');
+			}
+
+			this.updateBottomHint();
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی — گام ۱: محدودهٔ محصولات
+		 * ---------------------------------------------------------- */
+
+		/** گزینه‌های محدوده (دسته‌بندی‌ها + سقف‌ها) — یک‌بار. */
+		loadScopeOptions: function () {
+			var self = this;
+			if (this.scopeOptionsLoaded) {
+				return;
+			}
+			this.scopeOptionsLoaded = true;
+
+			$.post(window.tbsmData.ajaxUrl, {
+				action: 'tbsm_scope_options',
+				nonce: window.tbsmData.nonce
+			})
+				.done(function (res) {
+					if (!res || !res.success) {
+						self.scopeOptionsLoaded = false;
+						return;
+					}
+					var data = res.data || {};
+					if (data.limits && data.limits.products) {
+						self.scopeLimit = data.limits.products;
+					}
+					self.renderScopeCategories(data.categories || []);
+				})
+				.fail(function () {
+					self.scopeOptionsLoaded = false;
+				});
+		},
+
+		/** پرکردن سلکت دسته‌بندی‌ها (با تورفتگی سلسله‌مراتب). */
+		renderScopeCategories: function (list) {
+			this.scopeCategories = list || [];
+			this.paintScopeCategories();
+		},
+
+		/**
+		 * سلکت دسته‌ها با فیلتر جست‌وجو. در حالت فیلتر، والدهای نتیجه‌ها هم
+		 * می‌مانند تا تورفتگی سلسله‌مراتب معنی‌دار بماند و انتخاب فعلی کاربر
+		 * هم از دست نرود.
+		 */
+		paintScopeCategories: function () {
+			var list = this.scopeCategories || [];
+			var filter = this.categoryFilter || '';
+			var keep = {};
+			var matches = 0;
+			var i;
+
+			for (i = 0; i < list.length; i++) {
+				keep[list[i].id] = !filter;
+			}
+
+			if (filter) {
+				var byId = {};
+				for (i = 0; i < list.length; i++) {
+					byId[list[i].id] = list[i];
+				}
+
+				var mark = function (id) {
+					var guard = 0;
+					while (id && byId[id] && !keep[id] && guard < 30) {
+						keep[id] = true;
+						id = byId[id].parent;
+						guard++;
+					}
+				};
+
+				for (i = 0; i < list.length; i++) {
+					if (this.normalizeQuery(this.catLabel(list[i].name)).indexOf(filter) === -1) {
+						continue;
+					}
+					matches++;
+					keep[list[i].id] = true;
+					mark(list[i].parent);
+				}
+
+				// انتخاب فعلی کاربر با فیلتر پاک نشود.
+				if (this.scopeCategory && byId[this.scopeCategory]) {
+					keep[this.scopeCategory] = true;
+					mark(byId[this.scopeCategory].parent);
+				}
+			}
+
+			var html = '<option value="">— انتخاب کنید —</option>';
+			for (i = 0; i < list.length; i++) {
+				var row = list[i];
+				if (!keep[row.id]) {
+					continue;
+				}
+				var pad = '';
+				for (var d = 0; d < (row.depth || 0); d++) {
+					pad += '\u00A0\u00A0';
+				}
+				html += '<option value="' + this.esc(row.id) + '">'
+					+ this.esc(pad + this.catLabel(row.name))
+					+ (row.count ? ' (' + this.fmt(row.count) + ')' : '')
+					+ '</option>';
+			}
+
+			$('#tbsm-scope-category').html(html).val(this.scopeCategory ? String(this.scopeCategory) : '');
+
+			var hint = '';
+			if (filter && !matches) {
+				hint = this.i18n('scopeCategoryEmpty');
+			} else if (filter) {
+				// شمار «نتیجه»ها می‌آید، نه چیزهایی که فقط برای زمینه (والدها) مانده‌اند.
+				hint = this.i18n('scopeCategoryFound')
+					.replace('%1$d', this.fmt(matches))
+					.replace('%2$d', this.fmt(list.length));
+			}
+			$('#tbsm-scope-category-hint').prop('hidden', !hint).html(hint ? this.esc(hint) : '');
+		},
+
+		/** تغییر روش انتخاب محدوده (چند محصول / دسته / شناسه / همهٔ محصولات). */
+		setScopeType: function (type) {
+			if (type !== 'products' && type !== 'category' && type !== 'sku' && type !== 'all') {
+				type = 'products';
+			}
+			this.scopeType = type;
+
+			$('.tbsm-seg-btn')
+				.removeClass('is-active')
+				.attr('aria-selected', 'false')
+				.filter('[data-scope="' + type + '"]')
+				.addClass('is-active')
+				.attr('aria-selected', 'true');
+
+			$('.tbsm-scope-pane').prop('hidden', true);
+			$('#tbsm-scope-pane-' + type).prop('hidden', false);
+
+			if (type === 'products') {
+				$('#tbsm-scope-search').trigger('focus');
+			} else if (type === 'sku') {
+				$('#tbsm-scope-sku').trigger('focus');
+			} else if (type === 'all') {
+				this.loadScopeAllStats();
+			}
+
+			this.refreshScopeApply();
+		},
+
+		/** جست‌وجوی محصول در گام محدوده (چند-انتخابی). */
+		scopeSearch: function () {
+			var self = this;
+			var term = $.trim($('#tbsm-scope-search').val());
+
+			if (term.length < 2) {
+				$('#tbsm-scope-results').prop('hidden', true).empty();
+				return;
+			}
+
+			$('#tbsm-scope-results').prop('hidden', false).html(
+				'<div class="tbsm-results-empty">' + this.esc(this.i18n('scopeSearching')) + '</div>'
+			);
+
+			$.get(window.tbsmData.ajaxUrl, {
+				action: 'tbsm_search_products',
+				nonce: window.tbsmData.nonce,
+				term: term
+			})
+				.done(function (res) {
+					if (!res || !res.success) {
+						self.renderScopeResults([]);
+						return;
+					}
+					self.renderScopeResults(res.data.results || []);
+				})
+				.fail(function () {
+					self.renderScopeResults([]);
+					self.notice(self.i18n('scopeSearchError'), 'error');
+				});
+		},
+
+		/** فهرست نتایج جست‌وجو به شکل ردیف‌های تیک‌خورده. */
+		renderScopeResults: function (results) {
+			this.scopeResults = results;
+			var $box = $('#tbsm-scope-results');
+
+			if (!results.length) {
+				$box.prop('hidden', false).html(
+					'<div class="tbsm-results-empty">' + this.esc(this.i18n('scopeSearchEmpty')) + '</div>'
+				);
+				return;
+			}
+
+			var html = '<div class="tbsm-scope-results-head">'
+				+ '<span>' + this.esc(this.i18n('scopePickHint')) + '</span>'
+				+ '<button type="button" class="tbsm-link-btn" id="tbsm-scope-addall">' + this.esc(this.i18n('scopeSelectAll')) + '</button>'
+				+ '</div>';
+
+			for (var i = 0; i < results.length; i++) {
+				var p = results[i];
+				var picked = !!this.scopeProducts[p.id];
+				var badge = (p.type === 'variable')
+					? '<span class="tbsm-badge">' + this.fmt(p.variations) + ' ' + this.esc(this.i18n('variationsUnit')) + '</span>'
+					: '<span class="tbsm-badge tbsm-badge--muted">' + this.esc(this.i18n('simple')) + '</span>';
+
+				html += '<button type="button" class="tbsm-scope-row' + (picked ? ' is-picked' : '') + '" data-id="' + this.esc(p.id) + '">'
+					+ '<span class="tbsm-scope-check">' + this.checkIcon + '</span>'
+					+ '<span class="tbsm-scope-name">' + this.esc(p.name) + '</span>'
+					+ (p.sku ? '<span class="tbsm-scope-sku">' + this.esc(p.sku) + '</span>' : '')
+					+ badge
+					+ '</button>';
+			}
+
+			$box.prop('hidden', false).html(html);
+		},
+
+		/** افزودن/برداشتن یک محصول از محدوده. */
+		toggleScopeProduct: function (id) {
+			id = parseInt(id, 10) || 0;
+			if (!id) {
+				return;
+			}
+
+			if (this.scopeProducts[id]) {
+				delete this.scopeProducts[id];
+			} else {
+				var brief = null;
+				var list = this.scopeResults || [];
+				for (var i = 0; i < list.length; i++) {
+					if (list[i].id === id) {
+						brief = list[i];
+						break;
+					}
+				}
+				if (Object.keys(this.scopeProducts).length >= this.scopeLimit) {
+					this.notice(this.i18n('scopeTooMany').replace('%d', this.fmt(this.scopeLimit)), 'error');
+					return;
+				}
+				this.scopeProducts[id] = brief || { id: id, name: '#' + id, sku: '' };
+			}
+
+			$('#tbsm-scope-results .tbsm-scope-row[data-id="' + id + '"]').toggleClass('is-picked', !!this.scopeProducts[id]);
+			this.renderScopePicked();
+			this.refreshScopeApply();
+		},
+
+		/** افزودن همهٔ نتایج فعلی جست‌وجو. */
+		addAllScopeResults: function () {
+			var list = this.scopeResults || [];
+			for (var i = 0; i < list.length; i++) {
+				if (Object.keys(this.scopeProducts).length >= this.scopeLimit) {
+					this.notice(this.i18n('scopeTooMany').replace('%d', this.fmt(this.scopeLimit)), 'error');
+					break;
+				}
+				this.scopeProducts[list[i].id] = list[i];
+			}
+			this.renderScopeResults(list);
+			this.renderScopePicked();
+			this.refreshScopeApply();
+		},
+
+		/** حذف همهٔ محصولات انتخاب‌شده. */
+		clearScopeProducts: function () {
+			this.scopeProducts = {};
+			$('#tbsm-scope-results .tbsm-scope-row').removeClass('is-picked');
+			this.renderScopePicked();
+			this.refreshScopeApply();
+		},
+
+		/** چیپ‌های محصولات انتخاب‌شده. */
+		renderScopePicked: function () {
+			var $box = $('#tbsm-scope-picked');
+			var ids = Object.keys(this.scopeProducts);
+
+			if (!ids.length) {
+				$box.prop('hidden', true).empty();
+				return;
+			}
+
+			var html = '<span class="tbsm-picked-count">'
+				+ this.esc(this.i18n('scopePicked').replace('%d', this.fmt(ids.length)))
+				+ '</span>';
+
+			for (var i = 0; i < ids.length; i++) {
+				var p = this.scopeProducts[ids[i]];
+				html += '<button type="button" class="tbsm-pick-chip" data-id="' + this.esc(p.id) + '" title="' + this.esc('حذف: ' + (p.name || '')) + '">'
+					+ '<span>' + this.esc(p.name || ('#' + p.id)) + '</span>'
+					+ '<span class="tbsm-pick-x" aria-hidden="true">&times;</span>'
+					+ '</button>';
+			}
+
+			html += '<button type="button" class="tbsm-link-btn" id="tbsm-scope-clear">' + this.esc(this.i18n('scopeClear')) + '</button>';
+
+			$box.prop('hidden', false).html(html);
+		},
+
+		/**
+		 * آمار محدودهٔ «همهٔ محصولات»: چند محصول و چند متغیر بررسی می‌شود.
+		 *
+		 * فقط یک بار (اولین باری که کاربر این گزینه را انتخاب می‌کند) و از سرور
+		 * گرفته می‌شود؛ همان تابع `scope_summary()` که هنگام «نمایش ویژگی‌ها»
+		 * هم اجرا می‌شود. اگر ناموفق باشد، خطای واقعی سرور نشان داده می‌شود ولی
+		 * دکمهٔ ادامه غیرفعال نمی‌شود — کاربر باید بتواند رد شود.
+		 */
+		loadScopeAllStats: function () {
+			var self = this;
+			var $box = $('#tbsm-scope-all-stat');
+
+			if (this.scopeAllLoaded || this.scopeAllBusy) {
+				return;
+			}
+			if (!$box.length) {
+				return;
+			}
+
+			this.scopeAllBusy = true;
+			$box.removeClass('is-error').addClass('is-loading').text(this.i18n('scopeAllLoading'));
+
+			$.post(window.tbsmData.ajaxUrl, $.extend(this.scopePayload(), {
+				action: 'tbsm_scope_stats',
+				nonce: window.tbsmData.nonce,
+				scope_type: 'all'
+			}))
+				.done(function (res) {
+					if (!res || !res.success || !res.data || !res.data.scope) {
+						$box.removeClass('is-loading').addClass('is-error')
+							.text(self.i18n('scopeError') + ' ' + self.apiError(res));
+						return;
+					}
+
+					var scope = res.data.scope;
+					self.scopeAllLoaded = true;
+					$box.removeClass('is-loading').removeClass('is-error');
+					if (!scope.products) {
+						$box.text(self.i18n('scopeAllEmpty'));
+						return;
+					}
+					$box.html(self.esc(self.i18n('scopeSummary')
+						.replace('%1$s', scope.label || 'همهٔ محصولات')
+						.replace('%2$d', self.fmt(scope.products))
+						.replace('%3$d', self.fmt(scope.variations))));
+				})
+				.fail(function (xhr, status) {
+					var raw, code = (xhr && xhr.status) || 0;
+					if (code) {
+						raw = self.embeddedError(xhr && xhr.responseText);
+					} else if (status === 'timeout') {
+						raw = self.i18n('scopeErrorTimeout');
+					} else {
+						raw = self.i18n('scopeErrorNet');
+					}
+					if (!raw) {
+						raw = self.apiError(xhr && xhr.responseText);
+					}
+					$box.removeClass('is-loading').addClass('is-error')
+						.text(self.i18n('scopeError') + ' ' + raw);
+				})
+				.always(function () {
+					self.scopeAllBusy = false;
+				});
+		},
+
+		/** دکمهٔ «نمایش ویژگی‌ها» بر اساس وضعیت محدوده. */
+		refreshScopeApply: function () {
+			var ready = false;
+			if (this.scopeType === 'products') {
+				ready = Object.keys(this.scopeProducts).length > 0;
+			} else if (this.scopeType === 'category') {
+				ready = this.scopeCategory > 0;
+			} else {
+				ready = true; // شناسهٔ خالی یا «همهٔ محصولات» = کل فروشگاه
+			}
+			$('#tbsm-scope-apply').prop('disabled', !ready || this.busy);
+		},
+
+		/** بدنهٔ درخواست محدوده برای همهٔ endpointهای گروهی. */
+		scopePayload: function () {
+			return {
+				scope_type: this.scopeType,
+				product_ids: Object.keys(this.scopeProducts),
+				category_id: this.scopeCategory,
+				sku: (this.scopeType === 'sku') ? $.trim($('#tbsm-scope-sku').val() || '') : '',
+				sku_mode: ($('#tbsm-scope-sku-mode').val() || 'prefix')
+			};
+		},
+
+		/**
+		 * تأیید محدوده: سرور محصولات/متغیرها را می‌شمارد و ویژگی‌های همان محدوده
+		 * را برمی‌گرداند؛ سپس گام ۲ باز می‌شود.
+		 */
+		applyScope: function () {
+			var self = this;
+			if (this.busy) {
+				return;
+			}
+
+			if (this.scopeType === 'products' && !Object.keys(this.scopeProducts).length) {
+				this.notice(this.i18n('scopeNeedProducts'), 'error');
+				return;
+			}
+			if (this.scopeType === 'category' && this.scopeCategory <= 0) {
+				this.notice(this.i18n('scopeNeedCategory'), 'error');
+				return;
+			}
+
+			var seq = ++this.loadSeq;
+			this.busy = true;
+			this.notice('');
+			this.resetGroup(false);
+			$('#tbsm-scope-apply').prop('disabled', true).text(this.i18n('scopeApplying'));
+
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_scope_attributes';
+
+			this.api(payload)
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						self.notice(self.apiError(res), 'error');
+						return;
+					}
+
+					var data = res.data || {};
+					var attrs = data.attributes || [];
+					// قرارداد سرور آرایهٔ تخت است؛ اما اگر نسخهٔ دیگری از افزونه
+					// (یا کش) شکل `{values, groups, truncated}` را برگرداند، هم
+					// همان فهرست خوانده می‌شود تا گام ۲ هرگز خالی نماند.
+					if (!Array.isArray(attrs) && attrs && Array.isArray(attrs.values)) {
+						attrs = attrs.values;
+					}
+					self.scope = data.scope || null;
+					self.scopeAttrs = Array.isArray(attrs) ? attrs : [];
+					self.renderScopeSummary();
+					self.renderGroupAttrs();
+
+					if (self.scopeAttrs.length) {
+						$('#tbsm-step-model').removeClass('tbsm-step-locked');
+						$('#tbsm-group-attr').prop('disabled', false).trigger('focus');
+					} else {
+						self.notice(self.i18n('groupAttrEmpty'), 'info');
+					}
+				})
+				.fail(function (why) {
+					if (seq === self.loadSeq) {
+						self.notice(why || self.i18n('scopeError'), 'error');
+					}
+				})
+				.always(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.busy = false;
+					$('#tbsm-scope-apply').text(self.i18n('scopeApply'));
+					self.refreshScopeApply();
+				});
+		},
+
+
+		/** خط خلاصهٔ محدوده زیر دکمه. */
+		renderScopeSummary: function () {
+			var $box = $('#tbsm-scope-summary');
+			if (!this.scope) {
+				$box.prop('hidden', true).empty();
+				return;
+			}
+
+			var html = this.i18n('scopeSummary')
+				.replace('%1$s', this.scope.label || '')
+				.replace('%2$d', this.fmt(this.scope.products || 0))
+				.replace('%3$d', this.fmt(this.scope.variations || 0));
+
+			$box.prop('hidden', false).html('<strong>' + this.esc(html) + '</strong>');
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی — گام ۲: ویژگی و مقدار مدل
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * فهرست ویژگی‌های محدوده. ویژگی‌هایی که سرور آن‌ها را «یکی» شناخته
+		 * (برچسب خوانای یکسان؛ مثل `pa_model` و `مدل` و `d9%85d8%af%d9%84`) در یک
+		 * گزینه آمده‌اند و کلیدهای خامشان در `data-keys` است؛ کنار نام، تعداد
+		 * محصول (و در صورت ادغام، شمار کلیدها) نمایش داده می‌شود.
+		 */
+		renderGroupAttrs: function () {
+			var $sel = $('#tbsm-group-attr');
+			var list = this.scopeAttrs || [];
+
+			if (!list.length) {
+				$sel.prop('disabled', true).html('<option value="">—</option>');
+				this.renderGroupValues([]);
+				return;
+			}
+
+			var html = '<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>';
+			for (var i = 0; i < list.length; i++) {
+				var attr = list[i];
+				var label = this.catLabel(attr.label);
+				var keys = attr.keys || [];
+				var text = label
+					+ ' — ' + this.fmt(attr.products) + ' ' + this.esc(this.i18n('scopeProductsUnit'));
+
+				if (keys.length > 1) {
+					text += ' · ' + this.esc(this.i18n('groupMergedKeys').replace('%d', this.fmt(keys.length)));
+				}
+
+				html += '<option value="' + i + '" data-label="' + this.esc(label) + '"'
+					+ ' data-keys="' + this.esc(keys.join('|')) + '"'
+					+ ' data-products="' + this.fmt(attr.products) + '">'
+					+ this.esc(text)
+					+ '</option>';
+			}
+
+			$sel.html(html).val('');
+			this.renderGroupValues([]);
+		},
+
+		/**
+		 * بارگذاری مقدارهای ویژگی انتخاب‌شده در همین محدوده (فقط کلیدهای همان
+		 * ویژگی فرستاده می‌شوند).
+		 */
+		loadGroupValues: function (index) {
+			var self = this;
+			var attr = (this.scopeAttrs || [])[index];
+
+			if (!attr || !attr.keys || !attr.keys.length) {
+				this.renderGroupValues([]);
+				return;
+			}
+
+			var $term = $('#tbsm-group-term');
+			$term.prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupAttrLoading')) + '</option>');
+
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_scope_values';
+			payload.attr_keys = attr.keys;
+
+			var seq = this.loadSeq;
+			this.api(payload)
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						self.renderGroupValues([]);
+						self.notice(self.apiError(res), 'error');
+						return;
+					}
+					self.renderGroupValues(res.data || {});
+				})
+				.fail(function (why) {
+					if (seq === self.loadSeq) {
+						self.renderGroupValues([]);
+						self.notice(why || self.i18n('groupValuesError'), 'error');
+					}
+				});
+		},
+
+		/**
+		 * مقدارهای مدل: `{values, groups, truncated}` از سرور می‌آید.
+		 * `groups` گروه‌های برندِ صفحهٔ محصول است (آیفون/سامسونگ/…) و به شکل
+		 * `optgroup` رندر می‌شود؛ `data-values` نوشتارهای خامِ هر گزینه را
+		 * نگه می‌دارد تا هر دو نوشتار (کدشده و سالم) پوشش داده شوند.
+		 */
+		renderGroupValues: function (payload) {
+			if (Array.isArray(payload)) {
+				payload = { values: payload };
+			}
+			payload = payload || {};
+
+			this.valueGroups = payload.values || [];
+			this.valueGroupIndex = payload.groups || [];
+			this.valueTruncated = !!payload.truncated;
+			this.valueFilter = '';
+			this.valueHay = this.valueGroups.map(this.termHaystack, this); // یک‌بار، برای فیلتر زنده
+
+			$('#tbsm-group-term-search')
+				.val('')
+				.prop('disabled', !this.valueGroups.length);
+
+			this.paintGroupValues(false);
+			this.resetGroupCards();
+		},
+
+		/** متن و گزینهٔ یک مقدار (بر پایهٔ اندیس ثابت در فهرست کامل). */
+		termOptionHtml: function (index) {
+			var v = (this.valueGroups || [])[index];
+			if (!v) {
+				return '';
+			}
+			var label = this.catLabel(v.label);
+			return '<option value="' + index + '" data-label="' + this.esc(label) + '"'
+				+ ' data-values="' + this.esc((v.values || []).join('|')) + '">'
+				+ this.esc(label + ' — ' + this.fmt(v.products) + ' ' + this.i18n('scopeProductsUnit'))
+				+ '</option>';
+		},
+
+		/** متن قابل جست‌وجوی یک مقدار: برچسب + نوشتارهای خام. */
+		termHaystack: function (group) {
+			group = group || {};
+			return this.normalizeQuery(this.catLabel(group.label) + ' ' + (group.values || []).join(' '));
+		},
+
+		/**
+		 * رندر گزینه‌های مقدار با فیلتر جست‌وجو؛ با فیلتر، فهرست تخت می‌شود و
+		 * بدون فیلتر، اگر گروه برند داشته باشیم `optgroup`ها می‌آیند.
+		 *
+		 * @param {boolean} keepSelection انتخاب فعلی حفظ شود؟ (برای فیلتر زنده)
+		 */
+		paintGroupValues: function (keepSelection) {
+			var $term = $('#tbsm-group-term');
+			var list = this.valueGroups || [];
+			var groups = this.valueGroupIndex || [];
+			var filter = this.valueFilter || '';
+			var previous = keepSelection ? String($term.val() || '') : '';
+			var found = [];
+			var i;
+
+			for (i = 0; i < list.length; i++) {
+				var hay = this.valueHay && this.valueHay[i] !== undefined ? this.valueHay[i] : this.termHaystack(list[i]);
+				if (!filter || hay.indexOf(filter) !== -1) {
+					found.push(i);
+				}
+			}
+
+			var html = '<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>';
+
+			if (filter || !groups.length) {
+				for (i = 0; i < found.length; i++) {
+					html += this.termOptionHtml(found[i]);
+				}
+			} else {
+				var used = {};
+				for (var g = 0; g < groups.length; g++) {
+					var group = groups[g] || {};
+					var indexes = group.indexes || [];
+					var inner = '';
+					for (var k = 0; k < indexes.length; k++) {
+						inner += this.termOptionHtml(indexes[k]);
+						used[indexes[k]] = true;
+					}
+					if (!inner) {
+						continue;
+					}
+					html += '<optgroup label="' + this.esc(this.catLabel(group.label) + ' (' + this.fmt(indexes.length) + ')') + '">'
+						+ inner + '</optgroup>';
+				}
+				// مقدارهایی که در هیچ گروهی جا نگرفته‌اند (نباید پیش بیاید) در پایان.
+				for (i = 0; i < found.length; i++) {
+					if (!used[found[i]]) {
+						html += this.termOptionHtml(found[i]);
+					}
+				}
+			}
+
+			$term.prop('disabled', !list.length).html(html);
+
+			if (previous && $term.find('option[value="' + previous + '"]').length) {
+				$term.val(previous);
+			} else {
+				$term.val('');
+				if (previous) {
+					this.resetGroupCards();
+				}
+			}
+
+			var hint = [];
+			if (this.valueTruncated) {
+				hint.push(this.i18n('groupTermTruncated'));
+			}
+			if (filter) {
+				hint.push(
+					this.i18n('groupTermFound')
+						.replace('%1$d', this.fmt(found.length))
+						.replace('%2$d', this.fmt(list.length))
+				);
+			}
+			$('#tbsm-group-term-hint')
+				.prop('hidden', !hint.length)
+				.html(hint.length ? this.esc(hint.join(' — ')) : '');
+		},
+
+		/** پاک‌کردن کارت‌ها وقتی مقدار مدل ناتمام است. */
+		resetGroupCards: function () {
+			this.group = null;
+			$('#tbsm-grid').prop('hidden', true).empty();
+			$('#tbsm-group-note').prop('hidden', true).empty();
+			$('#tbsm-counts').empty();
+			$('#tbsm-report').prop('hidden', true).empty();
+			if (this.mode === 'group') {
+				$('#tbsm-step-cards').addClass('tbsm-step-locked');
+				$('#tbsm-apply').prop('disabled', true).text(this.i18n('applyBtn').replace('%d', '—'));
+				$('#tbsm-quickset-btn').prop('disabled', true);
+				$('#tbsm-unified').prop('disabled', true).removeClass('tisa-btn--confirm').text(this.i18n('unifiedBtn'));
+			}
+			this.updateBottomHint();
+		},
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی — گام ۳: کارت‌های همان مدل در همان محدوده
+		 * ---------------------------------------------------------- */
+
+		/** فهرست‌کردن متغیرهای مدل انتخاب‌شده (کلید/مقدارهای هم‌معنا با هم). */
+		findGroup: function (termIndex) {
+			var self = this;
+			var attrIndex = parseInt($('#tbsm-group-attr').val(), 10);
+			var attr = (this.scopeAttrs || [])[attrIndex];
+			var term = (this.valueGroups || [])[termIndex];
+
+			if (!this.scope) {
+				return;
+			}
+			if (!attr || !term) {
+				this.notice(this.i18n('groupNeedSelection'), 'error');
+				return;
+			}
+
+			var attrLabel = attr.label;
+			var termLabel = term.label;
+
+			var seq = ++this.loadSeq;
+			this.clearSelection(true);
+			this.notice('');
+			this.busy = true;
+			$('#tbsm-grid').prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(this.i18n('groupSearching')) + '</div>');
+
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_find_scope';
+			payload.attr_keys = attr.keys || [];
+			payload.term_values = term.values || [];
+
+			this.api(payload)
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						self.notice(self.apiError(res), 'error');
+						self.renderGrid();
+						return;
+					}
+
+					var data = res.data || {};
+					self.group = {
+						attrLabel: attrLabel,
+						termLabel: termLabel,
+						keys: attr.keys || [],
+						values: term.values || []
+					};
+					if (data.scope) {
+						self.scope = data.scope;
+						self.renderScopeSummary();
+					}
+					self.variations = data.rows || [];
+					self.categories = {};
+
+					if (!self.variations.length) {
+						self.renderGrid();
+						self.notice(self.i18n('groupEmpty'), 'info');
+					} else {
+						self.renderGrid();
+						$('#tbsm-step-cards').removeClass('tbsm-step-locked');
+					}
+
+					self.renderGroupNote(data);
+					self.refreshCounts();
+				})
+				.fail(function (why) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.notice(why || self.i18n('groupFindError'), 'error');
+					self.renderGrid();
+				})
+				.always(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.busy = false;
+					self.refreshCounts();
+				});
+		},
+
+		/** خط اطلاعات بالای کارت‌ها: محدوده + مدل + شمارش‌ها. */
+		renderGroupNote: function (data) {
+			var $note = $('#tbsm-group-note');
+			if (this.mode !== 'group' || !this.group || !this.scope) {
+				$note.prop('hidden', true).empty();
+				return;
+			}
+
+			var total = (data && typeof data.total !== 'undefined') ? data.total : this.variations.length;
+			var products = (data && typeof data.products !== 'undefined') ? data.products : 0;
+
+			var html = '<span class="tbsm-group-note-main">'
+				+ this.esc(this.i18n('groupNote')
+					.replace('%1$s', this.scope.label || '')
+					.replace('%2$s', this.group.attrLabel + ' · ' + this.group.termLabel)
+					.replace('%3$d', this.fmt(total))
+					.replace('%4$d', this.fmt(products)))
+				+ '</span>';
+
+			if (data && data.truncated) {
+				html += '<span class="tbsm-group-note-warn">'
+					+ this.esc(this.i18n('groupTruncated').replace('%d', this.fmt(data.limit || 0)))
+					+ '</span>';
+			}
+
+			this.groupNoteHtml = html;
+			$note.prop('hidden', false).html(html);
+		},
+
+		/** بازنشانی حالت گروهی (محدوده دست‌نخورده می‌ماند اگر keepScope باشد). */
+		resetGroup: function (keepScope) {
+			this.group = null;
+			this.groupNoteHtml = '';
+			this.variations = [];
+
+			$('#tbsm-grid').prop('hidden', true).empty();
+			$('#tbsm-group-note').prop('hidden', true).empty();
+			$('#tbsm-counts').empty();
+			$('#tbsm-report').prop('hidden', true).empty();
+			$('#tbsm-step-cards').addClass('tbsm-step-locked');
+
+			if (!keepScope) {
+				this.scope = null;
+				this.scopeAttrs = [];
+				$('#tbsm-scope-summary').prop('hidden', true).empty();
+				$('#tbsm-step-model').addClass('tbsm-step-locked');
+				this.valueGroups = [];
+				$('#tbsm-group-attr').prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupAttrLoading')) + '</option>');
+				$('#tbsm-group-term').prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>');
+			}
+		},
+
+		/** راهنمای نوار پایین بر اساس حالت و وضعیت فهرست. */
+		updateBottomHint: function () {
+			var $cards = $('#tbsm-grid .tbsm-var');
+			var selected = $cards.filter(':not(.is-hidden).is-selected').length;
+			if (selected > 0) {
+				$('#tbsm-bottombar-hint').text(this.i18n('bottomHint'));
+			} else if (this.mode === 'group' && !$cards.length) {
+				$('#tbsm-bottombar-hint').text(this.i18n('groupHintEmpty'));
+			} else {
+				$('#tbsm-bottombar-hint').text(this.i18n('selectAtLeastOne'));
+			}
 		},
 
 		/* ----------------------------------------------------------
@@ -323,6 +1483,8 @@
 			this.product = null;
 			this.variations = [];
 			this.categories = {};
+			this.group = null;
+			this.groupNoteHtml = '';
 			this.confirmMode = false;
 			clearTimeout(this.confirmTimer);
 			this.unifiedConfirm = false;
@@ -331,6 +1493,7 @@
 			$('#tbsm-selected').prop('hidden', true).empty();
 			$('#tbsm-grid').prop('hidden', true).empty();
 			$('#tbsm-report').prop('hidden', true).empty();
+			$('#tbsm-group-note').prop('hidden', true).empty();
 			$('#tbsm-counts').empty();
 			$('#tbsm-cat-select').prop('disabled', true).html('<option value="all">—</option>');
 			$('#tbsm-step-category').addClass('tbsm-step-locked');
@@ -339,7 +1502,7 @@
 			$('#tbsm-quickset').val('');
 			$('#tbsm-quickset-btn').prop('disabled', true);
 			$('#tbsm-unified').prop('disabled', true).removeClass('tisa-btn--confirm').text(this.i18n('unifiedBtn'));
-			$('#tbsm-bottombar-hint').text(this.i18n('selectAtLeastOne'));
+			this.updateBottomHint();
 			if (!keepSearch) {
 				$('#tbsm-search').val('').trigger('focus');
 			}
@@ -399,7 +1562,8 @@
 			var $grid = $('#tbsm-grid');
 
 			if (!this.variations.length) {
-				$grid.prop('hidden', false).html('<div class="tbsm-grid-empty">—</div>');
+				var emptyText = (this.mode === 'group') ? this.i18n('groupEmpty') : '—';
+				$grid.prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(emptyText) + '</div>');
 				return;
 			}
 
@@ -429,10 +1593,16 @@
 				var selIn  = mode === 'in_stock' ? ' selected' : '';
 				var selOut = mode === 'out_of_stock' ? ' selected' : '';
 
-				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat) + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
+				// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
+				var title = v.pname ? v.pname : v.name;
+				var sub = v.pname
+					? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
+					: (v.sku ? v.sku : '#' + v.id);
+
+				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
 					+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
-					+ '<span class="tbsm-var-name">' + this.esc(v.name) + '</span>'
-					+ (v.sku ? '<span class="tbsm-var-sku">' + this.esc(v.sku) + '</span>' : '<span class="tbsm-var-sku">#' + v.id + '</span>')
+					+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
+					+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
 					+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
 					+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
 					+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
@@ -552,31 +1722,219 @@
 		},
 
 		/**
-		 * بازیابی عنوان ویژگیِ percent-encoded: برخی افزونه‌ها taxonomy ویژگی‌های
-		 * فارسی را با نام URL-encoded می‌سازند (مثل «d9%85d8%af%d9%84» به‌جای «مدل»).
-		 * این encoding گاه ناقص است (نه هر بایت % دارد) و decodeURIComponent از
-		 * آن خطا می‌دهد؛ پس %ها را حذف، hex می‌کنیم و به‌صورت UTF-8 decode می‌کنیم.
+		 * بازیابی برچسبِ کدشده: برخی افزونه‌ها نام/برچسب ویژگی‌ها و مقادیر فارسی را
+		 * percent-encoded می‌سازند — آن هم به شکل «ناقص»:
+		 *   - نه هر بایت % دارد: d9%85d8%af%d9%84
+		 *   - پیشوند داخلی چسبیده است: pa_d9%85d8%af%d9%84 / attribute_…
+		 *   - جداکننده‌ها (_ - + فاصله) جای فاصله نشسته‌اند
+		 *   - رشته ممکن است وسط یک نویسهٔ چندبایتی بریده باشد
+		 *   - گاهی دو بار کد شده است (double-encoding)
+		 * decode فقط وقتی تلاش می‌شود که رشته واقعاً «شبیه blobِ hexی» باشد و خروجی
+		 * هم UTF-8 معتبر و متنِ چاپ‌پذیر باشد؛ برچسب‌های عادی دست‌نخورده می‌مانند.
 		 */
 		catLabel: function (label) {
-			var s = String(label || '');
-			if (s.indexOf('%') !== -1 && /^[0-9a-fA-F%]+$/.test(s)) {
-				var hex = s.replace(/%/g, '');
-				if (hex.length >= 2 && hex.length % 2 === 0) {
-					try {
-						var bin = '';
-						for (var i = 0; i < hex.length; i += 2) {
-							bin += String.fromCharCode(parseInt(hex.substr(i, 2), 16));
-						}
-						var d = decodeURIComponent(escape(bin));
-						if (d && d !== s) {
-							s = d;
-						}
-					} catch (e) {
-						// بایت‌ها UTF-8 معتبر نبودند — همان چیزی که بود می‌ماند
+			var s = this.stripInvisible(String(label === null || label === undefined ? '' : label));
+			if (!s || !this.looksEncoded(s)) {
+				return s;
+			}
+
+			// پیشوندهای داخلی (pa_/attribute_) بخشی از برچسب نمایشی نیستند.
+			var body = s.replace(/^attribute_/i, '').replace(/^pa_/i, '');
+			var out = '';
+			if (body && body !== s) {
+				out = this.decodeLabelText(body);
+			}
+			if (!out) {
+				out = this.decodeLabelText(s);
+			}
+
+			return out || s;
+		},
+
+		/** حذف کاراکترهای صفرعرض/کنترلی — پیش از هر decode ای (نیم‌فاصله حفظ می‌شود). */
+		stripInvisible: function (s) {
+			return String(s === null || s === undefined ? '' : s)
+				.replace(/[\u200B\u200E\u200F\u202A-\u202E\u2060\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+		},
+
+		/** آیا رشته شبیه blobِ کدشدهٔ hexی است؟ */
+		looksEncoded: function (s) {
+			s = String(s || '');
+			if (s.indexOf('%') === -1 || s.length < 4) {
+				return false;
+			}
+			var hexed = (s.match(/[0-9a-fA-F]/g) || []).length;
+			var seps = (s.match(/[%+ _\-.~]/g) || []).length;
+			return (hexed + seps) >= Math.ceil(s.length * 0.9);
+		},
+
+		/**
+		 * یک یا چند پاس decode (پشتیبانی از double-encoding).
+		 * @param {string} text
+		 * @return {string} متنِ بازیابی‌شده یا '' اگر قابل‌بازیابی نبود
+		 */
+		decodeLabelText: function (text) {
+			text = String(text || '');
+			if (!this.looksEncoded(text)) {
+				return '';
+			}
+
+			var current = text;
+			for (var pass = 0; pass < 3; pass++) {
+				var decoded = this.decodeLabelOnce(current);
+				if (!decoded) {
+					return (pass > 0) ? current : '';
+				}
+				current = decoded;
+				if (!this.looksEncoded(current)) {
+					break;
+				}
+			}
+
+			return current;
+		},
+
+		/** یک پاس decode (+ نجات رشته‌ای که وسط نویسهٔ چندبایتی بریده شده). */
+		decodeLabelOnce: function (text) {
+			text = String(text);
+			var marks = (text.match(/%/g) || []).length;
+			var len = text.length;
+
+			// ۱) decode استاندارد (فقط %xx بایت می‌شود و بقیه دست‌نخورده می‌ماند) —
+			//    لازم برای کدشده‌های کامل و double-encoded مثل %25d9%2585…
+			var strict = this.strictDecode(text);
+			if (strict && strict !== text) {
+				var strictOut = this.bytesToText(strict, marks);
+				if (strictOut) {
+					return strictOut.trim();
+				}
+			}
+
+			// ۲) decode جفت‌های hex (کدشدهٔ ناقص) + نجات رشتهٔ بریده‌شده
+			for (var drop = 0; drop <= 6; drop++) {
+				var src = (drop > 0) ? String(text).slice(0, Math.max(0, len - drop)) : String(text);
+				if (!src) {
+					break;
+				}
+				var bytes = this.hexStream(src);
+				if (!bytes || !bytes.length) {
+					continue;
+				}
+				var out = this.bytesToText(bytes, marks);
+				if (!out) {
+					continue;
+				}
+				return out.trim();
+			}
+
+			return '';
+		},
+
+		/**
+		 * decode استاندارد (معادل rawurldecode): فقط `%xx` بایت می‌شود و بقیهٔ
+		 * نویسه‌ها دست‌نخورده می‌مانند. برای `%25d9%2585…` و کدشده‌های کامل.
+		 *
+		 * @param {string} src
+		 * @return {number[]|null}
+		 */
+		strictDecode: function (src) {
+			src = String(src || '');
+			var out = [];
+			for (var i = 0; i < src.length; i++) {
+				var c = src.charAt(i);
+				if (c === '%') {
+					var pair = src.substr(i + 1, 2);
+					if (/^[0-9a-fA-F]{2}$/.test(pair)) {
+						out.push(parseInt(pair, 16));
+						i += 2;
+						continue;
+					}
+					out.push(37); // % بدون بایت معتبر
+					continue;
+				}
+				var code = src.charCodeAt(i);
+				if (code < 128) {
+					out.push(code);
+				} else {
+					// نویسهٔ غیر-ASCII را دست‌نخورده با بایت‌های UTF-8 نگه می‌داریم
+					var enc = unescape(encodeURIComponent(c));
+					for (var k = 0; k < enc.length; k++) {
+						out.push(enc.charCodeAt(k) & 0xFF);
 					}
 				}
 			}
-			return s;
+			return out;
+		},
+
+		/**
+		 * جریان کدشده → آرایهٔ بایت‌ها: `%xx` و جفت‌های hex بدون `%` هر دو بایت
+		 * می‌شوند، جداکننده‌ها (_ - + فاصله) فاصله می‌شوند و بقیه دور ریخته می‌شود.
+		 */
+		hexStream: function (src) {
+			src = String(src || '');
+			var out = [];
+			var i = 0;
+			var n = src.length;
+
+			while (i < n) {
+				var c = src.charAt(i);
+
+				if (c === '%') {
+					var pair = src.substr(i + 1, 2);
+					if (/^[0-9a-fA-F]{2}$/.test(pair)) {
+						out.push(parseInt(pair, 16));
+						i += 3;
+						continue;
+					}
+					i++;
+					continue;
+				}
+
+				if (/[0-9a-fA-F]/.test(c) && (i + 1) < n && /[0-9a-fA-F]/.test(src.charAt(i + 1))) {
+					out.push(parseInt(src.substr(i, 2), 16));
+					i += 2;
+					continue;
+				}
+
+				if (c === ' ' || c === '\t' || c === '+' || c === '-' || c === '_') {
+					out.push(32);
+					i++;
+					continue;
+				}
+
+				i++;
+			}
+
+			return out;
+		},
+
+		/**
+		 * بایت‌ها → متن (فقط اگر UTF-8 معتبر و نمایشی باشد).
+		 * @param {number[]} bytes
+		 * @param {number}   marks تعداد % در ورودی
+		 * @return {string}
+		 */
+		bytesToText: function (bytes, marks) {
+			try {
+				var bin = '';
+				for (var i = 0; i < bytes.length; i++) {
+					bin += String.fromCharCode(bytes[i]);
+				}
+				var text = decodeURIComponent(escape(bin));
+				if (!text) {
+					return '';
+				}
+				if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(text)) {
+					return ''; // نویسهٔ کنترلی → احتمالاً آشغال hex است
+				}
+				var hasHigh = /[\u0080-\uFFFF]/.test(text);
+				if (!hasHigh && !(marks >= 3 && /[A-Za-z0-9]/.test(text))) {
+					return ''; // خروجی لاتین فقط با نشانهٔ قویِ کدشدگی
+				}
+				return text;
+			} catch (e) {
+				return '';
+			}
 		},
 
 		/** رنگ باکس عددی بر اساس مقدار: سبز (بیش از صفر) / قرمز (صفر). */
@@ -591,28 +1949,68 @@
 				.addClass(isNaN(v) || v <= 0 ? 'tbsm-var-stockbox--out' : 'tbsm-var-stockbox--in');
 		},
 
+		/** نوع موجودی انتخاب‌شدهٔ ردیف همگانی: qty | in_stock | out_of_stock. */
+		bulkMode: function () {
+			var mode = $('#tbsm-bulk-mode').val();
+			return (mode === 'in_stock' || mode === 'out_of_stock') ? mode : 'qty';
+		},
+
+		/** برچسب فارسی حالت (همان متنی که در سلکت دیده می‌شود). */
+		bulkModeLabel: function (mode) {
+			var $opt = $('#tbsm-bulk-mode option[value="' + (mode || this.bulkMode()) + '"]');
+			return $opt.length ? $opt.text() : this.i18n('modeQty');
+		},
+
+		/**
+		 * با تغییر نوع موجودی همگانی، ورودی عدد فقط در حالت «تعداد» معنا دارد؛
+		 * در دو حالت وضعیتی مخفی و غیرفعال می‌شود تا کاربر دنبال عدد نگردد.
+		 */
+		syncBulkMode: function () {
+			var qty = this.bulkMode() === 'qty';
+			$('#tbsm-quickset-wrap').prop('hidden', !qty);
+			$('#tbsm-quickset').prop('disabled', !qty).removeClass('is-invalid');
+			if (qty) {
+				$('#tbsm-quickset').trigger('focus');
+			}
+		},
+
 		/** مقدار را در ورودی همهٔ کارت‌های انتخابی (نمایشی) درج می‌کند. */
 		quickSet: function () {
 			var self = this;
-			var raw = $('#tbsm-quickset').val();
-			if (raw === '' || raw === null || isNaN(Number(raw)) || Number(raw) < 0) {
-				return;
+			var mode = this.bulkMode();
+			var val = null;
+
+			if (mode === 'qty') {
+				var raw = $('#tbsm-quickset').val();
+				if (raw === '' || raw === null || isNaN(Number(raw)) || Number(raw) < 0) {
+					return;
+				}
+				val = Math.round(Number(raw));
 			}
-			var val = Math.round(Number(raw));
 			var n = 0;
 
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
-					var $card = $(this);
+				var $card = $(this);
+				if (mode === 'qty') {
 					if ($card.attr('data-mode') !== 'qty') {
 						self.setCardMode($card, 'qty');
 					}
 					$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
 					self.paintStockbox($card);
-					n++;
-				});
+				} else {
+					// وضعیت (موجود بدون تعداد / ناموجود) روی خود کارت‌ها تنظیم می‌شود
+					self.setCardMode($card, mode);
+				}
+				n++;
+			});
 
 			if (n) {
-				this.notice(this.i18n('fillDone').replace('%d', this.fmt(n)), 'info');
+				this.notice(
+					mode === 'qty'
+						? this.i18n('fillDone').replace('%d', this.fmt(n))
+						: this.i18n('fillStatusDone').replace('%1$s', this.bulkModeLabel(mode)).replace('%2$d', this.fmt(n)),
+					'info'
+				);
 			}
 		},
 
@@ -668,7 +2066,7 @@
 				}
 			}
 
-			$('#tbsm-bottombar-hint').text(selected > 0 ? this.i18n('bottomHint') : this.i18n('selectAtLeastOne'));
+			this.updateBottomHint();
 		},
 
 		/* ----------------------------------------------------------
@@ -677,7 +2075,7 @@
 
 		apply: function () {
 			var self = this;
-			if (this.busy || !this.product) {
+			if (this.busy || !this.readyContext()) {
 				return;
 			}
 
@@ -721,7 +2119,7 @@
 			var $btn = $('#tbsm-apply');
 			if (!this.confirmMode) {
 				this.confirmMode = true;
-				$btn.addClass('tisa-btn--confirm').text(this.i18n('applyConfirm').replace('%d', this.fmt(count)));
+				$btn.addClass('tisa-btn--confirm').text(this.applyConfirmText(count));
 				clearTimeout(this.confirmTimer);
 				this.confirmTimer = setTimeout(function () {
 					TBSM.confirmMode = false;
@@ -736,12 +2134,7 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			$.post(window.tbsmData.ajaxUrl, {
-				action: 'tbsm_apply_stock',
-				nonce: window.tbsmData.nonce,
-				product_id: this.product.id,
-				items: items
-			})
+			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
 				.done(function (res) {
 					if (res && res.success) {
 						self.renderReport(res.data);
@@ -750,21 +2143,62 @@
 					}
 				})
 				.fail(function (xhr) {
-					var msg = '';
-					try {
-						var parsed = xhr.responseJSON;
-						if (parsed) {
-							msg = self.applyMsg(parsed.data);
-						}
-					} catch (e) {
-						// پاسخ غیر-JSON
-					}
-					self.notice(self.i18n('applyError').replace('%s', msg || 'HTTP ' + (xhr.status || 0)), 'error');
+					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
 				})
 				.always(function () {
 					self.busy = false;
 					self.refreshCounts();
 				});
+		},
+
+		/** متن تأیید دکمهٔ اعمال بر اساس حالت کار. */
+		applyConfirmText: function (count) {
+			var key = (this.mode === 'group') ? 'groupApplyConfirm' : 'applyConfirm';
+			return this.i18n(key).replace('%d', this.fmt(count));
+		},
+
+		/** آیا بافت لازم برای اعمال آماده است؟ (محصول در حالت تکی، محدوده+مدل در حالت گروهی) */
+		readyContext: function () {
+			return (this.mode === 'group') ? (!!this.group && !!this.scope) : !!this.product;
+		},
+
+		/** بدنهٔ درخواست اعمال بر اساس حالت کار. */
+		applyPayload: function (items) {
+			var payload = {
+				nonce: window.tbsmData.nonce,
+				items: items
+			};
+
+			if (this.mode === 'group') {
+				var scope = this.scopePayload();
+				payload.action = 'tbsm_apply_scope_stock';
+				payload.attr_keys = this.group.keys || [];
+				payload.term_values = this.group.values || [];
+				payload.scope_type = scope.scope_type;
+				payload.product_ids = scope.product_ids;
+				payload.category_id = scope.category_id;
+				payload.sku = scope.sku;
+				payload.sku_mode = scope.sku_mode;
+			} else {
+				payload.action = 'tbsm_apply_stock';
+				payload.product_id = this.product.id;
+			}
+
+			return payload;
+		},
+
+		/** پیام خطای درخواست اعمال از پاسخ (JSON یا HTTP). */
+		applyFailMsg: function (xhr) {
+			var msg = '';
+			try {
+				var parsed = xhr && xhr.responseJSON;
+				if (parsed) {
+					msg = this.applyMsg(parsed.data);
+				}
+			} catch (e) {
+				// پاسخ غیر-JSON
+			}
+			return msg || ('HTTP ' + ((xhr && xhr.status) || 0));
 		},
 
 		/**
@@ -789,24 +2223,31 @@
 		},
 
 		/**
-		 * اعمال «موجودی همگانی»: یک عدد، روی همهٔ متغیرهای انتخاب‌شده.
-		 * همان مسیر سروری apply را با مقادیر یکسان می‌فرستد.
+		 * اعمال «موجودی همگانی» روی همهٔ متغیرهای انتخاب‌شده — در سه حالت:
+		 * «تعداد» (عدد دلخواه)، «موجود بدون تعداد» و «ناموجود».
+		 * همان مسیر سروری apply را با مقدار یکسان می‌فرستد.
 		 */
 		applyUnified: function () {
 			var self = this;
-			if (this.busy || !this.product) {
+			if (this.busy || !this.readyContext()) {
 				return;
 			}
 
+			var mode  = this.bulkMode();
 			var $input = $('#tbsm-quickset');
-			var raw = $input.val();
-			var num = Number(raw);
-			if (raw === '' || raw === null || !isFinite(num) || num < 0 || Math.floor(num) !== num) {
-				this.notice(this.i18n('unifiedInvalid'), 'error');
-				$input.trigger('focus');
-				return;
+			var val = null;
+
+			// فقط حالت «تعداد» عدد می‌خواهد؛ دو حالت وضعیتی بدون عدد اعمال می‌شوند.
+			if (mode === 'qty') {
+				var raw = $input.val();
+				var num = Number(raw);
+				if (raw === '' || raw === null || !isFinite(num) || num < 0 || Math.floor(num) !== num) {
+					this.notice(this.i18n('unifiedInvalid'), 'error');
+					$input.trigger('focus');
+					return;
+				}
+				val = Math.round(num);
 			}
-			var val = Math.round(num);
 
 			var ids = [];
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
@@ -822,7 +2263,11 @@
 			if (!this.unifiedConfirm) {
 				this.unifiedConfirm = true;
 				$btn.addClass('tisa-btn--confirm')
-					.text(this.i18n('unifiedConfirm').replace('%1$s', this.fmt(val)).replace('%2$d', this.fmt(ids.length)));
+					.text(
+						mode === 'qty'
+							? this.i18n('unifiedConfirm').replace('%1$s', this.fmt(val)).replace('%2$d', this.fmt(ids.length))
+							: this.i18n('unifiedStatusConfirm').replace('%1$s', this.bulkModeLabel(mode)).replace('%2$d', this.fmt(ids.length))
+					);
 				clearTimeout(this.unifiedConfirmTimer);
 				this.unifiedConfirmTimer = setTimeout(function () {
 					TBSM.unifiedConfirm = false;
@@ -837,26 +2282,23 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			// همهٔ انتخابی‌ها را به حالت عددی با همین مقدار نشان می‌دهیم
+			// کارت‌های انتخابی همان حالت را می‌گیرند تا پیش از پاسخ سرور هم دیده شود
 			var items = {};
 			for (var i = 0; i < ids.length; i++) {
-				items[ids[i]] = { mode: 'qty', qty: val };
+				items[ids[i]] = (mode === 'qty') ? { mode: 'qty', qty: val } : { mode: mode };
 			}
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
 				var $card = $(this);
-				if ($card.attr('data-mode') !== 'qty') {
-					self.setCardMode($card, 'qty');
+				if ($card.attr('data-mode') !== mode) {
+					self.setCardMode($card, mode);
 				}
-				$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
-				self.paintStockbox($card);
+				if (mode === 'qty') {
+					$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
+					self.paintStockbox($card);
+				}
 			});
 
-			$.post(window.tbsmData.ajaxUrl, {
-				action: 'tbsm_apply_stock',
-				nonce: window.tbsmData.nonce,
-				product_id: this.product.id,
-				items: items
-			})
+			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
 				.done(function (res) {
 					if (res && res.success) {
 						self.renderReport(res.data);
@@ -865,16 +2307,7 @@
 					}
 				})
 				.fail(function (xhr) {
-					var msg = '';
-					try {
-						var parsed = xhr.responseJSON;
-						if (parsed) {
-							msg = self.applyMsg(parsed.data);
-						}
-					} catch (e) {
-						// پاسخ غیر-JSON
-					}
-					self.notice(self.i18n('applyError').replace('%s', msg || 'HTTP ' + (xhr.status || 0)), 'error');
+					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
 				})
 				.always(function () {
 					self.busy = false;
@@ -895,8 +2328,11 @@
 					? this.fmt(it.from) + ' \u2190 ' + this.fmt(it.to)
 					: this.statusLabel(it.from_status) + ' \u2190 ' + this.statusLabel(it.to_status);
 
+				// در حالت گروهی، نام محصول والد هم پشت نام متغیر می‌آید تا ردیف‌ها قابل تفکیک باشند.
+				var rowLabel = it.product ? (it.product + ' — ' + it.name) : it.name;
+
 				rows += '<div class="tbsm-report-row">'
-					+ '<span>' + this.esc(it.name) + '</span>'
+					+ '<span>' + this.esc(rowLabel) + '</span>'
 					+ (it.sku ? '<span class="tbsm-report-sku">' + this.esc(it.sku) + '</span>' : '')
 					+ '<span class="tbsm-report-diff">' + this.esc(diff) + '</span>'
 					+ '</div>';
@@ -929,6 +2365,8 @@
 					? this.i18n('inStockLabel')
 					: this.i18n('outOfStockLabel');
 				html += '<div>' + this.esc(this.i18n('parentSynced').replace('%s', label)) + '</div>';
+			} else if (data.parents_synced) {
+				html += '<div>' + this.esc(this.i18n('parentsSynced').replace('%d', this.fmt(data.parents_synced))) + '</div>';
 			}
 
 			if (data.enabled_manage) {
@@ -950,6 +2388,92 @@
 			$report[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 		}
 	};
+
+	/*
+	 * منوی پیشخوانِ خکوب‌شده — زیرمنوهای کشویی (flyout) از قید overflow بیرون بیایند.
+	 *
+	 * در CSS همین افزونه، `#adminmenuwrap` روی این صفحه `position: fixed` و
+	 * `overflow-y: auto` است تا ارتفاع صفحه به بلندی منو کشیده نشود. عارضهٔ
+	 * جانبی: زیرمنویی که هسته با `position: absolute; right: 160px` بیرون ستون
+	 * نشان می‌دهد، زیر overflow بریده می‌شود. اینجا موقعیتش را با مختصات دیدِ
+	 * کنونی همان آیتم به `position: fixed` منتقل می‌کنیم تا کامل دیده شود.
+	 * روی صفحه‌های دیگر (منو خکوب نیست) هیچ کاری نمی‌کند.
+	 */
+	function menuFlyoutEscape() {
+		var wrap = document.getElementById('adminmenuwrap');
+		if (!wrap || 'fixed' !== window.getComputedStyle(wrap).position) {
+			return;
+		}
+
+		var current = null;
+		var currentLi = null;
+
+		function clear() {
+			currentLi = null;
+			if (!current) {
+				return;
+			}
+			current.style.position = '';
+			current.style.top = '';
+			current.style.bottom = '';
+			current.style.maxHeight = '';
+			current.style.overflowY = '';
+			current = null;
+		}
+
+		function place(li) {
+			// آیتم جاری، زیرمنویش درون جریان است (نه کشویی) — دست نمی‌زنیم.
+			if (!li || li.classList.contains('wp-has-current-submenu')) {
+				clear();
+				return;
+			}
+			var sub = li.querySelector('.wp-submenu');
+			if (!sub) {
+				clear();
+				return;
+			}
+
+			var r = li.getBoundingClientRect();
+			var gap = 8;
+			// اگر زیر آیتم جا نیست، زیرمنو به بالا می‌چرخد (مثل هر دراپ‌داون درست).
+			var below = window.innerHeight - Math.round(r.top) - gap;
+			var above = Math.round(r.bottom) - gap;
+
+			if (current && current !== sub) {
+				clear();
+			}
+			current = sub;
+			currentLi = li;
+			sub.style.position = 'fixed';
+			sub.style.overflowY = 'auto';
+			if (below >= Math.min(200, above)) {
+				var top = Math.max(gap, Math.round(r.top) - 1);
+				sub.style.top = top + 'px';
+				sub.style.bottom = '';
+				sub.style.maxHeight = Math.max(80, window.innerHeight - top - gap) + 'px';
+			} else {
+				sub.style.top = 'auto';
+				sub.style.bottom = Math.max(gap, window.innerHeight - Math.round(r.bottom)) + 'px';
+				sub.style.maxHeight = Math.max(80, above) + 'px';
+			}
+		}
+
+		$(wrap)
+			.on('mouseenter', '#adminmenu > li.menu-top', function () { place(this); })
+			.on('mouseleave', '#adminmenu > li.menu-top', clear)
+			// با اسکرولِ داخلی منو، زیرمنوی باز هم‌جای آیتمش می‌ماند.
+			.on('scroll', function () {
+				if (currentLi) {
+					place(currentLi);
+				}
+			});
+	}
+
+	$(menuFlyoutEscape);
+
+	// در دسترس گذاشتن کنترلر برای پیش‌نمایش/دیباگ (بدون تغییر رفتار افزونه).
+	window.TBSM = TBSM;
+	window.TBSM.menuFlyoutEscape = menuFlyoutEscape;
 
 	$(function () {
 		TBSM.init();

@@ -1,7 +1,8 @@
 <?php
 /**
  * مسیرهای AJAX افزونهٔ مدیریت انبوه موجودی:
- * جست‌وجوی محصول، بارگذاری متغیرها/دسته‌ها و اعمال موجودی.
+ * جست‌وجوی محصول، بارگذاری متغیرها/دسته‌ها، اعمال موجودی، و حالت گروهی
+ * (محدودهٔ محصولات ← ویژگی/مقدار مدل ← کارت‌ها و اعمال).
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
@@ -13,22 +14,193 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 	final class TBSM_Ajax {
 
 		public static function init() {
-			add_action( 'wp_ajax_tbsm_search_products', array( __CLASS__, 'ajax_search_products' ) );
-			add_action( 'wp_ajax_tbsm_load_product', array( __CLASS__, 'ajax_load_product' ) );
-			add_action( 'wp_ajax_tbsm_apply_stock', array( __CLASS__, 'ajax_apply_stock' ) );
+			// هر اندپوینت از میان گارد() رد می‌شود: هیچ خطای PHP داخل افزونه
+			// نباید به «صفحهٔ خطای کشندهٔ وردپرس» و پیام مبهم در مرورگر تبدیل
+			// شود — پیام واقعی خطا به‌صورت JSON برمی‌گردد.
+			foreach ( self::endpoints() as $action => $method ) {
+				add_action(
+					'wp_ajax_' . $action,
+					static function () use ( $method ) {
+						self::guard( $method );
+					}
+				);
+			}
 		}
+
+		/**
+		 * فهرست اندپوینت‌ها: نام اکشن → نام متد.
+		 *
+		 * @return array
+		 */
+		private static function endpoints() {
+			return array(
+				'tbsm_search_products'  => 'ajax_search_products',
+				'tbsm_load_product'     => 'ajax_load_product',
+				'tbsm_apply_stock'      => 'ajax_apply_stock',
+				// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل ← اعمال.
+				'tbsm_scope_options'    => 'ajax_scope_options',
+				'tbsm_scope_stats'      => 'ajax_scope_stats',
+				'tbsm_scope_attributes' => 'ajax_scope_attributes',
+				'tbsm_scope_values'     => 'ajax_scope_values',
+				'tbsm_find_scope'       => 'ajax_find_scope',
+				'tbsm_apply_scope_stock' => 'ajax_apply_scope_stock',
+				// توکن تازه برای صفحه‌هایی که مدتی باز مانده‌اند.
+				'tbsm_nonce'            => 'ajax_nonce',
+			);
+		}
+
+		/**
+		 * گارد مرکزی: هر Throwable را به پاسخ JSON با علت واقعی تبدیل می‌کند
+		 * (نوع خطا، متن، فایل و شمارهٔ خط) — به‌جای خطای کشندهٔ PHP.
+		 *
+		 * @param string $method نام متد اندپوینت.
+		 * @return void
+		 */
+		private static function guard( $method ) {
+			self::install_fatal_guard();
+
+			try {
+				call_user_func( array( __CLASS__, $method ) );
+			} catch ( \Throwable $e ) {
+				$where = basename( (string) $e->getFile() ) . ' خط ' . (int) $e->getLine();
+				self::send_error(
+					sprintf(
+						/* translators: 1: error class, 2: message, 3: file and line */
+						'خطای اجرای افزونه: %1$s — %2$s (%3$s)',
+						get_class( $e ),
+						$e->getMessage(),
+						$where
+					),
+					'php_exception',
+					array( 'type' => get_class( $e ), 'where' => $where )
+				);
+			}
+		}
+
+		/** @var bool آیا پاسخ JSON همین حالا فرستاده شده است؟ */
+		private static $sent = false;
 
 		/**
 		 * نگهبان مشترک: دسترسی + توکن + حضور ووکامرس.
 		 */
 		private static function check_auth() {
+			self::install_fatal_guard();
+
 			if ( ! TBSM_Core::can() ) {
-				wp_send_json_error( array( 'message' => 'دسترسی غیرمجاز است.' ), 403 );
+				self::send_error( 'دسترسی غیرمجاز است.', 'no_cap' );
 			}
 			if ( ! function_exists( 'wc_get_product' ) ) {
-				wp_send_json_error( array( 'message' => 'ووکامرس نصب یا فعال نیست.' ) );
+				self::send_error( 'ووکامرس نصب یا فعال نیست.', 'no_wc' );
 			}
-			check_ajax_referer( TBSM_Core::NONCE_ACTION, 'nonce' );
+
+			// توکن را خودمان بررسی می‌کنیم تا منقضی‌شدنش به «پاسخ HTML آدم‌کش»
+			// و پیام مبهم «بررسی محدوده ناموفق بود» تبدیل نشود.
+			$nonce = isset( $_POST['nonce'] ) ? sanitize_text_field( wp_unslash( $_POST['nonce'] ) ) : '';
+			if ( ! wp_verify_nonce( $nonce, TBSM_Core::NONCE_ACTION ) ) {
+				self::send_error(
+					'توکن امنیتی صفحه منقضی شده بود؛ خودکار تازه شد. لطفاً دوباره دکمه را بزنید.',
+					'bad_nonce',
+					array( 'new_nonce' => wp_create_nonce( TBSM_Core::NONCE_ACTION ) )
+				);
+			}
+		}
+
+		/**
+		 * فرستادن پاسخ موفق با مُهر نسخه (برای تشخیص ناهم‌خوانی کش/فایل‌ها).
+		 *
+		 * @param array $data دادهٔ پاسخ.
+		 * @return void
+		 */
+		private static function send_success( $data ) {
+			self::$sent = true;
+			$data       = is_array( $data ) ? $data : array();
+			$data['version'] = TBSM_VERSION;
+
+			wp_send_json_success( $data );
+		}
+
+		/**
+		 * فرستادن پاسخ خطا با «کد» و توضیح فنی — تا رابط کاربری بتواند به‌جای
+		 * پیام مبهم، علت واقعی را نشان دهد.
+		 *
+		 * @param string $message پیام فارسی.
+		 * @param string $code    کد خطا.
+		 * @param array  $extra   دادهٔ اضافه.
+		 * @return void
+		 */
+		private static function send_error( $message, $code = 'error', $extra = array() ) {
+			self::$sent = true;
+
+			$data = array(
+				'message' => (string) $message,
+				'code'    => (string) $code,
+				'version' => TBSM_VERSION,
+			);
+			if ( is_array( $extra ) && ! empty( $extra ) ) {
+				$data = array_merge( $data, $extra );
+			}
+
+			error_log( '[TBSM] ' . $code . ': ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+
+			wp_send_json_error( $data );
+		}
+
+		/**
+		 * نگهبان خطای کشندهٔ PHP: اگر در میانهٔ این درخواست خطای کشنده رخ دهد،
+		 * به‌جای صفحهٔ HTML وردپرس («بررسی محدوده ناموفق بود»)، پاسخ JSON با متن
+		 * دقیق خطا (فایل/خط/پیام) برگردانده می‌شود.
+		 */
+		private static function install_fatal_guard() {
+			static $installed = false;
+			if ( $installed ) {
+				return;
+			}
+			$installed = true;
+
+			register_shutdown_function( array( __CLASS__, 'fatal_guard' ) );
+		}
+
+		public static function fatal_guard() {
+			$err = error_get_last();
+			if ( ! is_array( $err ) ) {
+				return;
+			}
+
+			$fatal_types = array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR );
+			if ( ! in_array( (int) $err['type'], $fatal_types, true ) ) {
+				return;
+			}
+			if ( self::$sent ) {
+				return;
+			}
+
+			self::$sent = true;
+
+			$detail = sprintf(
+				'%s — %s خط %d',
+				(string) $err['message'],
+				basename( (string) $err['file'] ),
+				(int) $err['line']
+			);
+
+			error_log( '[TBSM] php_fatal: ' . $detail ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+
+			if ( ! headers_sent() ) {
+				status_header( 500 );
+				nocache_headers();
+				header( 'Content-Type: application/json; charset=utf-8' );
+			}
+
+			echo wp_json_encode(
+				array(
+					'success' => false,
+					'data'    => array(
+						'message' => 'خطای PHP در افزونه: ' . $detail,
+						'code'    => 'php_fatal',
+						'version' => TBSM_VERSION,
+					),
+				)
+			);
 		}
 
 		/**
@@ -51,7 +223,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			$len  = function_exists( 'mb_strlen' ) ? mb_strlen( $term, 'UTF-8' ) : strlen( $term );
 
 			if ( $len < 2 ) {
-				wp_send_json_success( array( 'results' => array() ) );
+				self::send_success( array( 'results' => array() ) );
 			}
 
 			$found = array();
@@ -121,7 +293,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				$results[] = self::product_brief( $product );
 			}
 
-			wp_send_json_success( array( 'results' => $results ) );
+			self::send_success( array( 'results' => $results ) );
 		}
 
 		/**
@@ -155,7 +327,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			$product    = wc_get_product( $product_id );
 
 			if ( ! $product || ! $product->exists() ) {
-				wp_send_json_error( array( 'message' => 'محصول انتخابی پیدا نشد.' ) );
+				self::send_error( 'محصول انتخابی پیدا نشد.', 'bad_product' );
 			}
 
 			$is_variable = 'variable' === $product->get_type();
@@ -188,7 +360,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					$counts[ $tax ][ $slug ]++;
 
 					$label = $variation->get_attribute( $tax );
-					$clean = TBSM_Stock::clean_label( ( '' !== (string) $label ) ? (string) $label : $slug );
+					$clean = TBSM_Stock::clean_label( TBSM_Stock::maybe_decode_label( ( '' !== (string) $label ) ? (string) $label : $slug ) );
 					if ( '' !== $clean && ! in_array( $clean, $labels, true ) ) {
 						$labels[] = $clean;
 					}
@@ -257,7 +429,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			);
 		}
 
-			wp_send_json_success(
+			self::send_success(
 				array(
 					'product'    => self::product_brief( $product ),
 					'variations' => $variations,
@@ -296,9 +468,274 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			}
 
 			if ( ! empty( $result['ok'] ) ) {
-				wp_send_json_success( $result );
+				self::send_success( $result );
 			}
-			wp_send_json_error( $result );
+			self::send_error( isset( $result['message'] ) ? $result['message'] : 'اعمال موجودی ناموفق بود.', 'apply_failed', $result );
 		}
+
+		/* ----------------------------------------------------------
+		 * حالت گروهی — «محدودهٔ محصولات ← ویژگی/مقدار مدل»
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * پاک‌سازی نام ویژگی/مقدار مدل بدون آسیب به کاراکترهای percent-encoded و فاصله‌ها.
+		 *
+		 * `sanitize_text_field()` توالی‌های %xx را حذف می‌کند و همین باعث می‌شد
+		 * ویژگی‌های کدشده (مثل d9%85d8%af%d9%84 = «مدل») با هیچ متغیری تطبیق نکنند؛
+		 * فاصله‌ها هم بخشی از مقدار واقعی‌اند (مثل «iPhone 15 Pro Max»). این مقادیر
+		 * هرگز مستقیم در SQL نمی‌نشینند (پارامترِ $wpdb->prepare) و در خروجی هم
+		 * escape می‌شوند؛ پس فقط کاراکترهای کنترلی حذف و طول محدود می‌شود.
+		 *
+		 * @param mixed $raw مقدار خام درخواست.
+		 * @return string
+		 */
+		private static function model_raw_text( $raw ) {
+			$text = (string) wp_unslash( (string) $raw );
+			$text = (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', $text );
+			return substr( $text, 0, 190 );
+		}
+
+		/**
+		 * خواندن یک فهرست از درخواست (کلید ویژگی یا مقدار مدل) با پاک‌سازی مخصوص
+		 * و سقف تعداد. عناصر خالی/تکراری حذف می‌شوند.
+		 *
+		 * @param string $key   نام پارامتر.
+		 * @param int    $limit سقف تعداد.
+		 * @return array
+		 */
+		private static function model_raw_list( $key, $limit ) {
+			if ( ! isset( $_POST[ $key ] ) ) {
+				return array();
+			}
+
+			$raw  = (array) wp_unslash( $_POST[ $key ] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$out  = array();
+			foreach ( $raw as $item ) {
+				if ( is_array( $item ) ) {
+					continue;
+				}
+				$text = self::model_raw_text( $item );
+				if ( '' !== $text && ! in_array( $text, $out, true ) ) {
+					$out[] = $text;
+				}
+				if ( count( $out ) >= (int) $limit ) {
+					break;
+				}
+			}
+
+			return $out;
+		}
+
+		/**
+		 * خواندن پارامترهای مشترک «محدودهٔ محصولات» از درخواست.
+		 *
+		 * @return array محدودهٔ خام (بعداً با TBSM_Stock::normalize_scope نرمال می‌شود).
+		 */
+		private static function scope_params() {
+			$type = isset( $_POST['scope_type'] ) ? sanitize_key( wp_unslash( $_POST['scope_type'] ) ) : 'all';
+			$ids  = ( isset( $_POST['product_ids'] ) && is_array( $_POST['product_ids'] ) )
+				? (array) wp_unslash( $_POST['product_ids'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				: array();
+			$cat  = isset( $_POST['category_id'] ) ? absint( $_POST['category_id'] ) : 0;
+			$sku  = isset( $_POST['sku'] ) ? sanitize_text_field( wp_unslash( $_POST['sku'] ) ) : '';
+			$mode = isset( $_POST['sku_mode'] ) ? sanitize_key( wp_unslash( $_POST['sku_mode'] ) ) : 'prefix';
+
+			return array(
+				'type'        => $type,
+				'product_ids' => array_map( 'absint', $ids ),
+				'category_id' => $cat,
+				'sku'         => $sku,
+				'sku_mode'    => $mode,
+			);
+		}
+
+		/**
+		 * داده‌های توصیفی محدوده برای پاسخ‌ها (برچسب + شمارش‌ها).
+		 *
+		 * @param array $scope محدودهٔ نرمال‌شده.
+		 * @return array
+		 */
+		private static function scope_payload( $scope ) {
+			$summary = TBSM_Stock::scope_summary( $scope );
+
+			return array(
+				'type'        => (string) $scope['type'],
+				'label'       => TBSM_Stock::scope_label( $scope ),
+				'product_ids' => array_map( 'absint', (array) $scope['product_ids'] ),
+				'category_id' => (int) $scope['category_id'],
+				'sku'         => (string) $scope['sku'],
+				'sku_mode'    => (string) $scope['sku_mode'],
+				'products'    => (int) $summary['products'],
+				'variations'  => (int) $summary['variations'],
+			);
+		}
+
+		/**
+		 * گزینه‌های گام «محدوده»: دسته‌بندی‌های محصول.
+		 */
+		public static function ajax_scope_options() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			self::send_success(
+				array(
+					'categories' => TBSM_Stock::list_product_categories(),
+					'limits'     => array(
+						'products' => TBSM_Core::MAX_SCOPE_PRODUCTS,
+						'rows'     => TBSM_Core::MAX_MODEL_ROWS,
+					),
+				)
+			);
+		}
+
+		/**
+		 * ویژگی‌های موجود در محدودهٔ انتخاب‌شده (گام ۲).
+		 */
+		public static function ajax_scope_attributes() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope  = TBSM_Stock::normalize_scope( self::scope_params() );
+			$error  = TBSM_Stock::scope_error( $scope );
+			if ( '' !== $error ) {
+				self::send_error( (string) $error, 'bad_scope' );
+			}
+
+			$attributes = TBSM_Stock::list_scope_attributes( $scope );
+
+			self::send_success(
+				array(
+					'scope'      => self::scope_payload( $scope ),
+					'attributes' => $attributes,
+				)
+			);
+		}
+
+		/**
+		 * شمارش سبک یک محدوده (محصول/متغیر) — برای نشان‌دادن «همهٔ محصولات»
+		 * پیش از محاسبهٔ سنگین ویژگی‌ها.
+		 */
+		public static function ajax_scope_stats() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
+			$error = TBSM_Stock::scope_error( $scope );
+			if ( '' !== $error ) {
+				self::send_error( (string) $error, 'bad_scope' );
+			}
+
+			self::send_success( array( 'scope' => self::scope_payload( $scope ) ) );
+		}
+
+		/**
+		 * مقدارهای یک ویژگی در محدودهٔ انتخاب‌شده.
+		 */
+		public static function ajax_scope_values() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$keys  = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
+			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
+
+			if ( empty( $keys ) ) {
+				self::send_error( 'ابتدا ویژگی مدل را انتخاب کنید.', 'no_attr' );
+			}
+
+			$pack = TBSM_Stock::list_scope_values( $scope, $keys );
+
+			self::send_success(
+				array(
+					'attr_keys' => $keys,
+					'values'    => isset( $pack['values'] ) ? $pack['values'] : array(),
+					'groups'    => isset( $pack['groups'] ) ? $pack['groups'] : array(),
+					'truncated' => ! empty( $pack['truncated'] ),
+				)
+			);
+		}
+
+		/**
+		 * فهرست متغیرهای یک مدل در محدودهٔ انتخاب‌شده.
+		 */
+		public static function ajax_find_scope() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope  = TBSM_Stock::normalize_scope( self::scope_params() );
+			$keys   = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
+			$values = self::model_raw_list( 'term_values', TBSM_Core::MAX_MODEL_VALUES );
+
+			if ( empty( $keys ) || empty( $values ) ) {
+				self::send_error( 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.', 'no_model' );
+			}
+
+			$found = TBSM_Stock::find_scope_rows( $scope, $keys, $values );
+
+			if ( ! empty( $found['error'] ) ) {
+				self::send_error( (string) $found['error'], 'scope_rows_error' );
+			}
+
+			self::send_success(
+				array(
+					'rows'      => $found['rows'],
+					'total'     => count( $found['rows'] ),
+					'products'  => (int) $found['products'],
+					'truncated' => ! empty( $found['truncated'] ),
+					'limit'     => TBSM_Core::MAX_MODEL_ROWS,
+					'scope'     => self::scope_payload( $scope ),
+					'attr_keys' => $keys,
+					'values'    => $values,
+				)
+			);
+		}
+
+		/**
+		 * اعمال موجودی گروهی روی متغیرهای همان مدل و همان محدودهٔ محصولات.
+		 */
+		public static function ajax_apply_scope_stock() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope  = self::scope_params();
+			$keys   = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
+			$values = self::model_raw_list( 'term_values', TBSM_Core::MAX_MODEL_VALUES );
+			$items  = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
+				? wp_unslash( $_POST['items'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				: array();
+
+			// کلید‌ها باید ایدی باشند؛ مقادیر بعداً در موتور اعتبارسنجی می‌شوند.
+			$clean = array();
+			foreach ( $items as $key => $spec ) {
+				if ( ctype_digit( (string) $key ) ) {
+					$clean[ absint( $key ) ] = $spec;
+				}
+			}
+
+			try {
+				$result = TBSM_Stock::apply_scope_stock( $clean, $keys, $values, $scope );
+			} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
+				$result = array(
+					'ok'    => false,
+					'error' => 'خطای پیش‌بینی‌نشده هنگام اعمال گروهی: ' . $e->getMessage(),
+				);
+			}
+
+			if ( ! empty( $result['ok'] ) ) {
+				self::send_success( $result );
+			}
+			self::send_error( isset( $result['message'] ) ? $result['message'] : 'اعمال گروهی ناموفق بود.', 'apply_failed', $result );
+		}
+
+		/**
+		 * توکن تازه برای صفحه‌هایی که مدتی باز مانده‌اند (12/24 ساعت).
+		 */
+		public static function ajax_nonce() {
+			if ( ! TBSM_Core::can() ) {
+				self::send_error( 'دسترسی غیرمجاز است.', 'no_cap' );
+			}
+
+			self::send_success( array( 'nonce' => wp_create_nonce( TBSM_Core::NONCE_ACTION ) ) );
+		}
+
 	}
 }

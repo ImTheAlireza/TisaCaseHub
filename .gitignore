@@ -1,3 +1,5 @@
 __pycache__/
 *.pyc
 .DS_Store
+# وابستگی‌های محلی تست (npm install --no-save jsdom jquery php-parser)
+node_modules/
