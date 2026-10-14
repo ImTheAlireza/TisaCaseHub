@@ -977,7 +977,7 @@
 /* ------------------------------------------------------------------
    حالت گروهی — فرم مدل و بازهٔ شناسه
    ------------------------------------------------------------------ */
-.tbsm-model-form {
+.tbsm-form-row {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: flex-end;
@@ -1014,13 +1014,13 @@
 	padding-inline-end: 12px;
 }
 
-.tbsm-model-find {
+.tbsm-form-action {
 	min-height: 38px;
 	padding: 0 22px;
 }
 
 /* خط اطلاعات بالای کارت‌های حالت گروهی */
-.tbsm-model-note {
+.tbsm-group-note {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 6px 14px;
@@ -1033,13 +1033,236 @@
 	color: var(--tisa-primary-ink, #0A5F52);
 }
 
-.tbsm-model-note-main {
+.tbsm-group-note-main {
 	font-weight: 700;
 }
 
-.tbsm-model-note-warn {
+.tbsm-group-note-warn {
 	color: var(--tisa-warning, #8A6116);
 	font-weight: 700;
+}
+
+/* ------------------------------------------------------------------
+   حالت گروهی — گام ۱: محدودهٔ محصولات
+   ------------------------------------------------------------------ */
+.tbsm-seg {
+	display: inline-flex;
+	gap: 4px;
+	padding: 4px;
+	margin: 4px 0 14px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 11px;
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tbsm-seg-btn {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	border-radius: 8px;
+	padding: 7px 16px;
+	font-family: inherit;
+	font-size: 12.5px;
+	font-weight: 700;
+	color: var(--tisa-muted, #77828A);
+	cursor: pointer;
+	transition: background 150ms cubic-bezier(.4, 0, .2, 1), color 150ms cubic-bezier(.4, 0, .2, 1);
+}
+
+.tbsm-seg-btn:hover {
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-seg-btn:focus-visible {
+	outline: none;
+	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+}
+
+.tbsm-seg-btn.is-active {
+	background: var(--tisa-surface, #FFFFFF);
+	color: var(--tisa-primary-ink, #0A5F52);
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+}
+
+.tbsm-scope-pane[hidden] {
+	display: none;
+}
+
+.tbsm-hint-line {
+	margin: 0 0 10px;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tbsm-field--wide {
+	min-width: 100%;
+	flex: 1 1 100%;
+}
+
+/* فهرست نتایج محدوده (چند-انتخابی) */
+.tbsm-scope-results {
+	margin-top: 10px;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: 11px;
+	background: var(--tisa-surface, #FFFFFF);
+	overflow: hidden;
+}
+
+.tbsm-scope-results-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	background: var(--tisa-surface-2, #FAFAF8);
+	font-size: 12px;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tbsm-link-btn {
+	appearance: none;
+	border: 0;
+	background: transparent;
+	padding: 2px;
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--tisa-primary, #0E7C6B);
+	cursor: pointer;
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+
+.tbsm-link-btn:hover {
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-scope-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	width: 100%;
+	padding: 9px 12px;
+	border: 0;
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	background: transparent;
+	font-family: inherit;
+	font-size: 13px;
+	color: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+
+.tbsm-scope-row:last-child {
+	border-bottom: 0;
+}
+
+.tbsm-scope-row:hover {
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tbsm-scope-row.is-picked {
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tbsm-scope-check {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 20px;
+	height: 20px;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: 6px;
+	background: #FFFFFF;
+	color: transparent;
+}
+
+.tbsm-scope-check svg {
+	width: 13px;
+	height: 13px;
+}
+
+.tbsm-scope-row.is-picked .tbsm-scope-check {
+	border-color: var(--tisa-primary, #0E7C6B);
+	background: var(--tisa-primary, #0E7C6B);
+	color: #FFFFFF;
+}
+
+.tbsm-scope-name {
+	flex: 1 1 auto;
+	font-weight: 700;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tbsm-scope-sku {
+	flex: 0 0 auto;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--tisa-muted, #77828A);
+	direction: ltr;
+}
+
+/* چیپ‌های محصولات انتخاب‌شده */
+.tbsm-picked {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px;
+	margin-top: 12px;
+}
+
+.tbsm-picked-count {
+	font-size: 12.5px;
+	font-weight: 700;
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tbsm-pick-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 7px;
+	appearance: none;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: 999px;
+	background: var(--tisa-primary-soft, #E8F0EE);
+	padding: 5px 12px;
+	font-family: inherit;
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--tisa-primary-ink, #0A5F52);
+	cursor: pointer;
+}
+
+.tbsm-pick-chip:hover {
+	border-color: var(--tisa-danger, #C0392B);
+	color: var(--tisa-danger, #C0392B);
+}
+
+.tbsm-pick-x {
+	font-size: 14px;
+	line-height: 1;
+}
+
+.tbsm-scope-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+	margin-top: 16px;
+}
+
+.tbsm-scope-summary {
+	font-size: 12.5px;
+	color: var(--tisa-primary-ink, #0A5F52);
+	padding: 7px 13px;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: 999px;
+	background: var(--tisa-primary-soft, #E8F0EE);
 }
 
 /* ------------------------------------------------------------------
@@ -1062,8 +1285,28 @@
 		flex: 1 1 100%;
 	}
 
-	.tbsm-model-find {
+	.tbsm-form-action {
 		width: 100%;
+	}
+
+	.tbsm-seg {
+		display: flex;
+		width: 100%;
+	}
+
+	.tbsm-seg-btn {
+		flex: 1;
+		text-align: center;
+		padding: 7px 8px;
+	}
+
+	.tbsm-scope-actions {
+		flex-direction: column;
+		align-items: stretch;
+	}
+
+	.tbsm-scope-summary {
+		text-align: center;
 	}
 
 	.tbsm-hero-row {

@@ -1,8 +1,9 @@
 <?php
 /**
  * موتور موجودی: نوشتن `_stock` روی متغیرها (یا محصول ساده) با همگام‌سازی وضعیت
- * والد، ترم‌های product_visibility و جدول lookup — به‌همراه یافتن متغیرهای یک
- * «مدل» (مقدار ویژگی) در بازهٔ شناسهٔ محصولات برای حالت گروهی.
+ * والد، ترم‌های product_visibility و جدول lookup — به‌همراه حالت گروهی:
+ * «محدودهٔ محصولات» (چند محصول / دسته / شناسه) ← ویژگی‌ها و مقدارهای همان
+ * محدوده ← یافتن متغیرهای یک مدل و اعمال موجودی روی آن‌ها.
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
@@ -58,24 +59,33 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		}
 
 		/**
-		 * اعمال موجودی در حالت گروهی: فقط متغیرهایی که «ویژگی/مقدار مدل» و
-		 * «بازهٔ شناسهٔ محصول» انتخاب‌شده را داشته باشند (اعتبارسنجی دوبارهٔ سمت سرور).
+		 * اعمال موجودی در حالت گروهی: فقط متغیرهایی که هم «مقدار مدل» انتخاب‌شده را
+		 * داشته باشند و هم محصول والدشان در «محدودهٔ محصولات» باشد (اعتبارسنجی دوبارهٔ
+		 * سمت سرور — کلاینت فقط پیشنهاد می‌دهد).
 		 *
-		 * @param array  $items    آرایهٔ [ شناسهٔ متغیر => مقدار موجودی ].
-		 * @param string $attr     نام ویژگی (کلید متای متغیر بدون پیشوند attribute_).
-		 * @param string $value    مقدار مدل انتخاب‌شده.
-		 * @param string $sku      بازهٔ شناسهٔ محصول (خالی = همهٔ محصولات).
-		 * @param string $sku_mode prefix | contains.
+		 * @param array  $items آرایهٔ [ شناسهٔ متغیر => مقدار موجودی ].
+		 * @param string $attr  نام ویژگی (کلید متای متغیر بدون پیشوند attribute_).
+		 * @param string $value مقدار مدل انتخاب‌شده.
+		 * @param array  $scope محدوده (خروجی normalize_scope).
 		 * @return array گزارش اعمال.
 		 */
-		public static function apply_model_stock( array $items, $attr, $value, $sku = '', $sku_mode = 'prefix' ) {
+		public static function apply_scope_stock( array $items, $attr, $value, array $scope ) {
 			$attr  = self::sanitize_attribute_key( $attr );
 			$value = (string) $value;
+			$scope = self::normalize_scope( $scope );
 
 			if ( '' === $attr || '' === $value ) {
 				return array(
 					'ok'    => false,
 					'error' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
+				);
+			}
+
+			$scope_error = self::scope_error( $scope );
+			if ( '' !== $scope_error ) {
+				return array(
+					'ok'    => false,
+					'error' => $scope_error,
 				);
 			}
 
@@ -93,18 +103,15 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
-			$sku      = trim( (string) $sku );
-			$sku_mode = self::normalize_sku_mode( $sku_mode, $sku );
-
 			$allowed = array();
 			foreach ( array_keys( $items ) as $raw_id ) {
 				$var_id = absint( $raw_id );
-				if ( self::model_item_allowed( $var_id, $attr, $value, $sku, $sku_mode ) ) {
+				if ( self::scope_item_allowed( $var_id, $scope, $attr, $value ) ) {
 					$allowed[] = $var_id;
 				}
 			}
 
-			return self::run_apply( $items, $allowed, true, 'متغیر #%d با مدل/بازهٔ شناسهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.' );
+			return self::run_apply( $items, $allowed, true, 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.' );
 		}
 
 		/**
@@ -321,116 +328,289 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * ---------------------------------------------------------- */
 
 		/**
-		 * فهرست ویژگی‌های متغیرها به‌همراه مقادیرشان (برای سلکت «مدل متغیر»).
+		 * فهرست دسته‌بندی‌های محصول (product_cat) با عمق و شمارش، برای گام
+		 * «محدودهٔ محصولات» — مرتب‌شده به شکل درختی (والد، بعد فرزندان).
 		 *
-		 * ویژگی‌ها از خودِ متادیتای متغیرها کشف می‌شوند (`attribute_*`)، پس
-		 * ویژگی‌های سراسری (pa_*) و ویژگی‌های سفارشی هر دو پوشش داده می‌شوند.
-		 *
-		 * @return array [{attr, label, values: [{value, label, count}]}]
+		 * @return array [{id, name, parent, depth, count}]
 		 */
-		public static function list_model_attributes() {
-			global $wpdb;
+		public static function list_product_categories() {
+			if ( ! taxonomy_exists( 'product_cat' ) ) {
+				return array();
+			}
 
-			$attributes = array();
-			$prefix     = 'attribute_';
-			$keys       = $wpdb->get_col(
-				$wpdb->prepare(
-					"SELECT DISTINCT meta_key FROM {$wpdb->postmeta} WHERE meta_key LIKE %s ORDER BY meta_key ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-					$wpdb->esc_like( $prefix ) . '%',
-					TBSM_Core::MAX_MODEL_ATTRS
+			$terms = get_terms(
+				array(
+					'taxonomy'   => 'product_cat',
+					'hide_empty' => false,
 				)
 			);
+			if ( is_wp_error( $terms ) || empty( $terms ) ) {
+				return array();
+			}
 
-			foreach ( (array) $keys as $meta_key ) {
-				$meta_key = (string) $meta_key;
-				$attr     = substr( $meta_key, strlen( $prefix ) );
+			$rows = array();
+			foreach ( $terms as $term ) {
+				$rows[] = array(
+					'id'     => (int) $term->term_id,
+					'name'   => self::clean_label( self::maybe_decode_label( (string) $term->name ) ),
+					'parent' => (int) $term->parent,
+					'depth'  => count( (array) get_ancestors( (int) $term->term_id, 'product_cat' ) ),
+					'count'  => (int) $term->count,
+				);
+			}
+
+			$by_parent = array();
+			foreach ( $rows as $row ) {
+				$by_parent[ (int) $row['parent'] ][] = $row;
+			}
+
+			$sorted = array();
+			$walk   = function ( $parent ) use ( &$walk, &$by_parent, &$sorted ) {
+				if ( empty( $by_parent[ $parent ] ) ) {
+					return;
+				}
+				foreach ( $by_parent[ $parent ] as $row ) {
+					$sorted[] = $row;
+					$walk( (int) $row['id'] );
+				}
+			};
+
+			$walk( 0 );
+
+			return ! empty( $sorted ) ? $sorted : $rows;
+		}
+
+		/* ----------------------------------------------------------
+		 * محدودهٔ محصولات (scope)
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * نرمال‌سازی «محدودهٔ محصولات» از پارامترهای خام.
+		 *
+		 * type: all | products (چند محصول) | category (دسته‌بندی) | sku (شناسه).
+		 *
+		 * @param array $raw محدودهٔ خام.
+		 * @return array {type, product_ids, category_id, sku, sku_mode}
+		 */
+		public static function normalize_scope( array $raw ) {
+			$type = isset( $raw['type'] ) ? strtolower( trim( (string) $raw['type'] ) ) : 'all';
+			if ( ! in_array( $type, array( 'all', 'products', 'category', 'sku' ), true ) ) {
+				$type = 'all';
+			}
+
+			$ids = array();
+			foreach ( (array) ( isset( $raw['product_ids'] ) ? $raw['product_ids'] : array() ) as $id ) {
+				$id = absint( $id );
+				if ( $id > 0 && ! in_array( $id, $ids, true ) ) {
+					$ids[] = $id;
+				}
+			}
+			if ( count( $ids ) > TBSM_Core::MAX_SCOPE_PRODUCTS ) {
+				$ids = array_slice( $ids, 0, TBSM_Core::MAX_SCOPE_PRODUCTS );
+			}
+
+			$category = absint( isset( $raw['category_id'] ) ? $raw['category_id'] : 0 );
+			$sku      = trim( (string) ( isset( $raw['sku'] ) ? $raw['sku'] : '' ) );
+			$mode     = self::normalize_sku_mode( isset( $raw['sku_mode'] ) ? $raw['sku_mode'] : 'prefix', $sku );
+
+			// بازهٔ شناسهٔ خالی = همهٔ محصولات.
+			if ( 'sku' === $type && '' === $sku ) {
+				$type = 'all';
+			}
+
+			return array(
+				'type'        => $type,
+				'product_ids' => $ids,
+				'category_id' => $category,
+				'sku'         => $sku,
+				'sku_mode'    => $mode,
+			);
+		}
+
+		/**
+		 * پیام خطای محدودهٔ ناقص — رشتهٔ خالی یعنی محدوده معتبر است.
+		 *
+		 * @param array $scope محدوده.
+		 * @return string
+		 */
+		public static function scope_error( $scope ) {
+			if ( 'products' === $scope['type'] && empty( $scope['product_ids'] ) ) {
+				return 'حداقل یک محصول را انتخاب کنید.';
+			}
+			if ( 'category' === $scope['type'] && (int) $scope['category_id'] <= 0 ) {
+				return 'یک دسته‌بندی انتخاب کنید.';
+			}
+			return '';
+		}
+
+		/**
+		 * برچسب خوانا برای محدوده (خط اطلاعات بالای کارت‌ها).
+		 *
+		 * @param array $scope محدوده.
+		 * @return string
+		 */
+		public static function scope_label( $scope ) {
+			switch ( $scope['type'] ) {
+				case 'products':
+					return self::fa_digits( sprintf( '%d محصول انتخابی', count( (array) $scope['product_ids'] ) ) );
+				case 'category':
+					$term = get_term( (int) $scope['category_id'], 'product_cat' );
+					$name = ( $term instanceof WP_Term ) ? self::clean_label( self::maybe_decode_label( (string) $term->name ) ) : '';
+					return ( '' !== $name ) ? 'دستهٔ «' . $name . '»' : 'دستهٔ انتخابی';
+				case 'sku':
+					return 'شناسهٔ «' . $scope['sku'] . '»' . ( 'contains' === $scope['sku_mode'] ? ' (شامل می‌شود)' : ' (شروع می‌شود با)' );
+				default:
+					return 'همهٔ محصولات';
+			}
+		}
+
+		/**
+		 * شمارش محصولات و متغیرهای یک محدوده.
+		 *
+		 * @param array $scope محدوده.
+		 * @return array {products, variations}
+		 */
+		public static function scope_summary( $scope ) {
+			global $wpdb;
+
+			$scope = self::normalize_scope( $scope );
+			$sql   = self::scope_sql( $scope );
+
+			$query = "SELECT COUNT(DISTINCT p.ID) AS products, COUNT(DISTINCT v.ID) AS variations
+				FROM {$wpdb->posts} v
+				INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent AND p.post_type = 'product' AND p.post_status IN ('publish','draft','pending')
+				{$sql['join']}
+				WHERE v.post_type = 'product_variation' AND v.post_status IN ('publish','draft','private','pending') {$sql['where']}";
+
+			$row = empty( $sql['params'] )
+				? $wpdb->get_row( $query, ARRAY_A ) // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				: $wpdb->get_row( $wpdb->prepare( $query, $sql['params'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+			return array(
+				'products'   => (int) ( isset( $row['products'] ) ? $row['products'] : 0 ),
+				'variations' => (int) ( isset( $row['variations'] ) ? $row['variations'] : 0 ),
+			);
+		}
+
+		/**
+		 * ویژگی‌های موجود در «محدودهٔ انتخابی» به‌همراه شمارش متغیر/محصول.
+		 * مقدارها با فراخوانی جداگانهٔ list_scope_values() خوانده می‌شوند
+		 * (روی کاتالوگ‌های بزرگ، این‌طور فقط ویژگیِ انتخاب‌شده گران است).
+		 *
+		 * @param array $scope محدوده.
+		 * @return array [{attr, label, hint, products, variations}]
+		 */
+		public static function list_scope_attributes( $scope ) {
+			global $wpdb;
+
+			$scope = self::normalize_scope( $scope );
+			$sql   = self::scope_sql( $scope );
+			$base  = self::scope_base();
+
+			$params   = array_merge( array( $wpdb->esc_like( 'attribute_' ) . '%' ), $sql['params'] );
+			$params[] = TBSM_Core::MAX_MODEL_ATTRS;
+
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT am.meta_key AS meta_key,
+						COUNT(DISTINCT am.post_id) AS variations,
+						COUNT(DISTINCT p.ID) AS products
+					{$base} {$sql['join']}
+					WHERE am.meta_key LIKE %s AND am.meta_value <> '' {$sql['where']}
+					GROUP BY am.meta_key
+					ORDER BY products DESC, variations DESC, am.meta_key ASC
+					LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					$params
+				),
+				ARRAY_A
+			);
+			$rows = is_array( $rows ) ? $rows : array();
+
+			$list = array();
+			foreach ( $rows as $row ) {
+				$meta_key = (string) $row['meta_key'];
+				$attr     = substr( $meta_key, strlen( 'attribute_' ) );
 				if ( '' === $attr ) {
 					continue;
 				}
-
-				$rows = $wpdb->get_results(
-					$wpdb->prepare(
-						"SELECT meta_value AS value, COUNT(*) AS total FROM {$wpdb->postmeta} WHERE meta_key = %s AND meta_value <> '' GROUP BY meta_value ORDER BY total DESC, meta_value ASC LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
-						$meta_key,
-						TBSM_Core::MAX_MODEL_VALUES
-					),
-					ARRAY_A
-				);
-
-				$values = array();
-				$total  = 0;
-				foreach ( (array) $rows as $row ) {
-					$values[] = array(
-						'value' => (string) $row['value'],
-						'label' => self::clean_label( self::maybe_decode_label( (string) $row['value'] ) ),
-						'count' => (int) $row['total'],
-					);
-					$total += (int) $row['total'];
-				}
-
-				if ( empty( $values ) ) {
-					continue;
-				}
-
-				$attributes[ $attr ] = array(
-					'attr'   => (string) $attr,
-					'label'  => self::attribute_display_label( $attr ),
-					'count'  => $total,
-					'values' => $values,
+				$list[] = array(
+					'attr'       => $attr,
+					'label'      => self::attribute_display_label( $attr ),
+					'hint'       => $attr,
+					'products'   => (int) $row['products'],
+					'variations' => (int) $row['variations'],
 				);
 			}
-
-			// ویژگی‌های سراسری: برچسب مقدارها از نام ترم‌های ووکامرس خوانده می‌شود.
-			foreach ( $attributes as $attr => $data ) {
-				if ( ! function_exists( 'wc_attribute_label' ) || ! taxonomy_exists( $attr ) ) {
-					continue;
-				}
-				$terms = get_terms(
-					array(
-						'taxonomy'   => $attr,
-						'hide_empty' => false,
-					)
-				);
-				if ( is_wp_error( $terms ) || empty( $terms ) ) {
-					continue;
-				}
-
-				$map = array();
-				foreach ( $terms as $term ) {
-					$map[ (string) $term->slug ] = self::clean_label( self::maybe_decode_label( (string) $term->name ) );
-				}
-
-				$label = self::maybe_decode_label( (string) wc_attribute_label( $attr ) );
-				$attributes[ $attr ]['label'] = self::clean_label( $label );
-
-				foreach ( $attributes[ $attr ]['values'] as $index => $value ) {
-					if ( isset( $map[ (string) $value['value'] ] ) && '' !== $map[ (string) $value['value'] ] ) {
-						$attributes[ $attr ]['values'][ $index ]['label'] = $map[ (string) $value['value'] ];
-					}
-				}
-			}
-
-			$list = array_values( $attributes );
-			usort(
-				$list,
-				static function ( $a, $b ) {
-					return strcmp( (string) $a['label'], (string) $b['label'] );
-				}
-			);
 
 			return $list;
 		}
 
 		/**
-		 * یافتن متغیرهای یک مدل در میان محصولاتی که شناسه‌شان با بازه می‌خواند.
+		 * مقدارهای یک ویژگی در محدودهٔ انتخابی.
 		 *
-		 * @param string $attr     نام ویژگی.
-		 * @param string $value    مقدار مدل.
-		 * @param string $sku      بازهٔ شناسهٔ محصولات (خالی = همه).
-		 * @param string $sku_mode prefix | contains.
+		 * @param array  $scope محدوده.
+		 * @param string $attr  نام ویژگی.
+		 * @return array [{value, label, hint, products, variations}]
+		 */
+		public static function list_scope_values( $scope, $attr ) {
+			$attr = self::sanitize_attribute_key( $attr );
+			if ( '' === $attr ) {
+				return array();
+			}
+
+			global $wpdb;
+
+			$scope = self::normalize_scope( $scope );
+			$sql   = self::scope_sql( $scope );
+			$base  = self::scope_base();
+
+			$params   = array_merge( array( 'attribute_' . $attr ), $sql['params'] );
+			$params[] = TBSM_Core::MAX_MODEL_VALUES;
+
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT am.meta_value AS value,
+						COUNT(DISTINCT am.post_id) AS variations,
+						COUNT(DISTINCT p.ID) AS products
+					{$base} {$sql['join']}
+					WHERE am.meta_key = %s AND am.meta_value <> '' {$sql['where']}
+					GROUP BY am.meta_value
+					ORDER BY products DESC, variations DESC, am.meta_value ASC
+					LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					$params
+				),
+				ARRAY_A
+			);
+			$rows = is_array( $rows ) ? $rows : array();
+
+			$term_labels = self::global_term_labels( $attr );
+			$list        = array();
+			foreach ( $rows as $row ) {
+				$value = (string) $row['value'];
+				$label = ( isset( $term_labels[ $value ] ) && '' !== $term_labels[ $value ] )
+					? $term_labels[ $value ]
+					: self::clean_label( self::maybe_decode_label( $value ) );
+				$list[] = array(
+					'value'      => $value,
+					'label'      => $label,
+					'hint'       => $value,
+					'products'   => (int) $row['products'],
+					'variations' => (int) $row['variations'],
+				);
+			}
+
+			return $list;
+		}
+
+		/**
+		 * یافتن متغیرهای یک مدل (ویژگی + مقدار) در محدودهٔ انتخابی.
+		 *
+		 * @param array  $scope محدوده.
+		 * @param string $attr  نام ویژگی.
+		 * @param string $value مقدار مدل.
 		 * @return array {rows, products, truncated, error?}
 		 */
-		public static function find_model_rows( $attr, $value, $sku = '', $sku_mode = 'prefix' ) {
+		public static function find_scope_rows( $scope, $attr, $value ) {
 			$attr  = self::sanitize_attribute_key( $attr );
 			$value = (string) $value;
 
@@ -443,34 +623,36 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
-			$sku      = trim( (string) $sku );
-			$sku_mode = self::normalize_sku_mode( $sku_mode, $sku );
+			$scope = self::normalize_scope( $scope );
+			$error = self::scope_error( $scope );
+			if ( '' !== $error ) {
+				return array(
+					'rows'      => array(),
+					'products'  => 0,
+					'truncated' => false,
+					'error'     => $error,
+				);
+			}
 
 			global $wpdb;
 
-			$limit  = TBSM_Core::MAX_MODEL_ROWS + 1; // یکی بیشتر برای تشخیص بریدگی فهرست.
-			$params = array( 'attribute_' . $attr, $value );
-
-			// شناسهٔ والد با LEFT JOIN می‌آید تا محصول بدون SKU در حالت «همهٔ محصولات» حذف نشود.
-			$sql = "SELECT DISTINCT v.ID AS vid, v.post_parent AS pid, sk.meta_value AS psku, (sk.meta_value IS NULL) AS psku_null
-				FROM {$wpdb->posts} v
-				INNER JOIN {$wpdb->postmeta} am ON am.post_id = v.ID AND am.meta_key = %s AND am.meta_value = %s
-				INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent
-				LEFT JOIN {$wpdb->postmeta} sk ON sk.post_id = p.ID AND sk.meta_key = '_sku'";
-
-			$where = " WHERE v.post_type = 'product_variation' AND v.post_status IN ('publish','draft','private','pending')
-				AND p.post_type = 'product' AND p.post_status IN ('publish','draft','pending')";
-
-			if ( '' !== $sku ) {
-				$like     = ( 'prefix' === $sku_mode ) ? $wpdb->esc_like( $sku ) . '%' : '%' . $wpdb->esc_like( $sku ) . '%';
-				$where   .= ' AND sk.meta_value LIKE %s';
-				$params[] = $like;
-			}
-
-			$sql     .= $where . ' ORDER BY psku_null ASC, psku ASC, vid ASC LIMIT %d';
+			$sql      = self::scope_sql( $scope );
+			$limit    = TBSM_Core::MAX_MODEL_ROWS + 1; // یکی بیشتر برای تشخیص بریدگی فهرست.
+			$params   = array_merge( array( 'attribute_' . $attr, $value ), $sql['params'] );
 			$params[] = $limit;
 
-			$found = $wpdb->get_results( $wpdb->prepare( $sql, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			// شناسهٔ والد با LEFT JOIN می‌آید تا محصول بدون SKU هم (در حالت «همه») حذف نشود.
+			$query = "SELECT DISTINCT v.ID AS vid, v.post_parent AS pid, sk.meta_value AS psku, (sk.meta_value IS NULL) AS psku_null
+				FROM {$wpdb->postmeta} am
+				INNER JOIN {$wpdb->posts} v ON v.ID = am.post_id AND v.post_type = 'product_variation' AND v.post_status IN ('publish','draft','private','pending')
+				INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent AND p.post_type = 'product' AND p.post_status IN ('publish','draft','pending')
+				{$sql['join']}
+				LEFT JOIN {$wpdb->postmeta} sk ON sk.post_id = p.ID AND sk.meta_key = '_sku'
+				WHERE am.meta_key = %s AND am.meta_value = %s {$sql['where']}
+				ORDER BY psku_null ASC, psku ASC, vid ASC
+				LIMIT %d";
+
+			$found = $wpdb->get_results( $wpdb->prepare( $query, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$found = is_array( $found ) ? $found : array();
 
 			$truncated = count( $found ) > TBSM_Core::MAX_MODEL_ROWS;
@@ -499,16 +681,15 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		}
 
 		/**
-		 * آیا این متغیر با مدل و بازهٔ شناسهٔ انتخابی هم‌خوان است؟ (اعتبارسنجی سرور)
+		 * آیا این متغیر با مدل و محدودهٔ انتخابی هم‌خوان است؟ (اعتبارسنجی سرور)
 		 *
-		 * @param int    $var_id   شناسهٔ متغیر.
-		 * @param string $attr     نام ویژگی.
-		 * @param string $value    مقدار مدل.
-		 * @param string $sku      بازهٔ شناسه.
-		 * @param string $sku_mode prefix | contains.
+		 * @param int    $var_id شناسهٔ متغیر.
+		 * @param array  $scope  محدوده.
+		 * @param string $attr   نام ویژگی.
+		 * @param string $value  مقدار مدل.
 		 * @return bool
 		 */
-		private static function model_item_allowed( $var_id, $attr, $value, $sku, $sku_mode ) {
+		private static function scope_item_allowed( $var_id, $scope, $attr, $value ) {
 			$var_id = absint( $var_id );
 			if ( $var_id <= 0 || 'product_variation' !== get_post_type( $var_id ) ) {
 				return false;
@@ -519,23 +700,145 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				return false;
 			}
 
-			if ( '' === $sku ) {
-				return true;
-			}
-
-			$parent = wc_get_product( (int) wp_get_post_parent_id( $var_id ) );
-			if ( ! $parent || ! $parent->exists() ) {
+			$parent_id = (int) wp_get_post_parent_id( $var_id );
+			if ( $parent_id <= 0 || 'product' !== get_post_type( $parent_id ) ) {
 				return false;
 			}
 
-			$product_sku = (string) $parent->get_sku();
-			if ( '' === $product_sku ) {
-				return false;
+			switch ( $scope['type'] ) {
+				case 'products':
+					return in_array( $parent_id, array_map( 'absint', (array) $scope['product_ids'] ), true );
+
+				case 'category':
+					$term_ids = self::category_term_ids( (int) $scope['category_id'] );
+					return ! empty( $term_ids ) && has_term( $term_ids, 'product_cat', $parent_id );
+
+				case 'sku':
+					$parent = wc_get_product( $parent_id );
+					if ( ! $parent || ! $parent->exists() ) {
+						return false;
+					}
+					$product_sku = (string) $parent->get_sku();
+					if ( '' === $product_sku ) {
+						return false;
+					}
+					return ( 'prefix' === $scope['sku_mode'] )
+						? ( 0 === stripos( $product_sku, $scope['sku'] ) )
+						: ( false !== stripos( $product_sku, $scope['sku'] ) );
+
+				default:
+					return true;
+			}
+		}
+
+		/**
+		 * شرط‌های SQL محدوده (جدول‌های posts/postmeta). جدول‌های اصلی:
+		 * p = محصول والد، v = متغیر، am = متای ویژگی.
+		 *
+		 * @param array $scope محدودهٔ نرمال‌شده.
+		 * @return array {join, where, params}
+		 */
+		private static function scope_sql( $scope ) {
+			global $wpdb;
+
+			$join   = '';
+			$where  = '';
+			$params = array();
+
+			if ( 'products' === $scope['type'] && ! empty( $scope['product_ids'] ) ) {
+				$ids    = array_map( 'absint', (array) $scope['product_ids'] );
+				$where .= ' AND p.ID IN (' . implode( ', ', array_fill( 0, count( $ids ), '%d' ) ) . ')';
+				$params = array_merge( $params, $ids );
+			} elseif ( 'category' === $scope['type'] ) {
+				$term_ids = self::category_term_ids( (int) $scope['category_id'] );
+				if ( empty( $term_ids ) ) {
+					$where .= ' AND 1 = 0'; // دستهٔ نامعتبر → نتیجهٔ خالی
+				} else {
+					$join  .= " INNER JOIN {$wpdb->term_relationships} tr ON tr.object_id = p.ID"
+						. " INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_cat'";
+					$where .= ' AND tt.term_id IN (' . implode( ', ', array_fill( 0, count( $term_ids ), '%d' ) ) . ')';
+					$params = array_merge( $params, array_map( 'absint', $term_ids ) );
+				}
+			} elseif ( 'sku' === $scope['type'] && '' !== $scope['sku'] ) {
+				$join    .= " INNER JOIN {$wpdb->postmeta} ssk ON ssk.post_id = p.ID AND ssk.meta_key = '_sku'";
+				$where   .= ' AND ssk.meta_value LIKE %s';
+				$params[] = ( 'prefix' === $scope['sku_mode'] )
+					? $wpdb->esc_like( $scope['sku'] ) . '%'
+					: '%' . $wpdb->esc_like( $scope['sku'] ) . '%';
 			}
 
-			return ( 'prefix' === $sku_mode )
-				? ( 0 === stripos( $product_sku, $sku ) )
-				: ( false !== stripos( $product_sku, $sku ) );
+			return array(
+				'join'   => $join,
+				'where'  => $where,
+				'params' => $params,
+			);
+		}
+
+		/**
+		 * FROM مشترک حالت گروهی: متای ویژگی ← متغیر ← محصول والد.
+		 *
+		 * @return string
+		 */
+		private static function scope_base() {
+			global $wpdb;
+
+			return "FROM {$wpdb->postmeta} am
+				INNER JOIN {$wpdb->posts} v ON v.ID = am.post_id AND v.post_type = 'product_variation' AND v.post_status IN ('publish','draft','private','pending')
+				INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent AND p.post_type = 'product' AND p.post_status IN ('publish','draft','pending')";
+		}
+
+		/**
+		 * شناسهٔ یک دسته و همهٔ زیردسته‌هایش.
+		 *
+		 * @param int $term_id شناسهٔ دسته.
+		 * @return int[]
+		 */
+		private static function category_term_ids( $term_id ) {
+			$term_id = absint( $term_id );
+			if ( $term_id <= 0 ) {
+				return array();
+			}
+
+			$ids = array( $term_id );
+			if ( function_exists( 'get_term_children' ) ) {
+				$children = get_term_children( $term_id, 'product_cat' );
+				if ( ! is_wp_error( $children ) ) {
+					foreach ( (array) $children as $child ) {
+						$ids[] = absint( $child );
+					}
+				}
+			}
+
+			return array_values( array_unique( array_filter( $ids ) ) );
+		}
+
+		/**
+		 * نگاشت «مقدار متا ← نام ترم» برای ویژگی‌های سراسری ووکامرس (pa_*).
+		 *
+		 * @param string $attr نام ویژگی.
+		 * @return array
+		 */
+		private static function global_term_labels( $attr ) {
+			$map = array();
+			if ( ! function_exists( 'wc_attribute_label' ) || ! taxonomy_exists( $attr ) ) {
+				return $map;
+			}
+
+			$terms = get_terms(
+				array(
+					'taxonomy'   => $attr,
+					'hide_empty' => false,
+				)
+			);
+			if ( is_wp_error( $terms ) || empty( $terms ) ) {
+				return $map;
+			}
+
+			foreach ( $terms as $term ) {
+				$map[ (string) $term->slug ] = self::clean_label( self::maybe_decode_label( (string) $term->name ) );
+			}
+
+			return $map;
 		}
 
 		/**
@@ -566,6 +869,20 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'mode'         => $managed ? 'qty' : ( 'instock' === $status ? 'in_stock' : 'out_of_stock' ),
 				'image'        => $image_id ? (string) wp_get_attachment_image_url( (int) $image_id, 'thumbnail' ) : '',
 				'cat'          => '',
+			);
+		}
+
+		/**
+		 * ارقام لاتین → فارسی برای متن‌های فارسی رابط (هماهنگ با fmt() در JS).
+		 *
+		 * @param string $text متن.
+		 * @return string
+		 */
+		private static function fa_digits( $text ) {
+			return str_replace(
+				array( '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ),
+				array( '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' ),
+				(string) $text
 			);
 		}
 

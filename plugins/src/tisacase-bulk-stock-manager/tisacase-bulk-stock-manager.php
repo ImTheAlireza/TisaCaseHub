@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       TisaCase — مدیریت انبوه موجودی
  * Plugin URI:        https://tisacase.com
- * Description:       دو حالت: (۱) تک‌محصول با جست‌وجو و کارت‌های متغیر، (۲) گروهی با مدل — انتخاب یک مدل متغیر و بازهٔ شناسهٔ محصولات (مثلاً CH) و اعمال موجودی روی همان متغیر در همهٔ آن محصولات، تکی یا یک‌جا.
- * Version:           1.2.1
+ * Description:       دو حالت: (۱) تک‌محصول با جست‌وجو و کارت‌های متغیر، (۲) گروهی — اول محدودهٔ محصولات (چند محصول با جست‌وجو، دسته‌بندی یا بازهٔ شناسه مثل CH)، بعد ویژگی و مقدار مدل از میان ویژگی‌های همان محدوده، و اعمال موجودی تکی یا یک‌جا.
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 5.0
@@ -13,14 +13,14 @@
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub:      key=bsm; title="مدیریت انبوه موجودی"; icon=box; group=products; page=admin.php?page=tisacase-bulk-stock-manager; screen=woocommerce_page_tisacase-bulk-stock-manager; parent=woocommerce; slug=tisacase-bulk-stock-manager; desc="تک‌محصول با جست‌وجو و کارت‌های متغیر، یا گروهی با مدل: یک مدل متغیر + بازهٔ شناسهٔ محصولات (مثلاً CH) و اعمال موجودی همان متغیر در همهٔ آن محصولات."
+ * TisaCase Hub:      key=bsm; title="مدیریت انبوه موجودی"; icon=box; group=products; page=admin.php?page=tisacase-bulk-stock-manager; screen=woocommerce_page_tisacase-bulk-stock-manager; parent=woocommerce; slug=tisacase-bulk-stock-manager; desc="تک‌محصول با جست‌وجو و کارت‌های متغیر، یا گروهی: اول محدودهٔ محصولات (چند محصول، دسته‌بندی یا بازهٔ شناسه مثل CH) و بعد ویژگی/مقدار مدل از میان ویژگی‌های همان محدوده؛ اعمال موجودی تکی یا یک‌جا."
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TBSM_VERSION', '1.2.1' );
+define( 'TBSM_VERSION', '1.3.0' );
 define( 'TBSM_FILE', __FILE__ );
 define( 'TBSM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TBSM_URL', plugin_dir_url( __FILE__ ) );

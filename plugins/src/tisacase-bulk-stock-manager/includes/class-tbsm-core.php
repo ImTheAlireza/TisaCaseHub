@@ -16,10 +16,11 @@ if ( ! class_exists( 'TBSM_Core' ) ) {
 		const MAX_ITEMS_APPLY = 2000;
 		const MAX_SEARCH_HITS = 20;
 
-		// حالت گروهی «مدل متغیر در بازهٔ شناسه».
-		const MAX_MODEL_ROWS   = 300; // سقف متغیرهای فهرست‌شده در هر جست‌وجوی گروهی.
-		const MAX_MODEL_ATTRS  = 60;  // سقف ویژگی‌های پیشنهادی در سلکت مدل.
-		const MAX_MODEL_VALUES = 300; // سقف مقادیر هر ویژگی در سلکت مدل.
+		// حالت گروهی: «محدودهٔ محصولات ← ویژگی/مقدار مدل».
+		const MAX_SCOPE_PRODUCTS = 200; // سقف محصولات انتخابی دستی در گام محدوده.
+		const MAX_MODEL_ROWS     = 300; // سقف متغیرهای فهرست‌شده در هر جست‌وجوی گروهی.
+		const MAX_MODEL_ATTRS    = 60;  // سقف ویژگی‌های پیشنهادی در فهرست ویژگی‌های محدوده.
+		const MAX_MODEL_VALUES   = 300; // سقف مقدارهای هر ویژگی.
 
 		private static $instance = null;
 

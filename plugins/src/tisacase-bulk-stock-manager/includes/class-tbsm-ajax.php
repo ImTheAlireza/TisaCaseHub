@@ -1,7 +1,8 @@
 <?php
 /**
  * مسیرهای AJAX افزونهٔ مدیریت انبوه موجودی:
- * جست‌وجوی محصول، بارگذاری متغیرها/دسته‌ها و اعمال موجودی.
+ * جست‌وجوی محصول، بارگذاری متغیرها/دسته‌ها، اعمال موجودی، و حالت گروهی
+ * (محدودهٔ محصولات ← ویژگی/مقدار مدل ← کارت‌ها و اعمال).
  *
  * @package TisaCase_Bulk_Stock_Manager
  */
@@ -17,10 +18,12 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			add_action( 'wp_ajax_tbsm_load_product', array( __CLASS__, 'ajax_load_product' ) );
 			add_action( 'wp_ajax_tbsm_apply_stock', array( __CLASS__, 'ajax_apply_stock' ) );
 
-			// حالت گروهی: مدل متغیر در بازهٔ شناسهٔ محصولات.
-			add_action( 'wp_ajax_tbsm_model_options', array( __CLASS__, 'ajax_model_options' ) );
-			add_action( 'wp_ajax_tbsm_find_model', array( __CLASS__, 'ajax_find_model' ) );
-			add_action( 'wp_ajax_tbsm_apply_model_stock', array( __CLASS__, 'ajax_apply_model_stock' ) );
+			// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل ← اعمال.
+			add_action( 'wp_ajax_tbsm_scope_options', array( __CLASS__, 'ajax_scope_options' ) );
+			add_action( 'wp_ajax_tbsm_scope_attributes', array( __CLASS__, 'ajax_scope_attributes' ) );
+			add_action( 'wp_ajax_tbsm_scope_values', array( __CLASS__, 'ajax_scope_values' ) );
+			add_action( 'wp_ajax_tbsm_find_scope', array( __CLASS__, 'ajax_find_scope' ) );
+			add_action( 'wp_ajax_tbsm_apply_scope_stock', array( __CLASS__, 'ajax_apply_scope_stock' ) );
 		}
 
 		/**
@@ -307,7 +310,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 		}
 
 		/* ----------------------------------------------------------
-		 * حالت گروهی — «مدل متغیر در بازهٔ شناسهٔ محصولات»
+		 * حالت گروهی — «محدودهٔ محصولات ← ویژگی/مقدار مدل»
 		 * ---------------------------------------------------------- */
 
 		/**
@@ -329,52 +332,128 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 		}
 
 		/**
-		 * خواندن پارامترهای مشترک حالت گروهی از درخواست.
+		 * خواندن پارامترهای مشترک «محدودهٔ محصولات» از درخواست.
 		 *
-		 * @return array {attr, value, sku, sku_mode}
+		 * @return array محدودهٔ خام (بعداً با TBSM_Stock::normalize_scope نرمال می‌شود).
 		 */
-		private static function model_params() {
-			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$sku   = isset( $_POST['sku'] ) ? sanitize_text_field( wp_unslash( $_POST['sku'] ) ) : '';
-			$mode  = isset( $_POST['sku_mode'] ) ? sanitize_key( wp_unslash( $_POST['sku_mode'] ) ) : 'prefix';
+		private static function scope_params() {
+			$type = isset( $_POST['scope_type'] ) ? sanitize_key( wp_unslash( $_POST['scope_type'] ) ) : 'all';
+			$ids  = ( isset( $_POST['product_ids'] ) && is_array( $_POST['product_ids'] ) )
+				? (array) wp_unslash( $_POST['product_ids'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+				: array();
+			$cat  = isset( $_POST['category_id'] ) ? absint( $_POST['category_id'] ) : 0;
+			$sku  = isset( $_POST['sku'] ) ? sanitize_text_field( wp_unslash( $_POST['sku'] ) ) : '';
+			$mode = isset( $_POST['sku_mode'] ) ? sanitize_key( wp_unslash( $_POST['sku_mode'] ) ) : 'prefix';
 
 			return array(
-				'attr'     => $attr,
-				'value'    => $value,
-				'sku'      => $sku,
-				'sku_mode' => $mode,
+				'type'        => $type,
+				'product_ids' => array_map( 'absint', $ids ),
+				'category_id' => $cat,
+				'sku'         => $sku,
+				'sku_mode'    => $mode,
 			);
 		}
 
 		/**
-		 * فهرست ویژگی‌های متغیرها و مقادیرشان (برای سلکت «مدل متغیر»).
+		 * داده‌های توصیفی محدوده برای پاسخ‌ها (برچسب + شمارش‌ها).
+		 *
+		 * @param array $scope محدودهٔ نرمال‌شده.
+		 * @return array
 		 */
-		public static function ajax_model_options() {
+		private static function scope_payload( $scope ) {
+			$summary = TBSM_Stock::scope_summary( $scope );
+
+			return array(
+				'type'        => (string) $scope['type'],
+				'label'       => TBSM_Stock::scope_label( $scope ),
+				'product_ids' => array_map( 'absint', (array) $scope['product_ids'] ),
+				'category_id' => (int) $scope['category_id'],
+				'sku'         => (string) $scope['sku'],
+				'sku_mode'    => (string) $scope['sku_mode'],
+				'products'    => (int) $summary['products'],
+				'variations'  => (int) $summary['variations'],
+			);
+		}
+
+		/**
+		 * گزینه‌های گام «محدوده»: دسته‌بندی‌های محصول.
+		 */
+		public static function ajax_scope_options() {
 			self::check_auth();
 			self::prepare_runtime();
 
 			wp_send_json_success(
 				array(
-					'attributes' => TBSM_Stock::list_model_attributes(),
+					'categories' => TBSM_Stock::list_product_categories(),
+					'limits'     => array(
+						'products' => TBSM_Core::MAX_SCOPE_PRODUCTS,
+						'rows'     => TBSM_Core::MAX_MODEL_ROWS,
+					),
 				)
 			);
 		}
 
 		/**
-		 * فهرست متغیرهای یک مدل در میان محصولات بازهٔ شناسه.
+		 * ویژگی‌های موجود در محدودهٔ انتخاب‌شده (گام ۲).
 		 */
-		public static function ajax_find_model() {
+		public static function ajax_scope_attributes() {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$params = self::model_params();
+			$scope  = TBSM_Stock::normalize_scope( self::scope_params() );
+			$error  = TBSM_Stock::scope_error( $scope );
+			if ( '' !== $error ) {
+				wp_send_json_error( array( 'message' => $error ) );
+			}
 
-			if ( '' === $params['attr'] || '' === $params['value'] ) {
+			$attributes = TBSM_Stock::list_scope_attributes( $scope );
+
+			wp_send_json_success(
+				array(
+					'scope'      => self::scope_payload( $scope ),
+					'attributes' => $attributes,
+				)
+			);
+		}
+
+		/**
+		 * مقدارهای یک ویژگی در محدودهٔ انتخاب‌شده.
+		 */
+		public static function ajax_scope_values() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
+
+			if ( '' === $attr ) {
+				wp_send_json_error( array( 'message' => 'ابتدا ویژگی مدل را انتخاب کنید.' ) );
+			}
+
+			wp_send_json_success(
+				array(
+					'attr'   => $attr,
+					'values' => TBSM_Stock::list_scope_values( $scope, $attr ),
+				)
+			);
+		}
+
+		/**
+		 * فهرست متغیرهای یک مدل در محدودهٔ انتخاب‌شده.
+		 */
+		public static function ajax_find_scope() {
+			self::check_auth();
+			self::prepare_runtime();
+
+			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
+			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+
+			if ( '' === $attr || '' === $value ) {
 				wp_send_json_error( array( 'message' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' ) );
 			}
 
-			$found = TBSM_Stock::find_model_rows( $params['attr'], $params['value'], $params['sku'], $params['sku_mode'] );
+			$found = TBSM_Stock::find_scope_rows( $scope, $attr, $value );
 
 			if ( ! empty( $found['error'] ) ) {
 				wp_send_json_error( array( 'message' => (string) $found['error'] ) );
@@ -387,36 +466,37 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					'products'  => (int) $found['products'],
 					'truncated' => ! empty( $found['truncated'] ),
 					'limit'     => TBSM_Core::MAX_MODEL_ROWS,
-					'attr'      => $params['attr'],
-					'term'      => $params['value'],
-					'sku'       => $params['sku'],
-					'sku_mode'  => $params['sku_mode'],
+					'scope'     => self::scope_payload( $scope ),
+					'attr'      => $attr,
+					'term'      => $value,
 				)
 			);
 		}
 
 		/**
-		 * اعمال موجودی گروهی روی متغیرهای همان مدل و همان بازهٔ شناسه.
+		 * اعمال موجودی گروهی روی متغیرهای همان مدل و همان محدودهٔ محصولات.
 		 */
-		public static function ajax_apply_model_stock() {
+		public static function ajax_apply_scope_stock() {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$params = self::model_params();
-			$items  = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
+			$scope = self::scope_params();
+			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$items = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
 				? wp_unslash( $_POST['items'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 				: array();
 
 			// کلید‌ها باید ایدی باشند؛ مقادیر بعداً در موتور اعتبارسنجی می‌شوند.
 			$clean = array();
-			foreach ( $items as $key => $value ) {
+			foreach ( $items as $key => $spec ) {
 				if ( ctype_digit( (string) $key ) ) {
-					$clean[ absint( $key ) ] = $value;
+					$clean[ absint( $key ) ] = $spec;
 				}
 			}
 
 			try {
-				$result = TBSM_Stock::apply_model_stock( $clean, $params['attr'], $params['value'], $params['sku'], $params['sku_mode'] );
+				$result = TBSM_Stock::apply_scope_stock( $clean, $attr, $value, $scope );
 			} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 				$result = array(
 					'ok'    => false,
