@@ -474,6 +474,44 @@ ok('گزارش شامل زمان اجرای کوئری‌هاست', /ثانیه/
 await click('#tbsm-diag-close');
 ok('بستن گزارش کار می‌کند', !visible('#tbsm-diag-box'));
 
+/* ------------------------------------------------ تحمل شکل پاسخ سرور (۱٫۳٫۶) */
+// ریشهٔ باگ واقعی: سرور برای ویژگی‌ها آرایهٔ تخت می‌فرستد؛ اگر نسخه/کشی شکل
+// `{values: [...]}` را برگرداند، گام ۲ نباید خالی بماند.
+freshAttrs();
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => {
+	if (data.action === 'tbsm_scope_attributes') {
+		return { resolve: { success: true, data: { scope: { type: 'sku', label: 'همهٔ محصولات', sku: '', sku_mode: 'prefix', product_ids: [], category_id: 0, products: 3, variations: 90 }, attributes: { values: [{ label: 'مدل', keys: ['model'], products: 3, variations: 41 }], groups: [], truncated: false } } } };
+	}
+	return null;
+};
+await click('#tbsm-scope-apply');
+await waitFor('تحمل شکل کلیددار ویژگی‌ها', () => qa('#tbsm-group-attr option').length > 1);
+ok('شکل {values:[…]} هم در گام ۲ خوانده می‌شود', qa('#tbsm-group-attr option').length > 1, String(qa('#tbsm-group-attr option').length));
+ok('انتخاب ویژگی بعد از شکل کلیددار کار می‌کند', qa('#tbsm-group-attr option').some((o) => o.value === '0'));
+
+/* ------------------------------------------------ استخراج پیام از پاسخ خطای PHP */
+// همان چیزی که روی سایت کاربر دیده شد: صفحهٔ HTML خطای وردپرس + JSON خود افزونه.
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => {
+	if (data.action === 'tbsm_scope_attributes') {
+		return {
+			reject: {
+				status: 500,
+				responseText: '<html><body>There has been a critical error on this website.</body></html>\n{"success":false,"data":{"message":"خطای اجرای افزونه: TypeError — Argument 2 passed to TBSM_Stock::brand_groups() must be of the type array, null given (class-tbsm-stock.php خط ۶۱۶)","code":"php_exception"}}'
+			}
+		};
+	}
+	return null;
+};
+await click('#tbsm-scope-apply');
+await waitFor('پیام استخراج‌شده از JSON خطا', () => /TypeError/.test(text('#tbsm-notice') || ''));
+ok('پیام از JSON داخل پاسخ بیرون کشیده می‌شود (نه HTML)', /خطای اجرای افزونه/.test(text('#tbsm-notice') || ''), String(text('#tbsm-notice') || '').slice(0, 80));
+ok('متن HTML خطای وردپرس در پیام نمی‌آید', !/critical error/.test(text('#tbsm-notice') || ''));
+ok('کد خطای PHP هم در پیام هست', /php_exception|TypeError/.test(text('#tbsm-notice') || ''));
+window.TBSM_PREVIEW_FAULT = null;
+
+
 /* ------------------------------------------------ هم‌خوانی نسخه در همهٔ فایل‌ها */
 // جلوی یک اشتباه واقعی را می‌گیرد: بامپ نسخه در فایل اصلی PHP و جا ماندن
 // پیش‌نمایش/readme یا برعکس — همان چیزی که «ناهم‌خوانی نسخه» را می‌سازد.

@@ -145,13 +145,56 @@
 				why = this.i18n('scopeErrorTimeout');
 			} else if (!code) {
 				why = this.i18n('scopeErrorNet');
-			} else if (clean && clean.length > 3) {
-				why = clean.slice(0, 220);
 			} else {
-				why = this.i18n('scopeErrorHttp').replace('%d', this.fmt(code));
+				// خطای کشندهٔ PHP دو بخش دارد: صفحهٔ HTML وردپرس + JSONِ خود افزونه.
+				// اول آن JSON را بیرون می‌کشیم تا پیام خوانا و کوتاه Persian به
+				// کاربر برسد، نه متن به‌هم‌ریختهٔ HTML.
+				var json = this.embeddedError(raw);
+				if (json) {
+					why = json;
+				} else if (clean && clean.length > 3) {
+					why = clean.slice(0, 220);
+				} else {
+					why = this.i18n('scopeErrorHttp').replace('%d', this.fmt(code));
+				}
 			}
 
 			return why;
+		},
+
+		/**
+		 * اگر بدنهٔ پاسخ JSONِ خطای افزونه را در خود داشته باشد (حالت خطای
+		 * کشندهٔ PHP که HTML وردپرس + JSON ما با هم می‌آید)، پیام همان JSON را
+		 * برمی‌گرداند؛ وگرنه رشتهٔ خالی.
+		 *
+		 * @param {string} raw بدنهٔ خام پاسخ.
+		 * @return {string}
+		 */
+		embeddedError: function (raw) {
+			if (!raw || raw.indexOf('{') === -1) {
+				return '';
+			}
+
+			// از آخر به اول: JSON افزونه بعد از صفحهٔ HTML می‌آید.
+			for (var start = raw.lastIndexOf('{'); start !== -1; start = raw.lastIndexOf('{', start - 1)) {
+				var slice = raw.slice(start);
+				var end = slice.lastIndexOf('}');
+				if (end === -1) {
+					continue;
+				}
+				var text = slice.slice(0, end + 1);
+				try {
+					var obj = JSON.parse(text);
+					var msg = obj && obj.data && (obj.data.message || obj.data.error);
+					if (msg) {
+						return String(msg).slice(0, 300);
+					}
+				} catch (e) {
+					// دنبال JSON معتبر بعدی می‌گردیم.
+				}
+			}
+
+			return '';
 		},
 
 		/**
@@ -789,8 +832,15 @@
 					}
 
 					var data = res.data || {};
+					var attrs = data.attributes || [];
+					// قرارداد سرور آرایهٔ تخت است؛ اما اگر نسخهٔ دیگری از افزونه
+					// (یا کش) شکل `{values, groups, truncated}` را برگرداند، هم
+					// همان فهرست خوانده می‌شود تا گام ۲ هرگز خالی نماند.
+					if (!Array.isArray(attrs) && attrs && Array.isArray(attrs.values)) {
+						attrs = attrs.values;
+					}
 					self.scope = data.scope || null;
-					self.scopeAttrs = data.attributes || [];
+					self.scopeAttrs = Array.isArray(attrs) ? attrs : [];
 					self.renderScopeSummary();
 					self.renderGroupAttrs();
 

@@ -14,20 +14,67 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 	final class TBSM_Ajax {
 
 		public static function init() {
-			add_action( 'wp_ajax_tbsm_search_products', array( __CLASS__, 'ajax_search_products' ) );
-			add_action( 'wp_ajax_tbsm_load_product', array( __CLASS__, 'ajax_load_product' ) );
-			add_action( 'wp_ajax_tbsm_apply_stock', array( __CLASS__, 'ajax_apply_stock' ) );
+			// هر اندپوینت از میان گارد() رد می‌شود: هیچ خطای PHP داخل افزونه
+			// نباید به «صفحهٔ خطای کشندهٔ وردپرس» و پیام مبهم در مرورگر تبدیل
+			// شود — پیام واقعی خطا به‌صورت JSON برمی‌گردد.
+			foreach ( self::endpoints() as $action => $method ) {
+				add_action(
+					'wp_ajax_' . $action,
+					static function () use ( $method ) {
+						self::guard( $method );
+					}
+				);
+			}
+		}
 
-			// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل ← اعمال.
-			add_action( 'wp_ajax_tbsm_scope_options', array( __CLASS__, 'ajax_scope_options' ) );
-			add_action( 'wp_ajax_tbsm_scope_attributes', array( __CLASS__, 'ajax_scope_attributes' ) );
-			add_action( 'wp_ajax_tbsm_scope_values', array( __CLASS__, 'ajax_scope_values' ) );
-			add_action( 'wp_ajax_tbsm_find_scope', array( __CLASS__, 'ajax_find_scope' ) );
-			add_action( 'wp_ajax_tbsm_apply_scope_stock', array( __CLASS__, 'ajax_apply_scope_stock' ) );
+		/**
+		 * فهرست اندپوینت‌ها: نام اکشن → نام متد.
+		 *
+		 * @return array
+		 */
+		private static function endpoints() {
+			return array(
+				'tbsm_search_products'  => 'ajax_search_products',
+				'tbsm_load_product'     => 'ajax_load_product',
+				'tbsm_apply_stock'      => 'ajax_apply_stock',
+				// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل ← اعمال.
+				'tbsm_scope_options'    => 'ajax_scope_options',
+				'tbsm_scope_attributes' => 'ajax_scope_attributes',
+				'tbsm_scope_values'     => 'ajax_scope_values',
+				'tbsm_find_scope'       => 'ajax_find_scope',
+				'tbsm_apply_scope_stock' => 'ajax_apply_scope_stock',
+				// تشخیص: توکن تازه و گزارش وضعیت.
+				'tbsm_nonce'            => 'ajax_nonce',
+				'tbsm_diag'             => 'ajax_diag',
+			);
+		}
 
-			// تشخیص و قابلیت‌های جانبی: توکن تازه و گزارش تشخیص.
-			add_action( 'wp_ajax_tbsm_nonce', array( __CLASS__, 'ajax_nonce' ) );
-			add_action( 'wp_ajax_tbsm_diag', array( __CLASS__, 'ajax_diag' ) );
+		/**
+		 * گارد مرکزی: هر Throwable را به پاسخ JSON با علت واقعی تبدیل می‌کند
+		 * (نوع خطا، متن، فایل و شمارهٔ خط) — به‌جای خطای کشندهٔ PHP.
+		 *
+		 * @param string $method نام متد اندپوینت.
+		 * @return void
+		 */
+		private static function guard( $method ) {
+			self::install_fatal_guard();
+
+			try {
+				call_user_func( array( __CLASS__, $method ) );
+			} catch ( \Throwable $e ) {
+				$where = basename( (string) $e->getFile() ) . ' خط ' . (int) $e->getLine();
+				self::send_error(
+					sprintf(
+						/* translators: 1: error class, 2: message, 3: file and line */
+						'خطای اجرای افزونه: %1$s — %2$s (%3$s)',
+						get_class( $e ),
+						$e->getMessage(),
+						$where
+					),
+					'php_exception',
+					array( 'type' => get_class( $e ), 'where' => $where )
+				);
+			}
 		}
 
 		/** @var bool آیا پاسخ JSON همین حالا فرستاده شده است؟ */

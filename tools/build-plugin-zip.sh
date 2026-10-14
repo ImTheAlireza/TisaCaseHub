@@ -18,6 +18,11 @@ if node -e "require.resolve('php-parser')" >/dev/null 2>&1; then
 else
   echo "⚠ php-parser نصب نیست — بررسی سینتکس واقعی PHP رد شد (npm install php-parser)." >&2
 fi
+# قرارداد AJAX بین PHP و JS: جلوی باگ‌هایی مثل «آرایهٔ کلیددار در برابر آرایهٔ
+# تخت» و «کلیدی که لایهٔ AJAX می‌خواند ولی متد برنمی‌گرداند» را می‌گیرد.
+if [ -f tools/ajax-contract-check.mjs ]; then
+  node tools/ajax-contract-check.mjs "$src" || { echo "✗ قرارداد AJAX نقض شده — زیپ ساخته نشد." >&2; exit 1; }
+fi
 # تست رگرسیون پیش‌نمایش (jsdom) — اگر پیش‌نیازهایش نصب باشند اجرا می‌شود.
 if [ -f tools/bulk-stock-manager-preview-test.mjs ] && node -e "require.resolve('jsdom')" >/dev/null 2>&1; then
   # مهم: خروجی را پایپ نمی‌کنیم تا کد خروج تست پاک نشود؛ تست قرمز = بسته‌بندی متوقف می‌شود.

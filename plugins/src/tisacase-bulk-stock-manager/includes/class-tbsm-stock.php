@@ -571,11 +571,13 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 			$list = self::sort_labels_naturally( array_values( $groups ) );
 
-			return array(
-				'values'    => $list,
-				'groups'    => self::brand_groups( $list, $attr_keys ),
-				'truncated' => $truncated,
-			);
+			// قرارداد پاسخ: **آرایهٔ تخت** — سمت جاوااسکریپت هر عضو را با
+			// label/keys/products می‌خواند (`data.attributes[i]`). گروه‌بندی برند
+			// مربوط به «مقدارهای» یک ویژگی است نه فهرست ویژگی‌ها؛ تماس اشتباهِ
+			// قبلی با brand_groups() متغیر تعریف‌نشده می‌فرستاد و به خطای کشندهٔ
+			// «Argument 2 passed to … must be of the type array, null given»
+			// (و پیام مبهم «بررسی محدوده ناموفق بود») می‌رسید.
+			return $list;
 		}
 
 		/**
@@ -613,7 +615,11 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @param array $attr_keys کلیدهای ویژگی همان ردیف.
 		 * @return array [{label, indexes}]
 		 */
-		private static function brand_groups( array $list, array $attr_keys ) {
+		private static function brand_groups( array $list, $attr_keys = array() ) {
+			// گارد ورودی: تماس با null (مثل اشتباه نسخهٔ ۱٫۳٫۵) نباید به
+			// TypeError کشنده تبدیل شود؛ نبودِ کلیدها فقط یعنی «بدون گروه برند».
+			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
+
 			if ( ! class_exists( 'TCBV_Rules' ) || ! class_exists( 'TCBV_Settings' ) ) {
 				return array();
 			}
@@ -808,18 +814,18 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$groups[ $index ]['variations'] = $count['variations'];
 			}
 
-			$list = array_values( $groups );
-			usort(
-				$list,
-				static function ( $a, $b ) {
-					if ( $a['products'] === $b['products'] ) {
-						return strcmp( (string) $a['label'], (string) $b['label'] );
-					}
-					return ( $a['products'] > $b['products'] ) ? -1 : 1;
-				}
-			);
+			// ترتیب نمایش: طبیعی/الفبایی — همان قرارداد همین متد (نه بر اساس تعداد).
+			$list = self::sort_labels_naturally( array_values( $groups ) );
 
-			return $list;
+			// قرارداد پاسخ `{values, groups, truncated}` است و سمت جاوااسکریپت
+			// (renderGroupValues) همین سه کلید را می‌خواند. قبلاً آرایهٔ تخت
+			// برگردانده می‌شد و در نتیجه `values` همیشه خالی به مرورگر می‌رسید،
+			// گروه‌بندی برند هرگز اعمال نمی‌شد و هشدار بریدگی هم نمایش داده نمی‌شد.
+			return array(
+				'values'    => $list,
+				'groups'    => self::brand_groups( $list, $attr_keys ),
+				'truncated' => $truncated,
+			);
 		}
 
 		/**
