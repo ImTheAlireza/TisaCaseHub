@@ -59,6 +59,7 @@ python3 tools/ui-audit.py plugins/src/<dir>      # همهٔ چک‌های پای
 | ۱ | `wc-sku-prefix-bar` ۱٫۵٫۰ | ✅ بازطراحی شد → `plugins/dist/wc-sku-prefix-bar.zip` |
 | ۲ | `tisacase-exporter` | ✅ انجام شد (UI در ۱٫۵٫۰ · `ui-audit` پاک) — تغییر هویت به v2.0.0 و افزودن بخش‌ها طبق `EXPORTER_PROPOSAL.md` |
 | ۳–۹ | بقیه | ⏸ |
+| ۱۰ | `tisacase-bulk-stock-manager` ۱٫۴٫۰ | ✅ بازطراحی شد → `plugins/dist/tisacase-bulk-stock-manager.zip` |
 
 **الگویی که روی ۱ تثبیت شد (ملاک هشت تای بعد):**
 - هیچ کلاسِ `wcspb-*` عوض نشد → `bar.js` و `editor.js` صفر ویرایش؛ فقط CSS و مارکاپِ رندرشده.
@@ -68,6 +69,7 @@ python3 tools/ui-audit.py plugins/src/<dir>      # همهٔ چک‌های پای
 - یک باگ UI رفع شد: `bar.js` روی `#wcspb-refresh` کلیک را می‌گرفت، ولی آن دکمه هیچ‌وقت رندر نمی‌شد — الان در ردیف هست و همان هندلرِ موجود را صدا می‌زند (بدون کد جدید).
 - `role="toolbar"`، `role="status" aria-live="polite"` روی خط وضعیت، و `:focus-visible` با `--tisa-ring` اضافه شد.
 - نسخهٔ استایل/اسکریپت از `const VER` می‌آید (قبلاً چهارجا `'1.4.0'` تکراری بود) و `deps` استایل، اگر هاب فعال باشد، `tisacase-ui` است تا کسکید توکن‌ها قطعی باشد.
+- **الگوی تثبیت‌شده روی `tisacase-bulk-stock-manager` (۱٫۴٫۰):** سرِ گرادیانی + ابرو + قرص نسخه و نوار سفید قرص‌ها دقیقاً مثل `tisacase-exporter` v2؛ کارت‌ها با `tbsm-card-body` و سرِ شماره‌دار؛ دکمه‌ها از هاب و فقط `is-standalone` محلی؛ شمارنده‌ها `tabular-nums` و مونو فقط کد. **درس مهم:** پیش‌نمایش و `render_page()` می‌توانند بی‌صدا واگرا شوند — یک `</div>` اضافه در PHP یعنی گام ۳ بیرون از `.tbsm-wrap` روی سایت، در حالی که تست jsdom (که پیش‌نمایش را می‌خواند) سبز می‌ماند. حالا `tools/markup-parity.mjs` ساختار درختی خروجی PHP را با پیش‌نمایش مقایسه می‌کند و در `build-plugin-zip.sh` اجرا می‌شود؛ برای هر افزونهٔ بعدی که پیش‌نمایش دارد، همین گارد را اضافه کن.
 
 ## چیزی که در این فاز انجام **نمی‌دهیم**
 

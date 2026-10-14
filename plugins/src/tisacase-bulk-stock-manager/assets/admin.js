@@ -668,7 +668,7 @@
 			}
 
 			var html = '<div class="tbsm-scope-results-head">'
-				+ '<span>' + this.esc(this.i18n('scopePickHint')) + '</span>'
+				+ '<span>' + this.esc(this.i18n('scopeFound').replace('%d', this.fmt(results.length))) + '</span>'
 				+ '<button type="button" class="tbsm-link-btn" id="tbsm-scope-addall">' + this.esc(this.i18n('scopeSelectAll')) + '</button>'
 				+ '</div>';
 
