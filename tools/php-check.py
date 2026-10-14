@@ -8,6 +8,9 @@
   * جفت‌های if/endif، foreach/endforeach، switch/endswitch
   * برچسب‌های <?php ?> لنگ
   * فراخوانی add_submenu_page/add_menu_page با تعداد آرگومان قابل‌قبول
+  * کامای جاافتاده بین دو عضو آرایه/آرگومان در خط بعد (خطای کشندهٔ سینتکس
+    مثل نسخهٔ ۱.۳.۲ افزونهٔ انبار انبوه که سایت را خواباند) — بررسی کامل
+    سینتکس با `node tools/php-parse.mjs` انجام می‌شود.
   * هر فایل افزونه باید Text Domain داشته باشد (اگر __() استفاده می‌کند)
 
 استفاده:
@@ -143,6 +146,8 @@ def check_file(path):
             if short != closes:
                 out.append(("alt-syntax %s: %d باز / %d بسته" % (kw, short, closes), 0))
 
+    out.extend(missing_commas(src))
+
     # آرگومان‌های منو
     for m in re.finditer(r"\badd_(submenu|menu)_page\s*\(((?:[^()]|\([^()]*\))*)\)", code):
         kind, args = m.group(1), m.group(2)
@@ -165,6 +170,32 @@ def check_file(path):
     if re.search(r"__\s*\(", code) and "Text Domain" not in src and path.endswith(".php") and "plugin.php" not in path:
         # فقط فایل اصلی افزونه لازم است هدر داشته باشد؛ بقیه هشدار نیست
         pass
+    return out
+
+
+def missing_commas(src):
+    """کامای جاافتادهٔ بین دو عضو آرایه/آرگومان را پیدا می‌کند.
+
+    الگو: خطی که با یک مقدار تمام می‌شود **بدون کاما** (`'...'`، عدد، `)`، `]`)
+    و خط بعدش با کلید تازهٔ `'key' =>` شروع می‌شود — در PHP معتبر نیست و خطای
+    «syntax error, unexpected ... expecting ')'» می‌دهد؛ همین خطا در نسخهٔ
+    ۱.۳.۲ افزونهٔ انبار انبوه کل سایت را با «critical error» خواباند.
+    """
+    out = []
+    lines = src.split("\n")
+    value_end = re.compile(
+        r"^\s*'[^']*'\s*=>\s*(?:'[^']*'|\"[^\"]*\"|-?[\d.]+|true|false|null|\$[\w>\[\]\->\'\"]+|\)|\])\s*$"
+    )
+    next_key = re.compile(r"^\s*['\"][^'\"]+['\"]\s*=>")
+    for i in range(len(lines) - 1):
+        a, b = lines[i], lines[i + 1]
+        if not a.strip() or a.lstrip().startswith(("//", "*", "/*", "#")):
+            continue
+        if not next_key.match(b):
+            continue
+        if not value_end.match(a):
+            continue
+        out.append(("احتمال کامای جاافتاده در پایان این خط (عضو آرایه)", i + 1))
     return out
 
 

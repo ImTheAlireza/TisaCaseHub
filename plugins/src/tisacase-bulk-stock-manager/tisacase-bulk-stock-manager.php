@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — مدیریت انبوه موجودی
  * Plugin URI:        https://tisacase.com
  * Description:       دو حالت: (۱) تک‌محصول با جست‌وجو و کارت‌های متغیر، (۲) گروهی — اول محدودهٔ محصولات (چند محصول با جست‌وجو، دسته‌بندی یا بازهٔ شناسه مثل CH)، بعد ویژگی و مقدار مدل از میان ویژگی‌های همان محدوده، و اعمال موجودی تکی یا یک‌جا.
- * Version:           1.3.2
+ * Version:           1.3.3
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 5.0
@@ -20,7 +20,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TBSM_VERSION', '1.3.2' );
+define( 'TBSM_VERSION', '1.3.3' );
 define( 'TBSM_FILE', __FILE__ );
 define( 'TBSM_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TBSM_URL', plugin_dir_url( __FILE__ ) );

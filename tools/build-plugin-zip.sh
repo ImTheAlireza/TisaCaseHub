@@ -11,6 +11,13 @@ else echo "پوشه نیست: plugins/src/$name یا plugins/$name" >&2; exit 2;
 top=$(basename "$src")
 
 python3 tools/php-check.py "$src" >/dev/null
+# بررسی سینتکس واقعی PHP (خطای کشنده مثل کامای جاافتاده را می‌گیرد).
+#   نبودن پارسر = هشدار و ادامه؛ وجود خطای سینتکس = توقف با خطا.
+if node -e "require.resolve('php-parser')" >/dev/null 2>&1; then
+  node tools/php-parse.mjs "$src"
+else
+  echo "⚠ php-parser نصب نیست — بررسی سینتکس واقعی PHP رد شد (npm install php-parser)." >&2
+fi
 js=$(find "$src" -name "*.js" -not -name "*.min.js" | head -20 || true)
 for f in $js; do node --check "$f" >/dev/null || { echo "JS خطا دارد: $f" >&2; exit 1; }; done
 

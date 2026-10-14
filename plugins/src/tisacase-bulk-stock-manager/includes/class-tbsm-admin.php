@@ -163,7 +163,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'groupTermTruncated' => 'فهرست مقدارها بریده شد؛ محدودهٔ کوچک‌تری انتخاب کنید تا همهٔ مقدارها بیاید.',
 						'scopeCategorySearch' => 'جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)',
 						'scopeCategoryFound'  => 'نمایش %1$d دسته از %2$d',
-						'scopeCategoryEmpty'  => 'دسته‌ای با این نام پیدا نشد.'
+						'scopeCategoryEmpty'  => 'دسته‌ای با این نام پیدا نشد.',
 						'groupTermPick'      => '— انتخاب کنید —',
 						'groupFindError'     => 'فهرست‌کردن متغیرها ناموفق بود.',
 						'groupNeedSelection' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
