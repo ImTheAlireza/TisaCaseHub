@@ -1196,31 +1196,6 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * @param string $candidate برچسب تازه‌رسیده.
 		 * @return string
 		 */
-
-		/**
-		 * نسخهٔ کوتاه و تک‌خطی یک کوئری، برای گزارش تشخیص افزونه.
-		 *
-		 * @param string $query کوئری خام.
-		 * @return string
-		 */
-		public static function short_query( $query ) {
-			$query = (string) $query;
-			$query = (string) preg_replace( '/\s+/', ' ', $query );
-			if ( strlen( $query ) > 300 ) {
-				$query = substr( $query, 0, 300 ) . '…';
-			}
-
-			return $query;
-		}
-
-		/**
-		 * از میان دو نوشتار هم‌هویت، نوشتار «غنی‌تر» (کامل‌تر) را برمی‌گرداند تا
-		 * نیم‌فاصله/نویسهٔ نامرئیِ نوشتار بهتر در برچسب نهایی بماند.
-		 *
-		 * @param string $current   برچسب فعلی گروه.
-		 * @param string $candidate برچسب تازه‌رسیده.
-		 * @return string
-		 */
 		private static function richer_label( $current, $candidate ) {
 			$len_a = function_exists( 'mb_strlen' ) ? mb_strlen( (string) $candidate, 'UTF-8' ) : strlen( (string) $candidate );
 			$len_b = function_exists( 'mb_strlen' ) ? mb_strlen( (string) $current, 'UTF-8' ) : strlen( (string) $current );

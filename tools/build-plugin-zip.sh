@@ -43,5 +43,10 @@ out="plugins/dist/$top.zip"
 rm -f "$out"
 ( cd "$(dirname "$src")" && zip -qrD "$OLDPWD/$out" "$top" -x "*/.DS_Store" "*/__MACOSX/*" )
 
+# آخرین حلقه: خودِ زیپ هم با پارسر واقعی خوانده می‌شود (چیزی که به سایت می‌رود).
+if node -e "require.resolve('php-parser')" >/dev/null 2>&1 && [ -f tools/zip-parse.mjs ]; then
+  node tools/zip-parse.mjs "$out" || { echo "✗ سینتکس PHP داخل زیپ خراب است — زیپ حذف شد." >&2; rm -f "$out"; exit 1; }
+fi
+
 files=$(unzip -l "$out" | tail -1 | awk '{print $2}')
 echo "✓ $out ($(du -h "$out" | cut -f1 | tr -d ' ') · $files فایل) — نصب: پیشخوان › افزونه‌ها › بارگذاری (یا حذف و جایگزینی)"

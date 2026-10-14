@@ -116,7 +116,9 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'unifiedInvalid'     => 'موجودی همگانی را با عدد صحیح و غیرمنفی بنویسید.',
 						'unifiedBtn'         => 'اعمال همگانی',
 						'unifiedConfirm'     => 'تأیید: درج %1$s روی %2$d متغیر؟',
+						'unifiedStatusConfirm' => 'تأیید: حالت «%1$s» روی %2$d متغیر؟',
 						'fillDone'           => 'درج شد روی %d کارت انتخابی',
+						'fillStatusDone'     => 'حالت «%1$s» روی %2$d کارت تنظیم شد.',
 						'bottomHint'         => 'اعمال با مقادیر داخل هر کارت، روی انتخابی‌ها',
 						'applyBtn'           => 'اعمال موجودی روی %d متغیر',
 						'applyConfirm'       => 'تأیید: اعمال روی %d متغیر؟',
@@ -170,11 +172,6 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'scopeErrorNet'     => 'ارتباط با سرور برقرار نشد (اینترنت یا فایروال هاست).',
 						'scopeErrorHttp'    => 'سرور خطای %d برگرداند.',
 						'scopeErrorTimeout' => 'پاسخ سرور طول کشید (timeout)؛ محدودهٔ کوچک‌تری انتخاب کنید.',
-						'scopeDiagRunning'  => 'در حال بررسی…',
-						'scopeDiagCopied'   => 'گزارش کپی شد.',
-						'scopeDiagError'    => 'اجرای گزارش تشخیص ناموفق بود.',
-						'scopeDiagTitle'    => 'تشخیص مشکل',
-						'scopeDiagDone'     => 'گزارش تشخیص آماده شد (پایین همین کارت).',
 						'groupTermPick'      => '— انتخاب کنید —',
 						'groupFindError'     => 'فهرست‌کردن متغیرها ناموفق بود.',
 						'groupNeedSelection' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -333,18 +330,9 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<div class="tbsm-scope-actions">
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-form-action" id="tbsm-scope-apply">نمایش ویژگی‌ها</button>
 							<span class="tbsm-scope-summary" id="tbsm-scope-summary" hidden></span>
-							<button type="button" class="tbsm-link-btn" id="tbsm-scope-diag" title="اگر خطا گرفتید، این گزارش را برای پشتیبانی بفرستید.">تشخیص مشکل</button>
 						</div>
 
-						<!-- گزارش تشخیص (پنهان تا وقتی لازم شود) -->
-						<div class="tbsm-diag" id="tbsm-diag-box" hidden>
-							<div class="tbsm-diag-head">
-								<strong>گزارش تشخیص</strong>
-								<button type="button" class="tbsm-link-btn" id="tbsm-diag-copy">کپی گزارش</button>
-								<button type="button" class="tbsm-link-btn" id="tbsm-diag-close">بستن</button>
-							</div>
-							<pre class="tbsm-diag-text" id="tbsm-diag-text"></pre>
-						</div>
+					</div>
 					</div>
 
 					<!-- گام ۲ گروهی: ویژگی و مقدار مدل -->
@@ -391,8 +379,15 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 					<div class="tbsm-toolbar">
 						<div class="tbsm-counts" id="tbsm-counts"></div>
 						<div class="tbsm-unified">
-							<label for="tbsm-quickset">موجودی همگانی:</label>
-							<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+							<label for="tbsm-bulk-mode">موجودی همگانی:</label>
+							<select id="tbsm-bulk-mode" class="tbsm-input tbsm-select tbsm-bulk-mode" aria-label="نوع موجودی همگانی">
+								<option value="qty">تعداد</option>
+								<option value="in_stock">موجود بدون تعداد</option>
+								<option value="out_of_stock">ناموجود</option>
+							</select>
+							<span class="tbsm-quickset-wrap" id="tbsm-quickset-wrap">
+								<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+							</span>
 							<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 						</div>

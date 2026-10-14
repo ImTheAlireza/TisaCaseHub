@@ -61,6 +61,13 @@ const q = (sel) => doc.querySelector(sel);
 const qa = (sel) => [...doc.querySelectorAll(sel)];
 const text = (sel) => (q(sel) ? q(sel).textContent.trim() : '—MISSING—');
 const visible = (sel) => !!q(sel) && !q(sel).hasAttribute('hidden');
+// پیام جاری فقط وقتی خوانده می‌شود که واقعاً دیده می‌شود؛ notice('') متن قبلی را
+// پاک نمی‌کند (فقط مخفی می‌کند)، پس خواندن متنِ پنهان، خطای آزمایشی می‌سازد.
+const noticeText = () => {
+	const el = q('#tbsm-notice');
+	if (!el || el.hasAttribute('hidden')) return '';
+	return el.textContent.trim();
+};
 const attrOptions = () => qa('#tbsm-group-attr option').map((o) => o.textContent.trim());
 const termOptions = () => qa('#tbsm-group-term option').map((o) => o.textContent.trim());
 async function click(sel) {
@@ -462,17 +469,109 @@ window.TBSM_PREVIEW_FAULT = null;
 window.TBSM.notice('');
 await waitIdle();
 
-/* ------------------------------------------------ دکمهٔ «تشخیص مشکل» */
-ok('دکمهٔ تشخیص مشکل هست', q('#tbsm-scope-diag') !== null);
-await click('#tbsm-scope-diag');
-await waitFor('گزارش تشخیص', () => visible('#tbsm-diag-box'));
-ok('گزارش تشخیص نمایش داده شد', visible('#tbsm-diag-box'));
-	ok('گزارش شامل نسخهٔ افزونه است', text('#tbsm-diag-text').includes('افزونه: ' + window.tbsmData.version), text('#tbsm-diag-text').slice(0, 60));
-ok('گزارش شامل وضعیت اندپوینت‌هاست', /اندپوینت‌ها/.test(text('#tbsm-diag-text')));
-ok('گزارش شامل خطای آخر دیتابیس است', /خطای آخر دیتابیس/.test(text('#tbsm-diag-text')));
-ok('گزارش شامل زمان اجرای کوئری‌هاست', /ثانیه/.test(text('#tbsm-diag-text')));
-await click('#tbsm-diag-close');
-ok('بستن گزارش کار می‌کند', !visible('#tbsm-diag-box'));
+/* ------------------------------------------------ نوع موجودی همگانی (۱٫۳٫۷) */
+// سه حالت: تعداد / موجود بدون تعداد / ناموجود — روی همهٔ متغیرهای انتخابی.
+ok('بخش «تشخیص مشکل» برداشته شده', q('#tbsm-scope-diag') === null && q('#tbsm-diag-box') === null);
+
+// آماده‌سازی: آزمون‌های خطای قبلی عمداً محدوده را شکسته‌اند؛ دوباره یک
+// محدودهٔ سالم می‌سازیم تا کارت‌ها و مقدار مدل حاضر باشند.
+window.TBSM_PREVIEW_FAULT = null;
+await click('#tbsm-tab-group');
+await waitIdle();
+await click('.tbsm-seg-btn[data-scope="products"]');
+if (q('#tbsm-scope-clear')) { await click('#tbsm-scope-clear'); }
+await type(doc.getElementById('tbsm-scope-search'), 'آیفون');
+await waitFor('(پیش‌نیاز) نتایج محدوده', () => qa('#tbsm-scope-results .tbsm-scope-row').length === 3);
+await click('#tbsm-scope-addall');
+window.TBSM.notice('');
+await click('#tbsm-scope-apply');
+await waitIdle();
+ok('(پیش‌نیاز) فهرست ویژگی‌ها آمد', qa('#tbsm-group-attr option').length > 1, String(qa('#tbsm-group-attr option').length));
+
+const attrPick = qa('#tbsm-group-attr option').map((o) => o.value).filter((v) => v !== '')[0];
+await change('#tbsm-group-attr', attrPick);
+await waitFor('(پیش‌نیاز) مقدارهای مدل', () => qa('#tbsm-group-term option').length > 1);
+const termPick = qa('#tbsm-group-term option').map((o) => o.value).filter((v) => v !== '')[0];
+await change('#tbsm-group-term', termPick);
+await waitFor('(پیش‌نیاز) کارت‌های متغیر', () => qa('#tbsm-grid .tbsm-var').length > 0, 4000);
+ok('(پیش‌نیاز) کارت‌های متغیر ساخته شدند', qa('#tbsm-grid .tbsm-var').length > 0, String(qa('#tbsm-grid .tbsm-var').length));
+ok('سلکت نوع موجودی همگانی هست', q('#tbsm-bulk-mode') !== null);
+ok('سه حالت دارد', qa('#tbsm-bulk-mode option').map((o) => o.value).join(',') === 'qty,in_stock,out_of_stock', qa('#tbsm-bulk-mode option').map((o) => o.value).join(','));
+ok('گزینهٔ «موجود بدون تعداد» هست', /موجود بدون تعداد/.test(text('#tbsm-bulk-mode')), text('#tbsm-bulk-mode'));
+ok('پیش‌فرض «تعداد» است و ورودی عدد آشکار', q('#tbsm-bulk-mode').value === 'qty' && visible('#tbsm-quickset-wrap') && !q('#tbsm-quickset').disabled);
+
+await change('#tbsm-bulk-mode', 'in_stock');
+ok('در حالت وضعیتی، ورودی عدد پنهان می‌شود', !visible('#tbsm-quickset-wrap'));
+ok('در حالت وضعیتی، ورودی عدد غیرفعال می‌شود', q('#tbsm-quickset').disabled === true);
+await change('#tbsm-bulk-mode', 'out_of_stock');
+ok('حالت «ناموجود» هم ورودی عدد را پنهان می‌کند', !visible('#tbsm-quickset-wrap'));
+await change('#tbsm-bulk-mode', 'qty');
+ok('بازگشت به «تعداد» ورودی را برمی‌گرداند', visible('#tbsm-quickset-wrap') && !q('#tbsm-quickset').disabled);
+
+// همهٔ کارت‌ها انتخاب‌شده باشند تا اعمال همگانی معنا داشته باشد
+qa('#tbsm-grid .tbsm-var').forEach((card) => card.classList.add('is-selected'));
+await sleep(30);
+window.TBSM.refreshCounts();
+
+// «درج» در حالت موجود بدون تعداد: حالت کارت‌ها را عوض می‌کند، نه عدد را
+await change('#tbsm-bulk-mode', 'in_stock');
+window.TBSM.notice('');
+await click('#tbsm-quickset-btn');
+await sleep(40);
+ok('«درج» در حالت موجود بدون تعداد، کارت‌ها را به همان حالت می‌برد',
+	qa('#tbsm-grid .tbsm-var[data-mode="in_stock"]').length === qa('#tbsm-grid .tbsm-var').length,
+	String(qa('#tbsm-grid .tbsm-var[data-mode="in_stock"]').length) + '/' + String(qa('#tbsm-grid .tbsm-var').length));
+ok('سلکت هر کارت هم هم‌زمان به‌روز شد', qa('#tbsm-grid .tbsm-var .tbsm-var-mode').every((el) => el.value === 'in_stock'));
+ok('پیام «حالت … روی n کارت تنظیم شد» آمد', /تنظیم شد/.test(noticeText()), noticeText());
+
+// «درج» در حالت ناموجود
+await change('#tbsm-bulk-mode', 'out_of_stock');
+await click('#tbsm-quickset-btn');
+await sleep(40);
+ok('«درج» در حالت ناموجود هم کارت‌ها را ناموجود می‌کند',
+	qa('#tbsm-grid .tbsm-var[data-mode="out_of_stock"]').length === qa('#tbsm-grid .tbsm-var').length);
+
+// اعمال همگانی «موجود بدون تعداد»: بدون عدد، با تأیید مخصوص حالت
+await change('#tbsm-bulk-mode', 'in_stock');
+window.TBSM.notice('');
+await click('#tbsm-unified');
+ok('دکمهٔ اعمال (کلیک اول) حالت را در متن تأیید می‌آورد', /موجود بدون تعداد/.test(text('#tbsm-unified')), text('#tbsm-unified'));
+await click('#tbsm-unified'); // کلیک دوم = اعمال واقعی
+
+// محتوای درخواست با قلاب پیش‌نمایش گرفته می‌شود تا مطمئن شویم mode درست می‌رود
+const grabSpec = () => {
+	window.TBSM_PREVIEW_FAULT = (data) => {
+		if (data.action === 'tbsm_apply_scope_stock') {
+			const keys = Object.keys(data.items || {});
+			window.__sentSpec = keys.length ? data.items[keys[0]] : null;
+		}
+		return null;
+	};
+};
+window.__sentSpec = null;
+grabSpec();
+await waitFor('اعمال همگانی وضعیتی', () => window.__sentSpec !== null, 3000);
+window.TBSM_PREVIEW_FAULT = null;
+ok('درخواست اعمال، mode=in_stock و بدون qty می‌فرستد', !!window.__sentSpec && window.__sentSpec.mode === 'in_stock' && window.__sentSpec.qty === undefined, JSON.stringify(window.__sentSpec));
+await waitFor('گزارش اعمال', () => /←/.test(text('#tbsm-report')), 3000);
+ok('گزارش اعمال، تفاوت وضعیتی نشان می‌دهد', /←/.test(text('#tbsm-report')) && /موجود/.test(text('#tbsm-report')), text('#tbsm-report').slice(0, 90));
+
+// اعمال همگانی «ناموجود»
+await change('#tbsm-bulk-mode', 'out_of_stock');
+window.__sentSpec = null;
+grabSpec();
+await click('#tbsm-unified');
+await click('#tbsm-unified');
+await waitFor('اعمال ناموجود', () => window.__sentSpec !== null, 3000);
+window.TBSM_PREVIEW_FAULT = null;
+ok('درخواست اعمال، mode=out_of_stock می‌فرستد', !!window.__sentSpec && window.__sentSpec.mode === 'out_of_stock', JSON.stringify(window.__sentSpec));
+await waitFor('کارت‌های ناموجود', () => qa('#tbsm-grid .tbsm-var[data-mode="out_of_stock"]').length > 0, 3000);
+ok('کارت‌ها بعد از اعمال، ناموجود شدند', qa('#tbsm-grid .tbsm-var[data-mode="out_of_stock"]').length > 0);
+
+// مسیر عددی باید بعد از دو حالت وضعیتی سالم مانده باشد
+await change('#tbsm-bulk-mode', 'qty');
+await sleep(20);
+ok('مسیر عددی بعد از دو حالت وضعیتی سالم است', visible('#tbsm-quickset-wrap') && !q('#tbsm-quickset').disabled);
 
 /* ------------------------------------------------ تحمل شکل پاسخ سرور (۱٫۳٫۶) */
 // ریشهٔ باگ واقعی: سرور برای ویژگی‌ها آرایهٔ تخت می‌فرستد؛ اگر نسخه/کشی شکل

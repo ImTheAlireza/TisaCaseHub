@@ -43,9 +43,8 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				'tbsm_scope_values'     => 'ajax_scope_values',
 				'tbsm_find_scope'       => 'ajax_find_scope',
 				'tbsm_apply_scope_stock' => 'ajax_apply_scope_stock',
-				// تشخیص: توکن تازه و گزارش وضعیت.
+				// توکن تازه برای صفحه‌هایی که مدتی باز مانده‌اند.
 				'tbsm_nonce'            => 'ajax_nonce',
-				'tbsm_diag'             => 'ajax_diag',
 			);
 		}
 
@@ -720,132 +719,5 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			self::send_success( array( 'nonce' => wp_create_nonce( TBSM_Core::NONCE_ACTION ) ) );
 		}
 
-		/**
-		 * گزارش تشخیص: «چرا بررسی محدوده کار نمی‌کند؟»
-		 *
-		 * همه‌چیز را در یک پاسخ جمع می‌کند: نسخه‌ها، ثبت اندپوینت‌ها، حالت‌های
-		 * خطر (WP_DEBUG_DISPLAY)، پلاگین‌های کش، افزونهٔ گروه‌بندی برند، و
-		 * اجرای واقعی همان دو کوئری گام محدوده با زمان‌سنجی و خطای دیتابیس.
-		 */
-		public static function ajax_diag() {
-			self::check_auth();
-			self::prepare_runtime();
-
-			global $wpdb;
-
-			$theme = wp_get_theme();
-			$report = array(
-				'افزونه'          => TBSM_VERSION,
-				'وردپرس'          => get_bloginfo( 'version' ),
-				'ووکامرس'         => defined( 'WC_VERSION' ) ? WC_VERSION : 'فعال نیست',
-				'PHP'             => PHP_VERSION,
-				'MySQL'           => $wpdb->db_version(),
-				'پیشوند جدول'     => $wpdb->prefix,
-				'قالب'            => $theme->get( 'Name' ) . ' ' . $theme->get( 'Version' ),
-				'mbstring'        => function_exists( 'mb_strlen' ) ? 'دارد' : 'ندارد',
-				'حافظهٔ کش شیء'   => wp_using_ext_object_cache() ? 'روشن' : 'خاموش',
-				'کانال AJAX'      => admin_url( 'admin-ajax.php' ),
-			);
-
-			// اندپوینت‌ها: اگر جا نیفتاده باشند، پاسخ «0» برمی‌گردد و UI پیام مبهم می‌دهد.
-			$hooks = array( 'tbsm_scope_options', 'tbsm_scope_attributes', 'tbsm_scope_values', 'tbsm_find_scope', 'tbsm_apply_scope_stock', 'tbsm_nonce', 'tbsm_diag' );
-			$missing = array();
-			foreach ( $hooks as $hook ) {
-				if ( ! has_action( 'wp_ajax_' . $hook ) ) {
-					$missing[] = $hook;
-				}
-			}
-			$report['اندپوینت‌ها'] = $missing
-				? 'ثبت نشده: ' . implode( ', ', $missing )
-				: 'همه ثبت شده‌اند';
-
-			$report['WP_DEBUG']         = defined( 'WP_DEBUG' ) && WP_DEBUG ? 'روشن' : 'خاموش';
-			$report['WP_DEBUG_DISPLAY'] = defined( 'WP_DEBUG_DISPLAY' ) && WP_DEBUG_DISPLAY
-				? 'روشن (خروجی هشدارها JSON را خراب می‌کند)'
-				: 'خاموش';
-			$report['نمایش خطا در PHP'] = ini_get( 'display_errors' ) ? 'روشن' : 'خاموش';
-			$report['حداکثر زمان']      = (int) ini_get( 'max_execution_time' ) . ' ثانیه';
-			$report['حافظه']            = (string) ini_get( 'memory_limit' );
-
-			// افزونه‌های کش (اگر صفحهٔ ادمین/درخواست AJAX کش شوند).
-			$cache_plugins = array();
-			if ( ! function_exists( 'is_plugin_active' ) ) {
-				require_once ABSPATH . 'wp-admin/includes/plugin.php';
-			}
-			foreach ( array( 'litespeed-cache/litespeed-cache.php', 'wp-rocket/wp-rocket.php', 'w3-total-cache/w3-total-cache.php', 'wp-super-cache/wp-cache.php', 'autoptimize/autoptimize.php', 'sg-cachepress/sg-cachepress.php', 'wp-fastest-cache/wpFastestCache.php', 'breeze/breeze.php' ) as $plugin ) {
-				if ( is_plugin_active( $plugin ) ) {
-					$cache_plugins[] = basename( dirname( $plugin ) );
-				}
-			}
-			$report['افزونه‌های کش'] = $cache_plugins ? implode( ', ', $cache_plugins ) : 'ندارد';
-
-			// افزونهٔ گروه‌بندی برند (برای گروه‌های مقدارها).
-			if ( class_exists( 'TCBV_Rules' ) ) {
-				$report['گروه‌بندی برند'] = 'فعال (TCBV_Rules)';
-				foreach ( array( 'group' => 1, 'should_group' => 2 ) as $m => $max ) {
-					$req = null;
-					if ( method_exists( 'TCBV_Rules', $m ) ) {
-						try {
-							$req = ( new \ReflectionMethod( 'TCBV_Rules', $m ) )->getNumberOfRequiredParameters();
-						} catch ( \Throwable $e ) {
-							$req = 'خطا';
-						}
-					}
-					$report[ 'امضای ' . $m ] = null === $req ? 'متد نیست' : ( $req . ' پارامتر اجباری (حد مجاز ' . $max . ')' );
-				}
-			} else {
-				$report['گروه‌بندی برند'] = 'غیرفعال';
-			}
-
-			// اندازهٔ داده: چند ردیف ویژگی و متغیر داریم؟
-			$report['ردیف‌های ویژگی']  = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->postmeta} WHERE meta_key LIKE 'attribute\\_%'" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery
-			$report['تعداد متغیرها']   = (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$wpdb->posts} WHERE post_type = %s", 'product_variation' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-
-			// اجرای واقعی مسیر گام ۱ روی همان محدودهٔ کاربر.
-			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
-			$report['محدودهٔ آزمایشی'] = TBSM_Stock::scope_label( $scope );
-
-			$start = microtime( true );
-			try {
-				$summary = TBSM_Stock::scope_summary( $scope );
-				$report['شمارش محدوده'] = sprintf(
-					'%s محصول · %s متغیر — %.2f ثانیه',
-					number_format_i18n( $summary['products'] ),
-					number_format_i18n( $summary['variations'] ),
-					microtime( true ) - $start
-				);
-			} catch ( \Throwable $e ) {
-				$report['شمارش محدوده'] = 'خطا: ' . $e->getMessage();
-			}
-
-			$start = microtime( true );
-			try {
-				$attrs = TBSM_Stock::list_scope_attributes( $scope );
-				$report['فهرست ویژگی‌ها'] = sprintf(
-					'%d ردیف — %.2f ثانیه',
-					count( $attrs ),
-					microtime( true ) - $start
-				);
-			} catch ( \Throwable $e ) {
-				$report['فهرست ویژگی‌ها'] = 'خطا: ' . get_class( $e ) . ' — ' . $e->getMessage() . ' در ' . basename( $e->getFile() ) . ' خط ' . $e->getLine();
-			}
-
-			$report['خطای آخر دیتابیس'] = $wpdb->last_error ? $wpdb->last_error : 'ندارد';
-			$report['آخرین کوئری']      = TBSM_Stock::short_query( $wpdb->last_query );
-			$report['فایل admin.js']    = TBSM_PATH . 'assets/admin.js';
-			$report['زمان فایل JS']     = file_exists( TBSM_PATH . 'assets/admin.js' ) ? gmdate( 'Y-m-d H:i', (int) filemtime( TBSM_PATH . 'assets/admin.js' ) ) : 'نیست';
-
-			$lines = array();
-			foreach ( $report as $label => $value ) {
-				$lines[] = $label . ': ' . ( is_scalar( $value ) ? $value : wp_json_encode( $value ) );
-			}
-
-			self::send_success(
-				array(
-					'report' => $report,
-					'text'   => implode( "\n", $lines ),
-				)
-			);
-		}
 	}
 }

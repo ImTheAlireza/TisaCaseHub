@@ -35,7 +35,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید و موجودی متغیرهایش را تغییر دهید؛ یا در تب «گروهی» اول محدودهٔ محصولات را مشخص کنید (چند محصول، دسته‌بندی یا شناسه)، بعد ویژگی و مقدار مدل را از میان ویژگی‌های همان محدوده انتخاب کنید و موجودی را تکی یا یک‌جا روی همهٔ آن‌ها اعمال کنید.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.3.6</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.3.7</span>
 			</div>
 		</div>
 
@@ -149,17 +149,8 @@
 						<div class="tbsm-scope-actions">
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-form-action" id="tbsm-scope-apply">نمایش ویژگی‌ها</button>
 							<span class="tbsm-scope-summary" id="tbsm-scope-summary" hidden></span>
-							<button type="button" class="tbsm-link-btn" id="tbsm-scope-diag">تشخیص مشکل</button>
 						</div>
 
-						<div class="tbsm-diag" id="tbsm-diag-box" hidden>
-							<div class="tbsm-diag-head">
-								<strong>گزارش تشخیص</strong>
-								<button type="button" class="tbsm-link-btn" id="tbsm-diag-copy">کپی گزارش</button>
-								<button type="button" class="tbsm-link-btn" id="tbsm-diag-close">بستن</button>
-							</div>
-							<pre class="tbsm-diag-text" id="tbsm-diag-text"></pre>
-						</div>
 					</div>
 
 					<!-- گام ۲ گروهی: ویژگی و مقدار مدل -->
@@ -206,8 +197,15 @@
 			<div class="tbsm-toolbar">
 				<div class="tbsm-counts" id="tbsm-counts"></div>
 				<div class="tbsm-unified">
-					<label for="tbsm-quickset">موجودی همگانی:</label>
-					<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+					<label for="tbsm-bulk-mode">موجودی همگانی:</label>
+					<select id="tbsm-bulk-mode" class="tbsm-input tbsm-select tbsm-bulk-mode" aria-label="نوع موجودی همگانی">
+						<option value="qty">تعداد</option>
+						<option value="in_stock">موجود بدون تعداد</option>
+						<option value="out_of_stock">ناموجود</option>
+					</select>
+					<span class="tbsm-quickset-wrap" id="tbsm-quickset-wrap">
+						<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+					</span>
 					<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
 					<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
 				</div>
@@ -657,7 +655,7 @@
 			};
 		}
 
-		var PREVIEW_VERSION = '1.3.6';
+		var PREVIEW_VERSION = '1.3.7';
 		var nonceSeq = 0;
 
 		// قرارداد tbsmData (مثل wp_localize_script)
@@ -684,6 +682,8 @@
 				unifiedInvalid: 'موجودی همگانی را با عدد صحیح و غیرمنفی بنویسید.',
 				unifiedBtn: 'اعمال همگانی',
 				unifiedConfirm: 'تأیید: درج %1$s روی %2$d متغیر؟',
+				unifiedStatusConfirm: 'تأیید: حالت «%1$s» روی %2$d متغیر؟',
+				fillStatusDone: 'حالت «%1$s» روی %2$d کارت تنظیم شد.',
 				fillDone: 'درج شد روی %d کارت انتخابی',
 				bottomHint: 'اعمال با مقادیر داخل هر کارت، روی انتخابی‌ها',
 				applyBtn: 'اعمال موجودی روی %d متغیر',
@@ -736,11 +736,6 @@
 				scopeErrorNet: 'ارتباط با سرور برقرار نشد (اینترنت یا فایروال هاست).',
 				scopeErrorHttp: 'سرور خطای %d برگرداند.',
 				scopeErrorTimeout: 'پاسخ سرور طول کشید (timeout)؛ محدودهٔ کوچک‌تری انتخاب کنید.',
-				scopeDiagRunning: 'در حال بررسی…',
-				scopeDiagCopied: 'گزارش کپی شد.',
-				scopeDiagError: 'اجرای گزارش تشخیص ناموفق بود.',
-				scopeDiagTitle: 'تشخیص مشکل',
-				scopeDiagDone: 'گزارش تشخیص آماده شد (پایین همین کارت).',
 				groupTermPick: '— انتخاب کنید —',
 				groupFindError: 'فهرست‌کردن متغیرها ناموفق بود.',
 				groupNeedSelection: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -866,28 +861,6 @@
 					if (data.action === 'tbsm_nonce') {
 						window.tbsmData.nonce = 'preview-nonce-' + (++nonceSeq);
 						d.resolve({ success: true, data: { nonce: window.tbsmData.nonce, version: PREVIEW_VERSION } });
-						return;
-					}
-						if (data.action === 'tbsm_diag') {
-						d.resolve({
-							success: true,
-							data: {
-								version: PREVIEW_VERSION,
-								report: { 'افزونه': PREVIEW_VERSION, 'خطای آخر دیتابیس': 'ندارد' },
-								text: [
-									'افزونه: ' + PREVIEW_VERSION + ' (پیش‌نمایش)',
-									'وردپرس: 6.6 · ووکامرس: 9.2 · PHP: 8.2 · MySQL: 8.0',
-									'اندپوینت‌ها: همه ثبت شده‌اند',
-									'WP_DEBUG_DISPLAY: خاموش',
-									'افزونه‌های کش: ندارد',
-									'گروه‌بندی برند: فعال (TCBV_Rules)',
-									'ردیف‌های ویژگی: 45 · تعداد متغیرها: 41',
-									'شمارش محدوده: 3 محصول · 41 متغیر — 0.01 ثانیه',
-									'فهرست ویژگی‌ها: 4 ردیف — 0.02 ثانیه',
-									'خطای آخر دیتابیس: ندارد'
-								].join('\n')
-							}
-						});
 						return;
 					}
 

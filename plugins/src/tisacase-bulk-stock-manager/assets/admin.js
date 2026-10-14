@@ -293,6 +293,8 @@
 			}
 			var self = this;
 
+			this.syncBulkMode(); // حالت پیش‌فرض «تعداد» → ورودی عدد فعال
+
 			$('#tbsm-search').on('input', this.debounce(function () {
 				self.doSearch();
 			}, 320));
@@ -347,6 +349,11 @@
 
 			$('#tbsm-quickset-btn').on('click', function () {
 				self.quickSet();
+			});
+
+			// نوع موجودی همگانی: عددی / موجود بدون تعداد / ناموجود
+			$('#tbsm-bulk-mode').on('change', function () {
+				self.syncBulkMode();
 			});
 
 			$('#tbsm-unified').on('click', function () {
@@ -416,16 +423,6 @@
 			$('#tbsm-scope-apply').on('click', function () {
 				self.applyScope();
 			});
-			$('#tbsm-scope-diag').on('click', function () {
-				self.runDiag();
-			});
-			$('#tbsm-diag-copy').on('click', function () {
-				self.copyDiag();
-			});
-			$('#tbsm-diag-close').on('click', function () {
-				$('#tbsm-diag-box').prop('hidden', true);
-			});
-
 			// حالت گروهی — گام ۲: ویژگی و مقدار مدل
 			$('#tbsm-group-attr').on('change', function () {
 				self.loadGroupValues(parseInt(this.value, 10));
@@ -866,72 +863,6 @@
 				});
 		},
 
-		/**
-		 * گزارش تشخیص: سرور نسخه‌ها، وضعیت اندپوینت‌ها، کش، افزونهٔ گروه‌بندی برند
-		 * و اجرای واقعی همان دو کوئری گام محدوده (با زمان و خطای دیتابیس) را
-		 * برمی‌گرداند — تا به‌جای حدس، علت معلوم شود.
-		 */
-		runDiag: function () {
-			var self = this;
-			var $btn = $('#tbsm-scope-diag');
-			if ($btn.prop('disabled')) {
-				return;
-			}
-
-			$btn.prop('disabled', true).text(this.i18n('scopeDiagRunning'));
-
-			var payload = this.scopePayload();
-			payload.action = 'tbsm_diag';
-
-			this.api(payload)
-				.done(function (res) {
-					if (!res || !res.success) {
-						self.notice(self.apiError(res), 'error');
-						return;
-					}
-
-					var data = res.data || {};
-					$('#tbsm-diag-text').text(data.text || JSON.stringify(data.report || {}, null, 1));
-					$('#tbsm-diag-box').prop('hidden', false);
-					self.notice(self.i18n('scopeDiagDone'), 'success');
-				})
-				.fail(function (why) {
-					self.notice(why || self.i18n('scopeDiagError'), 'error');
-				})
-				.always(function () {
-					$btn.prop('disabled', false).text(self.i18n('scopeDiagTitle'));
-				});
-		},
-
-		/** کپی گزارش تشخیص در کلیپ‌بورد. */
-		copyDiag: function () {
-			var self = this;
-			var text = $('#tbsm-diag-text').text();
-
-			var done = function () {
-				self.notice(self.i18n('scopeDiagCopied'), 'success');
-			};
-
-			if (navigator.clipboard && navigator.clipboard.writeText) {
-				navigator.clipboard.writeText(text).then(done, function () { self.selectDiag(); done(); });
-				return;
-			}
-			self.selectDiag();
-			done();
-		},
-
-		/** انتخاب متن گزارش (روی مرورگرهای قدیمی که Clipboard API ندارند). */
-		selectDiag: function () {
-			var el = document.getElementById('tbsm-diag-text');
-			if (!el) {
-				return;
-			}
-			var range = document.createRange();
-			range.selectNodeContents(el);
-			var sel = window.getSelection();
-			sel.removeAllRanges();
-			sel.addRange(range);
-		},
 
 		/** خط خلاصهٔ محدوده زیر دکمه. */
 		renderScopeSummary: function () {
@@ -1948,28 +1879,68 @@
 				.addClass(isNaN(v) || v <= 0 ? 'tbsm-var-stockbox--out' : 'tbsm-var-stockbox--in');
 		},
 
+		/** نوع موجودی انتخاب‌شدهٔ ردیف همگانی: qty | in_stock | out_of_stock. */
+		bulkMode: function () {
+			var mode = $('#tbsm-bulk-mode').val();
+			return (mode === 'in_stock' || mode === 'out_of_stock') ? mode : 'qty';
+		},
+
+		/** برچسب فارسی حالت (همان متنی که در سلکت دیده می‌شود). */
+		bulkModeLabel: function (mode) {
+			var $opt = $('#tbsm-bulk-mode option[value="' + (mode || this.bulkMode()) + '"]');
+			return $opt.length ? $opt.text() : this.i18n('modeQty');
+		},
+
+		/**
+		 * با تغییر نوع موجودی همگانی، ورودی عدد فقط در حالت «تعداد» معنا دارد؛
+		 * در دو حالت وضعیتی مخفی و غیرفعال می‌شود تا کاربر دنبال عدد نگردد.
+		 */
+		syncBulkMode: function () {
+			var qty = this.bulkMode() === 'qty';
+			$('#tbsm-quickset-wrap').prop('hidden', !qty);
+			$('#tbsm-quickset').prop('disabled', !qty).removeClass('is-invalid');
+			if (qty) {
+				$('#tbsm-quickset').trigger('focus');
+			}
+		},
+
 		/** مقدار را در ورودی همهٔ کارت‌های انتخابی (نمایشی) درج می‌کند. */
 		quickSet: function () {
 			var self = this;
-			var raw = $('#tbsm-quickset').val();
-			if (raw === '' || raw === null || isNaN(Number(raw)) || Number(raw) < 0) {
-				return;
+			var mode = this.bulkMode();
+			var val = null;
+
+			if (mode === 'qty') {
+				var raw = $('#tbsm-quickset').val();
+				if (raw === '' || raw === null || isNaN(Number(raw)) || Number(raw) < 0) {
+					return;
+				}
+				val = Math.round(Number(raw));
 			}
-			var val = Math.round(Number(raw));
 			var n = 0;
 
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
-					var $card = $(this);
+				var $card = $(this);
+				if (mode === 'qty') {
 					if ($card.attr('data-mode') !== 'qty') {
 						self.setCardMode($card, 'qty');
 					}
 					$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
 					self.paintStockbox($card);
-					n++;
-				});
+				} else {
+					// وضعیت (موجود بدون تعداد / ناموجود) روی خود کارت‌ها تنظیم می‌شود
+					self.setCardMode($card, mode);
+				}
+				n++;
+			});
 
 			if (n) {
-				this.notice(this.i18n('fillDone').replace('%d', this.fmt(n)), 'info');
+				this.notice(
+					mode === 'qty'
+						? this.i18n('fillDone').replace('%d', this.fmt(n))
+						: this.i18n('fillStatusDone').replace('%1$s', this.bulkModeLabel(mode)).replace('%2$d', this.fmt(n)),
+					'info'
+				);
 			}
 		},
 
@@ -2182,8 +2153,9 @@
 		},
 
 		/**
-		 * اعمال «موجودی همگانی»: یک عدد، روی همهٔ متغیرهای انتخاب‌شده.
-		 * همان مسیر سروری apply را با مقادیر یکسان می‌فرستد.
+		 * اعمال «موجودی همگانی» روی همهٔ متغیرهای انتخاب‌شده — در سه حالت:
+		 * «تعداد» (عدد دلخواه)، «موجود بدون تعداد» و «ناموجود».
+		 * همان مسیر سروری apply را با مقدار یکسان می‌فرستد.
 		 */
 		applyUnified: function () {
 			var self = this;
@@ -2191,15 +2163,21 @@
 				return;
 			}
 
+			var mode  = this.bulkMode();
 			var $input = $('#tbsm-quickset');
-			var raw = $input.val();
-			var num = Number(raw);
-			if (raw === '' || raw === null || !isFinite(num) || num < 0 || Math.floor(num) !== num) {
-				this.notice(this.i18n('unifiedInvalid'), 'error');
-				$input.trigger('focus');
-				return;
+			var val = null;
+
+			// فقط حالت «تعداد» عدد می‌خواهد؛ دو حالت وضعیتی بدون عدد اعمال می‌شوند.
+			if (mode === 'qty') {
+				var raw = $input.val();
+				var num = Number(raw);
+				if (raw === '' || raw === null || !isFinite(num) || num < 0 || Math.floor(num) !== num) {
+					this.notice(this.i18n('unifiedInvalid'), 'error');
+					$input.trigger('focus');
+					return;
+				}
+				val = Math.round(num);
 			}
-			var val = Math.round(num);
 
 			var ids = [];
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
@@ -2215,7 +2193,11 @@
 			if (!this.unifiedConfirm) {
 				this.unifiedConfirm = true;
 				$btn.addClass('tisa-btn--confirm')
-					.text(this.i18n('unifiedConfirm').replace('%1$s', this.fmt(val)).replace('%2$d', this.fmt(ids.length)));
+					.text(
+						mode === 'qty'
+							? this.i18n('unifiedConfirm').replace('%1$s', this.fmt(val)).replace('%2$d', this.fmt(ids.length))
+							: this.i18n('unifiedStatusConfirm').replace('%1$s', this.bulkModeLabel(mode)).replace('%2$d', this.fmt(ids.length))
+					);
 				clearTimeout(this.unifiedConfirmTimer);
 				this.unifiedConfirmTimer = setTimeout(function () {
 					TBSM.unifiedConfirm = false;
@@ -2230,18 +2212,20 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			// همهٔ انتخابی‌ها را به حالت عددی با همین مقدار نشان می‌دهیم
+			// کارت‌های انتخابی همان حالت را می‌گیرند تا پیش از پاسخ سرور هم دیده شود
 			var items = {};
 			for (var i = 0; i < ids.length; i++) {
-				items[ids[i]] = { mode: 'qty', qty: val };
+				items[ids[i]] = (mode === 'qty') ? { mode: 'qty', qty: val } : { mode: mode };
 			}
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
 				var $card = $(this);
-				if ($card.attr('data-mode') !== 'qty') {
-					self.setCardMode($card, 'qty');
+				if ($card.attr('data-mode') !== mode) {
+					self.setCardMode($card, mode);
 				}
-				$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
-				self.paintStockbox($card);
+				if (mode === 'qty') {
+					$('.tbsm-var-stock', this).val(val).removeClass('is-invalid');
+					self.paintStockbox($card);
+				}
 			});
 
 			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
