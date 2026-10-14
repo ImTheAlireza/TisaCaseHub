@@ -2212,22 +2212,21 @@
 		 * کارت‌های پردازش‌شده نشان «data-applied» می‌گیرند تا «اعمال» بعدی فقط
 		 * باقی‌مانده را بفرستد (ادامه از همان‌جا که ماند).
 		 */
+		/**
+		 * اعمال را با دسته‌های «تطبیقی» می‌فرستد:
+		 * - خطا → سقف دسته نصف (تا زیر حدِ توان هاست برود)؛
+		 * - موفقیت → سقف دسته دوبرابر تا سقف پیش‌فرض (برگشت به سرعت کامل)؛
+		 * - تک‌مورد خراب → یک تلاش دوباره، بعد رد شدن و ادامه (جداسازی)؛
+		 * - ۶ خطای پیاپی بدون حتی یک موفقیت = فیوز می‌پرد: اجرا متوقف می‌شود
+		 *   و «متن واقعی خطای سرور» نمایش می‌گیرد (به‌جای هزار درخواست بی‌فایده).
+		 * کارت‌های پردازش‌شده نشان «data-applied» می‌گیرند تا «اعمال» بعدی فقط
+		 * باقی‌مانده را بفرستد (ادامه از همان‌جا که ماند).
+		 */
 		applyChunks: function (items) {
 			var self = this;
-			var size = Math.max(1, this.applyChunk || 300);
+			var maxSize = Math.max(1, this.applyChunk || 300);
 			var ids = Object.keys(items);
-			var queue = [];
 			var total = ids.length;
-			var sent = 0;
-
-			for (var i = 0; i < ids.length; i += size) {
-				var part = {};
-				for (var j = i; j < ids.length && j < i + size; j++) {
-					part[ids[j]] = items[ids[j]];
-				}
-				// پرچم تلاش روی خودِ «ایتم‌ها» نباشد: همان آبجکت payload درخواست است
-				queue.push({ it: part, retried: 0 });
-			}
 
 			var agg = {
 				ok: true,
@@ -2239,8 +2238,16 @@
 				errors: [],
 				pids: {},
 				failed: 0,
-				skipped: 0
+				skipped: 0,
+				aborted: 0,
+				abortError: ''
 			};
+
+			var off = 0;          // اولین آیتم پردازش‌نشده
+			var curSize = maxSize;
+			var consec = 0;       // خطاهای پیاپی
+			var retriedAt = -1;   // офsetی که یک بار تلاش دوباره شده
+			var lastErr = '';
 
 			var markDone = function (chunkIds) {
 				for (var k = 0; k < chunkIds.length; k++) {
@@ -2248,53 +2255,60 @@
 				}
 			};
 
-			var step = function (idx) {
+			var step = function () {
 				var def = $.Deferred();
 
-				if (idx >= queue.length) {
+				if (off >= total) {
 					def.resolve(agg);
 					return def.promise();
 				}
 
-				var entry = queue[idx];
-				var chunk = entry.it;
-				var cids = Object.keys(chunk);
+				var cids = ids.slice(off, off + curSize);
+				var chunk = {};
+				for (var j = 0; j < cids.length; j++) {
+					chunk[cids[j]] = items[cids[j]];
+				}
 
-				if (total > size) {
+				if (total > maxSize) {
 					self.notice(self.i18n('applyProgress')
-						.replace('%1$d', self.fmt(Math.min(sent + cids.length, total)))
+						.replace('%1$d', self.fmt(Math.min(off + cids.length, total)))
 						.replace('%2$d', self.fmt(total)), 'info');
 				}
 
-				var retryOrSplit = function () {
+				var onFailure = function () {
+					consec++;
+
+					// فیوز: خطای پیاپی بدون موفقیت = مشکل ساختاری، نه سیب خراب
+					if (consec >= 6) {
+						agg.aborted = 1;
+						agg.abortError = lastErr;
+						def.resolve(agg);
+						return;
+					}
+
 					if (cids.length > 1) {
-						// دستهٔ خطادار را نصف کن تا مورد خراب جدا بیفتد
-						var half = Math.ceil(cids.length / 2);
-						var a = {};
-						var b = {};
-						for (var n = 0; n < cids.length; n++) {
-							if (n < half) { a[cids[n]] = chunk[cids[n]]; } else { b[cids[n]] = chunk[cids[n]]; }
-						}
-						queue.splice(idx, 1, { it: a, retried: 0 }, { it: b, retried: 0 });
-						step(idx).done(function (x) { def.resolve(x); });
+						curSize = Math.max(1, Math.ceil(cids.length / 2));
+						step().done(function (x) { def.resolve(x); });
 						return;
 					}
-					if (!entry.retried) {
-						entry.retried = 1;
-						step(idx).done(function (x) { def.resolve(x); });
+					if (retriedAt !== off) {
+						retriedAt = off;
+						step().done(function (x) { def.resolve(x); });
 						return;
 					}
-					// تک‌مورد خراب: رد می‌شود بقیه ادامه دهند؛ در اعمال بعدی دوباره فرستاده می‌شود
+					// تک‌مورد خراب: رد شود، بقیه ادامه دهند
 					agg.errors.push(self.i18n('applyItemFailed').replace('%s', self.fmt(cids[0])));
 					agg.failed += 1;
-					sent += 1;
-					step(idx + 1).done(function (x) { def.resolve(x); });
+					retriedAt = -1;
+					off += 1;
+					step().done(function (x) { def.resolve(x); });
 				};
 
 				self.api(self.applyPayload(chunk))
 					.done(function (res) {
 						if (!res || !res.success) {
-							retryOrSplit();
+							lastErr = self.applyMsg(res && res.data);
+							onFailure();
 							return;
 						}
 
@@ -2312,18 +2326,24 @@
 						if (d.parent_status) {
 							agg.parent_status = d.parent_status;
 						}
-						sent += cids.length;
+
+						consec = 0;
+						retriedAt = -1;
 						markDone(cids);
-						step(idx + 1).done(function (a) { def.resolve(a); });
+						off += cids.length;
+						// بهبود تدریجی: پس از موفقیت، دسته بزرگ‌تر شود
+						curSize = Math.min(maxSize, curSize * 2);
+						step().done(function (a) { def.resolve(a); });
 					})
 					.fail(function (xhr) {
-						retryOrSplit();
+						lastErr = self.applyFailMsg(xhr);
+						onFailure();
 					});
 
 				return def.promise();
 			};
 
-			return step(0).done(function (a) {
+			return step().done(function (a) {
 				a.parents_synced = Object.keys(a.pids).length;
 				if (a.parents_synced !== 1) {
 					a.parent_status = null;
@@ -2576,7 +2596,9 @@
 			if (data.report.length || data.errors.length) {
 				this.renderReport(data);
 			}
-			if (data.failed) {
+			if (data.aborted) {
+				this.notice(this.i18n('applyAborted').replace('%s', data.abortError || ''), 'error');
+			} else if (data.failed) {
 				this.notice(this.i18n('applySomeFailed').replace('%d', this.fmt(data.failed)), 'error');
 			} else if (!data.report.length && !data.errors.length && data.skipped) {
 				this.notice(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)), 'info');

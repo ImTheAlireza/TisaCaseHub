@@ -318,7 +318,7 @@ await click('#tbsm-apply'); // تأیید
 await click('#tbsm-apply'); // اجرا
 await waitFor('اعمال با جداسازی مورد خراب', () => qa('#tbsm-report .tbsm-report-row').length === 4);
 ok('۴ سالم اعمال شد، ۲ خراب جدا افتاد', qa('#tbsm-report .tbsm-report-row').length === 4);
-ok('تلاش‌ها: دسته‌ها + نصف‌شدن + تلاش دوبارهٔ تک‌مورد = ۷ درخواست', window.tbsmMockApplyCalls === 7, String(window.tbsmMockApplyCalls));
+ok('تلاش‌ها: دسته‌ها + نصف‌شدن تطبیقی + تلاش دوبارهٔ تک‌مورد = ۸ درخواست', window.tbsmMockApplyCalls === 8, String(window.tbsmMockApplyCalls));
 ok('پیام خطای جزئی «۲ مورد» آمد', /۲ مورد/.test(text('#tbsm-notice')), text('#tbsm-notice'));
 ok('کارت‌های خراب نشان «اعمال‌شده» نگرفتند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 4);
 
@@ -340,6 +340,17 @@ ok('گزارشی برای موارد پرش‌شده ساخته نشد', !visibl
 // خط «بدون تغییر» داخل گزارش وقتی فقط بعضی پرش می‌شوند
 window.TBSM.renderReport({ report: [], applied: 0, skipped: 5, errors: [], parents_synced: 0, parent_status: null });
 ok('خط «بدون تغییر» در گزارش رندر شد', /۵ مورد بدون تغییر/.test(text('#tbsm-report')), text('#tbsm-report'));
+
+// فیوز: خطای پیاپی بدون موفقیت → توقف + نمایش خطای واقعی سرور
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+window.tbsmMockApplyFail = qa('#tbsm-grid .tbsm-var').map((c) => c.getAttribute('data-id'));
+window.tbsmMockApplyCalls = 0;
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('فیوز خطای پیاپی', () => /اعمال پس از خطاهای پیاپی/.test(text('#tbsm-notice')));
+ok('۶ خطای پیاپی → فیوز + نمایش خطای سرور', /اعمال پس از خطاهای پیاپی/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('شمار درخواست‌ها مهار شد (۶)', window.tbsmMockApplyCalls === 6, String(window.tbsmMockApplyCalls));
+window.tbsmMockApplyFail = null;
 
 window.TBSM.applyChunk = 300;
 delete window.tbsmMockApplyCalls;
