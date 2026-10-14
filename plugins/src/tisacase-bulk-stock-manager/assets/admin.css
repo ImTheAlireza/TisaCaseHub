@@ -509,22 +509,34 @@ body.tbsm-page #wpfooter {
 	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
 }
 
-.tbsm-input:disabled {
-	background: var(--tisa-surface-3, #F6F5F1);
+.tbsm-wrap .tbsm-input:disabled {
+	background-color: var(--tisa-surface-3, #F6F5F1);
 	color: var(--tisa-muted, #77828A);
 	cursor: not-allowed;
 }
 
-/* فلش سفارشی سلکت سمت چپ (RTL) و فاصلهٔ امن برای متن */
+/* فلش سفارشی سلکت سمت چپ (RTL) و فاصلهٔ امن برای متن.
+   همهٔ زیرخصیصه‌های background در یک قاعده با اختصاصی‌بودنی بالاتر از لایهٔ هاب
+   (`.tisa-scope select`) و بالاتر از قاعدهٔ disabled — تا image/repeat/position
+   هرگز از هم جدا نیفتند (باگ «فلش کاشی‌شده» یعنی repeatِ پیش‌فرض روی image). */
 .tbsm-select {
 	appearance: none;
 	-webkit-appearance: none;
 	cursor: pointer;
+}
+
+.tbsm-wrap .tbsm-input.tbsm-select {
+	background-color: var(--tisa-surface, #FFFFFF);
 	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2377828A' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 	background-repeat: no-repeat;
 	background-position: left 12px center;
 	background-size: 16px 16px;
 	padding-inline-end: var(--tisa-sp-6, 32px);
+}
+
+/* سلکت غیرفعال: زمینهٔ خاکستری، پیکان سر جایش */
+.tbsm-wrap .tbsm-input.tbsm-select:disabled {
+	background-color: var(--tisa-surface-3, #F6F5F1);
 }
 
 /* ------------------------------------------------------------------
@@ -785,7 +797,7 @@ body.tbsm-page #wpfooter {
 	color: var(--tisa-text, #2A3439);
 }
 
-.tbsm-bulk-mode {
+.tbsm-wrap .tbsm-select.tbsm-bulk-mode {
 	width: auto;
 	min-width: 170px;
 	min-height: var(--tisa-ctl-h-sm, 30px);
@@ -1073,7 +1085,7 @@ body.tbsm-page #wpfooter {
 }
 
 /* سلکت نوع موجودی روی کارت — فشرده‌تر از ورودی‌های فرم */
-.tbsm-var-mode {
+.tbsm-wrap .tbsm-var-mode {
 	width: 100%;
 	min-height: var(--tisa-ctl-h-sm, 30px);
 	appearance: none;
