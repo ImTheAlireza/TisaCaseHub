@@ -37,8 +37,9 @@
 
 		// حالت گروهی — گام ۲ و ۳
 		scope: null,        // محدودهٔ تأییدشده از سرور {type, label, products, variations, ...}
-		scopeAttrs: [],     // ویژگی‌های همان محدوده [{attr, label, hint, products, variations}]
-		group: null,        // {attr, attrLabel, term, termLabel} مدل انتخاب‌شده
+		scopeAttrs: [],     // ویژگی‌های همان محدوده [{label, keys[], products, variations}]
+		valueGroups: [],    // مقدارهای ویژگی انتخاب‌شده [{label, values[], products, variations}]
+		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -234,10 +235,10 @@
 
 			// حالت گروهی — گام ۲: ویژگی و مقدار مدل
 			$('#tbsm-group-attr').on('change', function () {
-				self.loadGroupValues(this.value);
+				self.loadGroupValues(parseInt(this.value, 10));
 			});
 			$('#tbsm-group-term').on('change', function () {
-				self.findGroup();
+				self.findGroup(parseInt(this.value, 10));
 			});
 		},
 
@@ -613,8 +614,10 @@
 		 * ---------------------------------------------------------- */
 
 		/**
-		 * فهرست ویژگی‌های محدوده. ویژگی‌های هم‌نام (مثل دو «مدل» از دو کلید مختلف)
-		 * با کلید متایشان تفکیک می‌شوند تا کاربر بداند کدام را انتخاب کند.
+		 * فهرست ویژگی‌های محدوده. ویژگی‌هایی که سرور آن‌ها را «یکی» شناخته
+		 * (برچسب خوانای یکسان؛ مثل `pa_model` و `مدل` و `d9%85d8%af%d9%84`) در یک
+		 * گزینه آمده‌اند و کلیدهای خامشان در `data-keys` است؛ کنار نام، تعداد
+		 * محصول (و در صورت ادغام، شمار کلیدها) نمایش داده می‌شود.
 		 */
 		renderGroupAttrs: function () {
 			var $sel = $('#tbsm-group-attr');
@@ -626,23 +629,22 @@
 				return;
 			}
 
-			var labels = [];
-			var i;
-			for (i = 0; i < list.length; i++) {
-				labels.push(this.catLabel(list[i].label));
-			}
-			var dupes = this.dupeSet(labels);
-
 			var html = '<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>';
-			for (i = 0; i < list.length; i++) {
+			for (var i = 0; i < list.length; i++) {
 				var attr = list[i];
-				var text = this.catLabel(attr.label);
-				if (dupes[text] && attr.hint) {
-					text += ' — ' + this.i18n('groupKeyHint').replace('%s', attr.hint);
+				var label = this.catLabel(attr.label);
+				var keys = attr.keys || [];
+				var text = label
+					+ ' — ' + this.fmt(attr.products) + ' ' + this.esc(this.i18n('scopeProductsUnit'));
+
+				if (keys.length > 1) {
+					text += ' · ' + this.esc(this.i18n('groupMergedKeys').replace('%d', this.fmt(keys.length)));
 				}
-				html += '<option value="' + this.esc(attr.attr) + '" data-label="' + this.esc(this.catLabel(attr.label)) + '">'
+
+				html += '<option value="' + i + '" data-label="' + this.esc(label) + '"'
+					+ ' data-keys="' + this.esc(keys.join('|')) + '"'
+					+ ' data-products="' + this.fmt(attr.products) + '">'
 					+ this.esc(text)
-					+ (attr.products ? ' (' + this.fmt(attr.products) + ' ' + this.esc(this.i18n('scopeProductsUnit')) + ')' : '')
 					+ '</option>';
 			}
 
@@ -650,11 +652,15 @@
 			this.renderGroupValues([]);
 		},
 
-		/** بارگذاری مقدارهای ویژگی انتخاب‌شده در همین محدوده. */
-		loadGroupValues: function (attr) {
+		/**
+		 * بارگذاری مقدارهای ویژگی انتخاب‌شده در همین محدوده (فقط کلیدهای همان
+		 * ویژگی فرستاده می‌شوند).
+		 */
+		loadGroupValues: function (index) {
 			var self = this;
+			var attr = (this.scopeAttrs || [])[index];
 
-			if (!attr) {
+			if (!attr || !attr.keys || !attr.keys.length) {
 				this.renderGroupValues([]);
 				return;
 			}
@@ -665,7 +671,7 @@
 			var payload = this.scopePayload();
 			payload.action = 'tbsm_scope_values';
 			payload.nonce = window.tbsmData.nonce;
-			payload.attr = attr;
+			payload.attr_keys = attr.keys;
 
 			var seq = this.loadSeq;
 			$.post(window.tbsmData.ajaxUrl, payload)
@@ -688,52 +694,29 @@
 				});
 		},
 
-		/** پرکردن سلکت مقدار مدل (با تفکیک مقدارهای هم‌نام برچسب). */
+		/** پرکردن سلکت مقدار مدل (مقدارهای هم‌معنا یک گزینه‌اند). */
 		renderGroupValues: function (values) {
 			var $term = $('#tbsm-group-term');
+			this.valueGroups = values || [];
 
-			if (!values || !values.length) {
+			if (!this.valueGroups.length) {
 				$term.prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>');
 				this.resetGroupCards();
 				return;
 			}
 
-			var labels = [];
-			var i;
-			for (i = 0; i < values.length; i++) {
-				labels.push(this.catLabel(values[i].label));
-			}
-			var dupes = this.dupeSet(labels);
-
 			var html = '<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>';
-			for (i = 0; i < values.length; i++) {
-				var v = values[i];
-				var text = this.catLabel(v.label);
-				if (dupes[text] && v.hint) {
-					text += ' — ' + this.i18n('groupKeyHint').replace('%s', v.hint);
-				}
-				html += '<option value="' + this.esc(v.value) + '" data-label="' + this.esc(this.catLabel(v.label)) + '">'
-					+ this.esc(text)
-					+ (v.products ? ' (' + this.fmt(v.products) + ' ' + this.esc(this.i18n('scopeProductsUnit')) + ')' : '')
+			for (var i = 0; i < this.valueGroups.length; i++) {
+				var v = this.valueGroups[i];
+				var label = this.catLabel(v.label);
+				html += '<option value="' + i + '" data-label="' + this.esc(label) + '"'
+					+ ' data-values="' + this.esc((v.values || []).join('|')) + '">'
+					+ this.esc(label + ' — ' + this.fmt(v.products) + ' ' + this.esc(this.i18n('scopeProductsUnit')))
 					+ '</option>';
 			}
 
 			$term.prop('disabled', false).html(html).val('');
 			this.resetGroupCards();
-		},
-
-		/** برچسب‌هایی که بیش از یک بار تکرار شده‌اند (برای افزودن کلید متا). */
-		dupeSet: function (labels) {
-			var seen = {};
-			var dupes = {};
-			for (var i = 0; i < labels.length; i++) {
-				var key = labels[i];
-				if (seen[key]) {
-					dupes[key] = true;
-				}
-				seen[key] = true;
-			}
-			return dupes;
 		},
 
 		/** پاک‌کردن کارت‌ها وقتی مقدار مدل ناتمام است. */
@@ -756,11 +739,12 @@
 		 * حالت گروهی — گام ۳: کارت‌های همان مدل در همان محدوده
 		 * ---------------------------------------------------------- */
 
-		/** فهرست‌کردن متغیرهای مدل انتخاب‌شده. */
-		findGroup: function () {
+		/** فهرست‌کردن متغیرهای مدل انتخاب‌شده (کلید/مقدارهای هم‌معنا با هم). */
+		findGroup: function (termIndex) {
 			var self = this;
-			var attr = $('#tbsm-group-attr').val();
-			var term = $('#tbsm-group-term').val();
+			var attrIndex = parseInt($('#tbsm-group-attr').val(), 10);
+			var attr = (this.scopeAttrs || [])[attrIndex];
+			var term = (this.valueGroups || [])[termIndex];
 
 			if (!this.scope) {
 				return;
@@ -770,10 +754,10 @@
 				return;
 			}
 
-			var seq = ++this.loadSeq;
-			var attrLabel = $('#tbsm-group-attr option:selected').attr('data-label') || $.trim($('#tbsm-group-attr option:selected').text());
-			var termLabel = $('#tbsm-group-term option:selected').attr('data-label') || $.trim($('#tbsm-group-term option:selected').text());
+			var attrLabel = attr.label;
+			var termLabel = term.label;
 
+			var seq = ++this.loadSeq;
 			this.clearSelection(true);
 			this.notice('');
 			this.busy = true;
@@ -782,8 +766,8 @@
 			var payload = this.scopePayload();
 			payload.action = 'tbsm_find_scope';
 			payload.nonce = window.tbsmData.nonce;
-			payload.attr = attr;
-			payload.term = term;
+			payload.attr_keys = attr.keys || [];
+			payload.term_values = term.values || [];
 
 			$.post(window.tbsmData.ajaxUrl, payload)
 				.done(function (res) {
@@ -801,10 +785,10 @@
 
 					var data = res.data || {};
 					self.group = {
-						attr: attr,
 						attrLabel: attrLabel,
-						term: term,
-						termLabel: termLabel
+						termLabel: termLabel,
+						keys: attr.keys || [],
+						values: term.values || []
 					};
 					if (data.scope) {
 						self.scope = data.scope;
@@ -886,6 +870,7 @@
 				this.scopeAttrs = [];
 				$('#tbsm-scope-summary').prop('hidden', true).empty();
 				$('#tbsm-step-model').addClass('tbsm-step-locked');
+				this.valueGroups = [];
 				$('#tbsm-group-attr').prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupAttrLoading')) + '</option>');
 				$('#tbsm-group-term').prop('disabled', true).html('<option value="">' + this.esc(this.i18n('groupTermPick')) + '</option>');
 			}
@@ -1331,10 +1316,10 @@
 			return out || s;
 		},
 
-		/** حذف کاراکترهای صفرعرض/کنترلی — پیش از هر decode ای. */
+		/** حذف کاراکترهای صفرعرض/کنترلی — پیش از هر decode ای (نیم‌فاصله حفظ می‌شود). */
 		stripInvisible: function (s) {
 			return String(s === null || s === undefined ? '' : s)
-				.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+				.replace(/[\u200B\u200E\u200F\u202A-\u202E\u2060\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
 		},
 
 		/** آیا رشته شبیه blobِ کدشدهٔ hexی است؟ */
@@ -1712,8 +1697,8 @@
 			if (this.mode === 'group') {
 				var scope = this.scopePayload();
 				payload.action = 'tbsm_apply_scope_stock';
-				payload.attr = this.group.attr;
-				payload.term = this.group.term;
+				payload.attr_keys = this.group.keys || [];
+				payload.term_values = this.group.values || [];
 				payload.scope_type = scope.scope_type;
 				payload.product_ids = scope.product_ids;
 				payload.category_id = scope.category_id;
@@ -1915,6 +1900,9 @@
 			$report[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 		}
 	};
+
+	// در دسترس گذاشتن کنترلر برای پیش‌نمایش/دیباگ (بدون تغییر رفتار افزونه).
+	window.TBSM = TBSM;
 
 	$(function () {
 		TBSM.init();

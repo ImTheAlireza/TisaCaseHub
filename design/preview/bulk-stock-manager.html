@@ -35,7 +35,7 @@
 					<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
 					<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید و موجودی متغیرهایش را تغییر دهید؛ یا در تب «گروهی» اول محدودهٔ محصولات را مشخص کنید (چند محصول، دسته‌بندی یا شناسه)، بعد ویژگی و مقدار مدل را از میان ویژگی‌های همان محدوده انتخاب کنید و موجودی را تکی یا یک‌جا روی همهٔ آن‌ها اعمال کنید.</p>
 				</div>
-				<span class="tbsm-hero-ver" dir="ltr">v1.3.0</span>
+				<span class="tbsm-hero-ver" dir="ltr">v1.3.1</span>
 			</div>
 		</div>
 
@@ -406,43 +406,123 @@
 			return PRODUCTS.filter(function (p) { return inScope(p, scope); });
 		}
 
-		/** ویژگی‌های موجود در محدوده + شمارش محصول/متغیر. */
+		/** دیکودر برچسب — همان catLabel واقعی افزونه (admin.js). */
+		function decodeLabel(label) {
+			if (window.TBSM && window.TBSM.catLabel) {
+				return window.TBSM.catLabel(label);
+			}
+			return String(label === null || label === undefined ? '' : label);
+		}
+
+		/** «هویت» برچسب — همان الگوریتم TBSM_Stock::label_identity() در سرور. */
+		function labelIdentity(label) {
+			var text = decodeLabel(label)
+				.replace(/[\u200B-\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+				.toLowerCase()
+				.replace(/[يﻯﻰ]/g, 'ی')
+				.replace(/[كﻙ]/g, 'ک')
+				.replace(/[ةۀ]/g, 'ه')
+				.replace(/\s+/g, ' ')
+				.trim();
+			return text;
+		}
+
+		/** ویژگی‌های محدوده با ادغام برچسب‌های یکسان (مثل pa_model و مدل و کدشده). */
 		function scopeAttributes(scope) {
 			var map = {};
 			scopeProducts(scope).forEach(function (p) {
 				if (p.type !== 'variable') { return; }
 				Object.keys(p.cats || {}).forEach(function (attr) {
-					var group = map[attr] || (map[attr] = { attr: attr, label: p.cats[attr].label, products: 0, variations: 0 });
-					group.products++;
-					group.variations += p.vars.length;
+					var label = decodeLabel(p.cats[attr].label);
+					var gid = labelIdentity(label) || ('key:' + attr);
+					var group = map[gid] || (map[gid] = { label: label, keys: [], productIds: {}, varIds: {} });
+					if (group.keys.indexOf(attr) === -1) {
+						group.keys.push(attr);
+					}
+					group.productIds[p.id] = true;
+					p.vars.forEach(function (v) { group.varIds[v.id] = true; });
 				});
 			});
-			return Object.keys(map).map(function (key) {
-				return { attr: map[key].attr, label: map[key].label, hint: map[key].attr, products: map[key].products, variations: map[key].variations };
-			}).sort(function (a, b) { return b.products - a.products; });
+
+			return Object.keys(map).map(function (gid) {
+				var group = map[gid];
+				return {
+					label: group.label,
+					keys: group.keys,
+					products: Object.keys(group.productIds).length,
+					variations: Object.keys(group.varIds).length
+				};
+			}).sort(function (a, b) {
+				return (b.products - a.products) || String(a.label).localeCompare(String(b.label));
+			});
 		}
 
-		/** مقدارهای یک ویژگی در محدوده. */
-		function scopeValues(scope, attr) {
-			var map = {};
+		/**
+		 * مقدارهای یک ویژگی (مجموعهٔ کلیدها) با ادغام نوشتار خام یکسان **یا**
+		 * برچسب یکسان — هم‌منطق با TBSM_Stock::list_scope_values().
+		 */
+		function scopeValues(scope, attrKeys) {
+			var list = [], byValue = {}, byIdentity = {};
+
 			scopeProducts(scope).forEach(function (p) {
-				if (p.type !== 'variable' || !p.cats || !p.cats[attr]) { return; }
-				p.cats[attr].values.forEach(function (val) {
-					var v = map[val.slug] || (map[val.slug] = { value: val.slug, label: val.label, hint: val.slug, products: 0, variations: 0 });
-					v.products++;
-					v.variations += val.count || 0;
+				if (p.type !== 'variable') { return; }
+				attrKeys.forEach(function (attr) {
+					if (!p.cats || !p.cats[attr]) { return; }
+					p.cats[attr].values.forEach(function (val) {
+						var raw = String(val.slug);
+						var label = decodeLabel(val.label);
+						var id = labelIdentity(label);
+						var index = null;
+
+						if (Object.prototype.hasOwnProperty.call(byValue, raw)) {
+							index = byValue[raw];
+						} else if (id && Object.prototype.hasOwnProperty.call(byIdentity, id)) {
+							index = byIdentity[id];
+						}
+
+						if (index === null) {
+							index = list.length;
+							list.push({ label: label, values: [], productIds: {}, varIds: {} });
+						}
+						if (!Object.prototype.hasOwnProperty.call(byValue, raw)) { byValue[raw] = index; }
+						if (id && !Object.prototype.hasOwnProperty.call(byIdentity, id)) { byIdentity[id] = index; }
+
+						if (list[index].values.indexOf(raw) === -1) { list[index].values.push(raw); }
+						list[index].productIds[p.id] = true;
+						// متغیرهای هم‌ارزش: کلید ویژگی هم در شناسه می‌آید تا شمارش دقیق باشد
+						list[index].varIds[attr + ':' + raw + ':' + p.id] = (val.count || 0);
+					});
 				});
 			});
-			return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) { return b.products - a.products; });
+
+			return list.map(function (group) {
+				var variations = 0;
+				Object.keys(group.varIds).forEach(function (k) { variations += group.varIds[k]; });
+				return {
+					label: group.label,
+					values: group.values,
+					products: Object.keys(group.productIds).length,
+					variations: variations
+				};
+			}).sort(function (a, b) {
+				return (b.products - a.products) || String(a.label).localeCompare(String(b.label));
+			});
 		}
 
-		/** متغیرهای یک مدل در محدوده (معادل find_scope_rows). */
-		function scopeRows(scope, attr, term) {
+		/** ردیف‌های کارت برای مجموعهٔ کلید/مقدارها. */
+		function scopeRows(scope, attrKeys, termValues) {
 			var rows = [], products = {};
 			scopeProducts(scope).forEach(function (p) {
 				if (p.type !== 'variable') { return; }
 				p.vars.forEach(function (v) {
-					if (('|' + (v.cat || '') + '|').indexOf('|' + attr + ':' + term + '|') === -1) { return; }
+					var cat = '|' + (v.cat || '') + '|';
+					var hit = false;
+					attrKeys.forEach(function (attr) {
+						termValues.forEach(function (term) {
+							if (cat.indexOf('|' + attr + ':' + term + '|') !== -1) { hit = true; }
+						});
+					});
+					if (!hit) { return; }
 					rows.push({
 						id: v.id, pid: p.id, pname: p.name, psku: p.sku, name: v.name, sku: v.sku,
 						stock: v.stock, status: v.status, manage_stock: v.manage_stock, mode: v.mode,
@@ -453,6 +533,7 @@
 			});
 			return { rows: rows, products: Object.keys(products).length };
 		}
+
 
 		/** گزارش محدوده (معادل scope_payload سرور). */
 		function scopePayload(scope) {
@@ -551,8 +632,8 @@
 				groupAttrEmpty: 'در محدودهٔ انتخابی هیچ ویژگی متغیری پیدا نشد؛ محدوده را تغییر دهید.',
 				groupAttrLoading: 'در حال بارگذاری…',
 				groupValuesError: 'بارگذاری مقدارهای این ویژگی ناموفق بود.',
+				groupMergedKeys: '%d کلید ادغام‌شده',
 				groupTermPick: '— انتخاب کنید —',
-				groupKeyHint: 'کلید: %s',
 				groupFindError: 'فهرست‌کردن متغیرها ناموفق بود.',
 				groupNeedSelection: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
 				groupSearching: 'در حال فهرست‌کردن متغیرها…',
@@ -678,26 +759,30 @@
 					}
 
 					if (data.action === 'tbsm_scope_values') {
-						if (!data.attr) {
+						if (!(data.attr_keys || []).length) {
 							d.resolve({ success: false, data: { message: 'ابتدا ویژگی مدل را انتخاب کنید.' } });
 							return;
 						}
-						d.resolve({ success: true, data: { attr: data.attr, values: scopeValues(data, data.attr) } });
+						d.resolve({
+							success: true,
+							data: { attr_keys: data.attr_keys, values: scopeValues(data, data.attr_keys) }
+						});
 						return;
 					}
 
 					if (data.action === 'tbsm_find_scope') {
-						if (!data.attr || !data.term) {
+						if (!(data.attr_keys || []).length || !(data.term_values || []).length) {
 							d.resolve({ success: false, data: { message: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' } });
 							return;
 						}
-						var found = scopeRows(data, data.attr, data.term);
+						var found = scopeRows(data, data.attr_keys, data.term_values);
 						d.resolve({
 							success: true,
 							data: {
 								rows: found.rows, total: found.rows.length, products: found.products,
 								truncated: false, limit: 300,
-								scope: scopePayload(data), attr: data.attr, term: data.term
+								scope: scopePayload(data),
+								attr_keys: data.attr_keys, values: data.term_values
 							}
 						});
 						return;
@@ -710,7 +795,16 @@
 							if (!isModel && item.id !== data.product_id) { return; }
 							if (isModel && !inScope(item, data)) { return; }
 							item.vars.forEach(function (v) {
-								if (isModel && ('|' + (v.cat || '') + '|').indexOf('|' + data.attr + ':' + data.term + '|') === -1) { return; }
+								if (isModel) {
+									var cat = '|' + (v.cat || '') + '|';
+									var hit = false;
+									(data.attr_keys || []).forEach(function (attr) {
+										(data.term_values || []).forEach(function (term) {
+											if (cat.indexOf('|' + attr + ':' + term + '|') !== -1) { hit = true; }
+										});
+									});
+									if (!hit) { return; }
+								}
 								targets.push({ product: item, variation: v });
 							});
 						});

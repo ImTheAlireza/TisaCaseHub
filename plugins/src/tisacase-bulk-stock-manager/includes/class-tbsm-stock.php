@@ -63,18 +63,19 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 * داشته باشند و هم محصول والدشان در «محدودهٔ محصولات» باشد (اعتبارسنجی دوبارهٔ
 		 * سمت سرور — کلاینت فقط پیشنهاد می‌دهد).
 		 *
-		 * @param array  $items آرایهٔ [ شناسهٔ متغیر => مقدار موجودی ].
-		 * @param string $attr  نام ویژگی (کلید متای متغیر بدون پیشوند attribute_).
-		 * @param string $value مقدار مدل انتخاب‌شده.
-		 * @param array  $scope محدوده (خروجی normalize_scope).
+		 * @param array $items     آرایهٔ [ شناسهٔ متغیر => مقدار موجودی ].
+		 * @param array $attr_keys کلیدهای متای ویژگی که همه به یک ویژگی اشاره می‌کنند
+		 *                         (مثل pa_model و model و d9%85d8%af%d9%84).
+		 * @param array $values    مقدارهای خام هم‌معنا (نوشتارهای مختلف یک مقدار).
+		 * @param array $scope     محدوده (خروجی normalize_scope).
 		 * @return array گزارش اعمال.
 		 */
-		public static function apply_scope_stock( array $items, $attr, $value, array $scope ) {
-			$attr  = self::sanitize_attribute_key( $attr );
-			$value = (string) $value;
-			$scope = self::normalize_scope( $scope );
+		public static function apply_scope_stock( array $items, array $attr_keys, array $values, array $scope ) {
+			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
+			$values    = self::sanitize_value_list( $values, TBSM_Core::MAX_MODEL_VALUES );
+			$scope     = self::normalize_scope( $scope );
 
-			if ( '' === $attr || '' === $value ) {
+			if ( empty( $attr_keys ) || empty( $values ) ) {
 				return array(
 					'ok'    => false,
 					'error' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -106,7 +107,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			$allowed = array();
 			foreach ( array_keys( $items ) as $raw_id ) {
 				$var_id = absint( $raw_id );
-				if ( self::scope_item_allowed( $var_id, $scope, $attr, $value ) ) {
+				if ( self::scope_item_allowed( $var_id, $scope, $attr_keys, $values ) ) {
 					$allowed[] = $var_id;
 				}
 			}
@@ -494,11 +495,14 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 		/**
 		 * ویژگی‌های موجود در «محدودهٔ انتخابی» به‌همراه شمارش متغیر/محصول.
-		 * مقدارها با فراخوانی جداگانهٔ list_scope_values() خوانده می‌شوند
-		 * (روی کاتالوگ‌های بزرگ، این‌طور فقط ویژگیِ انتخاب‌شده گران است).
+		 *
+		 * ویژگی‌هایی که برچسب خوانایشان یکی است (مثل pa_model، مدل و
+		 * d9%85d8%af%d9%84 که همه «مدل» خوانده می‌شوند) در **یک ردیف** ادغام
+		 * می‌شوند و کلیدهای خامشان در `keys` می‌ماند؛ اعمال و فهرست‌کردن هم روی
+		 * همان مجموعه انجام می‌شود تا کاربر چند ردیف تکراری و گیج‌کننده نبیند.
 		 *
 		 * @param array $scope محدوده.
-		 * @return array [{attr, label, hint, products, variations}]
+		 * @return array [{label, keys, products, variations}]
 		 */
 		public static function list_scope_attributes( $scope ) {
 			global $wpdb;
@@ -526,35 +530,72 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			);
 			$rows = is_array( $rows ) ? $rows : array();
 
-			$list = array();
+			$groups = array();
 			foreach ( $rows as $row ) {
 				$meta_key = (string) $row['meta_key'];
 				$attr     = substr( $meta_key, strlen( 'attribute_' ) );
 				if ( '' === $attr ) {
 					continue;
 				}
-				$list[] = array(
-					'attr'       => $attr,
-					'label'      => self::attribute_display_label( $attr ),
-					'hint'       => $attr,
-					'products'   => (int) $row['products'],
-					'variations' => (int) $row['variations'],
-				);
+
+				$label = self::attribute_display_label( $attr );
+				$gid   = self::label_identity( $label );
+				if ( '' === $gid ) {
+					$gid = 'key:' . $attr;
+				}
+
+				if ( ! isset( $groups[ $gid ] ) ) {
+					$groups[ $gid ] = array(
+						'label'      => $label,
+						'keys'       => array(),
+						'products'   => 0,
+						'variations' => 0,
+					);
+				}
+
+				$groups[ $gid ]['label']       = self::richer_label( $groups[ $gid ]['label'], $label );
+				$groups[ $gid ]['keys'][]      = $attr;
+				$groups[ $gid ]['products']   += (int) $row['products'];
+				$groups[ $gid ]['variations'] += (int) $row['variations'];
 			}
+
+			// ادغام‌شده‌ها: شمارش دقیق (بدون دوباره‌شمردن محصول مشترک).
+			foreach ( $groups as $gid => $group ) {
+				if ( count( $group['keys'] ) < 2 ) {
+					continue;
+				}
+				$count = self::scope_count( $scope, $group['keys'] );
+				$groups[ $gid ]['products']   = $count['products'];
+				$groups[ $gid ]['variations'] = $count['variations'];
+			}
+
+			$list = array_values( $groups );
+			usort(
+				$list,
+				static function ( $a, $b ) {
+					if ( $a['products'] === $b['products'] ) {
+						return strcmp( (string) $a['label'], (string) $b['label'] );
+					}
+					return ( $a['products'] > $b['products'] ) ? -1 : 1;
+				}
+			);
 
 			return $list;
 		}
 
 		/**
-		 * مقدارهای یک ویژگی در محدودهٔ انتخابی.
+		 * مقدارهای یک ویژگی (یا مجموعهٔ کلیدهای یک ویژگی ادغام‌شده) در محدوده.
 		 *
-		 * @param array  $scope محدوده.
-		 * @param string $attr  نام ویژگی.
-		 * @return array [{value, label, hint, products, variations}]
+		 * مقدارهایی که برچسب یکسان دارند (نوشتارهای مختلف یک مقدار) هم ادغام
+		 * می‌شوند و `values` همهٔ نوشتارهای خام را نگه می‌دارد.
+		 *
+		 * @param array $scope     محدوده.
+		 * @param array $attr_keys کلیدهای ویژگی.
+		 * @return array [{label, values, products, variations}]
 		 */
-		public static function list_scope_values( $scope, $attr ) {
-			$attr = self::sanitize_attribute_key( $attr );
-			if ( '' === $attr ) {
+		public static function list_scope_values( $scope, $attr_keys ) {
+			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
+			if ( empty( $attr_keys ) ) {
 				return array();
 			}
 
@@ -564,7 +605,16 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			$sql   = self::scope_sql( $scope );
 			$base  = self::scope_base();
 
-			$params   = array_merge( array( 'attribute_' . $attr ), $sql['params'] );
+			$keys_ph = implode( ', ', array_fill( 0, count( $attr_keys ), '%s' ) );
+			$params  = array_merge(
+				array_map(
+					static function ( $key ) {
+						return 'attribute_' . $key;
+					},
+					$attr_keys
+				),
+				$sql['params']
+			);
 			$params[] = TBSM_Core::MAX_MODEL_VALUES;
 
 			$rows = $wpdb->get_results(
@@ -573,7 +623,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 						COUNT(DISTINCT am.post_id) AS variations,
 						COUNT(DISTINCT p.ID) AS products
 					{$base} {$sql['join']}
-					WHERE am.meta_key = %s AND am.meta_value <> '' {$sql['where']}
+					WHERE am.meta_key IN ({$keys_ph}) AND am.meta_value <> '' {$sql['where']}
 					GROUP BY am.meta_value
 					ORDER BY products DESC, variations DESC, am.meta_value ASC
 					LIMIT %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
@@ -583,38 +633,136 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			);
 			$rows = is_array( $rows ) ? $rows : array();
 
-			$term_labels = self::global_term_labels( $attr );
-			$list        = array();
+			$term_labels = self::global_term_labels( $attr_keys );
+
+			// ادغام مقدارها: نوشتار خام یکسان **یا** برچسب یکسان → یک گزینه.
+			$groups      = array();
+			$by_value    = array();
+			$by_identity = array();
+
 			foreach ( $rows as $row ) {
 				$value = (string) $row['value'];
 				$label = ( isset( $term_labels[ $value ] ) && '' !== $term_labels[ $value ] )
 					? $term_labels[ $value ]
 					: self::clean_label( self::maybe_decode_label( $value ) );
-				$list[] = array(
-					'value'      => $value,
-					'label'      => $label,
-					'hint'       => $value,
-					'products'   => (int) $row['products'],
-					'variations' => (int) $row['variations'],
-				);
+
+				$identity = self::label_identity( $label );
+				$index    = null;
+
+				if ( isset( $by_value[ $value ] ) ) {
+					$index = $by_value[ $value ];
+				} elseif ( '' !== $identity && isset( $by_identity[ $identity ] ) ) {
+					$index = $by_identity[ $identity ];
+				}
+
+				if ( null === $index ) {
+					$index                = count( $groups );
+					$groups[ $index ]     = array(
+						'label'      => $label,
+						'values'     => array(),
+						'products'   => 0,
+						'variations' => 0,
+					);
+				}
+
+				if ( ! isset( $by_value[ $value ] ) ) {
+					$by_value[ $value ] = $index;
+				}
+				if ( '' !== $identity && ! isset( $by_identity[ $identity ] ) ) {
+					$by_identity[ $identity ] = $index;
+				}
+
+				$groups[ $index ]['label'] = self::richer_label( $groups[ $index ]['label'], $label );
+
+				if ( ! in_array( $value, $groups[ $index ]['values'], true ) ) {
+					$groups[ $index ]['values'][] = $value;
+				}
+				$groups[ $index ]['products']   += (int) $row['products'];
+				$groups[ $index ]['variations'] += (int) $row['variations'];
 			}
+
+			foreach ( $groups as $index => $group ) {
+				if ( count( $group['values'] ) < 2 ) {
+					continue;
+				}
+				$count = self::scope_count( $scope, $attr_keys, $group['values'] );
+				$groups[ $index ]['products']   = $count['products'];
+				$groups[ $index ]['variations'] = $count['variations'];
+			}
+
+			$list = array_values( $groups );
+			usort(
+				$list,
+				static function ( $a, $b ) {
+					if ( $a['products'] === $b['products'] ) {
+						return strcmp( (string) $a['label'], (string) $b['label'] );
+					}
+					return ( $a['products'] > $b['products'] ) ? -1 : 1;
+				}
+			);
 
 			return $list;
 		}
 
 		/**
+		 * شمارش دقیق محصول/متغیر برای مجموعه‌ای از کلیدهای ویژگی و (اختیاری)
+		 * مقدارها در محدوده — برای ردیف‌های ادغام‌شده.
+		 *
+		 * @param array $scope     محدوده.
+		 * @param array $attr_keys کلیدهای ویژگی.
+		 * @param array $values    مقدارهای خام (خالی = همهٔ مقدارها).
+		 * @return array {products, variations}
+		 */
+		private static function scope_count( $scope, array $attr_keys, array $values = array() ) {
+			global $wpdb;
+
+			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
+			$values    = self::sanitize_value_list( $values, TBSM_Core::MAX_MODEL_VALUES );
+			if ( empty( $attr_keys ) ) {
+				return array( 'products' => 0, 'variations' => 0 );
+			}
+
+			$sql = self::scope_sql( $scope );
+			$base = self::scope_base();
+
+			$meta_keys = array();
+			foreach ( $attr_keys as $key ) {
+				$meta_keys[] = 'attribute_' . $key;
+			}
+
+			$params  = array_merge( $meta_keys, $sql['params'] );
+			$values_sql = '';
+			if ( ! empty( $values ) ) {
+				$values_sql = ' AND am.meta_value IN (' . implode( ', ', array_fill( 0, count( $values ), '%s' ) ) . ')';
+				$params     = array_merge( $params, $values );
+			}
+
+			$keys_ph = implode( ', ', array_fill( 0, count( $meta_keys ), '%s' ) );
+			$query   = "SELECT COUNT(DISTINCT am.post_id) AS variations, COUNT(DISTINCT p.ID) AS products
+				{$base} {$sql['join']}
+				WHERE am.meta_key IN ({$keys_ph}){$values_sql} {$sql['where']}";
+
+			$row = $wpdb->get_row( $wpdb->prepare( $query, $params ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+			return array(
+				'products'   => (int) ( isset( $row['products'] ) ? $row['products'] : 0 ),
+				'variations' => (int) ( isset( $row['variations'] ) ? $row['variations'] : 0 ),
+			);
+		}
+
+		/**
 		 * یافتن متغیرهای یک مدل (ویژگی + مقدار) در محدودهٔ انتخابی.
 		 *
-		 * @param array  $scope محدوده.
-		 * @param string $attr  نام ویژگی.
-		 * @param string $value مقدار مدل.
+		 * @param array $scope      محدوده.
+		 * @param array $attr_keys  کلیدهای ویژگی (هم‌معنا در یک ردیف ادغام‌شده).
+		 * @param array $values     مقدارهای خام هم‌معنا.
 		 * @return array {rows, products, truncated, error?}
 		 */
-		public static function find_scope_rows( $scope, $attr, $value ) {
-			$attr  = self::sanitize_attribute_key( $attr );
-			$value = (string) $value;
+		public static function find_scope_rows( $scope, array $attr_keys, array $values ) {
+			$attr_keys = self::sanitize_key_list( $attr_keys, TBSM_Core::MAX_MODEL_ATTRS );
+			$values    = self::sanitize_value_list( $values, TBSM_Core::MAX_MODEL_VALUES );
 
-			if ( '' === $attr || '' === $value ) {
+			if ( empty( $attr_keys ) || empty( $values ) ) {
 				return array(
 					'rows'      => array(),
 					'products'  => 0,
@@ -636,10 +784,20 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 
 			global $wpdb;
 
-			$sql      = self::scope_sql( $scope );
-			$limit    = TBSM_Core::MAX_MODEL_ROWS + 1; // یکی بیشتر برای تشخیص بریدگی فهرست.
-			$params   = array_merge( array( 'attribute_' . $attr, $value ), $sql['params'] );
-			$params[] = $limit;
+			$sql    = self::scope_sql( $scope );
+			$limit  = TBSM_Core::MAX_MODEL_ROWS + 1; // یکی بیشتر برای تشخیص بریدگی فهرست.
+			$params = array();
+
+			$meta_keys = array();
+			foreach ( $attr_keys as $key ) {
+				$meta_keys[] = 'attribute_' . $key;
+			}
+			$params = array_merge( $params, $meta_keys, $values );
+
+			$keys_ph   = implode( ', ', array_fill( 0, count( $meta_keys ), '%s' ) );
+			$values_ph = implode( ', ', array_fill( 0, count( $values ), '%s' ) );
+			$params    = array_merge( $params, $sql['params'] );
+			$params[]  = $limit;
 
 			// شناسهٔ والد با LEFT JOIN می‌آید تا محصول بدون SKU هم (در حالت «همه») حذف نشود.
 			$query = "SELECT DISTINCT v.ID AS vid, v.post_parent AS pid, sk.meta_value AS psku, (sk.meta_value IS NULL) AS psku_null
@@ -648,7 +806,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				INNER JOIN {$wpdb->posts} p ON p.ID = v.post_parent AND p.post_type = 'product' AND p.post_status IN ('publish','draft','pending')
 				{$sql['join']}
 				LEFT JOIN {$wpdb->postmeta} sk ON sk.post_id = p.ID AND sk.meta_key = '_sku'
-				WHERE am.meta_key = %s AND am.meta_value = %s {$sql['where']}
+				WHERE am.meta_key IN ({$keys_ph}) AND am.meta_value IN ({$values_ph}) {$sql['where']}
 				ORDER BY psku_null ASC, psku ASC, vid ASC
 				LIMIT %d";
 
@@ -683,20 +841,30 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		/**
 		 * آیا این متغیر با مدل و محدودهٔ انتخابی هم‌خوان است؟ (اعتبارسنجی سرور)
 		 *
-		 * @param int    $var_id شناسهٔ متغیر.
-		 * @param array  $scope  محدوده.
-		 * @param string $attr   نام ویژگی.
-		 * @param string $value  مقدار مدل.
+		 * متغیر باید تحت **یکی از کلیدهای ویژگی** همان ردیف ادغام‌شده، یکی از
+		 * مقدارهای انتخاب‌شده را داشته باشد و والدش هم در محدوده باشد.
+		 *
+		 * @param int   $var_id    شناسهٔ متغیر.
+		 * @param array $scope     محدوده.
+		 * @param array $attr_keys کلیدهای ویژگی.
+		 * @param array $values    مقدارهای خام.
 		 * @return bool
 		 */
-		private static function scope_item_allowed( $var_id, $scope, $attr, $value ) {
+		private static function scope_item_allowed( $var_id, $scope, array $attr_keys, array $values ) {
 			$var_id = absint( $var_id );
 			if ( $var_id <= 0 || 'product_variation' !== get_post_type( $var_id ) ) {
 				return false;
 			}
 
-			$stored = get_post_meta( $var_id, 'attribute_' . $attr, true );
-			if ( (string) $stored !== (string) $value ) {
+			$matched = false;
+			foreach ( $attr_keys as $attr_key ) {
+				$stored = (string) get_post_meta( $var_id, 'attribute_' . $attr_key, true );
+				if ( '' !== $stored && in_array( $stored, $values, true ) ) {
+					$matched = true;
+					break;
+				}
+			}
+			if ( ! $matched ) {
 				return false;
 			}
 
@@ -815,27 +983,37 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		/**
 		 * نگاشت «مقدار متا ← نام ترم» برای ویژگی‌های سراسری ووکامرس (pa_*).
 		 *
-		 * @param string $attr نام ویژگی.
+		 * @param string|array $attrs یک کلید یا فهرست کلیدهای ویژگی.
 		 * @return array
 		 */
-		private static function global_term_labels( $attr ) {
+		private static function global_term_labels( $attrs ) {
 			$map = array();
-			if ( ! function_exists( 'wc_attribute_label' ) || ! taxonomy_exists( $attr ) ) {
+			if ( ! function_exists( 'wc_attribute_label' ) ) {
 				return $map;
 			}
 
-			$terms = get_terms(
-				array(
-					'taxonomy'   => $attr,
-					'hide_empty' => false,
-				)
-			);
-			if ( is_wp_error( $terms ) || empty( $terms ) ) {
-				return $map;
-			}
+			foreach ( (array) $attrs as $attr ) {
+				$attr = (string) $attr;
+				if ( '' === $attr || ! taxonomy_exists( $attr ) ) {
+					continue;
+				}
 
-			foreach ( $terms as $term ) {
-				$map[ (string) $term->slug ] = self::clean_label( self::maybe_decode_label( (string) $term->name ) );
+				$terms = get_terms(
+					array(
+						'taxonomy'   => $attr,
+						'hide_empty' => false,
+					)
+				);
+				if ( is_wp_error( $terms ) || empty( $terms ) ) {
+					continue;
+				}
+
+				foreach ( $terms as $term ) {
+					$slug = (string) $term->slug;
+					if ( ! isset( $map[ $slug ] ) ) {
+						$map[ $slug ] = self::clean_label( self::maybe_decode_label( (string) $term->name ) );
+					}
+				}
 			}
 
 			return $map;
@@ -884,6 +1062,94 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				array( '۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹' ),
 				(string) $text
 			);
+		}
+
+		/**
+		 * از میان دو نوشتار هم‌هویت، نوشتار «غنی‌تر» (کامل‌تر) را برمی‌گرداند تا
+		 * نیم‌فاصله/نویسهٔ نامرئیِ نوشتار بهتر در برچسب نهایی بماند.
+		 *
+		 * @param string $current   برچسب فعلی گروه.
+		 * @param string $candidate برچسب تازه‌رسیده.
+		 * @return string
+		 */
+		private static function richer_label( $current, $candidate ) {
+			if ( mb_strlen( (string) $candidate ) > mb_strlen( (string) $current ) ) {
+				return (string) $candidate;
+			}
+
+			return (string) $current;
+		}
+
+		/**
+		 * «هویت» یک برچسب: دو نوشتار که به یک ویژگی/مقدار اشاره می‌کنند یک هویت
+		 * می‌گیرند — «مدل»، «مدلِ» کدشده و «مدل» با نویسه‌های عربی/فاصلهٔ متفاوت.
+		 *
+		 * @param string $label برچسب.
+		 * @return string
+		 */
+		private static function label_identity( $label ) {
+			$label = self::clean_label( self::maybe_decode_label( self::strip_invisible( (string) $label ) ) );
+			// در «هویت»، نیم‌فاصله/چسبان و نشانه‌های نامرئی تفاوتی ایجاد نمی‌کنند.
+			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}]/u', '', $label );
+			if ( '' === $label ) {
+				return '';
+			}
+
+			// نویسه‌های عربی/فارسی هم‌معنا (ي/ك عربی ← ی/ک فارسی، ة/ۀ ← ه) و فاصله‌های
+			// چندگانه؛ نیم‌فاصله (ZWNJ) و کاراکترهای نامرئی پیش‌تر در strip_invisible()
+			// حذف شده‌اند.
+			$label = str_replace(
+				array( 'ي', 'ك', 'ة', 'ۀ', 'ؤ' ),
+				array( 'ی', 'ک', 'ه', 'ه', 'و' ),
+				$label
+			);
+			$label = (string) preg_replace( '/\s+/u', ' ', $label );
+			$label = trim( $label );
+
+			return function_exists( 'mb_strtolower' ) ? mb_strtolower( $label, 'UTF-8' ) : strtolower( $label );
+		}
+
+		/**
+		 * پاک‌سازی فهرست کلیدهای ویژگی (حذف تکراری/خالی + سقف).
+		 *
+		 * @param array $keys  کلیدها.
+		 * @param int   $limit سقف.
+		 * @return array
+		 */
+		private static function sanitize_key_list( $keys, $limit ) {
+			$out = array();
+			foreach ( (array) $keys as $key ) {
+				$key = self::sanitize_attribute_key( $key );
+				if ( '' !== $key && ! in_array( $key, $out, true ) ) {
+					$out[] = $key;
+				}
+				if ( count( $out ) >= (int) $limit ) {
+					break;
+				}
+			}
+			return $out;
+		}
+
+		/**
+		 * پاک‌سازی فهرست مقدارهای خام (بدون آسیب به کاراکترهای کدشده/فاصله‌ها).
+		 *
+		 * @param array $values مقدارها.
+		 * @param int   $limit  سقف.
+		 * @return array
+		 */
+		private static function sanitize_value_list( $values, $limit ) {
+			$out = array();
+			foreach ( (array) $values as $value ) {
+				$value = (string) preg_replace( '/[\x00-\x1F\x7F]+/', '', (string) $value );
+				$value = substr( $value, 0, 190 );
+				if ( '' !== $value && ! in_array( $value, $out, true ) ) {
+					$out[] = $value;
+				}
+				if ( count( $out ) >= (int) $limit ) {
+					break;
+				}
+			}
+			return $out;
 		}
 
 		/** نرمال‌سازی حالت تطبیق شناسه. */
@@ -969,15 +1235,16 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		}
 
 		/**
-		 * حذف کاراکترهای صفرعرض/کنترلی (RTL marks، ZWNJ، BOM) — بدون دست‌زدن
-		 * به `%` و نویسه‌های داده، چون پیش از decode استفاده می‌شود.
+		 * حذف کاراکترهای صفرعرض/کنترلی (ZWSP، RTL marks، BOM) — بدون دست‌زدن
+		 * به `%` و نویسه‌های داده، چون پیش از decode استفاده می‌شود. نیم‌فاصله (ZWNJ)
+		 * و چسبان (ZWJ) حذف **نمی‌شوند** چون بخشی از نوشتار درست فارسی‌اند.
 		 *
 		 * @param string $label برچسب خام.
 		 * @return string
 		 */
 		public static function strip_invisible( $label ) {
 			$label = (string) $label;
-			$label = (string) preg_replace( '/[\x{200B}-\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $label );
+			$label = (string) preg_replace( '/[\x{200B}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', '', $label );
 			return $label;
 		}
 

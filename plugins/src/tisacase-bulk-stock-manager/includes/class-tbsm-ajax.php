@@ -332,6 +332,37 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 		}
 
 		/**
+		 * خواندن یک فهرست از درخواست (کلید ویژگی یا مقدار مدل) با پاک‌سازی مخصوص
+		 * و سقف تعداد. عناصر خالی/تکراری حذف می‌شوند.
+		 *
+		 * @param string $key   نام پارامتر.
+		 * @param int    $limit سقف تعداد.
+		 * @return array
+		 */
+		private static function model_raw_list( $key, $limit ) {
+			if ( ! isset( $_POST[ $key ] ) ) {
+				return array();
+			}
+
+			$raw  = (array) wp_unslash( $_POST[ $key ] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$out  = array();
+			foreach ( $raw as $item ) {
+				if ( is_array( $item ) ) {
+					continue;
+				}
+				$text = self::model_raw_text( $item );
+				if ( '' !== $text && ! in_array( $text, $out, true ) ) {
+					$out[] = $text;
+				}
+				if ( count( $out ) >= (int) $limit ) {
+					break;
+				}
+			}
+
+			return $out;
+		}
+
+		/**
 		 * خواندن پارامترهای مشترک «محدودهٔ محصولات» از درخواست.
 		 *
 		 * @return array محدودهٔ خام (بعداً با TBSM_Stock::normalize_scope نرمال می‌شود).
@@ -423,17 +454,17 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$keys  = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
 			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
 
-			if ( '' === $attr ) {
+			if ( empty( $keys ) ) {
 				wp_send_json_error( array( 'message' => 'ابتدا ویژگی مدل را انتخاب کنید.' ) );
 			}
 
 			wp_send_json_success(
 				array(
-					'attr'   => $attr,
-					'values' => TBSM_Stock::list_scope_values( $scope, $attr ),
+					'attr_keys' => $keys,
+					'values'    => TBSM_Stock::list_scope_values( $scope, $keys ),
 				)
 			);
 		}
@@ -445,15 +476,15 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$scope = TBSM_Stock::normalize_scope( self::scope_params() );
-			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$scope  = TBSM_Stock::normalize_scope( self::scope_params() );
+			$keys   = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
+			$values = self::model_raw_list( 'term_values', TBSM_Core::MAX_MODEL_VALUES );
 
-			if ( '' === $attr || '' === $value ) {
+			if ( empty( $keys ) || empty( $values ) ) {
 				wp_send_json_error( array( 'message' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' ) );
 			}
 
-			$found = TBSM_Stock::find_scope_rows( $scope, $attr, $value );
+			$found = TBSM_Stock::find_scope_rows( $scope, $keys, $values );
 
 			if ( ! empty( $found['error'] ) ) {
 				wp_send_json_error( array( 'message' => (string) $found['error'] ) );
@@ -467,8 +498,8 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 					'truncated' => ! empty( $found['truncated'] ),
 					'limit'     => TBSM_Core::MAX_MODEL_ROWS,
 					'scope'     => self::scope_payload( $scope ),
-					'attr'      => $attr,
-					'term'      => $value,
+					'attr_keys' => $keys,
+					'values'    => $values,
 				)
 			);
 		}
@@ -480,10 +511,10 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			self::check_auth();
 			self::prepare_runtime();
 
-			$scope = self::scope_params();
-			$attr  = isset( $_POST['attr'] ) ? self::model_raw_text( $_POST['attr'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$value = isset( $_POST['term'] ) ? self::model_raw_text( $_POST['term'] ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
-			$items = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
+			$scope  = self::scope_params();
+			$keys   = self::model_raw_list( 'attr_keys', TBSM_Core::MAX_MODEL_ATTRS );
+			$values = self::model_raw_list( 'term_values', TBSM_Core::MAX_MODEL_VALUES );
+			$items  = ( isset( $_POST['items'] ) && is_array( $_POST['items'] ) )
 				? wp_unslash( $_POST['items'] ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 				: array();
 
@@ -496,7 +527,7 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 			}
 
 			try {
-				$result = TBSM_Stock::apply_scope_stock( $clean, $attr, $value, $scope );
+				$result = TBSM_Stock::apply_scope_stock( $clean, $keys, $values, $scope );
 			} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
 				$result = array(
 					'ok'    => false,
