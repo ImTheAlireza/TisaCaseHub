@@ -79,6 +79,115 @@
 				.trim();
 		},
 
+		/**
+		 * درخواست AJAX با رفتار یکسان برای همهٔ مسیرهای گروهی:
+		 *   - توکن امنیتی را خودش می‌چسباند؛
+		 *   - اگر سرور بگوید توکن منقضی شده (`bad_nonce`)، توکن تازه می‌گیرد و
+		 *     **یک بار** همان درخواست را تکرار می‌کند (صفحه‌های مدتی‌بازمانده)؛
+		 *   - خطا را با علت واقعی برمی‌گرداند (پیام سرور، کد HTTP، متن خام پاسخ)
+		 *     به‌جای پیام مبهم «بررسی محدوده ناموفق بود».
+		 *
+		 * @param {Object} payload بدنهٔ درخواست (بدون nonce).
+		 * @return {Object} promise با متدهای done/fail جی‌کوئری.
+		 */
+		api: function (payload) {
+			var self = this;
+			var dfd = $.Deferred();
+			var attempt = 0;
+
+			var send = function () {
+				attempt++;
+				var body = $.extend({}, payload, { nonce: window.tbsmData.nonce });
+				$.post(window.tbsmData.ajaxUrl, body)
+					.done(function (res) {
+						if (res && res.success === false && res.data && res.data.code === 'bad_nonce' && attempt < 2) {
+							if (res.data.new_nonce) {
+								window.tbsmData.nonce = res.data.new_nonce;
+							}
+							self.refreshNonce().always(send);
+							return;
+						}
+						dfd.resolve(res);
+					})
+					.fail(function (xhr, status) {
+						dfd.reject(self.failReason(xhr, status));
+					});
+			};
+
+			send();
+			return dfd.promise();
+		},
+
+		/** گرفتن توکن تازه از سرور (برای صفحه‌های مدتی‌بازمانده). */
+		refreshNonce: function () {
+			return $.post(window.tbsmData.ajaxUrl, { action: 'tbsm_nonce' })
+				.done(function (res) {
+					if (res && res.success && res.data && res.data.nonce) {
+						window.tbsmData.nonce = res.data.nonce;
+					}
+				});
+		},
+
+		/**
+		 * ساختن پیام خطای قابل‌فهم از یک درخواست شکست‌خورده.
+		 *
+		 * @param {Object} xhr    شیء XHR (اگر باشد).
+		 * @param {string} status open|error|timeout|abort|parsererror.
+		 * @return {string}
+		 */
+		failReason: function (xhr, status) {
+			var code = xhr && xhr.status ? xhr.status : 0;
+			var raw = (xhr && xhr.responseText) ? String(xhr.responseText) : '';
+			var clean = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+			var why;
+
+			if (status === 'timeout' || code === 504) {
+				why = this.i18n('scopeErrorTimeout');
+			} else if (!code) {
+				why = this.i18n('scopeErrorNet');
+			} else if (clean && clean.length > 3) {
+				why = clean.slice(0, 220);
+			} else {
+				why = this.i18n('scopeErrorHttp').replace('%d', this.fmt(code));
+			}
+
+			return why;
+		},
+
+		/**
+		 * پاسخ سرور را به پیام(های) خطا تبدیل می‌کند.
+		 *
+		 * حالت‌های واقعی که دیده می‌شود: `0` (اندپوینت ثبت نشده/نسخهٔ ناهمخوان)،
+		 * HTML خطای وردپرس، پاسخ موفق نبودن با پیام فارسی، و ناهم‌خوانی نسخه.
+		 *
+		 * @param {*} res پاسخ جی‌کوئری.
+		 * @return {string}
+		 */
+		apiError: function (res) {
+			var msgs = [];
+
+			if (typeof res === 'string') {
+				var clean = res.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+				msgs.push(clean ? clean.slice(0, 220) : this.i18n('scopeErrorBadResponse'));
+			} else if (!res || res === 0) {
+				msgs.push(this.i18n('scopeErrorBadResponse'));
+			} else if (res.data && (res.data.message || res.data.error)) {
+				msgs.push(res.data.message || res.data.error);
+			} else {
+				msgs.push(this.i18n('scopeError'));
+			}
+
+			if (res && res.data && res.data.version && window.tbsmData.version && res.data.version !== window.tbsmData.version) {
+				msgs.push(
+					this.i18n('scopeErrorVersion')
+						.replace('%1$s', window.tbsmData.version)
+						.replace('%2$s', res.data.version)
+				);
+			}
+
+			return msgs.join(' — ');
+		},
+
 		/** ارقام به فارسی. */
 		fa: function (n) {
 			var f = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
@@ -264,6 +373,15 @@
 			$('#tbsm-scope-apply').on('click', function () {
 				self.applyScope();
 			});
+			$('#tbsm-scope-diag').on('click', function () {
+				self.runDiag();
+			});
+			$('#tbsm-diag-copy').on('click', function () {
+				self.copyDiag();
+			});
+			$('#tbsm-diag-close').on('click', function () {
+				$('#tbsm-diag-box').prop('hidden', true);
+			});
 
 			// حالت گروهی — گام ۲: ویژگی و مقدار مدل
 			$('#tbsm-group-attr').on('change', function () {
@@ -289,6 +407,11 @@
 			}
 			this.mode = mode;
 			this.loadSeq++; // پاسخ‌های دیررس بی‌اثر می‌شوند
+
+			// درخواستی که وسط راه بود (و پاسخش با loadSeq قدیمی نادیده گرفته می‌شود)
+			// نباید دکمه‌ها را برای همیشه قفل کند؛ وگرنه بعد از یک بار سوئیچ تب،
+			// «نمایش ویژگی‌ها» بی‌صدا کار نمی‌کند و کاربر فقط پیام قدیمی را می‌بیند.
+			this.busy = false;
 
 			$('.tbsm-tab')
 				.removeClass('is-active')
@@ -654,16 +777,14 @@
 
 			var payload = this.scopePayload();
 			payload.action = 'tbsm_scope_attributes';
-			payload.nonce = window.tbsmData.nonce;
 
-			$.post(window.tbsmData.ajaxUrl, payload)
+			this.api(payload)
 				.done(function (res) {
 					if (seq !== self.loadSeq) {
 						return;
 					}
 					if (!res || !res.success) {
-						var msg = (res && res.data && (res.data.message || res.data.error)) || self.i18n('scopeError');
-						self.notice(msg, 'error');
+						self.notice(self.apiError(res), 'error');
 						return;
 					}
 
@@ -680,9 +801,9 @@
 						self.notice(self.i18n('groupAttrEmpty'), 'info');
 					}
 				})
-				.fail(function () {
+				.fail(function (why) {
 					if (seq === self.loadSeq) {
-						self.notice(self.i18n('scopeError'), 'error');
+						self.notice(why || self.i18n('scopeError'), 'error');
 					}
 				})
 				.always(function () {
@@ -693,6 +814,73 @@
 					$('#tbsm-scope-apply').text(self.i18n('scopeApply'));
 					self.refreshScopeApply();
 				});
+		},
+
+		/**
+		 * گزارش تشخیص: سرور نسخه‌ها، وضعیت اندپوینت‌ها، کش، افزونهٔ گروه‌بندی برند
+		 * و اجرای واقعی همان دو کوئری گام محدوده (با زمان و خطای دیتابیس) را
+		 * برمی‌گرداند — تا به‌جای حدس، علت معلوم شود.
+		 */
+		runDiag: function () {
+			var self = this;
+			var $btn = $('#tbsm-scope-diag');
+			if ($btn.prop('disabled')) {
+				return;
+			}
+
+			$btn.prop('disabled', true).text(this.i18n('scopeDiagRunning'));
+
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_diag';
+
+			this.api(payload)
+				.done(function (res) {
+					if (!res || !res.success) {
+						self.notice(self.apiError(res), 'error');
+						return;
+					}
+
+					var data = res.data || {};
+					$('#tbsm-diag-text').text(data.text || JSON.stringify(data.report || {}, null, 1));
+					$('#tbsm-diag-box').prop('hidden', false);
+					self.notice(self.i18n('scopeDiagDone'), 'success');
+				})
+				.fail(function (why) {
+					self.notice(why || self.i18n('scopeDiagError'), 'error');
+				})
+				.always(function () {
+					$btn.prop('disabled', false).text(self.i18n('scopeDiagTitle'));
+				});
+		},
+
+		/** کپی گزارش تشخیص در کلیپ‌بورد. */
+		copyDiag: function () {
+			var self = this;
+			var text = $('#tbsm-diag-text').text();
+
+			var done = function () {
+				self.notice(self.i18n('scopeDiagCopied'), 'success');
+			};
+
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(text).then(done, function () { self.selectDiag(); done(); });
+				return;
+			}
+			self.selectDiag();
+			done();
+		},
+
+		/** انتخاب متن گزارش (روی مرورگرهای قدیمی که Clipboard API ندارند). */
+		selectDiag: function () {
+			var el = document.getElementById('tbsm-diag-text');
+			if (!el) {
+				return;
+			}
+			var range = document.createRange();
+			range.selectNodeContents(el);
+			var sel = window.getSelection();
+			sel.removeAllRanges();
+			sel.addRange(range);
 		},
 
 		/** خط خلاصهٔ محدوده زیر دکمه. */
@@ -772,26 +960,25 @@
 
 			var payload = this.scopePayload();
 			payload.action = 'tbsm_scope_values';
-			payload.nonce = window.tbsmData.nonce;
 			payload.attr_keys = attr.keys;
 
 			var seq = this.loadSeq;
-			$.post(window.tbsmData.ajaxUrl, payload)
+			this.api(payload)
 				.done(function (res) {
 					if (seq !== self.loadSeq) {
 						return;
 					}
 					if (!res || !res.success) {
 						self.renderGroupValues([]);
-						self.notice(self.i18n('groupValuesError'), 'error');
+						self.notice(self.apiError(res), 'error');
 						return;
 					}
 					self.renderGroupValues(res.data || {});
 				})
-				.fail(function () {
+				.fail(function (why) {
 					if (seq === self.loadSeq) {
 						self.renderGroupValues([]);
-						self.notice(self.i18n('groupValuesError'), 'error');
+						self.notice(why || self.i18n('groupValuesError'), 'error');
 					}
 				});
 		},
@@ -966,20 +1153,16 @@
 
 			var payload = this.scopePayload();
 			payload.action = 'tbsm_find_scope';
-			payload.nonce = window.tbsmData.nonce;
 			payload.attr_keys = attr.keys || [];
 			payload.term_values = term.values || [];
 
-			$.post(window.tbsmData.ajaxUrl, payload)
+			this.api(payload)
 				.done(function (res) {
 					if (seq !== self.loadSeq) {
 						return;
 					}
 					if (!res || !res.success) {
-						var errMsg = (res && res.data && (res.data.message || res.data.error))
-							? (res.data.message || res.data.error)
-							: self.i18n('groupFindError');
-						self.notice(errMsg, 'error');
+						self.notice(self.apiError(res), 'error');
 						self.renderGrid();
 						return;
 					}
@@ -1009,11 +1192,11 @@
 					self.renderGroupNote(data);
 					self.refreshCounts();
 				})
-				.fail(function () {
+				.fail(function (why) {
 					if (seq !== self.loadSeq) {
 						return;
 					}
-					self.notice(self.i18n('groupFindError'), 'error');
+					self.notice(why || self.i18n('groupFindError'), 'error');
 					self.renderGrid();
 				})
 				.always(function () {

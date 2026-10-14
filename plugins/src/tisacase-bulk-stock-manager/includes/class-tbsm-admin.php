@@ -96,6 +96,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 				array(
 					'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 					'nonce'   => wp_create_nonce( TBSM_Core::NONCE_ACTION ),
+					'version' => TBSM_VERSION,
 					'i18n'    => array(
 						'searching'          => 'در حال جست‌وجو…',
 						'noResults'          => 'محصولی با این مشخصات پیدا نشد.',
@@ -164,6 +165,16 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'scopeCategorySearch' => 'جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)',
 						'scopeCategoryFound'  => 'نمایش %1$d دسته از %2$d',
 						'scopeCategoryEmpty'  => 'دسته‌ای با این نام پیدا نشد.',
+						'scopeErrorBadResponse' => 'پاسخ نامعتبر از سرور (احتمالاً کش یا ناهم‌خوانی نسخهٔ فایل‌ها).',
+						'scopeErrorVersion' => 'نسخهٔ رابط (%1$s) با نسخهٔ سرور (%2$s) یکی نیست؛ افزونه را دوباره نصب یا کش را پاک کنید.',
+						'scopeErrorNet'     => 'ارتباط با سرور برقرار نشد (اینترنت یا فایروال هاست).',
+						'scopeErrorHttp'    => 'سرور خطای %d برگرداند.',
+						'scopeErrorTimeout' => 'پاسخ سرور طول کشید (timeout)؛ محدودهٔ کوچک‌تری انتخاب کنید.',
+						'scopeDiagRunning'  => 'در حال بررسی…',
+						'scopeDiagCopied'   => 'گزارش کپی شد.',
+						'scopeDiagError'    => 'اجرای گزارش تشخیص ناموفق بود.',
+						'scopeDiagTitle'    => 'تشخیص مشکل',
+						'scopeDiagDone'     => 'گزارش تشخیص آماده شد (پایین همین کارت).',
 						'groupTermPick'      => '— انتخاب کنید —',
 						'groupFindError'     => 'فهرست‌کردن متغیرها ناموفق بود.',
 						'groupNeedSelection' => 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.',
@@ -322,6 +333,17 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						<div class="tbsm-scope-actions">
 							<button type="button" class="tisa-btn tisa-btn--primary tbsm-form-action" id="tbsm-scope-apply">نمایش ویژگی‌ها</button>
 							<span class="tbsm-scope-summary" id="tbsm-scope-summary" hidden></span>
+							<button type="button" class="tbsm-link-btn" id="tbsm-scope-diag" title="اگر خطا گرفتید، این گزارش را برای پشتیبانی بفرستید.">تشخیص مشکل</button>
+						</div>
+
+						<!-- گزارش تشخیص (پنهان تا وقتی لازم شود) -->
+						<div class="tbsm-diag" id="tbsm-diag-box" hidden>
+							<div class="tbsm-diag-head">
+								<strong>گزارش تشخیص</strong>
+								<button type="button" class="tbsm-link-btn" id="tbsm-diag-copy">کپی گزارش</button>
+								<button type="button" class="tbsm-link-btn" id="tbsm-diag-close">بستن</button>
+							</div>
+							<pre class="tbsm-diag-text" id="tbsm-diag-text"></pre>
 						</div>
 					</div>
 

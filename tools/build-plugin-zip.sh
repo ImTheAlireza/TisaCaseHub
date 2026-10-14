@@ -20,7 +20,13 @@ else
 fi
 # تست رگرسیون پیش‌نمایش (jsdom) — اگر پیش‌نیازهایش نصب باشند اجرا می‌شود.
 if [ -f tools/bulk-stock-manager-preview-test.mjs ] && node -e "require.resolve('jsdom')" >/dev/null 2>&1; then
-  node tools/bulk-stock-manager-preview-test.mjs | tail -1
+  # مهم: خروجی را پایپ نمی‌کنیم تا کد خروج تست پاک نشود؛ تست قرمز = بسته‌بندی متوقف می‌شود.
+  if ! test_out=$(node tools/bulk-stock-manager-preview-test.mjs); then
+    echo "$test_out" | tail -25 >&2
+    echo "✗ تست رگرسیون پیش‌نمایش قرمز شد — زیپ ساخته نشد." >&2
+    exit 1
+  fi
+  echo "$test_out" | tail -1
 else
   echo "⚠ jsdom نصب نیست — تست رگرسیون پیش‌نمایش رد شد (npm install jsdom jquery@3.7.1)." >&2
 fi

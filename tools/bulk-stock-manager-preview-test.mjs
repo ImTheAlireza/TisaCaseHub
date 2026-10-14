@@ -371,6 +371,130 @@ if (TBSM) {
 	ok('فهرست خالی: سلکت غیرفعال و راهنما پاک', q('#tbsm-group-term').disabled === true && q('#tbsm-group-term-hint').hasAttribute('hidden'));
 }
 
+/* ------------------------------------------------ خطاها: علت واقعی، نه پیام مبهم */
+// همان «بررسی محدوده ناموفق بود» مبهم را هدف می‌گیرد؛ حالت را کامل تازه می‌کنیم.
+const waitIdle = () => waitFor('آماده‌شدن دوباره', () => window.TBSM.busy === false, 3000);
+const freshAttrs = () => { window.TBSM.scopeAttrs = []; window.TBSM.renderGroupAttrs(); };
+
+await click('#tbsm-tab-group');
+await waitIdle();
+await click('.tbsm-seg-btn[data-scope="products"]');
+if (q('#tbsm-scope-clear')) { await click('#tbsm-scope-clear'); }
+await type(doc.getElementById('tbsm-scope-search'), 'آیفون');
+await waitFor('نتایج محدوده سوم', () => qa('#tbsm-scope-results .tbsm-scope-row').length === 3);
+await click('#tbsm-scope-results .tbsm-scope-row');
+ok('(پیش‌نیاز) یک محصول انتخاب شد', qa('#tbsm-scope-picked .tbsm-pick-chip').length === 1, String(qa('#tbsm-scope-picked .tbsm-pick-chip').length));
+
+window.TBSM.notice('');
+await click('#tbsm-scope-apply');
+await waitIdle();
+ok('(پیش‌نیاز) مسیر سالم ویژگی‌ها را می‌آورد', qa('#tbsm-group-attr option').length > 1, String(qa('#tbsm-group-attr option').length));
+
+// (۱) پاسخ «0» — اندپوینت ثبت نشده یا JS/سرور ناهم‌خوان (هارنس قدیمی)
+freshAttrs();
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => (data.action === 'tbsm_scope_attributes' ? { resolve: 0 } : null);
+await click('#tbsm-scope-apply');
+await waitFor('پیام پاسخ نامعتبر', () => /پاسخ نامعتبر/.test(text('#tbsm-notice')));
+ok('پاسخ «0» به پیام «پاسخ نامعتبر» تبدیل شد', /پاسخ نامعتبر از سرور/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('پیام مبهم «بررسی محدوده ناموفق بود» نمایش داده نشد', !/بررسی محدوده ناموفق بود/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+await waitIdle();
+ok('دکمهٔ نمایش ویژگی‌ها دوباره فعال شد', q('#tbsm-scope-apply').disabled === false);
+
+// (۲) خطای HTTP با متن خطای PHP در بدنه — همان متن باید نشان داده شود
+freshAttrs();
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => (data.action === 'tbsm_scope_attributes'
+	? { reject: { status: 500, responseText: '<b>Fatal error</b>: Allowed memory size exhausted in class-tbsm-stock.php on line 812' } }
+	: null);
+await click('#tbsm-scope-apply');
+await waitFor('پیام خطای سرور', () => /memory size exhausted/.test(text('#tbsm-notice')));
+ok('متن خطای واقعی سرور به کاربر نشان داده شد', /memory size exhausted/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('تگ‌های HTML از پیام پاک شدند', !/<b>/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+await waitIdle();
+
+// (۳) timeout
+freshAttrs();
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => (data.action === 'tbsm_scope_attributes' ? { reject: { status: 504, responseText: '' } } : null);
+await click('#tbsm-scope-apply');
+await waitFor('پیام تایم‌اوت', () => /محدودهٔ کوچک‌تری/.test(text('#tbsm-notice')));
+ok('timeout پیام مخصوص خودش را دارد', /محدودهٔ کوچک‌تری/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+await waitIdle();
+
+// (۴) توکن منقضی: باید خودکار تازه شود و همان درخواست یک بار تکرار شود
+freshAttrs();
+window.TBSM.notice('');
+const nonceBefore = window.tbsmData.nonce;
+let nonceAsks = 0;
+let attrAttempts = 0;
+window.TBSM_PREVIEW_FAULT = (data) => {
+	if (data.action === 'tbsm_nonce') { nonceAsks++; return null; }
+	if (data.action === 'tbsm_scope_attributes') {
+		attrAttempts++;
+		// فقط تلاش اول با توکن منقضی رد می‌شود؛ تلاش بعدی (با توکن تازه) باید موفق شود.
+		if (attrAttempts === 1) {
+			return { resolve: { success: false, data: { code: 'bad_nonce', message: 'توکن امنیتی صفحه منقضی شده بود.', new_nonce: 'server-fresh-nonce' } } };
+		}
+	}
+	return null;
+};
+await click('#tbsm-scope-apply');
+await waitFor('تکرار خودکار با توکن تازه', () => qa('#tbsm-group-attr option').length > 1);
+ok('توکن منقضی خودکار تازه شد', window.tbsmData.nonce !== nonceBefore, window.tbsmData.nonce);
+ok('از سرور توکن تازه گرفته شد', nonceAsks >= 1, String(nonceAsks));
+ok('همان درخواست خودکار تکرار شد', attrAttempts >= 2, String(attrAttempts));
+ok('تلاش دوم با توکن تازه موفق شد و ویژگی‌ها آمدند', qa('#tbsm-group-attr option').length > 1, String(qa('#tbsm-group-attr option').length));
+ok('پیام «بررسی محدوده ناموفق بود» نیامد', !/بررسی محدوده ناموفق بود/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+window.TBSM_PREVIEW_FAULT = null;
+await waitIdle();
+
+// (۵) ناهم‌خوانی نسخه (کش/فایل قدیمی): باید صریح گفته شود
+freshAttrs();
+window.TBSM.notice('');
+window.TBSM_PREVIEW_FAULT = (data) => (data.action === 'tbsm_scope_attributes'
+	? { resolve: { success: false, data: { message: 'خطای ناشناخته', version: '1.3.1' } } }
+	: null);
+await click('#tbsm-scope-apply');
+await waitFor('پیام ناهم‌خوانی نسخه', () => /نسخهٔ رابط/.test(text('#tbsm-notice')));
+ok('ناهم‌خوانی نسخه صریح گزارش شد', /نسخهٔ رابط/.test(text('#tbsm-notice')) && /1\.3\.1/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+window.TBSM_PREVIEW_FAULT = null;
+window.TBSM.notice('');
+await waitIdle();
+
+/* ------------------------------------------------ دکمهٔ «تشخیص مشکل» */
+ok('دکمهٔ تشخیص مشکل هست', q('#tbsm-scope-diag') !== null);
+await click('#tbsm-scope-diag');
+await waitFor('گزارش تشخیص', () => visible('#tbsm-diag-box'));
+ok('گزارش تشخیص نمایش داده شد', visible('#tbsm-diag-box'));
+	ok('گزارش شامل نسخهٔ افزونه است', text('#tbsm-diag-text').includes('افزونه: ' + window.tbsmData.version), text('#tbsm-diag-text').slice(0, 60));
+ok('گزارش شامل وضعیت اندپوینت‌هاست', /اندپوینت‌ها/.test(text('#tbsm-diag-text')));
+ok('گزارش شامل خطای آخر دیتابیس است', /خطای آخر دیتابیس/.test(text('#tbsm-diag-text')));
+ok('گزارش شامل زمان اجرای کوئری‌هاست', /ثانیه/.test(text('#tbsm-diag-text')));
+await click('#tbsm-diag-close');
+ok('بستن گزارش کار می‌کند', !visible('#tbsm-diag-box'));
+
+/* ------------------------------------------------ هم‌خوانی نسخه در همهٔ فایل‌ها */
+// جلوی یک اشتباه واقعی را می‌گیرد: بامپ نسخه در فایل اصلی PHP و جا ماندن
+// پیش‌نمایش/readme یا برعکس — همان چیزی که «ناهم‌خوانی نسخه» را می‌سازد.
+{
+	const phpMain = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/tisacase-bulk-stock-manager.php'), 'utf8');
+	const readme = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/readme.txt'), 'utf8');
+	const readmeMd = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/README.md'), 'utf8');
+	const pot = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/languages/tisacase-bsm.pot'), 'utf8');
+	const phpVer = (phpMain.match(/\* Version:\s+([\d.]+)/) || [])[1];
+	const constVer = (phpMain.match(/TBSM_VERSION',\s*'([\d.]+)'/) || [])[1];
+	const faVer = phpVer ? phpVer.replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[+d]).replace(/\./g, '٫') : '';
+	ok('نسخهٔ پیش‌نمایش با نسخهٔ افزونه یکی است', window.tbsmData.version === phpVer, window.tbsmData.version + ' ≠ ' + phpVer);
+	ok('نسخه در TBSM_VERSION هم همان است', constVer === phpVer, String(constVer));
+	ok('هدر HTML پیش‌نمایش هم همان نسخه است', html.includes('v' + phpVer));
+	ok('readme.txt (Stable tag) هم همان نسخه است', readme.includes('Stable tag: ' + phpVer));
+	ok('README.md هم همان نسخه است', readmeMd.includes(faVer));
+	ok('فایل ترجمه (.pot) هم همان نسخه است', pot.includes('TisaCase Bulk Stock Manager ' + phpVer));
+	ok('بلوک چنج‌لاگ همان نسخه در readme هست', readme.includes('= ' + phpVer + ' ='));
+}
+
+
 ok('هیچ خطای صفحه‌ای ثبت نشد', errors.length === 0, errors.slice(0, 3).join(' | '));
 
 console.log('\n' + '─'.repeat(72));
