@@ -48,6 +48,8 @@
 		valueFilter: '',    // عبارت جست‌وجوی مقدارها
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
+		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
+		applyChunk: 300,    // سقف هر درخواست اعمال؛ با موتور SQL انبوه + پرش از هم‌خوان‌ها، هزینهٔ هر دسته تقریباً ثابت است
 		groupNoteHtml: '',
 
 		/* ----------------------------------------------------------
@@ -344,9 +346,12 @@
 			}).on('input', '.tbsm-var-stock', function () {
 				var $card = $(this).closest('.tbsm-var');
 				$card.removeClass('is-invalid');
+				$card.removeAttr('data-applied');
 				self.paintStockbox($card);
 			}).on('change', '.tbsm-var-mode', function () {
-				self.setCardMode($(this).closest('.tbsm-var'), this.value);
+				var $card = $(this).closest('.tbsm-var');
+				$card.removeAttr('data-applied');
+				self.setCardMode($card, this.value);
 			});
 
 			$('#tbsm-quickset-btn').on('click', function () {
@@ -371,6 +376,11 @@
 
 			$('#tbsm-apply').on('click', function () {
 				self.apply();
+			});
+
+			// صفحه‌بندی سرورِ فهرست‌های بلند گروهی
+			$('#tbsm-step-cards').on('click', '#tbsm-more', function () {
+				self.loadMore();
 			});
 
 			// تب‌ها: تک‌محصول ↔ گروهی با مدل
@@ -668,7 +678,7 @@
 			}
 
 			var html = '<div class="tbsm-scope-results-head">'
-				+ '<span>' + this.esc(this.i18n('scopePickHint')) + '</span>'
+				+ '<span>' + this.esc(this.i18n('scopeFound').replace('%d', this.fmt(results.length))) + '</span>'
 				+ '<button type="button" class="tbsm-link-btn" id="tbsm-scope-addall">' + this.esc(this.i18n('scopeSelectAll')) + '</button>'
 				+ '</div>';
 
@@ -1200,6 +1210,7 @@
 			this.clearSelection(true);
 			this.notice('');
 			this.busy = true;
+			$('#tbsm-more-wrap').remove();
 			$('#tbsm-grid').prop('hidden', false).html('<div class="tbsm-grid-empty">' + this.esc(this.i18n('groupSearching')) + '</div>');
 
 			var payload = this.scopePayload();
@@ -1231,6 +1242,12 @@
 					}
 					self.variations = data.rows || [];
 					self.categories = {};
+					self.scopePids = {};
+					self.variations.forEach(function (r) {
+						if (r.pid) {
+							self.scopePids[r.pid] = 1;
+						}
+					});
 
 					if (!self.variations.length) {
 						self.renderGrid();
@@ -1240,6 +1257,7 @@
 						$('#tbsm-step-cards').removeClass('tbsm-step-locked');
 					}
 
+					self.renderMore(data);
 					self.renderGroupNote(data);
 					self.refreshCounts();
 				})
@@ -1267,8 +1285,9 @@
 				return;
 			}
 
-			var total = (data && typeof data.total !== 'undefined') ? data.total : this.variations.length;
-			var products = (data && typeof data.products !== 'undefined') ? data.products : 0;
+			// شمارش تجمعی صفحه‌های بارگیری‌شده (فهرست گروهی صفحه‌بندی سرور دارد).
+			var total = this.variations.length;
+			var products = Object.keys(this.scopePids || {}).length;
 
 			var html = '<span class="tbsm-group-note-main">'
 				+ this.esc(this.i18n('groupNote')
@@ -1288,12 +1307,92 @@
 			$note.prop('hidden', false).html(html);
 		},
 
+		/** دکمهٔ «نمایش موارد بعدی» وقتی سرور هنوز صفحهٔ بعدی فهرست را دارد. */
+		renderMore: function (data) {
+			$('#tbsm-more-wrap').remove();
+
+			if (this.mode !== 'group' || !data || !data.truncated || !this.variations.length) {
+				return;
+			}
+
+			var label = this.i18n('groupMoreBtn').replace('%d', this.fmt(data.limit || 300));
+			var $wrap = $('<div class="tbsm-more-wrap" id="tbsm-more-wrap"></div>');
+			$('<button type="button" class="tisa-btn tisa-btn--secondary" id="tbsm-more"></button>')
+				.text(label)
+				.appendTo($wrap);
+			$('#tbsm-grid').after($wrap);
+		},
+
+		/** صفحهٔ بعدی متغیرهای همان مدل/محدوده را می‌گیرد و به فهرست اضافه می‌کند. */
+		loadMore: function () {
+			if (this.busy || this.mode !== 'group' || !this.group || !this.scope) {
+				return;
+			}
+
+			var self = this;
+			var seq = this.loadSeq;
+			var payload = this.scopePayload();
+			payload.action = 'tbsm_find_scope';
+			payload.attr_keys = this.group.keys || [];
+			payload.term_values = this.group.values || [];
+			payload.offset = this.variations.length;
+
+			this.busy = true;
+			$('#tbsm-more').prop('disabled', true).text(this.i18n('groupMoreLoading'));
+
+			this.api(payload)
+				.done(function (res) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					if (!res || !res.success) {
+						self.notice(self.apiError(res), 'error');
+						self.renderMore({ truncated: true, limit: 300 }); // دکمه برای تلاش دوباره
+						return;
+					}
+
+					var data = res.data || {};
+					var rows = data.rows || [];
+
+					if (rows.length) {
+						self.variations = self.variations.concat(rows);
+						rows.forEach(function (r) {
+							if (r.pid) {
+								self.scopePids[r.pid] = 1;
+							}
+						});
+						self.appendGrid(rows);
+					}
+
+					self.renderGroupNote(data);
+					self.renderMore(data);
+					self.refreshCounts();
+					self.updateBottomHint();
+				})
+				.fail(function (why) {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.notice(why || self.i18n('groupFindError'), 'error');
+					self.renderMore({ truncated: true, limit: 300 });
+				})
+				.always(function () {
+					if (seq !== self.loadSeq) {
+						return;
+					}
+					self.busy = false;
+					self.refreshCounts();
+				});
+		},
+
 		/** بازنشانی حالت گروهی (محدوده دست‌نخورده می‌ماند اگر keepScope باشد). */
 		resetGroup: function (keepScope) {
 			this.group = null;
 			this.groupNoteHtml = '';
 			this.variations = [];
+			this.scopePids = {};
 
+			$('#tbsm-more-wrap').remove();
 			$('#tbsm-grid').prop('hidden', true).empty();
 			$('#tbsm-group-note').prop('hidden', true).empty();
 			$('#tbsm-counts').empty();
@@ -1558,6 +1657,62 @@
 		 * گام ۳ — کارت‌ها
 		 * ---------------------------------------------------------- */
 
+		/** HTML یک کارت متغیر؛ مشترک بین رندر کامل و الحاق صفحهٔ تازه. */
+		cardHtml: function (v) {
+			var html = '';
+			var mode = (v.mode === 'in_stock' || v.mode === 'out_of_stock') ? v.mode : 'qty';
+
+			// بج وضعیت
+			var stockBadge;
+			if (mode === 'qty') {
+				stockBadge = (v.stock > 0 || v.status === 'instock')
+					? '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>'
+					: '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>';
+			} else if (mode === 'in_stock') {
+				stockBadge = '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('inStockLabel')) + '</span>';
+			} else {
+				stockBadge = '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('outOfStockLabel')) + '</span>';
+			}
+
+			// یادداشت «موجودی‌گیری خاموش» فقط در حالت عددی (وقتی با اعمال روشن می‌شود)
+			var manageNote = (!v.manage_stock && mode === 'qty')
+				? '<span class="tbsm-var-manage" title="' + this.esc(this.i18n('manageOffNote')) + '">' + this.esc(this.i18n('manageOffNote')) + '</span>'
+				: '';
+
+			var selQty = mode === 'qty' ? ' selected' : '';
+			var selIn  = mode === 'in_stock' ? ' selected' : '';
+			var selOut = mode === 'out_of_stock' ? ' selected' : '';
+
+			// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
+			var title = v.pname ? v.pname : v.name;
+			var sub = v.pname
+				? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
+				: (v.sku ? v.sku : '#' + v.id);
+
+			html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
+				+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
+				+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
+				+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
+				+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
+				+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
+				+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
+				+   '<option value="in_stock"' + selIn + '>' + this.esc(this.i18n('modeInStock')) + '</option>'
+				+   '<option value="out_of_stock"' + selOut + '>' + this.esc(this.i18n('modeOutOfStock')) + '</option>'
+				+ '</select>'
+				+ '<span class="tbsm-var-stockbox" dir="ltr"' + (mode === 'qty' ? '' : ' hidden') + '>'
+				+   '<button type="button" class="tbsm-stepbtn tbsm-step-down" aria-label="-1">−</button>'
+				+   '<input type="number" class="tbsm-var-stock" min="0" step="1" inputmode="numeric" value="' + v.stock + '"' + (mode === 'qty' ? '' : ' disabled') + ' aria-label="' + this.esc(this.i18n('stockLabel')) + '">'
+				+   '<button type="button" class="tbsm-stepbtn tbsm-step-up" aria-label="+1">+</button>'
+				+ '</span>'
+				+ (mode === 'in_stock'
+					? '<span class="tbsm-var-status-chip tbsm-var-status-chip--in">' + this.esc(this.i18n('modeInStock')) + '</span>'
+					: mode === 'out_of_stock'
+						? '<span class="tbsm-var-status-chip tbsm-var-status-chip--out">' + this.esc(this.i18n('modeOutOfStock')) + '</span>'
+						: '<span class="tbsm-var-status-chip" hidden></span>')
+				+ '</div>';
+			return html;
+		},
+
 		renderGrid: function () {
 			var $grid = $('#tbsm-grid');
 
@@ -1569,71 +1724,37 @@
 
 			var html = '';
 			for (var i = 0; i < this.variations.length; i++) {
-				var v = this.variations[i];
-				var mode = (v.mode === 'in_stock' || v.mode === 'out_of_stock') ? v.mode : 'qty';
-
-				// بج وضعیت
-				var stockBadge;
-				if (mode === 'qty') {
-					stockBadge = (v.stock > 0 || v.status === 'instock')
-						? '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>'
-						: '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('stockLabel')) + ': ' + this.fmt(v.stock) + '</span>';
-				} else if (mode === 'in_stock') {
-					stockBadge = '<span class="tbsm-badge tbsm-badge--ok" data-badge>' + this.esc(this.i18n('inStockLabel')) + '</span>';
-				} else {
-					stockBadge = '<span class="tbsm-badge tbsm-badge--out" data-badge>' + this.esc(this.i18n('outOfStockLabel')) + '</span>';
-				}
-
-				// یادداشت «موجودی‌گیری خاموش» فقط در حالت عددی (وقتی با اعمال روشن می‌شود)
-				var manageNote = (!v.manage_stock && mode === 'qty')
-					? '<span class="tbsm-var-manage" title="' + this.esc(this.i18n('manageOffNote')) + '">' + this.esc(this.i18n('manageOffNote')) + '</span>'
-					: '';
-
-				var selQty = mode === 'qty' ? ' selected' : '';
-				var selIn  = mode === 'in_stock' ? ' selected' : '';
-				var selOut = mode === 'out_of_stock' ? ' selected' : '';
-
-				// در حالت گروهی، نام محصول والد در تیتر و برچسب متغیر + شناسه‌ها در خط دوم می‌آید.
-				var title = v.pname ? v.pname : v.name;
-				var sub = v.pname
-					? (v.name + (v.sku ? ' — ' + v.sku : (v.psku ? ' — ' + v.psku : '')))
-					: (v.sku ? v.sku : '#' + v.id);
-
-				html += '<div class="tbsm-var is-selected" data-id="' + v.id + '" data-cat="' + this.esc(v.cat || '') + '" data-mode="' + mode + '" data-manage="' + (v.manage_stock ? 1 : 0) + '">'
-					+ '<span class="tbsm-var-check">' + this.checkIcon + '</span>'
-					+ '<span class="tbsm-var-name">' + this.esc(title) + '</span>'
-					+ '<span class="tbsm-var-sku">' + this.esc(sub) + '</span>'
-					+ '<span class="tbsm-var-foot">' + stockBadge + manageNote + '</span>'
-					+ '<select class="tbsm-var-mode" aria-label="' + this.esc(this.i18n('modeLabel')) + '">'
-					+   '<option value="qty"' + selQty + '>' + this.esc(this.i18n('modeQty')) + '</option>'
-					+   '<option value="in_stock"' + selIn + '>' + this.esc(this.i18n('modeInStock')) + '</option>'
-					+   '<option value="out_of_stock"' + selOut + '>' + this.esc(this.i18n('modeOutOfStock')) + '</option>'
-					+ '</select>'
-					+ '<span class="tbsm-var-stockbox" dir="ltr"' + (mode === 'qty' ? '' : ' hidden') + '>'
-					+   '<button type="button" class="tbsm-stepbtn tbsm-step-down" aria-label="-1">−</button>'
-					+   '<input type="number" class="tbsm-var-stock" min="0" step="1" inputmode="numeric" value="' + v.stock + '"' + (mode === 'qty' ? '' : ' disabled') + ' aria-label="' + this.esc(this.i18n('stockLabel')) + '">'
-					+   '<button type="button" class="tbsm-stepbtn tbsm-step-up" aria-label="+1">+</button>'
-					+ '</span>'
-					+ (mode === 'in_stock'
-						? '<span class="tbsm-var-status-chip tbsm-var-status-chip--in">' + this.esc(this.i18n('modeInStock')) + '</span>'
-						: mode === 'out_of_stock'
-							? '<span class="tbsm-var-status-chip tbsm-var-status-chip--out">' + this.esc(this.i18n('modeOutOfStock')) + '</span>'
-							: '<span class="tbsm-var-status-chip" hidden></span>')
-					+ '</div>';
-				}
+				html += this.cardHtml(this.variations[i]);
+			}
 
 			$grid.prop('hidden', false).html(html);
+			this.paintCards($grid.find('.tbsm-var'));
+		},
 
-			// رنگ اولیهٔ باکس‌های عددی (سبز/قرمز بر اساس مقدار)
+		/** کارت‌های صفحهٔ تازه را به فهرست اضافه می‌کند؛ انتخاب/ویرایش صفحه‌های قبلی دست‌نخورده می‌ماند. */
+		appendGrid: function (rows) {
+			var html = '';
+			for (var i = 0; i < rows.length; i++) {
+				html += this.cardHtml(rows[i]);
+			}
+			var $new = $(html);
+			$('#tbsm-grid').append($new);
+			this.paintCards($new);
+		},
+
+		/** رنگ اولیهٔ باکس‌های عددی (سبز/قرمز بر اساس مقدار). */
+		paintCards: function ($cards) {
 			var self = this;
-			$grid.find('.tbsm-var').each(function () {
+			$cards.each(function () {
 				self.paintStockbox($(this));
 			});
 		},
 
+
 		toggleCard: function ($card) {
 			$card.toggleClass('is-selected');
 			$card.attr('data-touched', '1');
+			$card.removeAttr('data-applied');
 			this.refreshCounts();
 		},
 
@@ -1656,6 +1777,7 @@
 				next = 0;
 			}
 			$input.val(next).removeClass('is-invalid').trigger('focus');
+			$card.removeAttr('data-applied');
 			this.paintStockbox($card);
 		},
 
@@ -1991,6 +2113,7 @@
 
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
 				var $card = $(this);
+				$card.removeAttr('data-applied');
 				if (mode === 'qty') {
 					if ($card.attr('data-mode') !== 'qty') {
 						self.setCardMode($card, 'qty');
@@ -2073,6 +2196,161 @@
 		 * اعمال موجودی
 		 * ---------------------------------------------------------- */
 
+		/**
+		 * اعمال را در دسته‌های کوچک و پشت‌سرهم می‌فرستد.
+		 * چرا؟ ذخیرهٔ صدها متغیر ووکامرس در «یک» درخواست روی هاست اشتراکی
+		 * به timeout و HTTP 500 می‌خورد؛ دسته‌های ۲۵تایی هر درخواست را سبک نگه می‌دارند.
+		 * گزارش‌ها تجمیع می‌شوند و همگام‌سازی والد بدون شمارش مضاعف (با sync_id).
+		 */
+		/**
+		 * اعمال را در دسته‌های کوچک و پشت‌سرهم می‌فرستد.
+		 * چرا؟ ذخیرهٔ صدها متغیر ووکامرس در «یک» درخواست روی هاست اشتراکی
+		 * به timeout و HTTP 500 می‌خورد؛ دسته‌های کوچک هر درخواست را سبک نگه می‌دارند.
+		 *
+		 * تاب‌آوری: دستهٔ خطادار نصف می‌شود تا مورد خراب جدا بیفتد؛ تک‌موردِ خراب
+		 * یک بار تلاش دوباره می‌شود و بعد با خطا در گزارش رد می‌شود (بقیه ادامه می‌یابد).
+		 * کارت‌های پردازش‌شده نشان «data-applied» می‌گیرند تا «اعمال» بعدی فقط
+		 * باقی‌مانده را بفرستد (ادامه از همان‌جا که ماند).
+		 */
+		/**
+		 * اعمال را با دسته‌های «تطبیقی» می‌فرستد:
+		 * - خطا → سقف دسته نصف (تا زیر حدِ توان هاست برود)؛
+		 * - موفقیت → سقف دسته دوبرابر تا سقف پیش‌فرض (برگشت به سرعت کامل)؛
+		 * - تک‌مورد خراب → یک تلاش دوباره، بعد رد شدن و ادامه (جداسازی)؛
+		 * - ۶ خطای پیاپی بدون حتی یک موفقیت = فیوز می‌پرد: اجرا متوقف می‌شود
+		 *   و «متن واقعی خطای سرور» نمایش می‌گیرد (به‌جای هزار درخواست بی‌فایده).
+		 * کارت‌های پردازش‌شده نشان «data-applied» می‌گیرند تا «اعمال» بعدی فقط
+		 * باقی‌مانده را بفرستد (ادامه از همان‌جا که ماند).
+		 */
+		applyChunks: function (items) {
+			var self = this;
+			var maxSize = Math.max(1, this.applyChunk || 300);
+			var ids = Object.keys(items);
+			var total = ids.length;
+
+			var agg = {
+				ok: true,
+				applied: 0,
+				enabled_manage: 0,
+				parent_status: null,
+				parents_synced: 0,
+				report: [],
+				errors: [],
+				pids: {},
+				failed: 0,
+				skipped: 0,
+				aborted: 0,
+				abortError: ''
+			};
+
+			var off = 0;          // اولین آیتم پردازش‌نشده
+			var curSize = maxSize;
+			var consec = 0;       // خطاهای پیاپی
+			var retriedAt = -1;   // офsetی که یک بار تلاش دوباره شده
+			var lastErr = '';
+
+			var markDone = function (chunkIds) {
+				for (var k = 0; k < chunkIds.length; k++) {
+					$('#tbsm-grid .tbsm-var[data-id="' + chunkIds[k] + '"]').attr('data-applied', '1');
+				}
+			};
+
+			var step = function () {
+				var def = $.Deferred();
+
+				if (off >= total) {
+					def.resolve(agg);
+					return def.promise();
+				}
+
+				var cids = ids.slice(off, off + curSize);
+				var chunk = {};
+				for (var j = 0; j < cids.length; j++) {
+					chunk[cids[j]] = items[cids[j]];
+				}
+
+				if (total > maxSize) {
+					self.notice(self.i18n('applyProgress')
+						.replace('%1$d', self.fmt(Math.min(off + cids.length, total)))
+						.replace('%2$d', self.fmt(total)), 'info');
+				}
+
+				var onFailure = function () {
+					consec++;
+
+					// فیوز: خطای پیاپی بدون موفقیت = مشکل ساختاری، نه سیب خراب
+					if (consec >= 6) {
+						agg.aborted = 1;
+						agg.abortError = lastErr;
+						def.resolve(agg);
+						return;
+					}
+
+					if (cids.length > 1) {
+						curSize = Math.max(1, Math.ceil(cids.length / 2));
+						step().done(function (x) { def.resolve(x); });
+						return;
+					}
+					if (retriedAt !== off) {
+						retriedAt = off;
+						step().done(function (x) { def.resolve(x); });
+						return;
+					}
+					// تک‌مورد خراب: رد شود، بقیه ادامه دهند
+					agg.errors.push(self.i18n('applyItemFailed').replace('%s', self.fmt(cids[0])));
+					agg.failed += 1;
+					retriedAt = -1;
+					off += 1;
+					step().done(function (x) { def.resolve(x); });
+				};
+
+				self.api(self.applyPayload(chunk))
+					.done(function (res) {
+						if (!res || !res.success) {
+							lastErr = self.applyMsg(res && res.data);
+							onFailure();
+							return;
+						}
+
+						var d = res.data || {};
+						agg.applied += d.applied || 0;
+						agg.enabled_manage += d.enabled_manage || 0;
+						agg.report = agg.report.concat(d.report || []);
+						agg.errors = agg.errors.concat(d.errors || []);
+						agg.skipped += d.skipped || 0;
+						(d.report || []).forEach(function (row) {
+							if (row.sync_id) {
+								agg.pids[row.sync_id] = 1;
+							}
+						});
+						if (d.parent_status) {
+							agg.parent_status = d.parent_status;
+						}
+
+						consec = 0;
+						retriedAt = -1;
+						markDone(cids);
+						off += cids.length;
+						// بهبود تدریجی: پس از موفقیت، دسته بزرگ‌تر شود
+						curSize = Math.min(maxSize, curSize * 2);
+						step().done(function (a) { def.resolve(a); });
+					})
+					.fail(function (xhr) {
+						lastErr = self.applyFailMsg(xhr);
+						onFailure();
+					});
+
+				return def.promise();
+			};
+
+			return step().done(function (a) {
+				a.parents_synced = Object.keys(a.pids).length;
+				if (a.parents_synced !== 1) {
+					a.parent_status = null;
+				}
+			}).promise();
+		},
+
 		apply: function () {
 			var self = this;
 			if (this.busy || !this.readyContext()) {
@@ -2086,6 +2364,10 @@
 			$('#tbsm-grid .tbsm-var:not(.is-hidden)').each(function () {
 					var $card = $(this);
 					if (!$card.hasClass('is-selected')) {
+						return;
+					}
+					// همین الان موفق اعمال شده؛ «اعمال» بعدی فقط باقی‌مانده را می‌فرستد
+					if ($card.attr('data-applied')) {
 						return;
 					}
 					var mode = $card.attr('data-mode') || 'qty';
@@ -2111,7 +2393,11 @@
 
 			var count = Object.keys(items).length;
 			if (!count) {
-				this.notice(this.i18n('selectAtLeastOne'), 'error');
+				if ($('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected[data-applied]').length) {
+					this.notice(this.i18n('applyAllDone'), 'info');
+				} else {
+					this.notice(this.i18n('selectAtLeastOne'), 'error');
+				}
 				return;
 			}
 
@@ -2134,16 +2420,9 @@
 			$btn.prop('disabled', true).text(this.i18n('applying'));
 			$('#tbsm-report').prop('hidden', true).empty();
 
-			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
-				.done(function (res) {
-					if (res && res.success) {
-						self.renderReport(res.data);
-					} else {
-						self.notice(self.i18n('applyError').replace('%s', self.applyMsg(res.data)), 'error');
-					}
-				})
-				.fail(function (xhr) {
-					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
+			this.applyChunks(items)
+				.done(function (data) {
+					self.finishApply(data);
 				})
 				.always(function () {
 					self.busy = false;
@@ -2298,21 +2577,34 @@
 				}
 			});
 
-			$.post(window.tbsmData.ajaxUrl, this.applyPayload(items))
-				.done(function (res) {
-					if (res && res.success) {
-						self.renderReport(res.data);
-					} else {
-						self.notice(self.i18n('applyError').replace('%s', self.applyMsg(res.data)), 'error');
-					}
-				})
-				.fail(function (xhr) {
-					self.notice(self.i18n('applyError').replace('%s', self.applyFailMsg(xhr)), 'error');
+			this.applyChunks(items)
+				.done(function (data) {
+					self.finishApply(data);
 				})
 				.always(function () {
 					self.busy = false;
 					self.refreshCounts();
 				});
+		},
+
+		/**
+		 * پایان اعمال دسته‌ای: پاک‌کردن پیشرفت، رندر گزارش تجمعی و خطاهای جزئی.
+		 * (data اینجا «آبجکت تجمعی سمت کلاینت» است، نه پاسخ خام سرور.)
+		 */
+		finishApply: function (data) {
+			this.notice('');
+			if (data.report.length || data.errors.length) {
+				this.renderReport(data);
+			}
+			if (data.aborted) {
+				this.notice(this.i18n('applyAborted').replace('%s', data.abortError || ''), 'error');
+			} else if (data.failed) {
+				this.notice(this.i18n('applySomeFailed').replace('%d', this.fmt(data.failed)), 'error');
+			} else if (!data.report.length && !data.errors.length && data.skipped) {
+				this.notice(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)), 'info');
+			} else if (!data.applied && data.errors.length) {
+				this.notice(this.i18n('applyError').replace('%s', data.errors[0]), 'error');
+			}
 		},
 
 		/** گزارش نتیجهٔ اعمال + به‌روزرسانی کارت‌ها. */
@@ -2357,8 +2649,16 @@
 
 			var html = '<div class="tbsm-report-title">'
 				+ this.esc(this.i18n('reportTitle').replace('%d', this.fmt(data.applied)))
-				+ '</div>'
-				+ '<div class="tbsm-report-list">' + rows + '</div>';
+				+ '</div>';
+
+			// موارد هم‌خوان که بدون نوشتن رد شدند
+			if (data.skipped) {
+				html += '<div class="tbsm-report-skip">'
+					+ this.esc(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)))
+					+ '</div>';
+			}
+
+			html += '<div class="tbsm-report-list">' + rows + '</div>';
 
 			if (data.parent_status) {
 				var label = data.parent_status === 'instock'

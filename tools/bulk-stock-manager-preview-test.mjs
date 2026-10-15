@@ -269,6 +269,93 @@ await click('#tbsm-apply');
 await waitFor('گزارش اعمال تکی', () => /۵۵/.test(text('#tbsm-report')));
 ok('گزارش اعمال تکی یک ردیف دارد', qa('#tbsm-report .tbsm-report-row').length === 1, text('#tbsm-report').slice(0, 120));
 
+/* ------------------------------------------------ فهرست بلند: صفحه‌بندی سرور (۱٫۴٫۰) */
+window.tbsmMockPageSize = 4;
+await change('#tbsm-group-term', proMax.value);
+await waitFor('صفحهٔ نخست فهرست صفحه‌بندی‌شده', () => qa('#tbsm-grid .tbsm-var').length === 4);
+ok('با سقف ۴، فقط صفحهٔ نخست (۴ کارت) می‌آید', qa('#tbsm-grid .tbsm-var').length === 4);
+ok('دکمهٔ «نمایش موارد بعدی» آمد', !!q('#tbsm-more'), text('#tbsm-more'));
+ok('برچسب دکمه سقف صفحه را دارد', /۴/.test(text('#tbsm-more')), text('#tbsm-more'));
+ok('خط اطلاعات دربارهٔ صفحه‌بندی هشدار می‌دهد', /نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارش متغیر در خط اطلاعات تجمعی است', /۴ متغیر در/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('کارت‌های صفحهٔ نخست هم پیش‌فرض تیک‌خورده‌اند', qa('#tbsm-grid .tbsm-var.is-selected').length === 4);
+ok('شمارنده‌ها فقط موارد بارگیری‌شده را می‌شمارند', /۴ از ۴/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+await click('#tbsm-more');
+await waitFor('الحاق صفحهٔ دوم', () => qa('#tbsm-grid .tbsm-var').length === 6);
+ok('صفحهٔ دوم الحاق شد (۶ کارت، بدون بازسازی فهرست)', qa('#tbsm-grid .tbsm-var').length === 6);
+ok('پس از بارگیری کامل، دکمهٔ ادامه رفت', !q('#tbsm-more'));
+ok('هشدار صفحه‌بندی از خط اطلاعات رفت', !/نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارش تجمعی کامل شد (۶ متغیر در ۲ محصول)', /۶ متغیر در ۲ محصول/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
+ok('شمارنده‌ها کل موارد بارگیری‌شده را نشان می‌دهند', /۶ از ۶/.test(text('#tbsm-counts')), text('#tbsm-counts'));
+delete window.tbsmMockPageSize;
+
+/* ------------------------------------------------ اعمال دسته‌ای: دسته‌های کوچک، گزارش تجمعی (۱٫۴٫۰) */
+ok('سقف پیش‌فرض هر دستهٔ اعمال ۳۰۰ است (موتور SQL انبوه + پرش)', window.TBSM.applyChunk === 300, String(window.TBSM.applyChunk));
+window.tbsmMockApplyCalls = 0;
+window.TBSM.applyChunk = 2;
+await type(doc.getElementById('tbsm-quickset'), '9');
+await click('#tbsm-quickset-btn');
+await click('#tbsm-apply'); // حالت تأیید
+await click('#tbsm-apply'); // اجرای دسته‌ای
+await waitFor('گزارش اعمال دسته‌ای', () => qa('#tbsm-report .tbsm-report-row').length === 6);
+ok('اعمال ۶ مورد در ۳ دستهٔ ۲تایی فرستاده شد', window.tbsmMockApplyCalls === 3, String(window.tbsmMockApplyCalls));
+ok('گزارش تجمعی هر ۶ ردیف را دارد', qa('#tbsm-report .tbsm-report-row').length === 6);
+ok('همگام‌سازی والد بدون شمارش مضاعف (۲ محصول، نه ۶)', /۲ محصول والد/.test(text('#tbsm-report')), text('#tbsm-report').slice(0, 200));
+ok('پیشرفت دسته‌ای پس از پایان پاک شده', q('#tbsm-notice').hasAttribute('hidden') || !/اعمال دسته‌ای/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('کارت‌های اعمال‌شده نشان «اعمال‌شده» گرفتند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 6);
+await click('#tbsm-apply');
+ok('اعمال دوباره بدون باقی‌مانده → پیام «همه اعمال شده‌اند»', /اعمال شده/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('برای اعمال دوبارهٔ بی‌مورد، درخواستی نرفت', window.tbsmMockApplyCalls === 3, String(window.tbsmMockApplyCalls));
+
+// جداسازی مورد خراب: دو کارت وسطی خطای سرور می‌گیرند
+const badIds = qa('#tbsm-grid .tbsm-var').slice(2, 4).map((c) => c.getAttribute('data-id'));
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+window.tbsmMockApplyFail = badIds;
+window.tbsmMockApplyCalls = 0;
+await type(doc.getElementById('tbsm-quickset'), '8');
+await click('#tbsm-quickset-btn');
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('اعمال با جداسازی مورد خراب', () => qa('#tbsm-report .tbsm-report-row').length === 4);
+ok('۴ سالم اعمال شد، ۲ خراب جدا افتاد', qa('#tbsm-report .tbsm-report-row').length === 4);
+ok('تلاش‌ها: دسته‌ها + نصف‌شدن تطبیقی + تلاش دوبارهٔ تک‌مورد = ۸ درخواست', window.tbsmMockApplyCalls === 8, String(window.tbsmMockApplyCalls));
+ok('پیام خطای جزئی «۲ مورد» آمد', /۲ مورد/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('کارت‌های خراب نشان «اعمال‌شده» نگرفتند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 4);
+
+// ادامه از نقطهٔ توقف: فقط ۲ باقی‌مانده فرستاده می‌شود
+window.tbsmMockApplyFail = null;
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرای باقی‌مانده
+await waitFor('ادامهٔ اعمال از نقطهٔ توقف', () => qa('#tbsm-report .tbsm-report-row').length === 2);
+ok('ادامه، فقط ۲ مورد باقی‌مانده را فرستاد', qa('#tbsm-report .tbsm-report-row').length === 2);
+ok('پس از ادامه، هر ۶ کارت نشان دارند', qa('#tbsm-grid .tbsm-var[data-applied]').length === 6);
+// اجرای دوباره با همان مقدارها: همه هم‌خوان‌اند → پرش، بدون نوشتن
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('پیام پرش از موارد هم‌خوان', () => /بدون تغییر/.test(text('#tbsm-notice')));
+ok('اعمال دوبارهٔ همان مقدارها: همه پرش شدند', /۶ مورد بدون تغییر/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('گزارشی برای موارد پرش‌شده ساخته نشد', !visible('#tbsm-report') || qa('#tbsm-report .tbsm-report-row').length === 0);
+
+// خط «بدون تغییر» داخل گزارش وقتی فقط بعضی پرش می‌شوند
+window.TBSM.renderReport({ report: [], applied: 0, skipped: 5, errors: [], parents_synced: 0, parent_status: null });
+ok('خط «بدون تغییر» در گزارش رندر شد', /۵ مورد بدون تغییر/.test(text('#tbsm-report')), text('#tbsm-report'));
+
+// فیوز: خطای پیاپی بدون موفقیت → توقف + نمایش خطای واقعی سرور
+qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
+window.tbsmMockApplyFail = qa('#tbsm-grid .tbsm-var').map((c) => c.getAttribute('data-id'));
+window.tbsmMockApplyCalls = 0;
+await click('#tbsm-apply'); // تأیید
+await click('#tbsm-apply'); // اجرا
+await waitFor('فیوز خطای پیاپی', () => /اعمال پس از خطاهای پیاپی/.test(text('#tbsm-notice')));
+ok('۶ خطای پیاپی → فیوز + نمایش خطای سرور', /اعمال پس از خطاهای پیاپی/.test(text('#tbsm-notice')), text('#tbsm-notice'));
+ok('شمار درخواست‌ها مهار شد (۶)', window.tbsmMockApplyCalls === 6, String(window.tbsmMockApplyCalls));
+window.tbsmMockApplyFail = null;
+
+window.TBSM.applyChunk = 300;
+delete window.tbsmMockApplyCalls;
+delete window.tbsmMockApplyFail;
+
 /* ------------------------------------------------ محدوده با شناسه (SKU) */
 await click('.tbsm-seg-btn[data-scope="sku"]');
 ok('پنل شناسه آشکار شد', visible('#tbsm-scope-pane-sku'));
@@ -704,6 +791,10 @@ window.TBSM_PREVIEW_FAULT = null;
 	ok('قاعدهٔ پنهان‌کردن فوتر پیشخوان هست', /body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(admin));
 	ok('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود', /add_filter\(\s*'admin_body_class',\s*array\(\s*__CLASS__,\s*'body_class'\s*\)\s*\)/.test(php) && /if \( self::is_our_screen\(\) \)/.test(php));
 	ok('اندازهٔ کارت‌ها در سطح خودِ کارت قفل شده (سقف عرض + وسط‌چینی)', /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*max-width\s*:\s*min\(\s*100%\s*,\s*var\(--tisa-max-w/.test(admin) && /\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*margin-inline\s*:\s*auto/.test(admin));
+	// باگ «فلش‌های کاشی‌شده»: shorthand زمینهٔ disabled زیرخصیصه‌های پیکان سلکت را
+	// بازنشانی می‌کرد (repeat پیش‌فرض می‌ماند و تصویر از لایهٔ دیگر می‌آمد).
+	ok('پیکان سلکت یکپارچه و بالاتر از لایهٔ هاب است (repeat: no-repeat)', /\.tbsm-wrap\s+\.tbsm-input\.tbsm-select\s*\{[^}]*background-repeat:\s*no-repeat/.test(admin));
+	ok('حالت disabled با shorthand زمینهٔ پیکان را بازنشانی نمی‌کند', !/\.tbsm-input:disabled\s*\{[^}]*\bbackground:\s/.test(admin));
 	// ارتفاع صفحه: منوی پیشخوانِ بلند نباید صفحه را به بلندی خودش بکشد (۱٫۳٫۱۱)
 	const jsSrc = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js'), 'utf8');
 	ok('منو روی صفحهٔ ما خکوب می‌شود (fixed + اسکرول داخلی، از ۷۸۳px)', /@media screen and \(min-width: 783px\)[\s\S]{0,400}body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}position:\s*fixed[\s\S]{0,300}overflow-y:\s*auto/.test(admin));

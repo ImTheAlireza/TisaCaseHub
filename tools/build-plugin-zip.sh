@@ -22,6 +22,10 @@ fi
 if [ -f tools/i18n-parity.mjs ]; then
   node tools/i18n-parity.mjs || { echo "✗ کلیدهای ترجمه ناهم‌خوان‌اند — زیپ ساخته نشد." >&2; exit 1; }
 fi
+# هم‌خوانی مارک‌آپ render_page() با پیش‌نمایش (جلوی باگ «</div> اضافه» را می‌گیرد).
+if [ -f tools/markup-parity.mjs ]; then
+  node tools/markup-parity.mjs || { echo "✗ مارک‌آپ PHP و پیش‌نمایش ناهم‌خوان‌اند — زیپ ساخته نشد." >&2; exit 1; }
+fi
 # قرارداد چیدمان صفحه (پدینگ #wpcontent، مرکزچینی .wrap، هم‌گامی لایهٔ مشترک).
 if [ -f tools/layout-guard.mjs ]; then
   node tools/layout-guard.mjs || { echo "✗ قرارداد چیدمان نقض شده — زیپ ساخته نشد." >&2; exit 1; }

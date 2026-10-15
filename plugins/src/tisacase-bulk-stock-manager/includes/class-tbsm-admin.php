@@ -161,7 +161,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 
 						// حالت گروهی: محدودهٔ محصولات ← ویژگی/مقدار مدل.
 						'groupHintEmpty'     => 'ابتدا محدودهٔ محصولات را مشخص کنید، بعد ویژگی و مقدار مدل را انتخاب کنید.',
-						'scopePickHint'      => 'نام، SKU یا شناسهٔ محصول را بنویسید و از فهرست تیک بزنید (می‌توانید چند بار جست‌وجو کنید).',
+						'scopeFound'         => 'نمایش %d محصول — از فهرست تیک بزنید',
 						'scopeSearchEmpty'   => 'محصولی با این مشخصات پیدا نشد.',
 						'scopeSearching'     => 'در حال جست‌وجو…',
 						'scopeSearchError'   => 'جست‌وجوی محصول ناموفق بود.',
@@ -199,8 +199,16 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'groupSearching'     => 'در حال فهرست‌کردن متغیرها…',
 						'groupEmpty'         => 'برای این مدل در این محدوده متغیری پیدا نشد.',
 						'groupNote'          => '%1$s • %2$s — %3$d متغیر در %4$d محصول',
-						'groupTruncated'     => 'فهرست به %d مورد محدود شد؛ محدوده یا مقدار مدل را دقیق‌تر کنید.',
+						'groupTruncated'     => 'تنها %d مورد نخست فهرست شد؛ برای دیدن و اعمال بقیه، دکمهٔ «نمایش موارد بعدی» زیر فهرست را بزنید.',
+						'groupMoreBtn'       => 'نمایش %d مورد بعدی',
+						'groupMoreLoading'   => 'در حال آوردن صفحهٔ بعدی…',
 						'groupApplyConfirm'  => 'تأیید: اعمال روی %d متغیر گروهی؟',
+						'applyProgress'      => 'اعمال دسته‌ای: تا مورد %1$d از %2$d…',
+						'applyAllDone'       => 'همهٔ کارت‌های انتخابی همین الان موفق اعمال شده‌اند؛ برای اعمال دوباره، مقدار/حالت را عوض کنید یا تیک را بردارید و دوباره بزنید.',
+						'applySomeFailed'    => 'اعمال پایان یافت ولی %d مورد به خطای سرور خورد و رد شد (در گزارش آمده)؛ برای فرستادن دوبارهٔ همان‌ها، «اعمال» را بزنید.',
+						'applyItemFailed'    => 'متغیر #%s پس از تلاش دوباره اعمال نشد (خطای سرور).',
+						'reportSkipped'      => '%d مورد بدون تغییر رد شد (از قبل همین مقدار/وضعیت را داشتند).',
+						'applyAborted'       => 'اعمال پس از خطاهای پیاپی سرور متوقف شد: %s — موارد اعمال‌شده در گزارش‌اند و بقیه دست‌نخورده ماندند؛ متن این خطا را برای بررسی بفرستید.',
 						'parentsSynced'      => 'وضعیت موجودی %d محصول والد همگام شد.',
 					),
 				)
@@ -218,6 +226,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 			$paths = array(
 				'box'    => '<path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/>',
 				'search' => '<path d="M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.5-4.5"/>',
+				'layers' => '<path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/>',
 				'box-s'  => '<path d="M3 8l9-5 9 5v8l-9 5-9-5zM3 8l9 5 9-5M12 13v8"/>',
 			);
 			$set = isset( $paths[ $name ] ) ? $paths[ $name ] : $paths['box'];
@@ -228,59 +237,67 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 			if ( ! TBSM_Core::can() ) {
 				wp_die( esc_html( 'دسترسی غیرمجاز است.' ) );
 			}
+
+			// با هابِ خاموش، کامپوننت‌های پایه (.tisa-btn) اینجا تعریف می‌شوند.
+			$hub_on = wp_style_is( 'tisacase-ui', 'enqueued' ) || wp_style_is( 'tisacase-ui', 'done' );
 			?>
-			<div class="wrap tbsm-wrap" dir="rtl">
-				<div class="tbsm-hero" role="banner">
-					<div class="tbsm-hero-row">
-						<span class="tbsm-hero-mark"><?php echo self::icon( 'box' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-						<div class="tbsm-hero-text">
-							<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
-							<p class="tbsm-hero-sub">یک محصول را با جست‌وجو انتخاب کنید و موجودی متغیرهایش را تغییر دهید؛ یا در تب «گروهی» اول محدودهٔ محصولات را مشخص کنید (چند محصول، دسته‌بندی یا شناسه)، بعد ویژگی و مقدار مدل را از میان ویژگی‌های همان محدوده انتخاب کنید و موجودی را تکی یا یک‌جا روی همهٔ آن‌ها اعمال کنید.</p>
-						</div>
-						<span class="tbsm-hero-ver" dir="ltr">v<?php echo esc_html( TBSM_VERSION ); ?></span>
+			<div class="wrap tisa-wrap tbsm-wrap<?php echo $hub_on ? '' : ' is-standalone'; ?>" dir="rtl">
+				<header class="tbsm-hero" role="banner">
+					<span class="tbsm-hero-mark" aria-hidden="true"><?php echo self::icon( 'box' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+					<div class="tbsm-hero-text">
+						<p class="tbsm-hero-eyebrow">ابزار مدیریت موجودی ووکامرس</p>
+						<h1 class="tbsm-hero-title">مدیریت انبوه موجودی</h1>
+						<p class="tbsm-hero-sub">موجودی متغیرها را تکی یا گروهی روی چند محصول، دسته‌بندی یا بازهٔ شناسه اعمال کنید.</p>
 					</div>
-				</div>
+					<div class="tbsm-hero-meta">
+						<span class="tbsm-hero-pill tbsm-hero-pill--ver" dir="ltr">v<?php echo esc_html( TBSM_VERSION ); ?></span>
+					</div>
+				</header>
 
 				<div class="tbsm-notice" id="tbsm-notice" hidden role="alert"></div>
 
 				<!-- انتخاب حالت کار: تک‌محصول یا گروهی بر اساس مدل -->
-				<div class="tbsm-tabs" role="tablist" aria-label="حالت کار">
-					<button type="button" class="tbsm-tab is-active" id="tbsm-tab-single" data-mode="single" role="tab" aria-selected="true">تک‌محصول</button>
-					<button type="button" class="tbsm-tab" id="tbsm-tab-group" data-mode="group" role="tab" aria-selected="false">گروهی — چند محصول</button>
-				</div>
+				<nav class="tbsm-tabs" role="tablist" aria-label="حالت کار">
+					<button type="button" class="tbsm-tab is-active" id="tbsm-tab-single" data-mode="single" role="tab" aria-selected="true"><?php echo self::icon( 'box' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span>تک‌محصول</span></button>
+					<button type="button" class="tbsm-tab" id="tbsm-tab-group" data-mode="group" role="tab" aria-selected="false"><?php echo self::icon( 'layers' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span>گروهی — چند محصول</span></button>
+				</nav>
 
 				<div class="tbsm-panel" id="tbsm-panel-single">
 
-				<!-- گام ۱: انتخاب محصول -->
-				<div class="tbsm-card">
-					<div class="tbsm-step-head">
-						<span class="tbsm-step-num">۱</span>
-						<div class="tbsm-step-titles">
-							<h2 class="tbsm-step-title">انتخاب محصول</h2>
-							<p class="tbsm-step-sub">جست‌وجو بر اساس نام، SKU یا شناسه</p>
+					<!-- گام ۱: انتخاب محصول -->
+					<section class="tbsm-card">
+						<div class="tbsm-step-head">
+							<span class="tbsm-step-num">۱</span>
+							<div class="tbsm-step-titles">
+								<h2 class="tbsm-step-title">انتخاب محصول</h2>
+								<p class="tbsm-step-sub">جست‌وجو بر اساس نام، SKU یا شناسه</p>
+							</div>
 						</div>
-					</div>
-					<div class="tbsm-search">
-						<span class="tbsm-search-icon"><?php echo self::icon( 'search' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-						<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
-					</div>
-					<div id="tbsm-results" class="tbsm-results" hidden></div>
-					<div id="tbsm-selected" class="tbsm-selected" hidden></div>
-				</div>
+						<div class="tbsm-card-body">
+							<div class="tbsm-search">
+								<span class="tbsm-search-icon" aria-hidden="true"><?php echo self::icon( 'search' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+								<input type="text" id="tbsm-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول را بنویسید…" autocomplete="off">
+							</div>
+							<div id="tbsm-results" class="tbsm-results" hidden></div>
+							<div id="tbsm-selected" class="tbsm-selected" hidden></div>
+						</div>
+					</section>
 
-				<!-- گام ۲: دستهٔ متغیرها -->
-				<div class="tbsm-card tbsm-step-locked" id="tbsm-step-category">
-					<div class="tbsm-step-head">
-						<span class="tbsm-step-num">۲</span>
-						<div class="tbsm-step-titles">
-							<h2 class="tbsm-step-title">دستهٔ متغیرها</h2>
-							<p class="tbsm-step-sub">با انتخاب دسته، فقط همان متغیرها نشان داده و تیک می‌خورند؛ می‌توانید تیک‌ها را دستی جابه‌جا کنید.</p>
+					<!-- گام ۲: دستهٔ متغیرها -->
+					<section class="tbsm-card tbsm-step-locked" id="tbsm-step-category">
+						<div class="tbsm-step-head">
+							<span class="tbsm-step-num">۲</span>
+							<div class="tbsm-step-titles">
+								<h2 class="tbsm-step-title">دستهٔ متغیرها</h2>
+								<p class="tbsm-step-sub">با انتخاب دسته، فقط همان متغیرها نشان داده و تیک می‌خورند؛ می‌توانید تیک‌ها را دستی جابه‌جا کنید.</p>
+							</div>
 						</div>
-					</div>
-					<select id="tbsm-cat-select" class="tbsm-input tbsm-cat-select" disabled>
-						<option value="all">—</option>
-					</select>
-				</div>
+						<div class="tbsm-card-body">
+							<select id="tbsm-cat-select" class="tbsm-input tbsm-select tbsm-cat-select" disabled>
+								<option value="all">—</option>
+							</select>
+						</div>
+					</section>
 
 				</div><!-- /#tbsm-panel-single -->
 
@@ -288,7 +305,7 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 				<div class="tbsm-panel" id="tbsm-panel-group" hidden>
 
 					<!-- گام ۱ گروهی: محدودهٔ محصولات -->
-					<div class="tbsm-card">
+					<section class="tbsm-card">
 						<div class="tbsm-step-head">
 							<span class="tbsm-step-num">۱</span>
 							<div class="tbsm-step-titles">
@@ -296,75 +313,76 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 								<p class="tbsm-step-sub">اول مشخص کنید روی کدام محصولات کار می‌کنید؛ بعد فقط ویژگی‌های همان‌ها فهرست می‌شود.</p>
 							</div>
 						</div>
+						<div class="tbsm-card-body">
 
-						<div class="tbsm-seg" role="tablist" aria-label="روش انتخاب محدوده">
-							<button type="button" class="tbsm-seg-btn is-active" data-scope="products" role="tab" aria-selected="true">چند محصول</button>
-							<button type="button" class="tbsm-seg-btn" data-scope="category" role="tab" aria-selected="false">دسته‌بندی</button>
-							<button type="button" class="tbsm-seg-btn" data-scope="sku" role="tab" aria-selected="false">شناسهٔ (SKU)</button>
-							<button type="button" class="tbsm-seg-btn" data-scope="all" role="tab" aria-selected="false">همهٔ محصولات</button>
-						</div>
-
-						<!-- محدوده: چند محصول با جست‌وجو -->
-						<div class="tbsm-scope-pane" id="tbsm-scope-pane-products">
-							<p class="tbsm-hint-line">نام، SKU یا شناسهٔ محصول را بنویسید و از فهرست تیک بزنید (می‌توانید چند بار جست‌وجو کنید).</p>
-							<div class="tbsm-search">
-								<span class="tbsm-search-icon"><?php echo self::icon( 'search' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
-								<input type="text" id="tbsm-scope-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول…" autocomplete="off">
+							<div class="tbsm-seg" role="tablist" aria-label="روش انتخاب محدوده">
+								<button type="button" class="tbsm-seg-btn is-active" data-scope="products" role="tab" aria-selected="true">چند محصول</button>
+								<button type="button" class="tbsm-seg-btn" data-scope="category" role="tab" aria-selected="false">دسته‌بندی</button>
+								<button type="button" class="tbsm-seg-btn" data-scope="sku" role="tab" aria-selected="false">شناسهٔ (SKU)</button>
+								<button type="button" class="tbsm-seg-btn" data-scope="all" role="tab" aria-selected="false">همهٔ محصولات</button>
 							</div>
-							<div class="tbsm-scope-results" id="tbsm-scope-results" hidden></div>
-							<div class="tbsm-picked" id="tbsm-scope-picked" hidden></div>
-						</div>
 
-						<!-- محدوده: دسته‌بندی -->
-						<div class="tbsm-scope-pane" id="tbsm-scope-pane-category" hidden>
-							<p class="tbsm-hint-line">همهٔ محصولات این دسته و زیردسته‌هایش بررسی می‌شوند.</p>
-							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category-search">
-								<span class="tbsm-field-label">جست‌وجوی دسته</span>
-								<input type="text" id="tbsm-scope-category-search" class="tbsm-input" placeholder="جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)" autocomplete="off">
-							</label>
-							<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category">
-								<span class="tbsm-field-label">دسته‌بندی محصول</span>
-								<select id="tbsm-scope-category" class="tbsm-input tbsm-select">
-									<option value="">در حال بارگذاری…</option>
-								</select>
-							</label>
-							<p class="tbsm-hint-line" id="tbsm-scope-category-hint" hidden></p>
-						</div>
+							<!-- محدوده: چند محصول با جست‌وجو -->
+							<div class="tbsm-scope-pane" id="tbsm-scope-pane-products">
+								<p class="tbsm-hint-line">نام، SKU یا شناسهٔ محصول را بنویسید و از فهرست تیک بزنید (می‌توانید چند بار جست‌وجو کنید).</p>
+								<div class="tbsm-search">
+									<span class="tbsm-search-icon" aria-hidden="true"><?php echo self::icon( 'search' ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?></span>
+									<input type="text" id="tbsm-scope-search" class="tbsm-input tbsm-search-input" placeholder="نام یا SKU محصول…" autocomplete="off">
+								</div>
+								<div class="tbsm-scope-results" id="tbsm-scope-results" hidden></div>
+								<div class="tbsm-picked" id="tbsm-scope-picked" hidden></div>
+							</div>
 
-						<!-- محدوده: شناسه -->
-						<div class="tbsm-scope-pane" id="tbsm-scope-pane-sku" hidden>
-							<p class="tbsm-hint-line">مثلاً CH یا «CH184» — با «شامل می‌شود» هر شناسه‌ای که این متن را داشته باشد پیدا می‌شود.</p>
-							<div class="tbsm-form-row">
-								<label class="tbsm-field tbsm-field--grow" for="tbsm-scope-sku">
-									<span class="tbsm-field-label">شناسهٔ (SKU) محصول</span>
-									<input type="text" id="tbsm-scope-sku" class="tbsm-input" placeholder="مثلاً CH" autocomplete="off">
+							<!-- محدوده: دسته‌بندی -->
+							<div class="tbsm-scope-pane" id="tbsm-scope-pane-category" hidden>
+								<p class="tbsm-hint-line">همهٔ محصولات این دسته و زیردسته‌هایش بررسی می‌شوند.</p>
+								<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category-search">
+									<span class="tbsm-field-label">جست‌وجوی دسته</span>
+									<input type="text" id="tbsm-scope-category-search" class="tbsm-input" placeholder="جست‌وجوی دسته‌بندی… (مثلاً iPhone 11)" autocomplete="off">
 								</label>
-								<label class="tbsm-field" for="tbsm-scope-sku-mode">
-									<span class="tbsm-field-label">نوع تطبیق</span>
-									<select id="tbsm-scope-sku-mode" class="tbsm-input tbsm-select">
-										<option value="prefix">شروع می‌شود با</option>
-										<option value="contains">شامل می‌شود</option>
+								<label class="tbsm-field tbsm-field--wide" for="tbsm-scope-category">
+									<span class="tbsm-field-label">دسته‌بندی محصول</span>
+									<select id="tbsm-scope-category" class="tbsm-input tbsm-select">
+										<option value="">در حال بارگذاری…</option>
 									</select>
 								</label>
+								<p class="tbsm-hint-line" id="tbsm-scope-category-hint" hidden></p>
 							</div>
-						</div>
 
-						<!-- محدوده: همهٔ محصولات -->
-						<div class="tbsm-scope-pane" id="tbsm-scope-pane-all" hidden>
-							<p class="tbsm-hint-line">همهٔ محصولات فروشگاه یک‌جا بررسی می‌شوند و ویژگی‌های مدلشان فهرست می‌شود؛ مناسب وقتی می‌خواهید روی کل فروشگاه کار کنید و نمی‌خواهید محصول‌ها را دستی انتخاب کنید.</p>
-							<div class="tbsm-scope-stat" id="tbsm-scope-all-stat" aria-live="polite"></div>
-						</div>
+							<!-- محدوده: شناسه -->
+							<div class="tbsm-scope-pane" id="tbsm-scope-pane-sku" hidden>
+								<p class="tbsm-hint-line">مثلاً CH یا «CH184» — با «شامل می‌شود» هر شناسه‌ای که این متن را داشته باشد پیدا می‌شود.</p>
+								<div class="tbsm-form-row">
+									<label class="tbsm-field tbsm-field--grow" for="tbsm-scope-sku">
+										<span class="tbsm-field-label">شناسهٔ (SKU) محصول</span>
+										<input type="text" id="tbsm-scope-sku" class="tbsm-input" placeholder="مثلاً CH" autocomplete="off">
+									</label>
+									<label class="tbsm-field" for="tbsm-scope-sku-mode">
+										<span class="tbsm-field-label">نوع تطبیق</span>
+										<select id="tbsm-scope-sku-mode" class="tbsm-input tbsm-select">
+											<option value="prefix">شروع می‌شود با</option>
+											<option value="contains">شامل می‌شود</option>
+										</select>
+									</label>
+								</div>
+							</div>
 
-						<div class="tbsm-scope-actions">
-							<button type="button" class="tisa-btn tisa-btn--primary tbsm-form-action" id="tbsm-scope-apply">نمایش ویژگی‌ها</button>
-							<span class="tbsm-scope-summary" id="tbsm-scope-summary" hidden></span>
-						</div>
+							<!-- محدوده: همهٔ محصولات -->
+							<div class="tbsm-scope-pane" id="tbsm-scope-pane-all" hidden>
+								<p class="tbsm-hint-line">همهٔ محصولات فروشگاه یک‌جا بررسی می‌شوند و ویژگی‌های مدلشان فهرست می‌شود؛ مناسب وقتی می‌خواهید روی کل فروشگاه کار کنید و نمی‌خواهید محصول‌ها را دستی انتخاب کنید.</p>
+								<div class="tbsm-scope-stat" id="tbsm-scope-all-stat" aria-live="polite"></div>
+							</div>
 
-					</div>
-					</div>
+							<div class="tbsm-scope-actions">
+								<button type="button" class="tisa-btn tisa-btn--primary tbsm-form-action" id="tbsm-scope-apply">نمایش ویژگی‌ها</button>
+								<span class="tbsm-scope-summary" id="tbsm-scope-summary" hidden></span>
+							</div>
+
+						</div>
+					</section>
 
 					<!-- گام ۲ گروهی: ویژگی و مقدار مدل -->
-					<div class="tbsm-card tbsm-step-locked" id="tbsm-step-model">
+					<section class="tbsm-card tbsm-step-locked" id="tbsm-step-model">
 						<div class="tbsm-step-head">
 							<span class="tbsm-step-num">۲</span>
 							<div class="tbsm-step-titles">
@@ -372,31 +390,33 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 								<p class="tbsm-step-sub">فقط ویژگی‌های موجود در محدودهٔ انتخابی فهرست می‌شوند؛ بعد از انتخاب مقدار، کارت‌ها ساخته می‌شوند.</p>
 							</div>
 						</div>
-						<div class="tbsm-form-row">
-							<label class="tbsm-field tbsm-field--grow" for="tbsm-group-attr">
-								<span class="tbsm-field-label">ویژگی مدل</span>
-								<select id="tbsm-group-attr" class="tbsm-input tbsm-select" disabled>
-									<option value="">— ابتدا محدوده را مشخص کنید —</option>
-								</select>
-							</label>
+						<div class="tbsm-card-body">
+							<div class="tbsm-form-row">
+								<label class="tbsm-field tbsm-field--grow" for="tbsm-group-attr">
+									<span class="tbsm-field-label">ویژگی مدل</span>
+									<select id="tbsm-group-attr" class="tbsm-input tbsm-select" disabled>
+										<option value="">— ابتدا محدوده را مشخص کنید —</option>
+									</select>
+								</label>
+							</div>
+							<div class="tbsm-form-row">
+								<label class="tbsm-field tbsm-field--grow" for="tbsm-group-term">
+									<span class="tbsm-field-label">مقدار مدل</span>
+									<input type="text" id="tbsm-group-term-search" class="tbsm-input tbsm-term-search" placeholder="جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)" autocomplete="off" disabled>
+									<select id="tbsm-group-term" class="tbsm-input tbsm-select" disabled>
+										<option value="">— انتخاب کنید —</option>
+									</select>
+								</label>
+							</div>
+							<p class="tbsm-hint-line" id="tbsm-group-term-hint" hidden></p>
+							<p class="tbsm-hint-line" id="tbsm-group-hint" hidden></p>
 						</div>
-						<div class="tbsm-form-row">
-							<label class="tbsm-field tbsm-field--grow" for="tbsm-group-term">
-								<span class="tbsm-field-label">مقدار مدل</span>
-								<input type="text" id="tbsm-group-term-search" class="tbsm-input tbsm-term-search" placeholder="جست‌وجو در مقدارها… (مثلاً a55 یا iPhone 11)" autocomplete="off" disabled>
-								<select id="tbsm-group-term" class="tbsm-input tbsm-select" disabled>
-									<option value="">— انتخاب کنید —</option>
-								</select>
-							</label>
-						</div>
-						<p class="tbsm-hint-line" id="tbsm-group-term-hint" hidden></p>
-						<p class="tbsm-hint-line" id="tbsm-group-hint" hidden></p>
-					</div>
+					</section>
 
 				</div><!-- /#tbsm-panel-group -->
 
 				<!-- گام ۳: کارت‌های متغیرها -->
-				<div class="tbsm-card tbsm-step-locked" id="tbsm-step-cards">
+				<section class="tbsm-card tbsm-step-locked" id="tbsm-step-cards">
 					<div class="tbsm-step-head">
 						<span class="tbsm-step-num">۳</span>
 						<div class="tbsm-step-titles">
@@ -404,30 +424,32 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 							<p class="tbsm-step-sub">موجودیِ انتخابی‌ها را روی کارت‌ها تغییر دهید و از پایین اعمال کنید</p>
 						</div>
 					</div>
-					<div class="tbsm-toolbar">
-						<div class="tbsm-counts" id="tbsm-counts"></div>
-						<div class="tbsm-unified">
-							<label for="tbsm-bulk-mode">موجودی همگانی:</label>
-							<select id="tbsm-bulk-mode" class="tbsm-input tbsm-select tbsm-bulk-mode" aria-label="نوع موجودی همگانی">
-								<option value="qty">تعداد</option>
-								<option value="in_stock">موجود بدون تعداد</option>
-								<option value="out_of_stock">ناموجود</option>
-							</select>
-							<span class="tbsm-quickset-wrap" id="tbsm-quickset-wrap">
-								<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
-							</span>
-							<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
-							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
+					<div class="tbsm-card-body">
+						<div class="tbsm-toolbar">
+							<div class="tbsm-counts" id="tbsm-counts"></div>
+							<div class="tbsm-unified">
+								<label for="tbsm-bulk-mode">موجودی همگانی:</label>
+								<select id="tbsm-bulk-mode" class="tbsm-input tbsm-select tbsm-bulk-mode" aria-label="نوع موجودی همگانی">
+									<option value="qty">تعداد</option>
+									<option value="in_stock">موجود بدون تعداد</option>
+									<option value="out_of_stock">ناموجود</option>
+								</select>
+								<span class="tbsm-quickset-wrap" id="tbsm-quickset-wrap">
+									<input type="number" id="tbsm-quickset" class="tbsm-input tbsm-quickset-input" min="0" inputmode="numeric" placeholder="مثلاً ۰">
+								</span>
+								<button type="button" class="tisa-btn tbsm-btn-fill" id="tbsm-quickset-btn" disabled>درج</button>
+								<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-unified" id="tbsm-unified" disabled>اعمال همگانی</button>
+							</div>
 						</div>
+						<div class="tbsm-group-note" id="tbsm-group-note" hidden></div>
+						<div class="tbsm-grid" id="tbsm-grid" hidden></div>
+						<div class="tbsm-bottombar">
+							<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
+							<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
+						</div>
+						<div class="tbsm-report" id="tbsm-report" hidden></div>
 					</div>
-					<div class="tbsm-group-note" id="tbsm-group-note" hidden></div>
-					<div class="tbsm-grid" id="tbsm-grid" hidden></div>
-					<div class="tbsm-bottombar">
-						<span class="tbsm-bottombar-hint" id="tbsm-bottombar-hint"></span>
-						<button type="button" class="tisa-btn tisa-btn--primary tbsm-btn-apply" id="tbsm-apply" disabled>اعمال موجودی</button>
-					</div>
-					<div class="tbsm-report" id="tbsm-report" hidden></div>
-				</div>
+				</section>
 			</div>
 			<?php
 		}
