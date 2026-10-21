@@ -413,6 +413,17 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		}
 
 		/**
+		 * آیا این variation برای ویژگی هدف مقدار «هرکدام/همه» دارد؟
+		 * فقط حالتی که کلید ویژگی پیدا شده و مقدارش صریحاً خالی است واجد شرایط
+		 * است؛ «پیدا نشدن کلید» عمداً شامل نمی‌شود، چون ممکن است مقدار زیر کلید
+		 * ناشناخته‌ای باشد و حذف یا نادیده‌گرفتنش خطرناک است.
+		 */
+		private static function is_any_target_variation( array $attributes, $target_key ) {
+			$find = self::find_variation_attribute_value( $attributes, $target_key );
+			return ! empty( $find['found'] ) && empty( $find['ambiguous'] ) && '' === (string) $find['value'];
+		}
+
+		/**
 		 * هویت یک مقدار متغیر برای مقایسه/امضا: نرمال‌سازی فارسی، حذف نویسه‌های
 		 * نامرئی، حروف کوچک و یکدست‌کردن جداکننده‌ها (فاصله/خط‌تیره/آندرلاین) تا
 		 * شکل «نام» و شکل «اسلاگ» یک مقدار یکی شوند؛ اما علائم معنادار مثل + و / و .
@@ -555,14 +566,15 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			return array_values( array_unique( array_filter( $matrix_values, 'strlen' ) ) );
 		}
 
-		private static function count_missing_combinations( $product, array $matrix, $preloaded_attrs = null ) {
+		private static function count_missing_combinations( $product, array $matrix, $preloaded_attrs = null, $target_key = '', $drop_any_target = false ) {
 			$candidate_count = self::cartesian_product_count( $matrix, self::MAX_VARIATIONS_PER_PRODUCT );
 			if ( $candidate_count > self::MAX_VARIATIONS_PER_PRODUCT ) {
-				return array( 'count' => 0, 'error' => sprintf( 'تعداد ترکیب‌ها از سقف %d بیشتر است.', self::MAX_VARIATIONS_PER_PRODUCT ) );
+				return array( 'count' => 0, 'error' => sprintf( 'تعداد ترکیب‌ها از سقف %d بیشتر است.', self::MAX_VARIATIONS_PER_PRODUCT ), 'drop_any_count' => 0 );
 			}
 			$combinations = self::cartesian_product( $matrix );
 			$keys         = array_keys( $matrix );
 			$existing       = array();
+			$drop_any_count = 0;
 			$children_attrs = null;
 			if ( $product && $product->is_type( 'variable' ) ) {
 				if ( is_array( $preloaded_attrs ) ) {
@@ -582,15 +594,21 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			if ( is_array( $children_attrs ) ) {
 				foreach ( $children_attrs as $child_id => $attributes ) {
 					$attributes = (array) $attributes;
+					// گزینهٔ کاربر: variation بدون مقدار ویژگی هدف («هرکدام») در اجرا
+					// حذف می‌شود؛ پس نه جلوی افزودن را می‌گیرد و نه ترکیبی را پوشش می‌دهد.
+					if ( $drop_any_target && '' !== (string) $target_key && self::is_any_target_variation( $attributes, $target_key ) ) {
+						$drop_any_count++;
+						continue;
+					}
 					foreach ( $keys as $key ) {
 						$value = self::find_variation_attribute_value( $attributes, $key );
 						if ( ! empty( $value['ambiguous'] ) || empty( $value['found'] ) || '' === (string) $value['value'] ) {
-							return array( 'count' => 0, 'error' => self::variation_attribute_issue_text( $child_id, $key, $value, $attributes ) );
+							return array( 'count' => 0, 'error' => self::variation_attribute_issue_text( $child_id, $key, $value, $attributes ), 'drop_any_count' => $drop_any_count );
 						}
 					}
 					$signature = self::combination_signature( $attributes, $keys );
 					if ( false === $signature ) {
-						return array( 'count' => 0, 'error' => sprintf( 'ترکیب variation #%d قابل تطبیق نیست.', absint( $child_id ) ) );
+						return array( 'count' => 0, 'error' => sprintf( 'ترکیب variation #%d قابل تطبیق نیست.', absint( $child_id ) ), 'drop_any_count' => $drop_any_count );
 					}
 					$existing[ $signature ] = true;
 				}
@@ -599,13 +617,13 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			foreach ( $combinations as $combination ) {
 				$signature = self::combination_signature( $combination, $keys );
 				if ( false === $signature ) {
-					return array( 'count' => 0, 'error' => 'یکی از ترکیب‌های درخواستی قابل تطبیق نیست.' );
+					return array( 'count' => 0, 'error' => 'یکی از ترکیب‌های درخواستی قابل تطبیق نیست.', 'drop_any_count' => $drop_any_count );
 				}
 				if ( ! isset( $existing[ $signature ] ) ) {
 					$missing[ $signature ] = true;
 				}
 			}
-			return array( 'count' => count( $missing ), 'error' => '' );
+			return array( 'count' => count( $missing ), 'error' => '', 'drop_any_count' => $drop_any_count );
 		}
 
 		private static function count_matching_variations( $product, $target_key, array $comparison_values, $preloaded_attrs = null ) {
@@ -981,7 +999,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		 * @param bool   $combine_other ترکیب با سایر ویژگی‌های متغیر.
 		 * @return array داده‌های پیش‌نمایش.
 		 */
-		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL, $offset = 0, $limit = 0 ) {
+		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL, $offset = 0, $limit = 0, $drop_any_target = false ) {
 			self::ensure_all_attribute_taxonomies_registered();
 			$operation_mode = self::sanitize_operation_mode( $operation_mode );
 
@@ -998,6 +1016,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$total_old            = 0;
 			$total_new            = 0;
 			$total_remove         = 0;
+			$total_drop_any       = 0;
 			$total_new_capped     = false;
 			$preflight_error_count = 0;
 			$over_limit_count      = 0;
@@ -1162,7 +1181,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 
 				$multiplier  = empty( $other_counts ) ? 1 : self::bounded_product_of_counts( $other_counts, self::MAX_VARIATIONS_PER_PRODUCT );
 				$count_parts = array_merge( array( self::MODE_ADD_MISSING === $operation_mode ? count( $preflight_target_values ) : $val_count ), $other_counts );
-				$new_count   = 0;
+				$new_count     = 0;
+				$drop_any_vars = 0;
 				$over_limit  = false;
 				if ( '' !== $preflight_error ) {
 					$preflight_error_count++;
@@ -1187,7 +1207,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						foreach ( $other_matrix as $matrix_key => $matrix_values ) {
 							$add_matrix[ $matrix_key ] = $matrix_values;
 						}
-						$missing_result = self::count_missing_combinations( $product, $add_matrix, $preloaded_attrs );
+						$missing_result = self::count_missing_combinations( $product, $add_matrix, $preloaded_attrs, $target_key, (bool) $drop_any_target );
 						if ( '' !== $missing_result['error'] ) {
 							$preflight_error = $missing_result['error'];
 							$preflight_error_count++;
@@ -1197,7 +1217,9 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 								$issues_truncated = true;
 							}
 						} else {
-							$new_count = absint( $missing_result['count'] );
+							$new_count     = absint( $missing_result['count'] );
+							$drop_any_vars = isset( $missing_result['drop_any_count'] ) ? absint( $missing_result['drop_any_count'] ) : 0;
+							$total_drop_any += $drop_any_vars;
 						}
 					} else {
 						$new_count = $matrix_count;
@@ -1217,6 +1239,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						'type'            => $product->get_type(),
 						'old_vars'        => $old_count,
 						'new_vars'        => $new_count,
+						'drop_any_vars'   => $drop_any_vars,
 						'over_limit'      => $over_limit,
 						'preflight_error' => $preflight_error,
 						'multiplier'      => $multiplier,
@@ -1240,6 +1263,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				'total_old_vars'             => $total_old,
 				'total_new_vars'             => $total_new,
 				'total_remove_vars'          => $total_remove,
+				'total_drop_any_vars'        => $total_drop_any,
+				'drop_any_target'            => (bool) $drop_any_target,
 				'total_new_vars_capped'      => $total_new_capped,
 				'preflight_error_count' => $preflight_error_count,
 				'over_limit_count'      => $over_limit_count,
@@ -1253,7 +1278,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		/**
 		 * اجرای یک بسته محصول در پس‌زمینهٔ ایجکس با پشتیبانی کامل از Rollback.
 		 */
-		public static function execute_batch( $run_id, array $batch_ids, $attr_name, array $new_values, $price, $sale_price = '', $stock_status = 'instock', $combine_other = true ) {
+		public static function execute_batch( $run_id, array $batch_ids, $attr_name, array $new_values, $price, $sale_price = '', $stock_status = 'instock', $combine_other = true, $drop_any_target = false ) {
 			if ( ! TCBVM_Backup::lock_run( $run_id ) ) {
 				throw new RuntimeException( 'قفل اجرای هم‌زمان در دسترس نیست؛ این بسته اجرا نشد.' );
 			}
@@ -1291,6 +1316,9 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				}
 				if ( array_key_exists( 'combine_other', $run_meta ) ) {
 					$combine_other = (bool) $run_meta['combine_other'];
+				}
+				if ( array_key_exists( 'drop_any_target', $run_meta ) ) {
+					$drop_any_target = (bool) $run_meta['drop_any_target'];
 				}
 				self::ensure_all_attribute_taxonomies_registered();
 
@@ -1338,7 +1366,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							$sal_price > 0 ? $sal_price : '',
 							$stock_st,
 							(bool) $combine_other,
-							$operation_mode
+							$operation_mode,
+							(bool) $drop_any_target
 						);
 
 						if ( ! empty( $res['success'] ) ) {
@@ -1582,7 +1611,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			);
 		}
 
-		private static function generate_product_variations( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode ) {
+		private static function generate_product_variations( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false ) {
 			if ( ! TCBVM_Backup::lock_product( $product_id ) ) {
 				return array( 'success' => false, 'message' => 'قفل محصول در دسترس نیست؛ تغییر انجام نشد.' );
 			}
@@ -1590,13 +1619,13 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				if ( ! TCBVM_Backup::refresh_product_lock( $product_id ) ) {
 					return array( 'success' => false, 'message' => 'قفل محصول از دست رفت؛ تغییر انجام نشد.' );
 				}
-				return self::generate_product_variations_locked( $product_id, $run_id, $attr_name, $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode );
+				return self::generate_product_variations_locked( $product_id, $run_id, $attr_name, $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target );
 			} finally {
 				TCBVM_Backup::unlock_product( $product_id );
 			}
 		}
 
-		private static function generate_product_variations_locked( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode ) {
+		private static function generate_product_variations_locked( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false ) {
 			$start_time = microtime( true );
 
 			// ابتدا شمارش؛ محصولی که از سقف می‌گذرد نه snapshot می‌شود و نه تغییر می‌کند.
@@ -1674,6 +1703,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			}
 
 			$existing_signatures = array();
+			$drop_any_ids        = array();
 			if ( self::MODE_ADD_MISSING === $operation_mode ) {
 				$requested_matrix = array( $pre_key => $preflight_target_values );
 				foreach ( $preflight_matrix as $matrix_key => $matrix_values ) {
@@ -1693,6 +1723,12 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							continue;
 						}
 						$child_attributes = (array) $child->get_attributes();
+						// گزینهٔ کاربر: variation بدون مقدار ویژگی هدف («هرکدام») پس از
+						// snapshot حذف می‌شود؛ امضا ندارد و جلوی افزودن را نمی‌گیرد.
+						if ( $drop_any_target && self::is_any_target_variation( $child_attributes, $pre_key ) ) {
+							$drop_any_ids[] = absint( $child_id );
+							continue;
+						}
 						foreach ( $preflight_keys as $matrix_key ) {
 							$child_value = self::find_variation_attribute_value( $child_attributes, $matrix_key );
 							if ( ! empty( $child_value['ambiguous'] ) || empty( $child_value['found'] ) || '' === (string) $child_value['value'] ) {
@@ -1718,7 +1754,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						$requested_signatures[ $signature ] = true;
 					}
 				}
-				if ( 0 === $pending_count ) {
+				if ( 0 === $pending_count && empty( $drop_any_ids ) ) {
 					return array( 'success' => true, 'title' => $title, 'message' => 'تمام ترکیب‌های واردشده از قبل وجود داشتند؛ variation یا قیمت موجود تغییر نکرد.', 'created' => 0, 'deleted' => 0 );
 				}
 			}
@@ -1911,6 +1947,34 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					}
 				}
 			}
+			// گزینهٔ کاربر: حذف variationهای بدون مقدار ویژگی هدف («هرکدام») — فقط در
+			// افزودن و فقط همان‌هایی که در پیش‌بررسی علامت خوردند؛ هر مورد پیش از حذف
+			// دوباره اعتبارسنجی می‌شود تا اگر حین اجرا عوض شده بود، fail-closed شود.
+			// snapshot پیش‌تر گرفته شده است، پس از تاریخچه قابل بازگردانی‌اند.
+			if ( self::MODE_ADD_MISSING === $operation_mode && ! empty( $drop_any_ids ) ) {
+				foreach ( $drop_any_ids as $drop_index => $drop_id ) {
+					if ( 0 === ( $drop_index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
+						throw new RuntimeException( 'قفل اجرا/محصول از دست رفت؛ حذف variationهای بدون مقدار متوقف شد.' );
+					}
+					$drop_variation = wc_get_product( $drop_id );
+					if ( ! $drop_variation || ! $drop_variation->is_type( 'variation' ) ) {
+						continue; // خودش دیگر نیست؛ نیازی به حذف نیست.
+					}
+					if ( absint( $drop_variation->get_parent_id() ) !== absint( $product_id ) ) {
+						throw new RuntimeException( sprintf( 'variation #%d والد این محصول نیست؛ حذف variationهای بدون مقدار برای حفاظت از داده متوقف شد.', absint( $drop_id ) ) );
+					}
+					if ( ! self::is_any_target_variation( (array) $drop_variation->get_attributes(), $target_key ) ) {
+						throw new RuntimeException( sprintf( 'وضعیت variation #%d حین اجرا تغییر کرده و دیگر بدون مقدار ویژگی هدف نیست؛ برای جلوگیری از حذف اشتباه، افزودن متوقف شد.', absint( $drop_id ) ) );
+					}
+					$drop_variation_id = absint( $drop_variation->get_id() );
+					$drop_variation->delete( true );
+					clean_post_cache( $drop_variation_id );
+					if ( get_post( $drop_variation_id ) ) {
+						throw new RuntimeException( sprintf( 'حذف variation بدون مقدار #%d از مسیر CRUD کامل نشد.', $drop_variation_id ) );
+					}
+					$deleted_count++;
+				}
+			}
 			if ( self::MODE_REPLACE_ALL === $operation_mode ) {
 				foreach ( $old_children as $old_index => $old_id ) {
 					if ( 0 === ( $old_index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
@@ -1998,11 +2062,14 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$elapsed = round( microtime( true ) - $start_time, 2 );
 			if ( self::MODE_ADD_MISSING === $operation_mode ) {
 				$message = sprintf(
-					'%d ترکیب جدید با قیمت %s تومان افزوده شد؛ متغیرهای قبلی و ترکیب‌های تکراری بدون تغییر حفظ شدند (زمان: %s ثانیه).',
+					'%d ترکیب جدید با قیمت %s تومان افزوده شد؛ متغیرهای قبلی و ترکیب‌های تکراری بدون تغییر حفظ شدند',
 					$created_count,
-					number_format_i18n( $regular_price ),
-					number_format_i18n( $elapsed, 2 )
+					number_format_i18n( $regular_price )
 				);
+				if ( $deleted_count > 0 ) {
+					$message .= sprintf( '؛ همچنین %d variation بدون مقدار ویژگی هدف («هرکدام») حذف شد', $deleted_count );
+				}
+				$message .= sprintf( ' (زمان: %s ثانیه).', number_format_i18n( $elapsed, 2 ) );
 			} else {
 				$message = sprintf(
 					'ویژگی «%s» بروز شد؛ %d متغیر قبلی حذف و %d متغیر جدید با قیمت %s تومان ثبت گردید (زمان: %s ثانیه).',

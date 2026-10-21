@@ -619,11 +619,12 @@
 				$('#tcbvm-models-help').text(copy.help);
 				$('#tcbvm-pricing-card').toggleClass('tcbvm-hidden', mode === 'remove_values');
 				$('#tcbvm-combine-field').toggleClass('tcbvm-hidden', mode === 'remove_values');
+				$('#tcbvm-drop-any-field').toggleClass('tcbvm-hidden', mode !== 'add_missing');
 				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			};
 
 			$('#tcbvm-operation-mode').on('change', updateMode);
-			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other').on('input change', function() {
+			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other, #tcbvm-drop-any').on('input change', function() {
 				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			});
 			updateMode();
@@ -755,6 +756,7 @@
 
 				const salePrice = $('#tcbvm-sale-price').val().replace(/[^\d]/g, '');
 				const combineOther = operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
+				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
 
 				const $btn = $(this);
 				self.runPreview($btn, {
@@ -764,6 +766,7 @@
 					price: price,
 					sale_price: salePrice,
 					combine_other: combineOther,
+					drop_any_target: dropAnyTarget,
 					operation_mode: operationMode
 				});
 			});
@@ -793,8 +796,9 @@
 					return;
 				}
 
+				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
 				const modeConfirmation = operationMode === 'add_missing'
-					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.'
+					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.' + (dropAnyTarget ? ' variationهای بدون مقدار ویژگی هدف («هرکدام») حذف می‌شوند؛ از تاریخچه قابل بازگردانی‌اند.' : '')
 					: (operationMode === 'remove_values'
 						? 'حذف: variationهای دارای مقادیر فهرست‌شده در ویژگی هدف و همان گزینه‌ها حذف می‌شوند؛ قیمت اثری ندارد.'
 						: 'جایگزینی: همهٔ variationهای فعلی حذف و مقادیر فهرست‌شده از نو ساخته می‌شوند.');
@@ -811,9 +815,10 @@
 					sale_price: $('#tcbvm-sale-price').val().replace(/[^\d]/g, ''),
 					stock_status: $('#tcbvm-stock-status').val(),
 					combine_other: operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0,
+					drop_any_target: dropAnyTarget,
 					operation_mode: operationMode
 				});
-		});
+			});
 
 		// دکمه لغو عملیات (توقف پس از پایان بستهٔ جاری)
 		$('#tcbvm-btn-cancel-run').on('click', function(e) {
@@ -882,6 +887,7 @@
 				total_old_vars: 0,
 				total_new_vars: 0,
 				total_remove_vars: 0,
+				total_drop_any_vars: 0,
 				total_new_vars_capped: false,
 				preflight_error_count: 0,
 				over_limit_count: 0,
@@ -935,6 +941,7 @@
 						merged.total_old_vars += Number(d.total_old_vars || 0);
 						merged.total_new_vars += Number(d.total_new_vars || 0);
 						merged.total_remove_vars += Number(d.total_remove_vars || 0);
+						merged.total_drop_any_vars += Number(d.total_drop_any_vars || 0);
 						if (d.total_new_vars_capped) merged.total_new_vars_capped = true;
 						merged.preflight_error_count += Number(d.preflight_error_count || 0);
 						merged.over_limit_count += Number(d.over_limit_count || 0);
@@ -997,6 +1004,10 @@
 			if (overLimitCount) {
 				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">⚠️ ' + self.toPersianDigits(overLimitCount) + ' محصول از سقف ایمنی ۳۰۰۰ ترکیب عبور کرده است؛ اجرای همان محصول بدون تغییر رد می‌شود.</p>';
 			}
+			const totalDropAny = Number(data.total_drop_any_vars || 0);
+			if (totalDropAny) {
+				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">🗑 ' + self.toPersianDigits(self.formatNumber(totalDropAny)) + ' variation بدون مقدار ویژگی هدف («هرکدام») در اجرا حذف می‌شود؛ پس از snapshot حذف می‌شوند و از تاریخچه قابل بازگردانی‌اند.</p>';
+			}
 			if (previewIssues.length) {
 				// گروه‌بندی بر اساس دلیل دقیق سرور تا به‌جای ده‌ها خط تکراریِ کلی،
 				// علت واقعی هر دسته با تعداد و شناسه‌های درگیر دیده شود.
@@ -1045,6 +1056,9 @@
 						sampleCount = 'بیش از ۳۰۰۰؛ اجرای این محصول رد می‌شود';
 					} else {
 						sampleCount = self.toPersianDigits(s.new_vars) + (operationMode === 'add_missing' ? ' ترکیب تازه افزوده می‌شود' : ' متغیر جدید');
+					}
+					if (!s.preflight_error && Number(s.drop_any_vars || 0) > 0) {
+						sampleCount += '؛ حذف ' + self.toPersianDigits(s.drop_any_vars) + ' متغیر بدون مقدار';
 					}
 					const sampleDanger = !!s.preflight_error || !!s.over_limit;
 					html += '<td><span class="tcbvm-badge ' + (sampleDanger ? 'tcbvm-badge--danger' : 'tcbvm-badge--success') + '">' + self.escapeHtml(sampleCount) + '</span></td>';
@@ -1103,6 +1117,7 @@
 					sale_price: params.sale_price,
 					stock_status: params.stock_status,
 					combine_other: params.combine_other,
+					drop_any_target: params.drop_any_target,
 					operation_mode: params.operation_mode
 				},
 				success: function(resp) {
@@ -1157,7 +1172,7 @@
 								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر مطابق فهرست حذف شد.', 'success');
 							} else if (operationMode === 'add_missing') {
 								$pText.text('افزودن ترکیب‌های جدید تکمیل شد؛ متغیرهای قبلی و ترکیب‌های تکراری حفظ شدند.');
-								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' ترکیب تازه افزوده شد؛ متغیرهای قبلی حفظ شدند.', 'success');
+								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' ترکیب تازه افزوده شد؛ متغیرهای قبلی حفظ شدند.' + (totalDeleted > 0 ? ' ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر بدون مقدار ویژگی هدف («هرکدام») نیز حذف شد.' : ''), 'success');
 							} else {
 								$pText.text('تولید و بازسازی تمام متغیرها با موفقیت تکمیل و ثبت شد.');
 								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' متغیر تازه ساخته و ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر قدیمی پاکسازی شد.', 'success');
@@ -1189,7 +1204,8 @@
 								price: params.price,
 								sale_price: params.sale_price,
 								stock_status: params.stock_status,
-								combine_other: params.combine_other
+								combine_other: params.combine_other,
+								drop_any_target: params.drop_any_target
 							},
 							success: function(bResp) {
 								const stopForSafety = !bResp.success || !!(bResp.data && (bResp.data.stop || bResp.data.fatal));
