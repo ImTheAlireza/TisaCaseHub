@@ -107,6 +107,24 @@
 			"pages": [],
 			"source": "bundle"
 		},
+		"tisacase-optimizer": {
+			"title": "مرکز بهینه‌سازی تیساکیس (TisaCase Optimizer)",
+			"desc": "تحلیل حجم واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با قرنطینهٔ ۳۰ روزه، فشرده‌سازی و WebP، ادغام هوشمند تکراری‌ها و سئوی خودکار.",
+			"group": "maintenance",
+			"icon": "bolt",
+			"dir": "tisacase-optimizer",
+			"cap": "manage_woocommerce",
+			"pages": [
+				{
+					"label": "استودیوی تصاویر",
+					"path": "admin.php?page=tisacase-optimizer",
+					"screen": "woocommerce_page_tisacase-optimizer",
+					"parent": "woocommerce",
+					"slug": "tisacase-optimizer"
+				}
+			],
+			"source": "bundle"
+		},
 		"tisacase-pricing": {
 			"title": "TisaCase Pricing",
 			"desc": "قیمت‌گذاری یکپارچهٔ ووکامرس برای TisaCase — قوانین داینامیک (محصول/دسته/سراسری با حفظ قیمت همکاری و فروش ویژهٔ واقعی) به‌علاوهٔ تغییر گروهی امن قیمت عادی، فروش ویژه و قیمت عمده با پیش‌نمایش اجباری، گزارش، بازگردانی و CSV؛ و مدیریت کدهای تخفیف (ساخت، تولید انبوه، رند به ۸).",

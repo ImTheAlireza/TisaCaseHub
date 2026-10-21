@@ -1,0 +1,700 @@
+<?php
+/**
+ * مسیریاب مرکزی و امن AJAX برای تمام عملیات‌های مرکز بهینه‌سازی تیساکیس.
+ *
+ * @package TisaCase_Optimizer
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
+
+	/**
+	 * هندلر AJAX با سقف زمانی تطبیقی و اعتبارسنجی سخت‌گیرانه.
+	 */
+	final class TisaCase_Optimizer_Ajax {
+
+		const ACTION     = 'tisacase_optimizer';
+		const NONCE_NAME = 'tisacase_optimizer_nonce';
+		const BUDGET_SEC = 4.5; // سقف زمانی هر تیک دسته‌ای برای جلوگیری از تایم‌اوت سرور.
+
+		/**
+		 * بررسی سطح دسترسی مجاز.
+		 *
+		 * @return bool
+		 */
+		public static function user_can_access() {
+			$allowed = current_user_can( 'manage_woocommerce' ) || current_user_can( 'manage_options' );
+			return (bool) apply_filters( 'tisacase_optimizer_user_can_access', $allowed );
+		}
+
+		/**
+		 * ثبت اکشن AJAX.
+		 *
+		 * @return void
+		 */
+		public static function init() {
+			add_action( 'wp_ajax_' . self::ACTION, array( __CLASS__, 'dispatch' ) );
+		}
+
+		/**
+		 * دریافت، اعتبارسنجی و هدایت درخواست‌های AJAX.
+		 *
+		 * @return void
+		 */
+		public static function dispatch() {
+			if ( ! check_ajax_referer( self::NONCE_NAME, 'nonce', false ) ) {
+				wp_send_json_error( array( 'message' => __( 'نشست امنیتی منقضی شده است؛ صفحه را یک‌بار نوسازی کنید.', 'tisacase-optimizer' ) ), 403 );
+			}
+			if ( ! self::user_can_access() ) {
+				wp_send_json_error( array( 'message' => __( 'شما مجوز دسترسی به مرکز بهینه‌سازی را ندارید.', 'tisacase-optimizer' ) ), 403 );
+			}
+
+			if ( function_exists( 'ignore_user_abort' ) ) {
+				ignore_user_abort( true );
+			}
+
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$op = isset( $_POST['op'] ) ? sanitize_key( wp_unslash( (string) $_POST['op'] ) ) : '';
+
+			try {
+				switch ( $op ) {
+					case 'overview':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$force = ! empty( $_POST['force_rescan'] );
+						wp_send_json_success( TisaCase_Optimizer_Media_Inspector::overview_stats( $force ) );
+						break;
+
+					case 'query_media':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$raw  = wp_unslash( $_POST );
+						$data = TisaCase_Optimizer_Media_Inspector::query_items( $raw );
+						wp_send_json_success( $data );
+						break;
+
+					case 'toggle_pin':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$ids    = self::read_int_list( 'ids' );
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$pin    = ! empty( $_POST['pin'] );
+						$pinned = TisaCase_Optimizer_Settings::set_pinned( $ids, $pin );
+						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+						wp_send_json_success(
+							array(
+								'pinned_ids' => $pinned,
+								'overview'   => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
+							)
+						);
+						break;
+
+					case 'remove_items':
+						self::handle_remove_items();
+						break;
+
+					case 'optimize_batch':
+						self::handle_optimize_batch();
+						break;
+
+					case 'clean_unscaled':
+						self::handle_clean_unscaled();
+						break;
+
+					case 'get_duplicates':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$force = ! empty( $_POST['force_rescan'] );
+						wp_send_json_success( TisaCase_Optimizer_Deduplicator::find_duplicate_groups( $force ) );
+						break;
+
+					case 'merge_duplicates':
+						self::handle_merge_duplicates();
+						break;
+
+					case 'get_subsizes':
+						wp_send_json_success( array( 'sizes' => TisaCase_Optimizer_Subsizes::inspect_all_sizes() ) );
+						break;
+
+					case 'save_subsizes':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$disabled = self::read_string_list( 'disabled_sizes' );
+						$updated  = TisaCase_Optimizer_Settings::update( array( 'disabled_sizes' => $disabled ) );
+						TisaCase_Optimizer_Session::log(
+							'save_subsizes',
+							__( 'به‌روزرسانی وضعیت تولید زیرسایزهای تصویر', 'tisacase-optimizer' ),
+							count( $disabled ),
+							0,
+							sprintf( '%d سایز غیرفعال شد', count( $disabled ) )
+						);
+						wp_send_json_success(
+							array(
+								'settings' => $updated,
+								'sizes'    => TisaCase_Optimizer_Subsizes::inspect_all_sizes(),
+							)
+						);
+						break;
+
+					case 'clean_disabled_subsizes':
+						$disabled = (array) TisaCase_Optimizer_Settings::get( 'disabled_sizes', array() );
+						$res      = TisaCase_Optimizer_Subsizes::clean_disabled_subsize_files( $disabled );
+						TisaCase_Optimizer_Session::log(
+							'clean_subsizes',
+							__( 'پاک‌سازی فایل‌های زیرسایزهای غیرفعال‌شده از دیسک', 'tisacase-optimizer' ),
+							$res['deleted_files'],
+							$res['saved_bytes']
+						);
+						wp_send_json_success(
+							array(
+								'result'   => $res,
+								'sizes'    => TisaCase_Optimizer_Subsizes::inspect_all_sizes(),
+								'overview' => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
+							)
+						);
+						break;
+
+					case 'regen_batch':
+						self::handle_regen_batch();
+						break;
+
+					case 'get_seo':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$flt  = isset( $_POST['seo_filter'] ) ? sanitize_key( wp_unslash( (string) $_POST['seo_filter'] ) ) : 'missing_alt';
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$page = isset( $_POST['page'] ) ? max( 1, (int) $_POST['page'] ) : 1;
+						wp_send_json_success( TisaCase_Optimizer_Image_SEO::audit( $flt, $page ) );
+						break;
+
+					case 'save_single_seo':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$aid   = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$alt   = isset( $_POST['alt'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['alt'] ) ) : '';
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$title = isset( $_POST['title'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['title'] ) ) : null;
+						TisaCase_Optimizer_Image_SEO::update_single( $aid, $alt, $title );
+						wp_send_json_success( array( 'id' => $aid ) );
+						break;
+
+					case 'bulk_generate_seo':
+						$ids        = self::read_int_list( 'ids' );
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$only_empty = ! isset( $_POST['only_empty'] ) || ! empty( $_POST['only_empty'] );
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						if ( isset( $_POST['seo_alt_pattern'] ) ) {
+							TisaCase_Optimizer_Settings::update(
+								array(
+									// phpcs:ignore WordPress.Security.NonceVerification.Missing
+									'seo_alt_pattern'   => wp_unslash( (string) $_POST['seo_alt_pattern'] ),
+									// phpcs:ignore WordPress.Security.NonceVerification.Missing
+									'seo_title_pattern' => isset( $_POST['seo_title_pattern'] ) ? wp_unslash( (string) $_POST['seo_title_pattern'] ) : '{product_title}',
+									'seo_only_empty'    => $only_empty ? 1 : 0,
+								)
+							);
+						}
+						$count = TisaCase_Optimizer_Image_SEO::bulk_generate( $ids, $only_empty );
+						TisaCase_Optimizer_Session::log(
+							'bulk_seo',
+							__( 'تکمیل خودکار متن جایگزین (Alt) و عنوان تصاویر', 'tisacase-optimizer' ),
+							$count,
+							0
+						);
+						wp_send_json_success(
+							array(
+								'updated' => $count,
+								'audit'   => TisaCase_Optimizer_Image_SEO::audit( 'missing_alt', 1 ),
+							)
+						);
+						break;
+
+					case 'get_vault':
+						wp_send_json_success( self::vault_payload() );
+						break;
+
+					case 'restore_quarantine':
+						$qids     = self::read_string_list( 'item_ids' );
+						$restored = 0;
+						foreach ( $qids as $qid ) {
+							$r = TisaCase_Optimizer_Vault::restore_quarantine_item( $qid );
+							if ( ! is_wp_error( $r ) ) {
+								++$restored;
+							}
+						}
+						TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
+						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+						TisaCase_Optimizer_Session::log(
+							'restore_quarantine',
+							__( 'بازگردانی تصاویر از قرنطینه به مسیر اصلی', 'tisacase-optimizer' ),
+							$restored,
+							0
+						);
+						wp_send_json_success(
+							array(
+								'restored' => $restored,
+								'vault'    => self::vault_payload(),
+								'overview' => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
+							)
+						);
+						break;
+
+					case 'purge_quarantine':
+						$qids  = self::read_string_list( 'item_ids' );
+						$freed = 0;
+						$count = 0;
+						if ( empty( $qids ) ) {
+							foreach ( TisaCase_Optimizer_Vault::list_quarantine() as $qi ) {
+								if ( ! empty( $qi['id'] ) ) {
+									$freed += TisaCase_Optimizer_Vault::delete_quarantine_permanently( (string) $qi['id'] );
+									++$count;
+								}
+							}
+						} else {
+							foreach ( $qids as $qid ) {
+								$freed += TisaCase_Optimizer_Vault::delete_quarantine_permanently( $qid );
+								++$count;
+							}
+						}
+						TisaCase_Optimizer_Session::log(
+							'purge_quarantine',
+							__( 'حذف دائمی بسته‌های قرنطینه از دیسک خزانه', 'tisacase-optimizer' ),
+							$count,
+							$freed
+						);
+						wp_send_json_success(
+							array(
+								'deleted'     => $count,
+								'saved_bytes' => $freed,
+								'vault'       => self::vault_payload(),
+							)
+						);
+						break;
+
+					case 'restore_original':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$aid = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
+						$res = TisaCase_Optimizer_Vault::restore_original_backup( $aid );
+						if ( is_wp_error( $res ) ) {
+							wp_send_json_error( array( 'message' => $res->get_error_message() ), 400 );
+						}
+						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+						TisaCase_Optimizer_Session::log( 'restore_original', __( 'بازگردانی فایل اصلی اولیهٔ تصویر', 'tisacase-optimizer' ), 1, 0 );
+						wp_send_json_success( array( 'vault' => self::vault_payload() ) );
+						break;
+
+					case 'purge_originals':
+						$res = TisaCase_Optimizer_Vault::purge_original_backups();
+						TisaCase_Optimizer_Session::log(
+							'purge_originals',
+							__( 'آزادسازی پوشهٔ نسخه‌های پشتیبان پیش از فشرده‌سازی', 'tisacase-optimizer' ),
+							$res['count'],
+							$res['bytes']
+						);
+						wp_send_json_success(
+							array(
+								'result' => $res,
+								'vault'  => self::vault_payload(),
+							)
+						);
+						break;
+
+					case 'clear_history':
+						TisaCase_Optimizer_Session::clear_history();
+						wp_send_json_success( array( 'vault' => self::vault_payload() ) );
+						break;
+
+					case 'save_settings':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$raw_settings = isset( $_POST['settings'] ) && is_array( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
+						$updated      = TisaCase_Optimizer_Settings::update( $raw_settings );
+						TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
+						TisaCase_Optimizer_Session::log( 'save_settings', __( 'ذخیرهٔ تنظیمات مرکز بهینه‌سازی', 'tisacase-optimizer' ), 0, 0, '', 'info' );
+						wp_send_json_success( array( 'settings' => $updated ) );
+						break;
+
+					default:
+						wp_send_json_error( array( 'message' => __( 'عملیات درخواستی شناخته نشد.', 'tisacase-optimizer' ) ), 400 );
+				}
+			} catch ( Throwable $e ) {
+				wp_send_json_error( array( 'message' => $e->getMessage() ), 500 );
+			}
+		}
+
+		/**
+		 * حذف یا قرنطینهٔ تکی/گروهی پیوست‌ها و فایل‌های یتیم دیسک با رعایت بودجهٔ زمانی سرور.
+		 *
+		 * @return void
+		 */
+		private static function handle_remove_items() {
+			$started     = microtime( true );
+			$ids         = self::read_int_list( 'ids' );
+			$rel_paths   = self::read_string_list( 'rel_paths' );
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$mode_raw    = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
+			$mode        = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
+				? $mode_raw
+				: (string) TisaCase_Optimizer_Settings::get( 'delete_mode', 'quarantine' );
+
+			$pinned_map  = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
+			$done_ids    = array();
+			$done_paths  = array();
+			$saved_bytes = 0;
+
+			foreach ( $ids as $aid ) {
+				if ( isset( $pinned_map[ $aid ] ) ) {
+					$done_ids[] = $aid;
+					continue;
+				}
+				if ( 'permanent' === $mode ) {
+					$res = TisaCase_Optimizer_Vault::delete_attachment_permanently( $aid );
+					if ( ! is_wp_error( $res ) ) {
+						$saved_bytes += (int) $res['saved_bytes'];
+					}
+				} else {
+					$res = TisaCase_Optimizer_Vault::quarantine_attachment( $aid, 'unused' );
+					if ( ! is_wp_error( $res ) ) {
+						$saved_bytes += (int) $res['total_bytes'];
+					}
+				}
+				$done_ids[] = $aid;
+				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
+					break;
+				}
+			}
+
+			foreach ( $rel_paths as $rp ) {
+				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
+					break;
+				}
+				if ( 'permanent' === $mode ) {
+					$uploads = wp_upload_dir();
+					$safe    = TisaCase_Optimizer_Vault::assert_inside_uploads( trailingslashit( $uploads['basedir'] ) . ltrim( $rp, '/' ) );
+					if ( false !== $safe && is_file( $safe ) ) {
+						$fbytes       = max( 0, (int) @filesize( $safe ) );
+						wp_delete_file( $safe );
+						$saved_bytes += $fbytes;
+						TisaCase_Optimizer_Settings::bump_stats(
+							array(
+								'deleted_count' => 1,
+								'saved_bytes'   => $fbytes,
+							)
+						);
+					}
+				} else {
+					$res = TisaCase_Optimizer_Vault::quarantine_orphan_file( $rp );
+					if ( ! is_wp_error( $res ) ) {
+						$saved_bytes += (int) $res['total_bytes'];
+					}
+				}
+				$done_paths[] = $rp;
+			}
+
+			$count_done = count( $done_ids ) + count( $done_paths );
+			TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
+			TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			if ( ! empty( $_POST['log_final'] ) && $count_done > 0 ) {
+				TisaCase_Optimizer_Session::log(
+					'permanent' === $mode ? 'delete_permanent' : 'move_quarantine',
+					'permanent' === $mode
+						? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
+						: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه', 'tisacase-optimizer' ),
+					$count_done,
+					$saved_bytes
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'done_ids'    => $done_ids,
+					'done_paths'  => $done_paths,
+					'saved_bytes' => $saved_bytes,
+					'mode'        => $mode,
+				)
+			);
+		}
+
+		/**
+		 * فشرده‌سازی و تبدیل دسته‌ای تصاویر با بودجهٔ زمانی تطبیقی.
+		 *
+		 * @return void
+		 */
+		private static function handle_optimize_batch() {
+			$started   = microtime( true );
+			$ids       = self::read_int_list( 'ids' );
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$overrides = isset( $_POST['overrides'] ) && is_array( $_POST['overrides'] ) ? wp_unslash( $_POST['overrides'] ) : array();
+			$clean_ovr = array();
+			if ( ! empty( $overrides['force_webp'] ) ) {
+				$clean_ovr['nextgen_format'] = 'webp';
+			}
+
+			if ( empty( $ids ) ) {
+				$q   = TisaCase_Optimizer_Media_Inspector::query_items(
+					array(
+						'opt_state' => 'unoptimized',
+						'sort_by'   => 'total_bytes',
+						'per_page'  => 100,
+					)
+				);
+				$ids = isset( $q['matching_ids'] ) ? array_slice( (array) $q['matching_ids'], 0, 500 ) : array();
+				wp_send_json_success(
+					array(
+						'queue_ids' => $ids,
+						'total'     => count( $ids ),
+					)
+				);
+			}
+
+			$processed   = array();
+			$saved_total = 0;
+
+			foreach ( $ids as $aid ) {
+				$res = TisaCase_Optimizer_Image_Processor::optimize_attachment( $aid, $clean_ovr );
+				if ( is_wp_error( $res ) ) {
+					$processed[] = array(
+						'id'    => $aid,
+						'ok'    => false,
+						'error' => $res->get_error_message(),
+					);
+				} else {
+					$saved_total += (int) $res['saved_bytes'];
+					$processed[]  = array(
+						'id'           => $aid,
+						'ok'           => true,
+						'before_bytes' => $res['before_bytes'],
+						'after_bytes'  => $res['after_bytes'],
+						'saved_bytes'  => $res['saved_bytes'],
+						'nextgen'      => $res['nextgen'],
+						'mode'         => $res['mode'],
+					);
+				}
+				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
+					break;
+				}
+			}
+
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			if ( ! empty( $_POST['log_final'] ) ) {
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing
+				$total_n = isset( $_POST['summary_count'] ) ? absint( $_POST['summary_count'] ) : count( $processed );
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing
+				$total_b = isset( $_POST['summary_bytes'] ) ? absint( $_POST['summary_bytes'] ) : $saved_total;
+				TisaCase_Optimizer_Session::log(
+					'optimize_images',
+					__( 'فشرده‌سازی و بهینه‌سازی نسل جدید تصاویر', 'tisacase-optimizer' ),
+					$total_n,
+					$total_b
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'processed'   => $processed,
+					'saved_bytes' => $saved_total,
+				)
+			);
+		}
+
+		/**
+		 * پاک‌سازی فایل‌های خام پنهان پشت `-scaled`.
+		 *
+		 * @return void
+		 */
+		private static function handle_clean_unscaled() {
+			$ids = self::read_int_list( 'ids' );
+			if ( empty( $ids ) ) {
+				$q   = TisaCase_Optimizer_Media_Inspector::query_items(
+					array(
+						'opt_state' => 'has_unscaled',
+						'per_page'  => 100,
+					)
+				);
+				$ids = isset( $q['matching_ids'] ) ? (array) $q['matching_ids'] : array();
+			}
+
+			$cleaned     = 0;
+			$saved_bytes = 0;
+			foreach ( $ids as $aid ) {
+				$res = TisaCase_Optimizer_Image_Processor::clean_unscaled_original( $aid );
+				if ( ! is_wp_error( $res ) && $res['saved_bytes'] > 0 ) {
+					++$cleaned;
+					$saved_bytes += (int) $res['saved_bytes'];
+				}
+			}
+
+			TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
+			TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+
+			if ( $cleaned > 0 ) {
+				TisaCase_Optimizer_Session::log(
+					'clean_unscaled',
+					__( 'حذف نسخه‌های خام غول‌پیکر پشت تصاویر -scaled', 'tisacase-optimizer' ),
+					$cleaned,
+					$saved_bytes
+				);
+			}
+
+			wp_send_json_success(
+				array(
+					'cleaned'     => $cleaned,
+					'saved_bytes' => $saved_bytes,
+					'overview'    => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
+				)
+			);
+		}
+
+		/**
+		 * ادغام یک یا همهٔ گروه‌های تصاویر تکراری.
+		 *
+		 * @return void
+		 */
+		private static function handle_merge_duplicates() {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$mode_raw    = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
+			$mode        = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
+				? $mode_raw
+				: (string) TisaCase_Optimizer_Settings::get( 'delete_mode', 'quarantine' );
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$master_id   = isset( $_POST['master_id'] ) ? absint( $_POST['master_id'] ) : 0;
+			$dup_ids     = self::read_int_list( 'dup_ids' );
+
+			$merged_total   = 0;
+			$relinked_total = 0;
+			$saved_total    = 0;
+
+			if ( $master_id > 0 && ! empty( $dup_ids ) ) {
+				$res = TisaCase_Optimizer_Deduplicator::merge_group( $master_id, $dup_ids, $mode );
+				if ( is_wp_error( $res ) ) {
+					wp_send_json_error( array( 'message' => $res->get_error_message() ), 400 );
+				}
+				$merged_total   = $res['merged'];
+				$relinked_total = $res['relinked'];
+				$saved_total    = $res['saved_bytes'];
+			} else {
+				$report = TisaCase_Optimizer_Deduplicator::find_duplicate_groups( false );
+				foreach ( $report['groups'] as $grp ) {
+					$res = TisaCase_Optimizer_Deduplicator::merge_group( (int) $grp['master_id'], (array) $grp['dup_ids'], $mode );
+					if ( ! is_wp_error( $res ) ) {
+						$merged_total   += $res['merged'];
+						$relinked_total += $res['relinked'];
+						$saved_total    += $res['saved_bytes'];
+					}
+				}
+			}
+
+			TisaCase_Optimizer_Session::log(
+				'merge_duplicates',
+				__( 'ادغام هوشمند تصاویر تکراری و انتقال خودکار لینک محصولات', 'tisacase-optimizer' ),
+				$merged_total,
+				$saved_total,
+				sprintf( '%d ارجاع منتقل شد', $relinked_total )
+			);
+
+			wp_send_json_success(
+				array(
+					'merged'     => $merged_total,
+					'relinked'   => $relinked_total,
+					'saved_bytes' => $saved_total,
+					'duplicates' => TisaCase_Optimizer_Deduplicator::find_duplicate_groups( true ),
+					'overview'   => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
+				)
+			);
+		}
+
+		/**
+		 * بازسازی دسته‌ای بندانگشتی‌ها با سقف زمانی تطبیقی.
+		 *
+		 * @return void
+		 */
+		private static function handle_regen_batch() {
+			global $wpdb;
+
+			$started = microtime( true );
+			$ids     = self::read_int_list( 'ids' );
+			if ( empty( $ids ) ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$all_ids = array_map(
+					'absint',
+					(array) $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%' ORDER BY ID DESC" )
+				);
+				wp_send_json_success(
+					array(
+						'queue_ids' => $all_ids,
+						'total'     => count( $all_ids ),
+					)
+				);
+			}
+
+			$done = array();
+			foreach ( $ids as $aid ) {
+				TisaCase_Optimizer_Subsizes::regenerate_one( $aid );
+				$done[] = $aid;
+				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
+					break;
+				}
+			}
+
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			if ( ! empty( $_POST['log_final'] ) ) {
+				// phpcs:ignore WordPress.Security.NonceVerification.Missing
+				$cnt = isset( $_POST['summary_count'] ) ? absint( $_POST['summary_count'] ) : count( $done );
+				TisaCase_Optimizer_Session::log( 'regen_thumbnails', __( 'بازسازی دسته‌ای زیرسایزهای بندانگشتی', 'tisacase-optimizer' ), $cnt, 0 );
+			}
+
+			wp_send_json_success( array( 'done_ids' => $done ) );
+		}
+
+		/**
+		 * بستهٔ کامل دادهٔ تب خزانهٔ قرنطینه و تاریخچه.
+		 *
+		 * @return array<string,mixed>
+		 */
+		private static function vault_payload() {
+			return array(
+				'summary'    => TisaCase_Optimizer_Vault::summary(),
+				'quarantine' => TisaCase_Optimizer_Vault::list_quarantine(),
+				'originals'  => array_values( TisaCase_Optimizer_Vault::list_original_backups() ),
+				'history'    => TisaCase_Optimizer_Session::history(),
+			);
+		}
+
+		/**
+		 * خواندن آرایهٔ اعداد صحیح از `$_POST`.
+		 *
+		 * @param string $key کلید ورودی.
+		 * @return int[]
+		 */
+		private static function read_int_list( $key ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			if ( ! isset( $_POST[ $key ] ) ) {
+				return array();
+			}
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$raw = wp_unslash( $_POST[ $key ] );
+			$arr = is_array( $raw ) ? $raw : explode( ',', (string) $raw );
+			return array_values( array_unique( array_filter( array_map( 'absint', $arr ) ) ) );
+		}
+
+		/**
+		 * خواندن آرایهٔ رشته‌های امن از `$_POST`.
+		 *
+		 * @param string $key کلید ورودی.
+		 * @return string[]
+		 */
+		private static function read_string_list( $key ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			if ( ! isset( $_POST[ $key ] ) ) {
+				return array();
+			}
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$raw = wp_unslash( $_POST[ $key ] );
+			$arr = is_array( $raw ) ? $raw : explode( ',', (string) $raw );
+			$out = array();
+			foreach ( $arr as $v ) {
+				$s = trim( str_replace( '..', '', sanitize_text_field( (string) $v ) ) );
+				if ( '' !== $s ) {
+					$out[] = $s;
+				}
+			}
+			return array_values( array_unique( $out ) );
+		}
+	}
+}

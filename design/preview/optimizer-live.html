@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش زنده — مرکز بهینه‌سازی تیساکیس (TisaCase Optimizer v1.0.0)</title>
+<link rel="stylesheet" href="../tisacase-ui.css" id="tisa-hub-ui">
+<link rel="stylesheet" href="../../plugins/src/tisacase-optimizer/assets/admin.css">
+<style>
+	html, body { margin: 0; padding: 0; background: var(--tisa-bg, #F4F2EC); }
+	.sim-adminbar {
+		position: sticky; top: 0; z-index: 90;
+		display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+		min-height: 42px; padding: 6px 20px;
+		background: #06302B; color: #BFE3DC;
+		font-family: "Vazirmatn", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+		font-size: 12px;
+	}
+	.sim-adminbar b { color: #FFFFFF; }
+	.sim-adminbar a { color: #BFE3DC; text-decoration: none; }
+	.sim-adminbar a:hover { color: #FFFFFF; text-decoration: underline; }
+</style>
+</head>
+<body class="rtl tisa-scope tco-page">
+
+<div class="sim-adminbar">
+	<div>
+		<b>پیشخوان وردپرس · اختصاصی تیساکیس › بهینه‌سازی و نگهداری › مرکز بهینه‌سازی</b>
+		<span style="opacity:.75;margin-inline-start:10px">(پیش‌نمایش زنده با فایل واقعی <code>assets/admin.js</code> و <code>assets/admin.css</code>)</span>
+	</div>
+	<div style="display:flex;align-items:center;gap:12px">
+		<a href="./index.html">← بازگشت به کاتالوگ زبان طراحی و هاب</a>
+		<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="toggle-standalone">حالت هاب: روشن</button>
+	</div>
+</div>
+
+<div id="wpbody-content">
+	<div class="wrap tisa-wrap tco-wrap" id="tco-app" dir="rtl">
+		<header class="tco-hero">
+			<div class="tco-hero__mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+					<path d="M13 3L5 14h5l-1 7 8-11h-5z"/>
+				</svg>
+			</div>
+			<div class="tco-hero__text">
+				<span class="tco-hero__eyebrow">اختصاصی تیساکیس · گروه بهینه‌سازی و نگهداری</span>
+				<h1 class="tco-hero__title">مرکز بهینه‌سازی تیساکیس</h1>
+				<p class="tco-hero__sub">کالبدشکافی واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با قرنطینهٔ ۳۰ روزه، فشرده‌سازی WebP/AVIF و ادغام هوشمند تکراری‌ها.</p>
+			</div>
+			<div class="tco-hero__pills">
+				<span class="tco-hero__pill">نسخهٔ ۱٫۰٫۰</span>
+			</div>
+		</header>
+
+		<nav class="tco-nav" id="tco-module-nav" aria-label="بخش‌های مرکز بهینه‌سازی"></nav>
+
+		<main class="tco-main" id="tco-main">
+			<div class="tco-card tco-loading-card">
+				<div class="tco-loading-state">
+					<span class="tco-spinner" aria-hidden="true"></span>
+					<span>در حال بارگذاری مرکز بهینه‌سازی و تحلیل کتابخانهٔ رسانه…</span>
+				</div>
+			</div>
+		</main>
+
+		<div class="tco-modal" id="tco-modal" hidden>
+			<div class="tco-modal__backdrop" data-modal-close="1"></div>
+			<div class="tco-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="tco-modal-title">
+				<div class="tco-modal__head">
+					<h2 id="tco-modal-title">جزئیات تصویر</h2>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-modal-close="1">بستن ✕</button>
+				</div>
+				<div class="tco-modal__body" id="tco-modal-body"></div>
+			</div>
+		</div>
+
+		<div class="tco-toast-stack" id="tco-toasts" aria-live="polite"></div>
+	</div>
+</div>
+
+<script src="../../node_modules/jquery/dist/jquery.min.js"></script>
+<script src="./optimizer-mock-api.js"></script>
+<script src="../../plugins/src/tisacase-optimizer/assets/admin.js"></script>
+<script>
+	document.getElementById('toggle-standalone').addEventListener('click', function () {
+		const app = document.getElementById('tco-app');
+		const hubCss = document.getElementById('tisa-hub-ui');
+		const standalone = app.classList.toggle('is-standalone');
+		document.body.classList.toggle('tisa-scope', !standalone);
+		hubCss.disabled = standalone;
+		this.textContent = standalone ? 'حالت هاب: خاموش (مستقل)' : 'حالت هاب: روشن';
+	});
+</script>
+</body>
+</html>

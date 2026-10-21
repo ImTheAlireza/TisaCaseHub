@@ -16,6 +16,7 @@ python3 tools/php-check.py plugins/tisacase-hub
 node --check plugins/tisacase-hub/assets/hub.js && echo "✓ hub.js syntax"
 
 OUT=tisacase-hub.zip
-rm -f "$OUT"
+rm -f "$OUT" "plugins/dist/$OUT"
 ( cd plugins && zip -qr "../$OUT" tisacase-hub -x "*.DS_Store" )
-echo "✓ $OUT ($(du -h "$OUT" | cut -f1)) — نصب: پیشخوان › افزونه‌ها › افزودن › بارگذاری"
+cp "$OUT" "plugins/dist/$OUT"
+echo "✓ $OUT و plugins/dist/$OUT ($(du -h "$OUT" | cut -f1)) — نصب: پیشخوان › افزونه‌ها › افزودن › بارگذاری"
