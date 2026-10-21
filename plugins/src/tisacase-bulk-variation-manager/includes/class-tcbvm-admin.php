@@ -754,6 +754,18 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 											<p class="tcbvm-muted">حالت «شروع با این عبارت» تمامی شناسه‌هایی نظیر CH-101 و CH-A20 را پیدا می‌کند.</p>
 										</div>
 									</div>
+									<div class="tcbvm-grid-2">
+										<div class="tcbvm-field">
+											<label class="tcbvm-label" for="tcbvm-sku-keywords">فیلتر کلمه کلیدی عنوان (اختیاری)</label>
+											<input type="text" id="tcbvm-sku-keywords" class="tcbvm-input" placeholder="مثلاً: قاب، کیف، اسپیس">
+											<p class="tcbvm-muted">فقط محصولاتی که عنوانشان دست‌کم یکی از این کلمه‌ها را دارد می‌آیند؛ مثلاً SKU با پیشوند CH و کلمهٔ «قاب» → فقط قاب‌های CH. کلمه‌ها را با ویرگول جدا کنید.</p>
+										</div>
+										<div class="tcbvm-field">
+											<label class="tcbvm-label" for="tcbvm-sku-exclude-keywords">استثنا کردن عنوان‌ها (Exclude)</label>
+											<input type="text" id="tcbvm-sku-exclude-keywords" class="tcbvm-input" placeholder="مثلاً: محافظ لنز، شیشه‌ای">
+											<p class="tcbvm-muted">اگر عنوان محصولی هر یک از این کلمه‌ها را داشته باشد حذف می‌شود.</p>
+										</div>
+									</div>
 									<div class="tcbvm-actions">
 										<button type="button" class="tisa-btn tisa-btn--soft" id="tcbvm-btn-sku-search">
 											<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
@@ -852,6 +864,18 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 												</label>
 												<p class="tcbvm-muted">پیش‌فرض خاموش است تا دقیقاً «یک متغیر به‌ازای هر مقدار» ساخته شود. فقط اگر محصول واقعاً چند ویژگی متغیر دارد (مثل رنگ یا جنس) آن را روشن کنید؛ در آن صورت تمام ترکیب‌ها ضرب و جنریت می‌شوند و سقف ۳۰۰۰ ترکیب به ازای هر محصول اعمال است.</p>
 										</div>
+									</div>
+								</div>
+
+								<div class="tcbvm-field" id="tcbvm-only-existing-field">
+									<label class="tcbvm-label">محصولاتی که این ویژگی را ندارند</label>
+									<div class="tcbvm-switch-card">
+											<label class="tisa-switch tcbvm-toggle">
+												<input type="checkbox" id="tcbvm-only-existing-attr">
+												<span class="tisa-switch__track" aria-hidden="true"></span>
+												<span>فقط روی محصولاتی اعمال کن که همین حالا این ویژگی را دارند</span>
+											</label>
+											<p class="tcbvm-muted">وقتی روشن باشد، محصولی که ویژگی هدف روی خودش تعریف نشده بدون هیچ تغییری رد (Skip) می‌شود و در گزارش اجرا مشخص می‌شود. وقتی خاموش باشد (پیش‌فرض و رفتار قبلی) ویژگی برای چنین محصولاتی ساخته و اضافه می‌شود.</p>
 									</div>
 								</div>
 

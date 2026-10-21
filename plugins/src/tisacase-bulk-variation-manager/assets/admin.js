@@ -201,6 +201,8 @@
 				const $btn = $(this);
 				const skuVal = $('#tcbvm-sku-input').val().trim();
 				const skuMode = $('#tcbvm-sku-mode').val();
+				const skuKeywords = $('#tcbvm-sku-keywords').val();
+				const skuExcludeKeywords = $('#tcbvm-sku-exclude-keywords').val();
 
 				if (!skuVal) {
 					alert('لطفاً پیشوند یا مقدار شناسه (SKU) مورد نظر را وارد نمایید (مثلاً: CH).');
@@ -219,7 +221,9 @@
 						filters: {
 							mode: 'sku',
 							sku: skuVal,
-							sku_mode: skuMode
+							sku_mode: skuMode,
+							keywords: skuKeywords,
+							exclude_keywords: skuExcludeKeywords
 						}
 					},
 					success: function(resp) {
@@ -624,7 +628,7 @@
 			};
 
 			$('#tcbvm-operation-mode').on('change', updateMode);
-			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other, #tcbvm-drop-any').on('input change', function() {
+				$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other, #tcbvm-drop-any, #tcbvm-only-existing-attr').on('input change', function() {
 				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			});
 			updateMode();
@@ -757,6 +761,7 @@
 				const salePrice = $('#tcbvm-sale-price').val().replace(/[^\d]/g, '');
 				const combineOther = operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
 				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
+				const onlyExistingAttr = $('#tcbvm-only-existing-attr').is(':checked') ? 1 : 0;
 
 				const $btn = $(this);
 				self.runPreview($btn, {
@@ -767,6 +772,7 @@
 					sale_price: salePrice,
 					combine_other: combineOther,
 					drop_any_target: dropAnyTarget,
+					only_existing_attr: onlyExistingAttr,
 					operation_mode: operationMode
 				});
 			});
@@ -797,12 +803,13 @@
 				}
 
 				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
+				const onlyExistingAttr = $('#tcbvm-only-existing-attr').is(':checked') ? 1 : 0;
 				const modeConfirmation = operationMode === 'add_missing'
 					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.' + (dropAnyTarget ? ' variationهای بدون مقدار ویژگی هدف («هرکدام») حذف می‌شوند؛ از تاریخچه قابل بازگردانی‌اند.' : '')
 					: (operationMode === 'remove_values'
 						? 'حذف: variationهای دارای مقادیر فهرست‌شده در ویژگی هدف و همان گزینه‌ها حذف می‌شوند؛ قیمت اثری ندارد.'
 						: 'جایگزینی: همهٔ variationهای فعلی حذف و مقادیر فهرست‌شده از نو ساخته می‌شوند.');
-				const promptMsg = tcbvmData.i18n.confirmStart.replace('{n}', self.toPersianDigits(pids.length)) + '\n\n' + modeConfirmation;
+				const promptMsg = tcbvmData.i18n.confirmStart.replace('{n}', self.toPersianDigits(pids.length)) + '\n\n' + modeConfirmation + (onlyExistingAttr ? '\n\nمحصولاتی که ویژگی هدف را روی خودشان ندارند بدون تغییر رد (Skip) می‌شوند و در گزارش اجرا مشخص می‌شوند.' : '');
 				if (!confirm(promptMsg)) {
 					return;
 				}
@@ -816,6 +823,7 @@
 					stock_status: $('#tcbvm-stock-status').val(),
 					combine_other: operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0,
 					drop_any_target: dropAnyTarget,
+					only_existing_attr: onlyExistingAttr,
 					operation_mode: operationMode
 				});
 			});
@@ -888,6 +896,7 @@
 				total_new_vars: 0,
 				total_remove_vars: 0,
 				total_drop_any_vars: 0,
+				skipped_missing_attr_count: 0,
 				total_new_vars_capped: false,
 				preflight_error_count: 0,
 				over_limit_count: 0,
@@ -942,6 +951,7 @@
 						merged.total_new_vars += Number(d.total_new_vars || 0);
 						merged.total_remove_vars += Number(d.total_remove_vars || 0);
 						merged.total_drop_any_vars += Number(d.total_drop_any_vars || 0);
+						merged.skipped_missing_attr_count += Number(d.skipped_missing_attr_count || 0);
 						if (d.total_new_vars_capped) merged.total_new_vars_capped = true;
 						merged.preflight_error_count += Number(d.preflight_error_count || 0);
 						merged.over_limit_count += Number(d.over_limit_count || 0);
@@ -1007,6 +1017,10 @@
 			const totalDropAny = Number(data.total_drop_any_vars || 0);
 			if (totalDropAny) {
 				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">🗑 ' + self.toPersianDigits(self.formatNumber(totalDropAny)) + ' variation بدون مقدار ویژگی هدف («هرکدام») در اجرا حذف می‌شود؛ پس از snapshot حذف می‌شوند و از تاریخچه قابل بازگردانی‌اند.</p>';
+			}
+			const skippedMissingAttr = Number(data.skipped_missing_attr_count || 0);
+			if (skippedMissingAttr) {
+				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#334155;background:#eef2f7;border-radius:6px;padding:10px 12px;">⏭️ ' + self.toPersianDigits(self.formatNumber(skippedMissingAttr)) + ' محصول ویژگی هدف را روی خودشان ندارند و طبق گزینهٔ انتخاب‌شده بدون تغییر رد (Skip) می‌شوند؛ در مجموع بالا شمرده نشده‌اند و شناسه‌هایشان در فهرست زیر آمده است.</p>';
 			}
 			if (previewIssues.length) {
 				// گروه‌بندی بر اساس دلیل دقیق سرور تا به‌جای ده‌ها خط تکراریِ کلی،
@@ -1118,6 +1132,7 @@
 					stock_status: params.stock_status,
 					combine_other: params.combine_other,
 					drop_any_target: params.drop_any_target,
+					only_existing_attr: params.only_existing_attr,
 					operation_mode: params.operation_mode
 				},
 				success: function(resp) {
@@ -1205,7 +1220,8 @@
 								sale_price: params.sale_price,
 								stock_status: params.stock_status,
 								combine_other: params.combine_other,
-								drop_any_target: params.drop_any_target
+								drop_any_target: params.drop_any_target,
+								only_existing_attr: params.only_existing_attr
 							},
 							success: function(bResp) {
 								const stopForSafety = !bResp.success || !!(bResp.data && (bResp.data.stop || bResp.data.fatal));

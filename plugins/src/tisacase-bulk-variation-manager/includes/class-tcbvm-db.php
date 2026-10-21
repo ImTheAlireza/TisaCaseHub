@@ -51,7 +51,12 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 				if ( empty( $sku_ids ) ) {
 					return array();
 				}
-				return self::filter_valid_products( $sku_ids, $filters );
+				$sku_ids = self::filter_valid_products( $sku_ids, $filters );
+				// فیلتر کلمهٔ عنوان در حالت SKU هم اعمال شود (مثلاً CH + «قاب»).
+				if ( ! empty( $filters['keywords'] ) || ! empty( $filters['exclude_keywords'] ) || ! empty( $filters['model_term'] ) ) {
+					$sku_ids = self::refine_product_ids( $sku_ids, $filters );
+				}
+				return $sku_ids;
 			}
 
 			$post_types = array( 'product' );
