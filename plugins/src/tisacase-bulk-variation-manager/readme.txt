@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 2.1.5
+Stable tag: 2.1.6
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -23,6 +23,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce -> Products -> TisaCase Variation Manager, or via TisaCase Hub menu.
 
 == Changelog ==
+
+= 2.1.6 =
+* پیام رد شدن به‌علت مقدار خالی («هرکدام/همه») حالا راه اصلاح را هم می‌گوید (تعیین مقدار یا حذف همان variation، یا اجرای محصول با «جایگزینی کامل») و کلیدهای موجود روی variation را نشان می‌دهد تا اگر مقدار زیر کلید دیگری مانده باشد معلوم شود.
 
 = 2.1.5 =
 * رفع رد شدن همهٔ محصولات در حالت «افزودن ترکیب‌های جدید»: اگر مقدار یک ویژگی روی variation زیر چند کلید هم‌ارز ذخیره شده باشد (الگوی رایج داده‌های ایمپورتری)، وقتی همهٔ آن کلیدها مقدار یکسانی دارند دیگر «مبهم» حساب نمی‌شود و افزودن ادامه پیدا می‌کند؛ ابهام واقعی فقط وقتی است که مقادیر ناسازگار باشند.

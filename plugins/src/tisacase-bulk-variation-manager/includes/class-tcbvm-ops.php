@@ -402,13 +402,14 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				}
 				return sprintf( 'variation #%d برای ویژگی «%s» چند مقدار ناسازگار دارد (%s)؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label, implode( '، ', $pairs ) );
 			}
+			$keys      = array_map( 'strval', array_keys( $attributes ) );
+			$shown     = array_slice( $keys, 0, 6 );
+			$more      = count( $keys ) > 6 ? sprintf( ' و %d کلید دیگر', count( $keys ) - 6 ) : '';
+			$keys_text = ( $shown ? implode( '، ', $shown ) : '—' ) . $more;
 			if ( empty( $find['found'] ) ) {
-				$keys  = array_map( 'strval', array_keys( $attributes ) );
-				$shown = array_slice( $keys, 0, 6 );
-				$more  = count( $keys ) > 6 ? sprintf( ' و %d کلید دیگر', count( $keys ) - 6 ) : '';
-				return sprintf( 'variation #%d برای ویژگی «%s» مقداری ندارد (کلیدهای موجود روی variation: %s%s)؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label, $shown ? implode( '، ', $shown ) : '—', $more );
+				return sprintf( 'variation #%d برای ویژگی «%s» مقداری ندارد (کلیدهای موجود روی variation: %s)؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label, $keys_text );
 			}
-			return sprintf( 'variation #%d مقدار ویژگی «%s» خالی (هرکدام) است؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label );
+			return sprintf( 'variation #%d مقدار ویژگی «%s» خالی (هرکدام/همه) است؛ برای جلوگیری از ترکیب تکراری این محصول رد می‌شود. اصلاح: در ویرایش محصول برای این variation مقدار مشخص کنید یا آن را حذف کنید، یا همین محصول را با حالت «جایگزینی کامل» اجرا کنید. (کلیدهای روی variation: %s)', $child_id, $key_label, $keys_text );
 		}
 
 		/**
