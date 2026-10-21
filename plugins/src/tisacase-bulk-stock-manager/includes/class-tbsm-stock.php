@@ -58,12 +58,23 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				);
 			}
 
-			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
-				self::prime_caches( array_keys( $items ) );
-				return self::run_apply_sql( $items, $allowed_ids );
+			self::prime_caches( array_keys( $items ) );
+
+			// دلیل مشخص رد شدن برای شناسه‌هایی که متعلق به این محصول نیستند
+			// (در جریان عادی رابط نباید پیش بیاید؛ اگر آمد، کاربر دقیق می‌بیند چرا).
+			$rejections = array();
+			foreach ( array_keys( $items ) as $raw_id ) {
+				$var_id = absint( $raw_id );
+				if ( ! in_array( $var_id, $allowed_ids, true ) ) {
+					$rejections[ $var_id ] = self::single_reject_reason( $var_id, $product );
+				}
 			}
 
-			return self::run_apply( $items, $allowed_ids, false );
+			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
+				return self::run_apply_sql( $items, $allowed_ids, $rejections );
+			}
+
+			return self::run_apply( $items, $allowed_ids, false, $rejections );
 		}
 
 		/**
@@ -115,30 +126,125 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			// پرکردن کش‌ها پیش از موتور: اعتبارسنجی و همگام‌سازی حافظه‌محور می‌شوند.
 			self::prime_caches( array_keys( $items ) );
 
-			$allowed = array();
+			// بازبینی تک‌تک آیتم‌ها با «دلیل مشخص» رد شدن (نه یک پیام کلی):
+			// کدام نگهبان رد کرد — مدل، محصول والد یا کدام قاعدهٔ محدوده —
+			// و مقدار واقعیِ ذخیره‌شده در برابر مقدار انتخاب‌شده چیست.
+			$identities     = self::value_identities( $values );
+			$term_labels    = self::global_term_labels( $attr_keys );
+			$expected_label = self::expected_label( $values, $term_labels );
+
+			$allowed    = array();
+			$rejections = array();
 			foreach ( array_keys( $items ) as $raw_id ) {
 				$var_id = absint( $raw_id );
-				if ( self::scope_item_allowed( $var_id, $scope, $attr_keys, $values ) ) {
+				$reason = self::scope_item_reject_reason( $var_id, $scope, $attr_keys, $identities, $term_labels, $expected_label );
+				if ( null === $reason ) {
 					$allowed[] = $var_id;
+				} else {
+					$rejections[ $var_id ] = $reason;
 				}
 			}
 
 			if ( 'sql' === apply_filters( 'tbsm_apply_engine', 'sql' ) ) {
-				return self::run_apply_sql( $items, $allowed );
+				return self::run_apply_sql( $items, $allowed, $rejections );
 			}
 
-			return self::run_apply( $items, $allowed, true, 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.' );
+			return self::run_apply( $items, $allowed, true, $rejections );
+		}
+
+		/* ----------------------------------------------------------
+		 * دلیل رد شدن آیتم‌ها (ساخت‌یافته)
+		 *
+		 * هر آیتمی که موقع اعمال رد می‌شود یک ردیف ساخت‌یافته می‌گیرد:
+		 *   {id, code, reason, group, parent_id, product, expected, actual}
+		 * `reason` متن کاملِ همان آیتم است (با شناسه و نام محصول) و `group`
+		 * همان دلیل بدون شناسه/نام محصول تا رابط بتواند صدها موردِ هم‌دلیل
+		 * را در **یک خط** با شمارش نشان دهد، نه صدها خط تکراری.
+		 * `errors` (رشته‌ها) برای سازگاری عقب‌رو کنار `rejections` می‌ماند.
+		 * ---------------------------------------------------------- */
+
+		/**
+		 * ساخت ردیف «دلیل رد شدن» یک متغیر.
+		 *
+		 * @param int    $var_id    شناسهٔ متغیر.
+		 * @param string $code      کد دلیل (not_found|model_mismatch|model_missing|parent_missing|scope_products|scope_category|scope_sku|wrong_product|invalid_qty|invalid_value|save_error).
+		 * @param string $reason    متن کامل دلیل برای همین آیتم.
+		 * @param string $group     متن گروه (بدون شناسه/نام محصول) برای تجمیع در گزارش.
+		 * @param int    $parent_id شناسهٔ محصول والد.
+		 * @param string $product   نام محصول والد.
+		 * @param string $expected  مقدار/شرط انتخاب‌شده.
+		 * @param string $actual    مقدار واقعی ذخیره‌شده.
+		 * @return array
+		 */
+		private static function rejection_row( $var_id, $code, $reason, $group = '', $parent_id = 0, $product = '', $expected = '', $actual = '' ) {
+			return array(
+				'id'        => (int) $var_id,
+				'code'      => (string) $code,
+				'reason'    => (string) $reason,
+				'group'     => '' !== (string) $group ? (string) $group : (string) $reason,
+				'parent_id' => (int) $parent_id,
+				'product'   => (string) $product,
+				'expected'  => (string) $expected,
+				'actual'    => (string) $actual,
+			);
 		}
 
 		/**
-		 * حلقهٔ مشترک اعمال: اعتبارسنجی مجازها، نوشتن هر متغیر و همگام‌سازی والدها.
+		 * افزودن یک رد شدن به هر دو فهرست گزارش (رشته‌ای + ساخت‌یافته).
 		 *
-		 * @param array  $items           [ var_id => spec ].
-		 * @param array  $allowed_ids     شناسه‌های مجاز.
-		 * @param bool   $with_product    نام محصول والد در گزارش بیاید؟
-		 * @param string $reject_template الگوی پیام رد شدن (sprintf با شناسه).
-		 * @return array
+		 * @param array $errors مرجع خطاهای رشته‌ای.
+		 * @param array $rows   مرجع ردیف‌های ساخت‌یافته.
+		 * @param array $row    خروجی rejection_row.
 		 */
+		private static function add_rejection( array &$errors, array &$rows, array $row ) {
+			$errors[] = $row['reason'];
+			$rows[]   = $row;
+		}
+
+		/**
+		 * دلیل رد شدن در حالت تک‌محصول: شناسه‌ای که فرزند محصول انتخاب‌شده نیست.
+		 *
+		 * @param int          $var_id  شناسهٔ ارسالی.
+		 * @param \WC_Product  $product محصول انتخاب‌شده.
+		 * @return array خروجی rejection_row.
+		 */
+		private static function single_reject_reason( $var_id, $product ) {
+			$var_id        = absint( $var_id );
+			$product_id    = (int) $product->get_id();
+			$product_title = (string) get_the_title( $product_id );
+			if ( '' === $product_title ) {
+				$product_title = '#' . $product_id;
+			}
+
+			$type   = $var_id > 0 ? get_post_type( $var_id ) : false;
+			$status = $var_id > 0 ? (string) get_post_status( $var_id ) : '';
+
+			if ( ! $type || 'trash' === $status || ! in_array( $type, array( 'product_variation', 'product' ), true ) ) {
+				return self::rejection_row(
+					$var_id,
+					'not_found',
+					sprintf( 'متغیر #%d پیدا نشد (حذف شده است یا متغیر محصول نیست)؛ رد شد.', $var_id ),
+					'متغیر پیدا نشد (حذف شده است یا متغیر محصول نیست)'
+				);
+			}
+
+			$parent_id    = ( 'product_variation' === $type ) ? (int) wp_get_post_parent_id( $var_id ) : $var_id;
+			$parent_title = $parent_id > 0 ? (string) get_the_title( $parent_id ) : '';
+			if ( '' === $parent_title ) {
+				$parent_title = '#' . $parent_id;
+			}
+
+			return self::rejection_row(
+				$var_id,
+				'wrong_product',
+				sprintf( 'متغیر #%d متعلق به محصول «%s» است، نه محصول انتخاب‌شدهٔ «%s»؛ رد شد.', $var_id, $parent_title, $product_title ),
+				sprintf( 'متغیر متعلق به محصول دیگری است، نه محصول انتخاب‌شدهٔ «%s»', $product_title ),
+				$parent_id,
+				$parent_title,
+				$product_title,
+				$parent_title
+			);
+		}
 		/* ----------------------------------------------------------
 		 * موتور اعمال انبوه SQL (سیستم تازهٔ ۱٫۴٫۰)
 		 *
@@ -231,13 +337,15 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		 *
 		 * @param array $items       [ var_id => spec ].
 		 * @param array $allowed_ids شناسه‌های مجاز (اعتبارسنجی‌شده).
+		 * @param array $rejections  نقشهٔ [var_id => rejection_row] برای غیرمجازها.
 		 * @return array همان شکل پاسخ run_apply.
 		 */
-		private static function run_apply_sql( array $items, array $allowed_ids ) {
+		private static function run_apply_sql( array $items, array $allowed_ids, array $rejections = array() ) {
 			global $wpdb;
 
 			$report         = array();
 			$errors         = array();
+			$reject_rows    = array();
 			$enabled_manage = 0;
 
 			$triples        = array();
@@ -250,7 +358,13 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$var_id = absint( $raw_id );
 
 				if ( ! in_array( $var_id, $allowed_ids, true ) ) {
-					$errors[] = sprintf( 'متغیر #%d با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.', $var_id );
+					$row = isset( $rejections[ $var_id ] ) ? $rejections[ $var_id ] : self::rejection_row(
+						$var_id,
+						'not_allowed',
+						sprintf( 'متغیر #%d در فهرست مجاز این اعمال نیست؛ رد شد.', $var_id ),
+						'متغیر در فهرست مجاز این اعمال نیست'
+					);
+					self::add_rejection( $errors, $reject_rows, $row );
 					continue;
 				}
 
@@ -264,7 +378,12 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					if ( 'qty' === $mode ) {
 						$q = isset( $raw_spec['qty'] ) ? $raw_spec['qty'] : null;
 						if ( ! is_numeric( $q ) ) {
-							$errors[] = sprintf( 'موجودی متغیر #%d عدد معتبر نبود؛ رد شد.', $var_id );
+							self::add_rejection( $errors, $reject_rows, self::rejection_row(
+								$var_id,
+								'invalid_qty',
+								sprintf( 'موجودی متغیر #%d عدد معتبر نبود؛ رد شد.', $var_id ),
+								'موجودی ارسالی عدد معتبر نبود'
+							) );
 							continue;
 						}
 						$qty = max( 0, min( 99999999, (int) $q ) );
@@ -272,7 +391,12 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				} elseif ( is_numeric( $raw_spec ) ) {
 					$qty = max( 0, min( 99999999, (int) $raw_spec ) );
 				} else {
-					$errors[] = sprintf( 'مقدار متغیر #%d نامعتبر است؛ رد شد.', $var_id );
+					self::add_rejection( $errors, $reject_rows, self::rejection_row(
+						$var_id,
+						'invalid_value',
+						sprintf( 'مقدار متغیر #%d نامعتبر است؛ رد شد.', $var_id ),
+						'مقدار ارسالی نامعتبر بود'
+					) );
 					continue;
 				}
 
@@ -341,8 +465,13 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			}
 
 			if ( empty( $report ) ) {
+				// دسته پردازش شده است؛ فقط چیزی برای نوشتن نبود (همه «بدون تغییر»
+				// یا ردشده با دلیل مشخص). این «خطای سرور» نیست: قبلاً ok=false
+				// برمی‌گشت، لایهٔ AJAX آن را خطا می‌فرستاد و کلاینت دسته را نصف‌ونصف
+				// دوباره می‌فرستاد تا تک‌تک آیتم‌ها «خطای سرور» گزارش شوند و دلیل
+				// واقعیِ رد شدن در آن میان گم می‌شد.
 				return array(
-					'ok'             => false,
+					'ok'             => true,
 					'applied'        => 0,
 					'enabled_manage' => 0,
 					'parent_status'  => null,
@@ -350,7 +479,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					'skipped'        => $skipped,
 					'report'         => array(),
 					'errors'         => $errors,
-					'error'          => $errors ? 'هیچ متغیری اعمال نشد: ' . implode( ' ', $errors ) : '',
+					'rejections'     => $reject_rows,
 				);
 			}
 
@@ -511,6 +640,7 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'skipped'        => $skipped,
 				'report'         => $report,
 				'errors'         => $errors,
+				'rejections'     => $reject_rows,
 			);
 
 			// یک هوک per دسته به‌جای هوک per آیتم (سرعت).
@@ -519,13 +649,19 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 			return $result;
 		}
 
-		private static function run_apply( array $items, array $allowed_ids, $with_product = false, $reject_template = '' ) {
-			if ( '' === $reject_template ) {
-				$reject_template = 'متغیر #%d متعلق به این محصول نیست؛ رد شد.';
-			}
-
+		/**
+		 * حلقهٔ مشترک اعمال (موتور WC CRUD): نوشتن هر متغیر و همگام‌سازی والدها.
+		 *
+		 * @param array $items        [ var_id => spec ].
+		 * @param array $allowed_ids  شناسه‌های مجاز.
+		 * @param bool  $with_product نام محصول والد در گزارش بیاید؟
+		 * @param array $rejections   نقشهٔ [var_id => rejection_row] برای غیرمجازها.
+		 * @return array
+		 */
+		private static function run_apply( array $items, array $allowed_ids, $with_product = false, array $rejections = array() ) {
 			$report         = array();
 			$errors         = array();
+			$reject_rows    = array();
 			$enabled_manage = 0;
 
 			// شمارش ترم‌ها تا پایان درخواست عقب بیفتد (نوشته‌های sync_parent سبک‌تر).
@@ -535,20 +671,47 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				$var_id = absint( $raw_id );
 
 				if ( ! in_array( $var_id, $allowed_ids, true ) ) {
-					$errors[] = sprintf( $reject_template, $var_id );
+					$row = isset( $rejections[ $var_id ] ) ? $rejections[ $var_id ] : self::rejection_row(
+						$var_id,
+						'not_allowed',
+						sprintf( 'متغیر #%d در فهرست مجاز این اعمال نیست؛ رد شد.', $var_id ),
+						'متغیر در فهرست مجاز این اعمال نیست'
+					);
+					self::add_rejection( $errors, $reject_rows, $row );
 					continue;
 				}
 
 				$variation = wc_get_product( $var_id );
 				if ( ! $variation || ! $variation->exists() ) {
-					$errors[] = sprintf( 'متغیر #%d پیدا نشد؛ رد شد.', $var_id );
+					self::add_rejection( $errors, $reject_rows, self::rejection_row(
+						$var_id,
+						'not_found',
+						sprintf( 'متغیر #%d پیدا نشد (حذف شده است یا متغیر محصول نیست)؛ رد شد.', $var_id ),
+						'متغیر پیدا نشد (حذف شده است یا متغیر محصول نیست)'
+					) );
 					continue;
 				}
 
 				try {
+					$errors_before = count( $errors );
 					self::apply_one( $variation, $raw_spec, $errors, $report, $enabled_manage, $with_product );
+					// apply_one خطای مقداری را خودش به $errors اضافه می‌کند؛
+					// همان را ساخت‌یافته هم نگه می‌داریم تا کارت علامت بخورد.
+					if ( count( $errors ) > $errors_before ) {
+						$reject_rows[] = self::rejection_row(
+							$var_id,
+							'invalid_value',
+							(string) $errors[ count( $errors ) - 1 ],
+							'مقدار ارسالی برای متغیر نامعتبر بود'
+						);
+					}
 				} catch ( Exception $e ) { // phpcs:ignore Generic.CodeAnalysis.EmptyStatement.DetectedCatch
-					$errors[] = sprintf( 'خطا در ذخیرهٔ متغیر #%d: %s', $var_id, $e->getMessage() );
+					self::add_rejection( $errors, $reject_rows, self::rejection_row(
+						$var_id,
+						'save_error',
+						sprintf( 'خطا در ذخیرهٔ متغیر #%d: %s', $var_id, $e->getMessage() ),
+						'خطا هنگام ذخیرهٔ متغیر در ووکامرس'
+					) );
 				}
 			}
 
@@ -569,8 +732,12 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				}
 			}
 
+			// دسته پردازش شده است (حتی اگر همه رد شده باشند) — ok یعنی
+			// «درخواست سالم اجرا شد»؛ دلیل تک‌تک ردشده‌ها در rejections است.
+			// شکست‌های سخت (محصول پیدا نشد، مدل انتخاب نشده…) پیش از رسیدن
+			// به موتور و بدون کلید report برگردانده می‌شوند.
 			$result = array(
-				'ok'             => ! empty( $report ),
+				'ok'             => true,
 				'applied'        => count( $report ),
 				'enabled_manage' => $enabled_manage,
 				'parent_status'  => ( 1 === count( $statuses ) ) ? $statuses[0] : null,
@@ -578,12 +745,8 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 				'skipped'        => 0,
 				'report'         => $report,
 				'errors'         => $errors,
+				'rejections'     => $reject_rows,
 			);
-
-			// اگر هیچ‌چیز اعمال نشد، یک پیام واحد برای لایهٔ بالای خود بساز.
-			if ( empty( $report ) && ! empty( $errors ) ) {
-				$result['error'] = 'هیچ متغیری اعمال نشد: ' . implode( ' ', $errors );
-			}
 
 			wp_defer_term_counting( false );
 
@@ -1447,64 +1610,296 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 		}
 
 		/**
-		 * آیا این متغیر با مدل و محدودهٔ انتخابی هم‌خوان است؟ (اعتبارسنجی سرور)
+		 * «هویت تطبیقی» یک مقدار مدل — همان معنایی که فهرست‌کردنِ SQL دارد.
 		 *
-		 * متغیر باید تحت **یکی از کلیدهای ویژگی** همان ردیف ادغام‌شده، یکی از
-		 * مقدارهای انتخاب‌شده را داشته باشد و والدش هم در محدوده باشد.
+		 * چرا لازم است: کارت‌ها با SQL ساخته می‌شوند (`meta_value IN (…)`)
+		 * و collation پایگاه‌داده (`*_ci`) به بزرگی/کوچکی حروف، فاصلهٔ
+		 * انتهایی و نویسه‌های هم‌ارز عربی (ي/ك) حساس نیست و `GROUP BY`
+		 * نوشتارهای هم‌ارز را یک گزینه می‌کند. بازبینیِ قبلیِ لحظهٔ اعمال
+		 * با `in_array(..., true)` بایتی بود؛ پس متغیری که خودِ افزونه
+		 * فهرست کرده بود («iphone 12 mini» در برابر «iPhone 12 Mini» یا
+		 * مقدارِ دارای فاصلهٔ انتهایی) موقع اعمال رد می‌شد — با یک پیام
+		 * کلی که معلوم نمی‌کرد کدام نگهبان رد کرده است.
 		 *
-		 * @param int   $var_id    شناسهٔ متغیر.
-		 * @param array $scope     محدوده.
-		 * @param array $attr_keys کلیدهای ویژگی.
-		 * @param array $values    مقدارهای خام.
-		 * @return bool
+		 * نرمال‌سازی فقط همین هم‌ارزی‌هاست: نویسه‌های نامرئی و نیم‌فاصله
+		 * حذف، فاصله‌ها یکی و دو سر بریده، ي/ك/ة/ۀ/ؤ عربی ← فارسی و حروف
+		 * کوچک. نشانه‌گذاری دست نمی‌خورد تا «S24» با «S24+» یکی نشود.
+		 *
+		 * @param string $value مقدار خام.
+		 * @return string
 		 */
-		private static function scope_item_allowed( $var_id, $scope, array $attr_keys, array $values ) {
-			$var_id = absint( $var_id );
-			if ( $var_id <= 0 || 'product_variation' !== get_post_type( $var_id ) ) {
-				return false;
-			}
+		private static function model_value_identity( $value ) {
+			$value = self::strip_invisible( (string) $value );
+			$value = (string) preg_replace( '/[\x{200C}\x{200D}]/u', '', $value );
+			$value = str_replace(
+				array( 'ي', 'ك', 'ة', 'ۀ', 'ؤ' ),
+				array( 'ی', 'ک', 'ه', 'ه', 'و' ),
+				$value
+			);
+			$value = (string) preg_replace( '/\s+/u', ' ', $value );
+			$value = trim( $value );
 
-			$matched = false;
-			foreach ( $attr_keys as $attr_key ) {
-				$stored = (string) get_post_meta( $var_id, 'attribute_' . $attr_key, true );
-				if ( '' !== $stored && in_array( $stored, $values, true ) ) {
-					$matched = true;
-					break;
+			return function_exists( 'mb_strtolower' ) ? mb_strtolower( $value, 'UTF-8' ) : strtolower( $value );
+		}
+
+		/**
+		 * نگاشت «هویت تطبیقی ← نوشتار خام» برای مقدارهای انتخاب‌شده.
+		 *
+		 * @param array $values مقدارهای خام انتخاب‌شده.
+		 * @return array
+		 */
+		private static function value_identities( array $values ) {
+			$map = array();
+			foreach ( $values as $value ) {
+				$identity = self::model_value_identity( (string) $value );
+				if ( '' !== $identity && ! isset( $map[ $identity ] ) ) {
+					$map[ $identity ] = (string) $value;
 				}
 			}
+
+			return $map;
+		}
+
+		/**
+		 * برچسب خوانای یک مقدار خام متا برای متن پیام‌ها.
+		 *
+		 * @param string $raw         مقدار خام ذخیره‌شده.
+		 * @param array  $term_labels نگاشت مقدار خام ← نام ترم (ویژگی سراسری).
+		 * @return string
+		 */
+		private static function display_value_label( $raw, array $term_labels ) {
+			$raw = (string) $raw;
+			if ( isset( $term_labels[ $raw ] ) && '' !== $term_labels[ $raw ] ) {
+				return (string) $term_labels[ $raw ];
+			}
+			$label = self::clean_label( self::maybe_decode_label( $raw ) );
+
+			return '' !== $label ? $label : trim( $raw );
+		}
+
+		/**
+		 * برچسب خوانای مقدار(های) انتخاب‌شده برای متن پیام‌ها.
+		 *
+		 * @param array $values      مقدارهای خام انتخاب‌شده.
+		 * @param array $term_labels نگاشت مقدار خام ← نام ترم.
+		 * @return string
+		 */
+		private static function expected_label( array $values, array $term_labels ) {
+			$labels = array();
+			foreach ( $values as $value ) {
+				$label = self::display_value_label( (string) $value, $term_labels );
+				if ( '' !== $label && ! in_array( $label, $labels, true ) ) {
+					$labels[] = $label;
+				}
+			}
+
+			return implode( '، ', $labels );
+		}
+
+		/**
+		 * بازبینی یک متغیر در برابر مدل + محدودهٔ انتخابی؛ «چرا رد شد؟»
+		 *
+		 * برگشت `null` یعنی مجاز است. در غیر این صورت ردیف ساخت‌یافتهٔ دلیل
+		 * برمی‌گردد و دقیقاً می‌گوید کدام نگهبان رد کرد و مقدار واقعیِ
+		 * ذخیره‌شده در برابر مقدار انتخاب‌شده چه بوده است.
+		 *
+		 * تطبیق مدل هم‌معنای فهرست‌کردنِ SQL است تا چیزی که افزونه خودش
+		 * فهرست کرده موقع اعمال رد نشود:
+		 *   - **همهٔ ردیف‌های متا**ی کلیدهای ویژگی خوانده می‌شوند، نه فقط
+		 *     ردیف اول (SQL با هر ردیفی تطبیق می‌کند؛ `get_post_meta(…, true)`
+		 *     فقط اولی را می‌دهد و با متای تکراریِ داده‌های ایمپورت‌شده،
+		 *     همان اولی ممکن است مقدار کهنه باشد)؛
+		 *   - مقایسه با «هویت تطبیقی» (model_value_identity) است، نه بایتی.
+		 *
+		 * @param int    $var_id         شناسهٔ متغیر.
+		 * @param array  $scope          محدودهٔ نرمال‌شده.
+		 * @param array  $attr_keys      کلیدهای ویژگی.
+		 * @param array  $identities     خروجی value_identities برای مقدارهای انتخاب‌شده.
+		 * @param array  $term_labels    نگاشت مقدار خام ← نام ترم.
+		 * @param string $expected_label برچسب خوانای مقدار انتخاب‌شده.
+		 * @return array|null
+		 */
+		private static function scope_item_reject_reason( $var_id, $scope, array $attr_keys, array $identities, array $term_labels, $expected_label ) {
+			$var_id = absint( $var_id );
+			$type   = $var_id > 0 ? get_post_type( $var_id ) : false;
+			$status = $var_id > 0 ? (string) get_post_status( $var_id ) : '';
+
+			if ( 'product_variation' !== $type || 'trash' === $status ) {
+				return self::rejection_row(
+					$var_id,
+					'not_found',
+					sprintf( 'متغیر #%d پیدا نشد (حذف شده است یا متغیر محصول نیست)؛ رد شد.', $var_id ),
+					'متغیر پیدا نشد (حذف شده است یا متغیر محصول نیست)'
+				);
+			}
+
+			$parent_id    = (int) wp_get_post_parent_id( $var_id );
+			$parent_title = $parent_id > 0 ? (string) get_the_title( $parent_id ) : '';
+			$where        = '' !== $parent_title ? sprintf( ' (محصول «%s»)', $parent_title ) : '';
+
+			// نگهبان ۱: مقدار مدل — همهٔ ردیف‌های متای همهٔ کلیدهای ویژگی.
+			$stored_all = array();
+			$matched    = false;
+			foreach ( $attr_keys as $attr_key ) {
+				foreach ( (array) get_post_meta( $var_id, 'attribute_' . $attr_key ) as $stored ) {
+					$stored = (string) $stored;
+					if ( '' === trim( $stored ) ) {
+						continue;
+					}
+					$stored_all[] = $stored;
+					if ( isset( $identities[ self::model_value_identity( $stored ) ] ) ) {
+						$matched = true;
+					}
+				}
+			}
+
 			if ( ! $matched ) {
-				return false;
+				$attr_label = self::attribute_display_label( isset( $attr_keys[0] ) ? $attr_keys[0] : '' );
+
+				if ( empty( $stored_all ) ) {
+					return self::rejection_row(
+						$var_id,
+						'model_missing',
+						sprintf( 'متغیر #%d%s: برای ویژگی «%s» مقداری ثبت نشده است (مدل انتخاب‌شده: «%s»)؛ رد شد.', $var_id, $where, $attr_label, $expected_label ),
+						sprintf( 'برای ویژگی «%s» مقداری ثبت نشده است (مدل انتخاب‌شده: «%s»)', $attr_label, $expected_label ),
+						$parent_id,
+						$parent_title,
+						$expected_label,
+						''
+					);
+				}
+
+				$actual_labels = array();
+				foreach ( $stored_all as $stored ) {
+					$label = self::display_value_label( $stored, $term_labels );
+					if ( '' !== $label && ! in_array( $label, $actual_labels, true ) ) {
+						$actual_labels[] = $label;
+					}
+				}
+				$actual = implode( '، ', $actual_labels );
+
+				return self::rejection_row(
+					$var_id,
+					'model_mismatch',
+					sprintf( 'متغیر #%d%s: مقدار ویژگی «%s» آن «%s» است، نه «%s» انتخاب‌شده؛ رد شد.', $var_id, $where, $attr_label, $actual, $expected_label ),
+					sprintf( 'مقدار ویژگی «%s» آن «%s» است، نه «%s» انتخاب‌شده', $attr_label, $actual, $expected_label ),
+					$parent_id,
+					$parent_title,
+					$expected_label,
+					$actual
+				);
 			}
 
-			$parent_id = (int) wp_get_post_parent_id( $var_id );
+			// نگهبان ۲: محصول والد معتبر.
 			if ( $parent_id <= 0 || 'product' !== get_post_type( $parent_id ) ) {
-				return false;
+				return self::rejection_row(
+					$var_id,
+					'parent_missing',
+					sprintf( 'متغیر #%d محصول والد معتبری ندارد؛ رد شد.', $var_id ),
+					'محصول والد معتبری وجود ندارد',
+					$parent_id,
+					$parent_title
+				);
 			}
 
+			// نگهبان ۳: قاعدهٔ محدوده.
 			switch ( $scope['type'] ) {
 				case 'products':
-					return in_array( $parent_id, array_map( 'absint', (array) $scope['product_ids'] ), true );
+					if ( ! in_array( $parent_id, array_map( 'absint', (array) $scope['product_ids'] ), true ) ) {
+						return self::rejection_row(
+							$var_id,
+							'scope_products',
+							sprintf( 'متغیر #%d: محصول والد «%s» (#%d) در فهرست محصولات انتخاب‌شدهٔ محدوده نیست؛ رد شد.', $var_id, '' !== $parent_title ? $parent_title : ( '#' . $parent_id ), $parent_id ),
+							'محصول والد در فهرست محصولات انتخاب‌شدهٔ محدوده نیست',
+							$parent_id,
+							$parent_title
+						);
+					}
+					break;
 
 				case 'category':
 					$term_ids = self::category_term_ids( (int) $scope['category_id'] );
-					return ! empty( $term_ids ) && has_term( $term_ids, 'product_cat', $parent_id );
+					$term     = get_term( (int) $scope['category_id'], 'product_cat' );
+					$cat_name = ( $term instanceof WP_Term ) ? self::clean_label( self::maybe_decode_label( (string) $term->name ) ) : '';
+
+					if ( empty( $term_ids ) ) {
+						return self::rejection_row(
+							$var_id,
+							'scope_category',
+							sprintf( 'متغیر #%d%s: دستهٔ انتخاب‌شدهٔ محدوده دیگر پیدا نشد؛ رد شد.', $var_id, $where ),
+							'دستهٔ انتخاب‌شدهٔ محدوده دیگر پیدا نشد',
+							$parent_id,
+							$parent_title
+						);
+					}
+					if ( ! has_term( $term_ids, 'product_cat', $parent_id ) ) {
+						return self::rejection_row(
+							$var_id,
+							'scope_category',
+							sprintf( 'متغیر #%d: محصول والد «%s» در دستهٔ «%s» نیست؛ رد شد.', $var_id, '' !== $parent_title ? $parent_title : ( '#' . $parent_id ), '' !== $cat_name ? $cat_name : 'انتخاب‌شده' ),
+							sprintf( 'محصول والد در دستهٔ «%s» نیست', '' !== $cat_name ? $cat_name : 'انتخاب‌شده' ),
+							$parent_id,
+							$parent_title,
+							$cat_name
+						);
+					}
+					break;
 
 				case 'sku':
-					$parent = wc_get_product( $parent_id );
-					if ( ! $parent || ! $parent->exists() ) {
-						return false;
+					// همهٔ ردیف‌های متای شناسهٔ والد (JOIN فهرست‌کردن هم با هر ردیفی می‌خواند).
+					$skus = array();
+					foreach ( (array) get_post_meta( $parent_id, '_sku' ) as $sku_row ) {
+						$sku_row = trim( (string) $sku_row );
+						if ( '' !== $sku_row ) {
+							$skus[] = $sku_row;
+						}
 					}
-					$product_sku = (string) $parent->get_sku();
-					if ( '' === $product_sku ) {
-						return false;
+
+					$mode_text = ( 'prefix' === $scope['sku_mode'] ) ? 'شروع می‌شود با' : 'شامل می‌شود';
+
+					if ( empty( $skus ) ) {
+						return self::rejection_row(
+							$var_id,
+							'scope_sku',
+							sprintf( 'متغیر #%d: محصول والد «%s» شناسه (SKU) ندارد تا با محدودهٔ شناسهٔ «%s» سنجیده شود؛ رد شد.', $var_id, '' !== $parent_title ? $parent_title : ( '#' . $parent_id ), $scope['sku'] ),
+							sprintf( 'محصول والد شناسه (SKU) ندارد تا با محدودهٔ «%s» سنجیده شود', $scope['sku'] ),
+							$parent_id,
+							$parent_title,
+							(string) $scope['sku'],
+							''
+						);
 					}
-					return ( 'prefix' === $scope['sku_mode'] )
-						? ( 0 === stripos( $product_sku, $scope['sku'] ) )
-						: ( false !== stripos( $product_sku, $scope['sku'] ) );
+
+					$sku_hit = false;
+					foreach ( $skus as $product_sku ) {
+						$hit = ( 'prefix' === $scope['sku_mode'] )
+							? ( 0 === stripos( $product_sku, $scope['sku'] ) )
+							: ( false !== stripos( $product_sku, $scope['sku'] ) );
+						if ( $hit ) {
+							$sku_hit = true;
+							break;
+						}
+					}
+
+					if ( ! $sku_hit ) {
+						return self::rejection_row(
+							$var_id,
+							'scope_sku',
+							sprintf( 'متغیر #%d: شناسهٔ محصول والد «%s» با الگوی محدودهٔ «%s» (%s) هم‌خوان نیست؛ رد شد.', $var_id, $skus[0], $scope['sku'], $mode_text ),
+							sprintf( 'شناسهٔ محصول والد با الگوی محدودهٔ «%s» (%s) هم‌خوان نیست', $scope['sku'], $mode_text ),
+							$parent_id,
+							$parent_title,
+							(string) $scope['sku'],
+							$skus[0]
+						);
+					}
+					break;
 
 				default:
-					return true;
+					break;
 			}
+
+			return null;
 		}
 
 		/**

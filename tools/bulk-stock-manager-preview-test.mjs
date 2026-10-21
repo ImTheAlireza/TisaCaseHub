@@ -275,6 +275,7 @@ await change('#tbsm-group-term', proMax.value);
 await waitFor('صفحهٔ نخست فهرست صفحه‌بندی‌شده', () => qa('#tbsm-grid .tbsm-var').length === 4);
 ok('با سقف ۴، فقط صفحهٔ نخست (۴ کارت) می‌آید', qa('#tbsm-grid .tbsm-var').length === 4);
 ok('دکمهٔ «نمایش موارد بعدی» آمد', !!q('#tbsm-more'), text('#tbsm-more'));
+ok('دکمهٔ ادامه بالای فهرست است (درست قبل از گرید کارت‌ها)', !!(q('#tbsm-grid').previousElementSibling && q('#tbsm-grid').previousElementSibling.id === 'tbsm-more-wrap'));
 ok('برچسب دکمه سقف صفحه را دارد', /۴/.test(text('#tbsm-more')), text('#tbsm-more'));
 ok('خط اطلاعات دربارهٔ صفحه‌بندی هشدار می‌دهد', /نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
 ok('شمارش متغیر در خط اطلاعات تجمعی است', /۴ متغیر در/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
@@ -340,6 +341,26 @@ ok('گزارشی برای موارد پرش‌شده ساخته نشد', !visibl
 // خط «بدون تغییر» داخل گزارش وقتی فقط بعضی پرش می‌شوند
 window.TBSM.renderReport({ report: [], applied: 0, skipped: 5, errors: [], parents_synced: 0, parent_status: null });
 ok('خط «بدون تغییر» در گزارش رندر شد', /۵ مورد بدون تغییر/.test(text('#tbsm-report')), text('#tbsm-report'));
+
+// دلیل‌های رد شدن: هم‌دلیل‌ها یک گروه می‌شوند (شمارش + نمونهٔ شناسه‌ها)،
+// تک‌مورد متن کامل می‌آید و کارت ردشده علامت می‌خورد و «اعمال‌شده» نمی‌شود.
+const firstCardId = qa('#tbsm-grid .tbsm-var')[0].getAttribute('data-id');
+qa('#tbsm-grid .tbsm-var')[0].setAttribute('data-applied', '1');
+window.TBSM.renderReport({
+	report: [], applied: 0, skipped: 0, errors: [], parents_synced: 0, parent_status: null,
+	rejections: [
+		{ id: Number(firstCardId), code: 'model_mismatch', reason: 'متغیر #' + firstCardId + ' (محصول «قاب الف»): مقدار ویژگی «مدل» آن «iPhone 12» است، نه «iPhone 12 Mini» انتخاب‌شده؛ رد شد.', group: 'مقدار ویژگی «مدل» آن «iPhone 12» است، نه «iPhone 12 Mini» انتخاب‌شده' },
+		{ id: 900002, code: 'model_mismatch', reason: 'متغیر #900002 (محصول «قاب ب»): مقدار ویژگی «مدل» آن «iPhone 12» است، نه «iPhone 12 Mini» انتخاب‌شده؛ رد شد.', group: 'مقدار ویژگی «مدل» آن «iPhone 12» است، نه «iPhone 12 Mini» انتخاب‌شده' },
+		{ id: 900003, code: 'scope_sku', reason: 'متغیر #900003: شناسهٔ محصول والد «SB050» با الگوی محدودهٔ «CH» (شروع می‌شود با) هم‌خوان نیست؛ رد شد.', group: 'شناسهٔ محصول والد با الگوی محدودهٔ «CH» (شروع می‌شود با) هم‌خوان نیست' }
+	]
+});
+ok('سربرگ «۳ متغیر رد شد — دلیل‌ها» رندر شد', /۳ متغیر رد شد/.test(text('#tbsm-report')), text('#tbsm-report'));
+ok('دو مورد هم‌دلیل یکی شدند (۲ مورد با همین دلیل)', /۲ مورد با همین دلیل/.test(text('#tbsm-report')), text('#tbsm-report'));
+ok('نمونهٔ شناسه‌های گروه در گزارش آمد', text('#tbsm-report').includes('#900002'), text('#tbsm-report'));
+ok('دلیل تکی با متن کامل (شناسه + مقدار واقعی) آمد', /متغیر #900003/.test(text('#tbsm-report')) && /SB050/.test(text('#tbsm-report')), text('#tbsm-report'));
+ok('متن کلی «با مدل\/محدوده هم‌خوان نیست» دیگر نیست', !/با مدل\/محدودهٔ انتخاب‌شده هم‌خوان نیست/.test(text('#tbsm-report')));
+ok('کارت ردشده علامت خورد و نشان اعمال‌شده‌اش پاک شد', qa('#tbsm-grid .tbsm-var')[0].classList.contains('is-rejected') && !qa('#tbsm-grid .tbsm-var')[0].hasAttribute('data-applied'));
+qa('#tbsm-grid .tbsm-var')[0].classList.remove('is-rejected');
 
 // فیوز: خطای پیاپی بدون موفقیت → توقف + نمایش خطای واقعی سرور
 qa('#tbsm-grid .tbsm-var').forEach((c) => c.removeAttribute('data-applied'));
@@ -822,6 +843,8 @@ window.TBSM_PREVIEW_FAULT = null;
 	ok('README.md هم همان نسخه است', readmeMd.includes(faVer));
 	ok('فایل ترجمه (.pot) هم همان نسخه است', pot.includes('TisaCase Bulk Stock Manager ' + phpVer));
 	ok('بلوک چنج‌لاگ همان نسخه در readme هست', readme.includes('= ' + phpVer + ' ='));
+	const corePhp = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-core.php'), 'utf8');
+	ok('هر صفحهٔ فهرست گروهی ۳۰۰ متغیر می‌آورد (MAX_MODEL_ROWS)', /MAX_MODEL_ROWS\s*=\s*300/.test(corePhp));
 }
 
 

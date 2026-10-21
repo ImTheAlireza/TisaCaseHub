@@ -14,6 +14,7 @@
 		selectedProducts: {},
 		isExecuting: false,
 		cancelRequested: false,
+		activeConsoleId: '#tcbvm-log-console',
 
 		init: function() {
 			this.bindTargetMode();
@@ -85,6 +86,43 @@
 			const line = '[' + time + '] ' + prefix + msg + '\n';
 			$console.append(line);
 			$console.scrollTop($console[0].scrollHeight);
+		},
+
+		/**
+		 * کلید گروه‌بندی پیام خطا: شناسه‌های داخل پیام (مثل variation #272441)
+		 * ماسک می‌شوند تا یک علت واحد که برای صدها محصول تکرار شده، به‌جای صدها
+		 * «دلیل متمایز» جعلی، یک گروه با تعداد واقعی شود.
+		 */
+		failureGroupKey: function(message) {
+			return String(message || '').replace(/#[0-9۰-۹]+/g, '#…');
+		},
+
+		/**
+		 * جمع‌بندی گروهی خطاهای یک اجرا در انتهای کنسول: به‌جای مرور صدها خط
+		 * تکراری، هر دلیل یک‌بار با تعداد و شناسه‌های درگیر چاپ می‌شود تا علت
+		 * اصلی ردشدن‌ها فوراً دیده شود.
+		 */
+		logFailureSummary: function(items, consoleId) {
+			const self = this;
+			const groups = [];
+			const index = Object.create(null);
+			(items || []).forEach(function(it) {
+				if (!it || it.status !== 'error') return;
+				const message = self.failureGroupKey(it.message || 'خطای نامشخص');
+				if (!Object.prototype.hasOwnProperty.call(index, message)) {
+					index[message] = groups.length;
+					groups.push({ message: message, ids: [] });
+				}
+				groups[index[message]].ids.push(it.id);
+			});
+			if (!groups.length) return;
+
+			self.log('— جمع‌بندی خطاها (' + self.toPersianDigits(groups.length) + ' دلیل متمایز) —', 'info', consoleId);
+			groups.forEach(function(group) {
+				const shownIds = group.ids.slice(0, 12).map(function(id) { return '#' + id; }).join('، ');
+				const moreCount = group.ids.length > 12 ? ' و ' + self.toPersianDigits(group.ids.length - 12) + ' مورد دیگر' : '';
+				self.log(self.toPersianDigits(group.ids.length) + ' محصول: ' + group.message + ' (شناسه‌ها: ' + shownIds + moreCount + ')', 'error', consoleId);
+			});
 		},
 
 		/**
@@ -365,14 +403,14 @@
 		hydrationSeq: 0,
 
 		/**
-		 * بارگذاری تدریجی جزئیات سطرهای جایگزین، بسته‌های ۱۰۰تایی، در پس‌زمینه.
+		 * بارگذاری تدریجی جزئیات سطرهای جایگزین، بسته‌های ۳۰۰تایی، در پس‌زمینه.
 		 * اگر کاربر جستجوی جدیدی انجام دهد، زنجیرهٔ قبلی با توکن لغو می‌شود و
 		 * وضعیت تیک/حذف کاربر در حین جایگزینی حفظ می‌گردد.
 		 */
 		hydrateStubs: function($counter, baseMessage) {
 			const self = this;
 			const token = ++self.hydrationSeq;
-			const pageSize = 100;
+			const pageSize = 300;
 
 			const stubIds = Object.keys(self.selectedProducts)
 				.filter(function(pid) { return self.selectedProducts[pid].stub; })
@@ -581,11 +619,12 @@
 				$('#tcbvm-models-help').text(copy.help);
 				$('#tcbvm-pricing-card').toggleClass('tcbvm-hidden', mode === 'remove_values');
 				$('#tcbvm-combine-field').toggleClass('tcbvm-hidden', mode === 'remove_values');
+				$('#tcbvm-drop-any-field').toggleClass('tcbvm-hidden', mode !== 'add_missing');
 				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			};
 
 			$('#tcbvm-operation-mode').on('change', updateMode);
-			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other').on('input change', function() {
+			$('#tcbvm-attr-name, #tcbvm-regular-price, #tcbvm-sale-price, #tcbvm-stock-status, #tcbvm-combine-other, #tcbvm-drop-any').on('input change', function() {
 				$('#tcbvm-preview-output').addClass('tcbvm-hidden');
 			});
 			updateMode();
@@ -618,6 +657,25 @@
 		},
 
 		/**
+		 * هویت نرمال‌شدهٔ یک مقدار برای یکتاسازی فهرست (دقیقاً همان منطق سرور):
+		 * تبدیل نویسه‌های عربی، حروف کوچک و یکدست‌کردن جداکننده‌ها؛ علائم
+		 * معنادار مثل + حفظ می‌شوند تا «S24» و «S24+» یکی نشوند.
+		 */
+		normalizeModelKey: function(value) {
+			return String(value || '')
+				.replace(/ي/g, 'ی')
+				.replace(/ك/g, 'ک')
+				.replace(/ة/g, 'ه')
+				.replace(/ۀ/g, 'ه')
+				.replace(/ؤ/g, 'و')
+				.replace(/[\u00A0\u200C]/g, ' ')
+				.replace(/[\u200B\u200D\u200E\u200F\u202A-\u202E\u2060\uFEFF]/g, '')
+				.toLowerCase()
+				.replace(/[\s\-_]+/g, '-')
+				.replace(/^-+|-+$/g, '');
+		},
+
+		/**
 		 * تفکیک مقادیر مدل‌ها از روی متن
 		 */
 		parseModelsList: function(raw) {
@@ -629,12 +687,18 @@
 				lines = raw.split(/[,،]+/);
 			}
 
+			// یکتاسازی بر اساس هویت نرمال‌شده (هماهنگ با سرور) تا تفاوت حروف
+			// کوچک/بزرگ یا فاصله/خط‌تیره، مقدار تکراری و ترکیب تکراری نسازد.
+			const self = this;
 			const unique = [];
+			const seen = Object.create(null);
 			lines.forEach(function(line) {
 				const trimmed = line.trim().replace(/^["'`•\-\s]+|["'`•\-\s]+$/g, '');
-				if (trimmed && unique.indexOf(trimmed) === -1) {
-					unique.push(trimmed);
-				}
+				if (!trimmed) return;
+				const key = self.normalizeModelKey(trimmed) || trimmed;
+				if (seen[key]) return;
+				seen[key] = true;
+				unique.push(trimmed);
 			});
 			return unique;
 		},
@@ -692,6 +756,7 @@
 
 				const salePrice = $('#tcbvm-sale-price').val().replace(/[^\d]/g, '');
 				const combineOther = operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0;
+				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
 
 				const $btn = $(this);
 				self.runPreview($btn, {
@@ -701,6 +766,7 @@
 					price: price,
 					sale_price: salePrice,
 					combine_other: combineOther,
+					drop_any_target: dropAnyTarget,
 					operation_mode: operationMode
 				});
 			});
@@ -730,8 +796,9 @@
 					return;
 				}
 
+				const dropAnyTarget = operationMode === 'add_missing' && $('#tcbvm-drop-any').is(':checked') ? 1 : 0;
 				const modeConfirmation = operationMode === 'add_missing'
-					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.'
+					? 'افزودن: متغیرهای فعلی حفظ می‌شوند؛ ترکیب تکراری ساخته یا قیمت‌گذاری نمی‌شود.' + (dropAnyTarget ? ' variationهای بدون مقدار ویژگی هدف («هرکدام») حذف می‌شوند؛ از تاریخچه قابل بازگردانی‌اند.' : '')
 					: (operationMode === 'remove_values'
 						? 'حذف: variationهای دارای مقادیر فهرست‌شده در ویژگی هدف و همان گزینه‌ها حذف می‌شوند؛ قیمت اثری ندارد.'
 						: 'جایگزینی: همهٔ variationهای فعلی حذف و مقادیر فهرست‌شده از نو ساخته می‌شوند.');
@@ -748,9 +815,10 @@
 					sale_price: $('#tcbvm-sale-price').val().replace(/[^\d]/g, ''),
 					stock_status: $('#tcbvm-stock-status').val(),
 					combine_other: operationMode !== 'remove_values' && $('#tcbvm-combine-other').is(':checked') ? 1 : 0,
+					drop_any_target: dropAnyTarget,
 					operation_mode: operationMode
 				});
-		});
+			});
 
 		// دکمه لغو عملیات (توقف پس از پایان بستهٔ جاری)
 		$('#tcbvm-btn-cancel-run').on('click', function(e) {
@@ -768,7 +836,7 @@
 		 */
 		runPreview: function($btn, params) {
 			const self = this;
-			const PREVIEW_PAGE_SIZE = 50;
+			const PREVIEW_PAGE_SIZE = 300;
 			const pids = params.product_ids || [];
 
 			$btn.prop('disabled', true).addClass('is-busy');
@@ -819,6 +887,7 @@
 				total_old_vars: 0,
 				total_new_vars: 0,
 				total_remove_vars: 0,
+				total_drop_any_vars: 0,
 				total_new_vars_capped: false,
 				preflight_error_count: 0,
 				over_limit_count: 0,
@@ -872,6 +941,7 @@
 						merged.total_old_vars += Number(d.total_old_vars || 0);
 						merged.total_new_vars += Number(d.total_new_vars || 0);
 						merged.total_remove_vars += Number(d.total_remove_vars || 0);
+						merged.total_drop_any_vars += Number(d.total_drop_any_vars || 0);
 						if (d.total_new_vars_capped) merged.total_new_vars_capped = true;
 						merged.preflight_error_count += Number(d.preflight_error_count || 0);
 						merged.over_limit_count += Number(d.over_limit_count || 0);
@@ -934,14 +1004,30 @@
 			if (overLimitCount) {
 				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">⚠️ ' + self.toPersianDigits(overLimitCount) + ' محصول از سقف ایمنی ۳۰۰۰ ترکیب عبور کرده است؛ اجرای همان محصول بدون تغییر رد می‌شود.</p>';
 			}
+			const totalDropAny = Number(data.total_drop_any_vars || 0);
+			if (totalDropAny) {
+				html += '<p class="tcbvm-preview-warning" style="grid-column:1/-1;color:#8a2c0d;background:#fff3e0;border-radius:6px;padding:10px 12px;">🗑 ' + self.toPersianDigits(self.formatNumber(totalDropAny)) + ' variation بدون مقدار ویژگی هدف («هرکدام») در اجرا حذف می‌شود؛ پس از snapshot حذف می‌شوند و از تاریخچه قابل بازگردانی‌اند.</p>';
+			}
 			if (previewIssues.length) {
-				html += '<div class="tcbvm-preview-failures" style="grid-column:1/-1;"><strong>مواردی که در اجرا رد می‌شوند یا متوقف‌شونده‌اند:</strong><ul>';
+				// گروه‌بندی بر اساس دلیل دقیق سرور تا به‌جای ده‌ها خط تکراریِ کلی،
+				// علت واقعی هر دسته با تعداد و شناسه‌های درگیر دیده شود.
+				const issueGroups = [];
+				const issueGroupIndex = Object.create(null);
 				previewIssues.forEach(function(issue) {
-					const productId = self.toPersianDigits(self.formatNumber(Number(issue.id) || 0));
-					const reason = issue.reason === 'missing_product'
+					const reason = self.failureGroupKey((issue && issue.message) ? String(issue.message) : (issue.reason === 'missing_product'
 						? 'محصول در دسترس نیست.'
-						: (issue.reason === 'over_limit' ? 'بیش از سقف ۳۰۰۰ ترکیب؛ محصول بدون تغییر رد می‌شود.' : 'خواندن یا شمارش گزینه‌های ویژگی ناموفق بود.');
-					html += '<li>محصول #' + productId + ': ' + reason + '</li>';
+						: (issue.reason === 'over_limit' ? 'بیش از سقف ۳۰۰۰ ترکیب؛ محصول بدون تغییر رد می‌شود.' : 'خواندن یا شمارش گزینه‌های ویژگی ناموفق بود.')));
+					if (!Object.prototype.hasOwnProperty.call(issueGroupIndex, reason)) {
+						issueGroupIndex[reason] = issueGroups.length;
+						issueGroups.push({ reason: reason, ids: [] });
+					}
+					issueGroups[issueGroupIndex[reason]].ids.push(Number(issue.id) || 0);
+				});
+				html += '<div class="tcbvm-preview-failures" style="grid-column:1/-1;"><strong>مواردی که در اجرا رد می‌شوند یا متوقف‌شونده‌اند:</strong><ul>';
+				issueGroups.forEach(function(group) {
+					const shownIds = group.ids.slice(0, 12).map(function(id) { return '#' + self.toPersianDigits(self.formatNumber(id)); }).join('، ');
+					const moreCount = group.ids.length > 12 ? ' و ' + self.toPersianDigits(group.ids.length - 12) + ' محصول دیگر' : '';
+					html += '<li>' + self.escapeHtml(group.reason) + ' <strong>(' + self.toPersianDigits(group.ids.length) + ' محصول: ' + shownIds + moreCount + ')</strong></li>';
 				});
 				if (data.preview_issues_truncated) {
 					html += '<li>فهرست شناسه‌ها به ۱۰۰ مورد محدود شده است؛ تعداد کامل موارد در هشدارهای بالا آمده است.</li>';
@@ -971,6 +1057,9 @@
 					} else {
 						sampleCount = self.toPersianDigits(s.new_vars) + (operationMode === 'add_missing' ? ' ترکیب تازه افزوده می‌شود' : ' متغیر جدید');
 					}
+					if (!s.preflight_error && Number(s.drop_any_vars || 0) > 0) {
+						sampleCount += '؛ حذف ' + self.toPersianDigits(s.drop_any_vars) + ' متغیر بدون مقدار';
+					}
 					const sampleDanger = !!s.preflight_error || !!s.over_limit;
 					html += '<td><span class="tcbvm-badge ' + (sampleDanger ? 'tcbvm-badge--danger' : 'tcbvm-badge--success') + '">' + self.escapeHtml(sampleCount) + '</span></td>';
 					html += '<td><small class="tcbvm-muted">' + self.escapeHtml(s.other_attrs) + '</small></td>';
@@ -994,6 +1083,7 @@
 			const operationLabel = operationMode === 'add_missing' ? 'افزودن ترکیب‌های جدید' : (operationMode === 'remove_values' ? 'حذف مقادیر واردشده' : 'جایگزینی کامل');
 			self.isExecuting = true;
 			self.cancelRequested = false;
+			self.activeConsoleId = '#tcbvm-log-console';
 			$('#tcbvm-btn-cancel-run').prop('disabled', false).text('لغو عملیات');
 
 			const $progressWrap = $('#tcbvm-progress-wrap');
@@ -1027,6 +1117,7 @@
 					sale_price: params.sale_price,
 					stock_status: params.stock_status,
 					combine_other: params.combine_other,
+					drop_any_target: params.drop_any_target,
 					operation_mode: params.operation_mode
 				},
 				success: function(resp) {
@@ -1081,7 +1172,7 @@
 								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر مطابق فهرست حذف شد.', 'success');
 							} else if (operationMode === 'add_missing') {
 								$pText.text('افزودن ترکیب‌های جدید تکمیل شد؛ متغیرهای قبلی و ترکیب‌های تکراری حفظ شدند.');
-								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' ترکیب تازه افزوده شد؛ متغیرهای قبلی حفظ شدند.', 'success');
+								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' ترکیب تازه افزوده شد؛ متغیرهای قبلی حفظ شدند.' + (totalDeleted > 0 ? ' ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر بدون مقدار ویژگی هدف («هرکدام») نیز حذف شد.' : ''), 'success');
 							} else {
 								$pText.text('تولید و بازسازی تمام متغیرها با موفقیت تکمیل و ثبت شد.');
 								self.log('پایان تمام بسته‌ها! ' + self.toPersianDigits(self.formatNumber(totalCreated)) + ' متغیر تازه ساخته و ' + self.toPersianDigits(self.formatNumber(totalDeleted)) + ' متغیر قدیمی پاکسازی شد.', 'success');
@@ -1113,7 +1204,8 @@
 								price: params.price,
 								sale_price: params.sale_price,
 								stock_status: params.stock_status,
-								combine_other: params.combine_other
+								combine_other: params.combine_other,
+								drop_any_target: params.drop_any_target
 							},
 							success: function(bResp) {
 								const stopForSafety = !bResp.success || !!(bResp.data && (bResp.data.stop || bResp.data.fatal));
@@ -1209,6 +1301,8 @@
 	 * اتمام نشست
 	 */
 	finishRun: function(runId, createdCount, deletedCount, items, callback, status) {
+		// جمع‌بندی گروهی خطاها پیش از ثبت نهایی؛ کنسول فعال را جریان اجرا/پاکسازی تعیین کرده است.
+		this.logFailureSummary(items, this.activeConsoleId);
 		$.ajax({
 			url: tcbvmData.ajaxUrl,
 			type: 'POST',
@@ -1574,6 +1668,7 @@
 			const self = this;
 			self.isPurging = true;
 			self.purgeCancelRequested = false;
+			self.activeConsoleId = '#tcbvm-purge-log-console';
 			$('#tcbvm-btn-cancel-purge-run').prop('disabled', false).text('لغو عملیات');
 
 			const $wrap = $('#tcbvm-purge-progress-wrap');

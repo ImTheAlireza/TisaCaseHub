@@ -32,7 +32,9 @@ if [ -f tools/layout-guard.mjs ]; then
 fi
 # قرارداد AJAX بین PHP و JS: جلوی باگ‌هایی مثل «آرایهٔ کلیددار در برابر آرایهٔ
 # تخت» و «کلیدی که لایهٔ AJAX می‌خواند ولی متد برنمی‌گرداند» را می‌گیرد.
-if [ -f tools/ajax-contract-check.mjs ]; then
+# این ابزار فعلاً فقط ساختار افزونهٔ موجودی (tbsm) را می‌شناسد؛ برای بقیهٔ افزونه‌ها
+# رد می‌شود تا بیلدشان به‌خاطر فایل ناموجودِ افزونهٔ دیگر قفل نشود.
+if [ -f tools/ajax-contract-check.mjs ] && [ -f "$src/includes/class-tbsm-ajax.php" ]; then
   node tools/ajax-contract-check.mjs "$src" || { echo "✗ قرارداد AJAX نقض شده — زیپ ساخته نشد." >&2; exit 1; }
 fi
 # تست رگرسیون پیش‌نمایش (jsdom) — اگر پیش‌نیازهایش نصب باشند اجرا می‌شود.

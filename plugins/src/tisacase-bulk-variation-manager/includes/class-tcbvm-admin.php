@@ -865,6 +865,18 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 									<p id="tcbvm-operation-mode-help" class="tcbvm-muted">حالت جایگزینی کامل همان رفتار قبلی است؛ همهٔ variationهای موجود حذف می‌شوند و فهرست تازه ساخته می‌شود.</p>
 								</div>
 
+								<div class="tcbvm-field tcbvm-hidden" id="tcbvm-drop-any-field">
+									<label class="tcbvm-label">متغیرهای بدون مقدار ویژگی هدف</label>
+									<div class="tcbvm-switch-card">
+										<label class="tisa-switch tcbvm-toggle">
+												<input type="checkbox" id="tcbvm-drop-any">
+												<span class="tisa-switch__track" aria-hidden="true"></span>
+												<span>حذف variationهای بدون مقدار ویژگی هدف («هرکدام/همه») هنگام افزودن</span>
+											</label>
+											<p class="tcbvm-muted">فقط در حالت «افزودن موارد جدید» اثر دارد. بعضی محصولات (مثلاً ایمپورت‌شده) یک variation دارند که برای ویژگی هدف هیچ مقداری ندارد و یعنی «همهٔ مقادیر»؛ چنین متغیری جلوی افزودن امن را می‌گیرد. با روشن‌کردن این گزینه همان variationها — پس از گرفتن snapshot و قابل بازگردانی از تب تاریخچه — حذف می‌شوند و ترکیب‌های دقیق ساخته می‌شوند. پیش‌فرض خاموش است؛ تعدادشان در پیش‌نمایش اعلام می‌شود.</p>
+									</div>
+								</div>
+
 								<!-- باکس تعریف متغیرهای جدید -->
 								<div class="tcbvm-field">
 									<div class="tcbvm-field-header">
