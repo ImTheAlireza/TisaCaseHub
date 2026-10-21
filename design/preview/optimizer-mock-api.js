@@ -549,7 +549,19 @@
 		let data = {};
 
 		if (op === 'overview') {
-			data = computeOverview();
+			data = Number(req.force_rescan) === 1 ? { needs_scan: true } : computeOverview();
+		} else if (op === 'scan_step') {
+			const ov = computeOverview();
+			data = {
+				done: true,
+				stage: 'done',
+				stage_num: 5,
+				stage_label: 'تحلیل ۱۲لایه و محاسبهٔ دیسک کامل شد!',
+				detail_label: '',
+				percent: 100,
+				elapsed_sec: 1,
+				overview: ov,
+			};
 		} else if (op === 'query_media') {
 			if (req.usage === 'unregistered_disk') {
 				const rows = [...db.diskOrphans];
@@ -840,9 +852,11 @@
 			data = { settings: Object.assign({}, db.settings) };
 		}
 
+		const serialized = JSON.stringify({ success: true, data });
 		return {
 			ok: true,
 			status: 200,
+			text: async () => serialized,
 			json: async () => ({ success: true, data }),
 		};
 	};

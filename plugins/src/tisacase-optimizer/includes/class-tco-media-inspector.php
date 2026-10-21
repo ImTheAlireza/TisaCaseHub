@@ -1,13 +1,10 @@
 <?php
 /**
- * بازرس و کاوشگر رسانه (Media Inspector, Disk Telemetry & Explorer Query Engine).
+ * بازرس و کاوشگر فوق‌سریع رسانه (Instant Cached Media Inspector & In-Place Catalog Mutator).
  *
- * وظایف:
- *  - محاسبهٔ دقیق حجم واقعی هر پیوست روی دیسک:
- *      حجم کل دیسک = فایل اصلی + فایل خام پنهان (`original_image`) + همهٔ زیرسایزها + نسخه‌های موازی WebP/AVIF
- *  - تشخیص سریع PNGهای بدون شفافیت واقعی (Opaque PNGs) از روی کانال آلفای پیکسل‌ها
- *  - محاسبهٔ اثر انگشت محتوایی `SHA-1` با کش هوشمند وابسته به `filemtime`
- *  - تامین دادهٔ داشبورد (KPIها، تفکیک فرمت‌ها و لایه‌ها، Quick Wins) و کاوشگر پیشرفته با فیلتر و مرتب‌سازی کامل.
+ * تمام خوانش‌های داشبورد، مرتب‌سازی سنگین‌ترین تصاویر، فیلتر بدون استفاده‌ها، تکراری‌ها و زیرسایزها
+ * در کمتر از ۲۵ میلی‌ثانیه از روی کاتالوگ ساخته‌شدهٔ مرحله‌ای (`catalog-v2.json`) انجام می‌شود و پس از
+ * هر حذف، قرنطینه، فشرده‌سازی یا بازیابی، همان آیتم‌ها درجا در کاتالوگ به‌روز می‌شوند (بدون نیاز به اسکن مجدد!).
  *
  * @package TisaCase_Optimizer
  */
@@ -17,15 +14,15 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 
 	/**
-	 * تحلیلگر جامع کتابخانهٔ رسانه.
+	 * تحلیلگر و جستجوگر سریع کاتالوگ رسانه.
 	 */
 	final class TisaCase_Optimizer_Media_Inspector {
 
-		/** @var array<int,array<string,mixed>>|null کش در-درخواستی ردیف‌ها */
+		/** @var array<string,mixed>|null کش در-درخواستی */
 		private static $catalog_cache = null;
 
 		/**
-		 * پاک‌سازی کش در-درخواستی پس از تغییر روی فایل‌ها.
+		 * پاک‌سازی کش حافظهٔ درخواست جاری.
 		 *
 		 * @return void
 		 */
@@ -34,223 +31,244 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 		}
 
 		/**
-		 * ساخت کاتالوگ کامل پیوست‌های تصویری با جزئیات کامل حجم، ابعاد، فرمت و مراجع استفاده.
+		 * آیا کاتالوگ آماده روی دیسک موجود است؟
 		 *
-		 * @param bool $force_rescan بازسازی اجباری ایندکس مرجع ۱۲لایه.
+		 * @return bool
+		 */
+		public static function has_ready_catalog() {
+			if ( null !== self::$catalog_cache ) {
+				return true;
+			}
+			return null !== TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
+		}
+
+		/**
+		 * دریافت کاتالوگ آماده (یا اجرای اسکن کامل در محیط WP-CLI در صورت نبود).
+		 *
+		 * @param bool $force_rescan بازسازی کامل از صفر.
 		 * @return array{index:array<string,mixed>,items:array<int,array<string,mixed>>}
 		 */
 		public static function build_catalog( $force_rescan = false ) {
-			global $wpdb;
-
 			if ( null !== self::$catalog_cache && ! $force_rescan ) {
 				return self::$catalog_cache;
 			}
 
-			$index      = TisaCase_Optimizer_Reference_Scanner::get_or_build_index( $force_rescan );
-			$refs       = isset( $index['refs'] ) && is_array( $index['refs'] ) ? $index['refs'] : array();
+			$raw = ! $force_rescan ? TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog() : null;
+			if ( ! is_array( $raw ) ) {
+				$raw = TisaCase_Optimizer_Reference_Scanner::get_or_build_index( $force_rescan );
+			}
+
 			$pinned_map = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
-
-			$uploads = wp_upload_dir();
-			$basedir = ! empty( $uploads['basedir'] ) ? wp_normalize_path( trailingslashit( realpath( $uploads['basedir'] ) ? realpath( $uploads['basedir'] ) : $uploads['basedir'] ) ) : '';
-			$baseurl = ! empty( $uploads['baseurl'] ) ? trailingslashit( $uploads['baseurl'] ) : '';
-
-			// یک کوئری واحد برای خواندن تمام پیوست‌های تصویری و متاهای کلیدی بدون N+1 Query!
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			$rows = $wpdb->get_results(
-				"SELECT p.ID, p.post_title, p.post_mime_type, p.post_date, p.post_parent,
-				        pm_file.meta_value AS rel_file,
-				        pm_meta.meta_value AS meta_raw,
-				        pm_alt.meta_value  AS image_alt,
-				        pm_opt.meta_value  AS opt_raw,
-				        pm_hash.meta_value AS hash_raw
-				 FROM {$wpdb->posts} p
-				 LEFT JOIN {$wpdb->postmeta} pm_file ON pm_file.post_id = p.ID AND pm_file.meta_key = '_wp_attached_file'
-				 LEFT JOIN {$wpdb->postmeta} pm_meta ON pm_meta.post_id = p.ID AND pm_meta.meta_key = '_wp_attachment_metadata'
-				 LEFT JOIN {$wpdb->postmeta} pm_alt  ON pm_alt.post_id  = p.ID AND pm_alt.meta_key  = '_wp_attachment_image_alt'
-				 LEFT JOIN {$wpdb->postmeta} pm_opt  ON pm_opt.post_id  = p.ID AND pm_opt.meta_key  = '_tco_optimized'
-				 LEFT JOIN {$wpdb->postmeta} pm_hash ON pm_hash.post_id = p.ID AND pm_hash.meta_key = '_tco_file_fingerprint'
-				 WHERE p.post_type = 'attachment'
-				   AND p.post_mime_type LIKE 'image/%'
-				 ORDER BY p.ID DESC",
-				ARRAY_A
-			);
-
-			$items = array();
-			foreach ( (array) $rows as $row ) {
-				$aid      = absint( $row['ID'] );
-				$rel_file = isset( $row['rel_file'] ) ? ltrim( wp_normalize_path( (string) $row['rel_file'] ), '/' ) : '';
-				$meta     = ! empty( $row['meta_raw'] ) ? TisaCase_Optimizer_Reference_Scanner::safe_unserialize( (string) $row['meta_raw'] ) : array();
-				$opt_meta = ! empty( $row['opt_raw'] ) ? TisaCase_Optimizer_Reference_Scanner::safe_unserialize( (string) $row['opt_raw'] ) : array();
-				$hash_meta = ! empty( $row['hash_raw'] ) ? TisaCase_Optimizer_Reference_Scanner::safe_unserialize( (string) $row['hash_raw'] ) : array();
-
-				$main_abs       = ( '' !== $basedir && '' !== $rel_file ) ? $basedir . $rel_file : '';
-				$exists         = ( '' !== $main_abs && is_file( $main_abs ) );
-				$main_bytes     = $exists ? max( 0, (int) @filesize( $main_abs ) ) : 0;
-				$unscaled_bytes = 0;
-				$unscaled_name  = '';
-				$subsizes_bytes = 0;
-				$subsizes_count = 0;
-				$sidecar_bytes  = 0;
-				$has_webp       = false;
-
-				$subdir = '' !== $rel_file ? wp_normalize_path( dirname( $rel_file ) ) : '';
-				$subdir = ( '.' === $subdir || '' === $subdir ) ? '' : trailingslashit( $subdir );
-
-				if ( $exists && is_file( $main_abs . '.webp' ) ) {
-					$has_webp       = true;
-					$sidecar_bytes += max( 0, (int) @filesize( $main_abs . '.webp' ) );
-				}
-				if ( $exists && is_file( $main_abs . '.avif' ) ) {
-					$sidecar_bytes += max( 0, (int) @filesize( $main_abs . '.avif' ) );
-				}
-
-				if ( is_array( $meta ) && '' !== $basedir ) {
-					if ( ! empty( $meta['original_image'] ) ) {
-						$orig_abs = $basedir . $subdir . basename( (string) $meta['original_image'] );
-						if ( is_file( $orig_abs ) && $orig_abs !== $main_abs ) {
-							$unscaled_name  = basename( (string) $meta['original_image'] );
-							$unscaled_bytes = max( 0, (int) @filesize( $orig_abs ) );
-						}
+			$items      = array();
+			if ( ! empty( $raw['items'] ) && is_array( $raw['items'] ) ) {
+				foreach ( $raw['items'] as $k => $it ) {
+					$aid               = isset( $it['id'] ) ? (int) $it['id'] : (int) $k;
+					$is_pinned         = isset( $pinned_map[ $aid ] );
+					$it['is_pinned']   = $is_pinned;
+					if ( $is_pinned && ! empty( $it['exists'] ) ) {
+						$it['usage_status'] = 'pinned';
+					} elseif ( 'pinned' === $it['usage_status'] && ! $is_pinned ) {
+						$it['usage_status'] = ! empty( $it['refs_count'] ) ? 'used' : 'strict_unused';
 					}
-
-					if ( ! empty( $meta['sizes'] ) && is_array( $meta['sizes'] ) ) {
-						$seen_sub = array();
-						foreach ( $meta['sizes'] as $sinfo ) {
-							if ( empty( $sinfo['file'] ) ) {
-								continue;
-							}
-							$sabs = $basedir . $subdir . basename( (string) $sinfo['file'] );
-							if ( $sabs === $main_abs || isset( $seen_sub[ $sabs ] ) ) {
-								continue;
-							}
-							$seen_sub[ $sabs ] = true;
-							if ( is_file( $sabs ) ) {
-								++$subsizes_count;
-								$subsizes_bytes += max( 0, (int) @filesize( $sabs ) );
-								if ( is_file( $sabs . '.webp' ) ) {
-									$sidecar_bytes += max( 0, (int) @filesize( $sabs . '.webp' ) );
-								}
-								if ( is_file( $sabs . '.avif' ) ) {
-									$sidecar_bytes += max( 0, (int) @filesize( $sabs . '.avif' ) );
-								}
-							}
-						}
-					}
+					$items[ $aid ] = $it;
 				}
-
-				$width  = ( is_array( $meta ) && isset( $meta['width'] ) ) ? absint( $meta['width'] ) : 0;
-				$height = ( is_array( $meta ) && isset( $meta['height'] ) ) ? absint( $meta['height'] ) : 0;
-				$pixels = $width * $height;
-				$mime   = strtolower( (string) $row['post_mime_type'] );
-				if ( 'image/webp' === $mime ) {
-					$has_webp = true;
-				}
-
-				// تشخیص اثر انگشت فایل + شفافیت واقعی PNG (کش‌شده بر اساس filemtime).
-				$sha1          = '';
-				$is_opaque_png = false;
-				if ( $exists ) {
-					$mtime = (int) @filemtime( $main_abs );
-					if ( is_array( $hash_meta ) && isset( $hash_meta['mtime'], $hash_meta['sha1'] ) && (int) $hash_meta['mtime'] === $mtime ) {
-						$sha1          = (string) $hash_meta['sha1'];
-						$is_opaque_png = ! empty( $hash_meta['opaque_png'] );
-					} else {
-						$sha1          = (string) @sha1_file( $main_abs );
-						$is_opaque_png = ( 'image/png' === $mime ) ? self::detect_opaque_png( $main_abs ) : false;
-						update_post_meta(
-							$aid,
-							'_tco_file_fingerprint',
-							array(
-								'mtime'      => $mtime,
-								'sha1'       => $sha1,
-								'opaque_png' => $is_opaque_png ? 1 : 0,
-							)
-						);
-					}
-				}
-
-				$active_refs = isset( $refs[ $aid ]['active'] ) ? $refs[ $aid ]['active'] : array();
-				$draft_refs  = isset( $refs[ $aid ]['draft'] ) ? $refs[ $aid ]['draft'] : array();
-				$is_pinned   = isset( $pinned_map[ $aid ] );
-
-				if ( ! $exists ) {
-					$usage_status = 'missing_file';
-				} elseif ( $is_pinned ) {
-					$usage_status = 'pinned';
-				} elseif ( ! empty( $active_refs ) ) {
-					$usage_status = 'used';
-				} elseif ( ! empty( $draft_refs ) ) {
-					$usage_status = 'draft_only';
-				} else {
-					$usage_status = 'strict_unused';
-				}
-
-				$total_bytes = $main_bytes + $unscaled_bytes + $subsizes_bytes + $sidecar_bytes;
-				$thumb_file  = '';
-				if ( is_array( $meta ) && ! empty( $meta['sizes']['thumbnail']['file'] ) ) {
-					$thumb_file = $subdir . basename( (string) $meta['sizes']['thumbnail']['file'] );
-				}
-				$thumb_url = ( '' !== $baseurl && '' !== $thumb_file )
-					? $baseurl . $thumb_file
-					: ( ( '' !== $baseurl && '' !== $rel_file ) ? $baseurl . $rel_file : '' );
-				$full_url  = ( '' !== $baseurl && '' !== $rel_file ) ? $baseurl . $rel_file : '';
-
-				$items[ $aid ] = array(
-					'id'             => $aid,
-					'title'          => (string) $row['post_title'],
-					'filename'       => '' !== $rel_file ? basename( $rel_file ) : '#' . $aid,
-					'rel_path'       => $rel_file,
-					'folder'         => rtrim( $subdir, '/' ),
-					'mime'           => $mime,
-					'format'         => self::short_format_label( $mime ),
-					'date'           => substr( (string) $row['post_date'], 0, 10 ),
-					'exists'         => $exists,
-					'width'          => $width,
-					'height'         => $height,
-					'pixels'         => $pixels,
-					'main_bytes'     => $main_bytes,
-					'unscaled_bytes' => $unscaled_bytes,
-					'unscaled_name'  => $unscaled_name,
-					'subsizes_bytes' => $subsizes_bytes,
-					'subsizes_count' => $subsizes_count,
-					'sidecar_bytes'  => $sidecar_bytes,
-					'total_bytes'    => $total_bytes,
-					'density'        => $pixels > 0 ? round( ( $main_bytes / $pixels ) * 1000000 ) : $main_bytes,
-					'is_opaque_png'  => $is_opaque_png,
-					'has_webp'       => $has_webp,
-					'is_optimized'   => is_array( $opt_meta ) && ! empty( $opt_meta['saved_bytes'] ),
-					'saved_bytes'    => ( is_array( $opt_meta ) && isset( $opt_meta['saved_bytes'] ) ) ? (int) $opt_meta['saved_bytes'] : 0,
-					'sha1'           => $sha1,
-					'alt'            => trim( (string) $row['image_alt'] ),
-					'parent_id'      => absint( $row['post_parent'] ),
-					'is_pinned'      => $is_pinned,
-					'usage_status'   => $usage_status,
-					'refs_count'     => count( $active_refs ) + count( $draft_refs ),
-					'refs'           => array_slice( array_merge( $active_refs, $draft_refs ), 0, 5 ),
-					'thumb_url'      => $thumb_url,
-					'full_url'       => $full_url,
-				);
 			}
 
 			self::$catalog_cache = array(
-				'index' => $index,
+				'index' => $raw,
 				'items' => $items,
 			);
 			return self::$catalog_cache;
 		}
 
 		/**
-		 * خلاصهٔ آماری کامل داشبورد تصاویر، توزیع فرمت‌ها و فرصت‌های آزادسازی سریع (Quick Wins).
+		 * حذف فوری آیتم‌ها یا فایل‌های یتیم از کاتالوگ کش‌شده روی دیسک (در ۵ میلی‌ثانیه بدون نیاز به اسکن مجدد کل سایت!).
+		 *
+		 * @param int[]    $removed_ids شناسه‌های پیوست حذف/قرنطینه‌شده.
+		 * @param string[] $removed_paths مسیرهای نسبی فایل‌های یتیم حذف‌شده.
+		 * @return void
+		 */
+		public static function remove_from_cached_catalog( array $removed_ids, array $removed_paths = array() ) {
+			$raw = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
+			if ( ! is_array( $raw ) ) {
+				self::flush_runtime_cache();
+				return;
+			}
+
+			$freed_bytes  = 0;
+			$freed_inodes = 0;
+
+			foreach ( $removed_ids as $id ) {
+				$aid = absint( $id );
+				if ( isset( $raw['items'][ $aid ] ) ) {
+					$freed_bytes  += (int) $raw['items'][ $aid ]['total_bytes'];
+					$freed_inodes += 1 + (int) $raw['items'][ $aid ]['subsizes_count'];
+					unset( $raw['items'][ $aid ] );
+				} elseif ( isset( $raw['items'][ (string) $aid ] ) ) {
+					$freed_bytes  += (int) $raw['items'][ (string) $aid ]['total_bytes'];
+					$freed_inodes += 1 + (int) $raw['items'][ (string) $aid ]['subsizes_count'];
+					unset( $raw['items'][ (string) $aid ] );
+				}
+			}
+
+			if ( ! empty( $removed_paths ) && ! empty( $raw['orphans'] ) && is_array( $raw['orphans'] ) ) {
+				$path_map    = array_fill_keys( $removed_paths, true );
+				$next_orphan = array();
+				foreach ( $raw['orphans'] as $o ) {
+					if ( isset( $path_map[ $o['rel_path'] ] ) ) {
+						$freed_bytes += (int) $o['bytes'];
+						++$freed_inodes;
+						continue;
+					}
+					$next_orphan[] = $o;
+				}
+				$raw['orphans'] = $next_orphan;
+			}
+
+			$raw['disk_bytes']   = max( 0, (int) $raw['disk_bytes'] - $freed_bytes );
+			$raw['total_inodes'] = max( 0, (int) $raw['total_inodes'] - $freed_inodes );
+			TisaCase_Optimizer_Reference_Scanner::write_persisted_catalog( $raw );
+			self::flush_runtime_cache();
+		}
+
+		/**
+		 * به‌روزرسانی درجای مشخصات چند پیوست در کاتالوگ کش‌شده (پس از فشرده‌سازی، پاک‌سازی -scaled، بازیابی یا تغییر Alt).
+		 *
+		 * @param int[] $attachment_ids شناسه‌های تغییرکرده.
+		 * @return void
+		 */
+		public static function refresh_items_in_cached_catalog( array $attachment_ids ) {
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $attachment_ids ) ) ) );
+			if ( empty( $ids ) ) {
+				return;
+			}
+			$raw = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
+			if ( ! is_array( $raw ) ) {
+				self::flush_runtime_cache();
+				return;
+			}
+
+			$uploads = wp_upload_dir();
+			$basedir = ! empty( $uploads['basedir'] ) ? wp_normalize_path( trailingslashit( realpath( $uploads['basedir'] ) ? realpath( $uploads['basedir'] ) : $uploads['basedir'] ) ) : '';
+			$baseurl = ! empty( $uploads['baseurl'] ) ? trailingslashit( $uploads['baseurl'] ) : '';
+
+			foreach ( $ids as $aid ) {
+				$post = get_post( $aid );
+				if ( ! $post || 'attachment' !== $post->post_type ) {
+					unset( $raw['items'][ $aid ], $raw['items'][ (string) $aid ] );
+					continue;
+				}
+
+				$prev     = isset( $raw['items'][ $aid ] ) ? $raw['items'][ $aid ] : ( isset( $raw['items'][ (string) $aid ] ) ? $raw['items'][ (string) $aid ] : array() );
+				$rel_file = ltrim( wp_normalize_path( (string) get_post_meta( $aid, '_wp_attached_file', true ) ), '/' );
+				$meta     = wp_get_attachment_metadata( $aid );
+				$opt_meta = get_post_meta( $aid, '_tco_optimized', true );
+				$alt_txt  = trim( (string) get_post_meta( $aid, '_wp_attachment_image_alt', true ) );
+				$mime     = strtolower( (string) $post->post_mime_type );
+
+				$subdir   = '' !== $rel_file ? wp_normalize_path( dirname( $rel_file ) ) : '';
+				$subdir   = ( '.' === $subdir || '' === $subdir ) ? '' : trailingslashit( $subdir );
+				$main_abs = ( '' !== $basedir && '' !== $rel_file ) ? $basedir . $rel_file : '';
+				$exists   = ( '' !== $main_abs && is_file( $main_abs ) );
+				$main_b   = $exists ? max( 0, (int) @filesize( $main_abs ) ) : 0;
+				$unsc_b   = 0;
+				$unsc_n   = '';
+				$sub_b    = 0;
+				$sub_c    = 0;
+				$side_b   = 0;
+				$has_webp = ( 'image/webp' === $mime );
+
+				if ( $exists && is_file( $main_abs . '.webp' ) ) {
+					$has_webp = true;
+					$side_b  += max( 0, (int) @filesize( $main_abs . '.webp' ) );
+				}
+				if ( is_array( $meta ) && '' !== $basedir ) {
+					if ( ! empty( $meta['original_image'] ) ) {
+						$oabs = $basedir . $subdir . basename( (string) $meta['original_image'] );
+						if ( $oabs !== $main_abs && is_file( $oabs ) ) {
+							$unsc_n = basename( (string) $meta['original_image'] );
+							$unsc_b = max( 0, (int) @filesize( $oabs ) );
+						}
+					}
+					if ( ! empty( $meta['sizes'] ) && is_array( $meta['sizes'] ) ) {
+						$seen = array();
+						foreach ( $meta['sizes'] as $sv ) {
+							if ( empty( $sv['file'] ) ) {
+								continue;
+							}
+							$sabs = $basedir . $subdir . basename( (string) $sv['file'] );
+							if ( $sabs !== $main_abs && ! isset( $seen[ $sabs ] ) && is_file( $sabs ) ) {
+								$seen[ $sabs ] = true;
+								++$sub_c;
+								$sub_b += max( 0, (int) @filesize( $sabs ) );
+								if ( is_file( $sabs . '.webp' ) ) {
+									$side_b += max( 0, (int) @filesize( $sabs . '.webp' ) );
+								}
+							}
+						}
+					}
+				}
+
+				$w      = ( is_array( $meta ) && isset( $meta['width'] ) ) ? absint( $meta['width'] ) : 0;
+				$h      = ( is_array( $meta ) && isset( $meta['height'] ) ) ? absint( $meta['height'] ) : 0;
+				$pixels = $w * $h;
+				$tot_b  = $main_b + $unsc_b + $sub_b + $side_b;
+				$th_f   = ( is_array( $meta ) && ! empty( $meta['sizes']['thumbnail']['file'] ) ) ? $subdir . basename( (string) $meta['sizes']['thumbnail']['file'] ) : '';
+
+				$raw['items'][ $aid ] = array(
+					'id'             => $aid,
+					'title'          => (string) $post->post_title,
+					'filename'       => '' !== $rel_file ? basename( $rel_file ) : '#' . $aid,
+					'rel_path'       => $rel_file,
+					'folder'         => rtrim( $subdir, '/' ),
+					'mime'           => $mime,
+					'format'         => TisaCase_Optimizer_Reference_Scanner::short_format_label( $mime ),
+					'date'           => substr( (string) $post->post_date, 0, 10 ),
+					'exists'         => $exists,
+					'mtime'          => $exists ? (int) @filemtime( $main_abs ) : 0,
+					'width'          => $w,
+					'height'         => $h,
+					'pixels'         => $pixels,
+					'main_bytes'     => $main_b,
+					'unscaled_bytes' => $unsc_b,
+					'unscaled_name'  => $unsc_n,
+					'subsizes_bytes' => $sub_b,
+					'subsizes_count' => $sub_c,
+					'sidecar_bytes'  => $side_b,
+					'total_bytes'    => $tot_b,
+					'density'        => $pixels > 0 ? round( ( $main_b / $pixels ) * 1000000 ) : $main_b,
+					'is_opaque_png'  => ( $exists && 'image/png' === $mime ) ? TisaCase_Optimizer_Reference_Scanner::fast_detect_opaque_png( $main_abs ) : false,
+					'has_webp'       => $has_webp,
+					'is_optimized'   => is_array( $opt_meta ) && ! empty( $opt_meta['saved_bytes'] ),
+					'saved_bytes'    => ( is_array( $opt_meta ) && isset( $opt_meta['saved_bytes'] ) ) ? (int) $opt_meta['saved_bytes'] : 0,
+					'sha1'           => isset( $prev['sha1'] ) ? (string) $prev['sha1'] : '',
+					'alt'            => $alt_txt,
+					'parent_id'      => absint( $post->post_parent ),
+					'is_pinned'      => ! empty( $prev['is_pinned'] ),
+					'usage_status'   => isset( $prev['usage_status'] ) ? (string) $prev['usage_status'] : ( $exists ? 'strict_unused' : 'missing_file' ),
+					'refs_count'     => isset( $prev['refs_count'] ) ? (int) $prev['refs_count'] : 0,
+					'refs'           => isset( $prev['refs'] ) && is_array( $prev['refs'] ) ? $prev['refs'] : array(),
+					'thumb_url'      => ( '' !== $baseurl && '' !== $th_f ) ? $baseurl . $th_f : ( ( '' !== $baseurl && '' !== $rel_file ) ? $baseurl . $rel_file : '' ),
+					'full_url'       => ( '' !== $baseurl && '' !== $rel_file ) ? $baseurl . $rel_file : '',
+				);
+			}
+
+			TisaCase_Optimizer_Reference_Scanner::write_persisted_catalog( $raw );
+			self::flush_runtime_cache();
+		}
+
+		/**
+		 * خلاصهٔ آماری کامل داشبورد تصاویر و Quick Wins.
 		 *
 		 * @param bool $force_rescan بازسازی اجباری اسکن.
 		 * @return array<string,mixed>
 		 */
 		public static function overview_stats( $force_rescan = false ) {
-			$cat    = self::build_catalog( $force_rescan );
-			$items  = $cat['items'];
-			$index  = $cat['index'];
-			$vault  = TisaCase_Optimizer_Vault::summary();
-			$saved  = TisaCase_Optimizer_Settings::stats();
+			$cat   = self::build_catalog( $force_rescan );
+			$items = $cat['items'];
+			$index = $cat['index'];
+			$vault = TisaCase_Optimizer_Vault::summary();
+			$saved = TisaCase_Optimizer_Settings::stats();
 
 			$sum_main       = 0;
 			$sum_unscaled   = 0;
@@ -267,13 +285,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$opaque_png_cnt = 0;
 			$missing_alt    = 0;
 			$formats        = array(
-				'JPEG' => array( 'count' => 0, 'bytes' => 0 ),
-				'PNG'  => array( 'count' => 0, 'bytes' => 0 ),
-				'WEBP' => array( 'count' => 0, 'bytes' => 0 ),
-				'AVIF' => array( 'count' => 0, 'bytes' => 0 ),
+				'JPEG'  => array( 'count' => 0, 'bytes' => 0 ),
+				'PNG'   => array( 'count' => 0, 'bytes' => 0 ),
+				'WEBP'  => array( 'count' => 0, 'bytes' => 0 ),
+				'AVIF'  => array( 'count' => 0, 'bytes' => 0 ),
 				'OTHER' => array( 'count' => 0, 'bytes' => 0 ),
 			);
-			$hash_buckets = array();
+			$hash_buckets   = array();
 
 			foreach ( $items as $it ) {
 				$sum_main     += $it['main_bytes'];
@@ -337,21 +355,22 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$media_total = $sum_main + $sum_unscaled + $sum_subsizes + $sum_sidecar;
 
 			return array(
-				'scan_built_at'   => isset( $index['built_at'] ) ? $index['built_at'] : '',
-				'scan_ms'         => isset( $index['duration_ms'] ) ? (int) $index['duration_ms'] : 0,
-				'total_images'    => count( $items ),
-				'total_inodes'    => isset( $index['total_inodes'] ) ? (int) $index['total_inodes'] : 0,
-				'uploads_bytes'   => max( $media_total, isset( $index['disk_bytes'] ) ? (int) $index['disk_bytes'] : 0 ),
-				'media_bytes'     => $media_total,
-				'layers'          => array(
+				'needs_scan'     => false,
+				'scan_built_at'  => isset( $index['built_at'] ) ? $index['built_at'] : '',
+				'scan_ms'        => isset( $index['duration_ms'] ) ? (int) $index['duration_ms'] : 0,
+				'total_images'   => count( $items ),
+				'total_inodes'   => max( count( $items ), isset( $index['total_inodes'] ) ? (int) $index['total_inodes'] : 0 ),
+				'uploads_bytes'  => max( $media_total, isset( $index['disk_bytes'] ) ? (int) $index['disk_bytes'] : 0 ),
+				'media_bytes'    => $media_total,
+				'layers'         => array(
 					'main_bytes'       => $sum_main,
 					'subsizes_bytes'   => $sum_subsizes,
 					'unscaled_bytes'   => $sum_unscaled,
 					'sidecar_bytes'    => $sum_sidecar,
 					'quarantine_bytes' => $vault['quarantine_bytes'] + $vault['originals_bytes'],
 				),
-				'formats'         => $formats,
-				'quick_wins'      => array(
+				'formats'        => $formats,
+				'quick_wins'     => array(
 					'unused'     => array(
 						'count'        => $unused_count,
 						'bytes'        => $unused_bytes,
@@ -379,20 +398,19 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 						'missing_alt' => $missing_alt,
 					),
 				),
-				'vault'           => $vault,
-				'lifetime_stats'  => $saved,
+				'vault'          => $vault,
+				'lifetime_stats' => $saved,
 			);
 		}
 
 		/**
-		 * جستجو، فیلتر و مرتب‌سازی پیشرفتهٔ تصاویر برای «سنگین‌ترین تصاویر» و «تصاویر بدون استفاده».
+		 * جستجو، فیلتر و مرتب‌سازی فوری تصاویر از روی کاتالوگ حافظه/دیسک.
 		 *
-		 * @param array<string,mixed> $args پارامترهای فیلتر و مرتب‌سازی.
+		 * @param array<string,mixed> $args پارامترهای کوئری.
 		 * @return array<string,mixed>
 		 */
 		public static function query_items( array $args ) {
-			$force    = ! empty( $args['force_rescan'] );
-			$cat      = self::build_catalog( $force );
+			$cat      = self::build_catalog( false );
 			$search   = isset( $args['search'] ) ? mb_strtolower( trim( sanitize_text_field( (string) $args['search'] ) ) ) : '';
 			$min_size = isset( $args['min_bytes'] ) ? max( 0, (int) $args['min_bytes'] ) : 0;
 			$format   = isset( $args['format'] ) ? strtoupper( sanitize_text_field( (string) $args['format'] ) ) : 'ALL';
@@ -403,7 +421,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$page     = max( 1, isset( $args['page'] ) ? (int) $args['page'] : 1 );
 			$per_page = max( 10, min( 100, isset( $args['per_page'] ) ? (int) $args['per_page'] : 25 ) );
 
-			// حالت ویژهٔ فایل‌های فیزیکی رهاشده روی دیسک.
 			if ( 'unregistered_disk' === $usage ) {
 				$orphans = isset( $cat['index']['orphans'] ) ? (array) $cat['index']['orphans'] : array();
 				if ( '' !== $search ) {
@@ -502,70 +519,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				'pages'         => max( 1, (int) ceil( $total / $per_page ) ),
 				'rows'          => array_slice( $matched, ( $page - 1 ) * $per_page, $per_page ),
 			);
-		}
-
-		/**
-		 * بررسی سریع اینکه آیا یک تصویر PNG واقعاً دارای پیکسل نیمه‌شفاف/شفاف هست یا خیر.
-		 *
-		 * @param string $abs_path مسیر فایل PNG.
-		 * @return bool true اگر ۱۰۰٪ مات باشد (یعنی بی‌دلیل PNG ذخیره شده است!).
-		 */
-		public static function detect_opaque_png( $abs_path ) {
-			if ( ! function_exists( 'imagecreatefrompng' ) || ! is_file( $abs_path ) ) {
-				return false;
-			}
-			// جلوگیری از مصرف حافظه روی فایل‌های فوق‌بزرگ.
-			if ( (int) @filesize( $abs_path ) > 18 * 1024 * 1024 ) {
-				return false;
-			}
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			$im = @imagecreatefrompng( $abs_path );
-			if ( ! $im ) {
-				return false;
-			}
-			$w = imagesx( $im );
-			$h = imagesy( $im );
-			if ( $w <= 0 || $h <= 0 ) {
-				imagedestroy( $im );
-				return false;
-			}
-
-			// نمونه‌برداری شبکه‌ای تا سقف ۶۰×۶۰ نقطه در کل تصویر (اجرای زیر ۳ میلی‌ثانیه).
-			$step_x = max( 1, (int) floor( $w / 60 ) );
-			$step_y = max( 1, (int) floor( $h / 60 ) );
-
-			for ( $y = 0; $y < $h; $y += $step_y ) {
-				for ( $x = 0; $x < $w; $x += $step_x ) {
-					$rgba  = imagecolorat( $im, $x, $y );
-					$alpha = ( $rgba >> 24 ) & 0x7F; // در GD: 0 = کاملاً مات، 127 = کاملاً شفاف.
-					if ( $alpha > 0 ) {
-						imagedestroy( $im );
-						return false;
-					}
-				}
-			}
-
-			imagedestroy( $im );
-			return true;
-		}
-
-		/**
-		 * برچسب کوتاه فرمت تصویر.
-		 *
-		 * @param string $mime نوع MIME.
-		 * @return string
-		 */
-		private static function short_format_label( $mime ) {
-			$map = array(
-				'image/jpeg'    => 'JPEG',
-				'image/jpg'     => 'JPEG',
-				'image/png'     => 'PNG',
-				'image/webp'    => 'WEBP',
-				'image/avif'    => 'AVIF',
-				'image/gif'     => 'GIF',
-				'image/svg+xml' => 'SVG',
-			);
-			return isset( $map[ $mime ] ) ? $map[ $mime ] : strtoupper( str_replace( 'image/', '', $mime ) );
 		}
 	}
 }

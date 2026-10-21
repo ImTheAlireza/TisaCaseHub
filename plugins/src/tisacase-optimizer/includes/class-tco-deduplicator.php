@@ -266,8 +266,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Deduplicator' ) ) {
 			if ( $processed > 0 ) {
 				TisaCase_Optimizer_Settings::bump_stats( array( 'merged_duplicates' => $processed ) );
 			}
-			TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
-			TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+			TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $dup_ids );
 
 			return array(
 				'master_id'   => $master_id,

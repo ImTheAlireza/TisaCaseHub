@@ -119,4 +119,58 @@ for (const modId of ['system', 'database', 'frontend']) {
 	assert.ok(window.document.getElementById('tco-main').textContent.length > 60);
 }
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۹ بخش تست JSDOM) با موفقیت کامل اجرا شدند!');
+// ۱۰. تست اجرای اسکن مرحله‌ای `scan_step` و محافظت در برابر خطای HTML غیر-JSON (مثل 504 کلودفلر) بدون گیرکردن اسپینر!
+window.document.querySelector('[data-go-module="images"]').click();
+window.document.querySelector('[data-go-subtab="overview"]').click();
+await flush();
+
+const baseFetch = window.fetch;
+let stepCalls = 0;
+window.fetch = async function (url, opts) {
+	const body = String((opts && opts.body) || '');
+	if (body.includes('op=scan_step')) {
+		stepCalls += 1;
+		if (stepCalls === 1) {
+			const p1 = JSON.stringify({
+				success: true,
+				data: {
+					done: false,
+					stage: 'files_inspect',
+					stage_num: 4,
+					stage_label: 'گام ۴ از ۵: محاسبهٔ حجم واقعی دیسک…',
+					detail_label: '۴۰۰ از ۱۲۰۰ تصویر بررسی شد',
+					percent: 72,
+					elapsed_sec: 2,
+				},
+			});
+			return { ok: true, status: 200, text: async () => p1, json: async () => JSON.parse(p1) };
+		}
+	}
+	return baseFetch(url, opts);
+};
+
+window.document.getElementById('tco-rescan-btn').click();
+await flush();
+assert.ok(stepCalls >= 2, 'ماشین اسکن مرحله‌ای باید چند تیک پیاپی scan_step اجرا کند و کامل شود');
+assert.match(window.document.getElementById('tco-main').textContent, /کالبدشکافی مصرف فضای دیسک/);
+
+// تست پاسخ HTML 504 غیر-JSON سرور (نباید هرگز روی اسپینر گیر کند و باید کارت ادامه را نمایش دهد)
+window.fetch = async function () {
+	return {
+		ok: false,
+		status: 504,
+		text: async () => '<html><body>504 Gateway Time-out</body></html>',
+	};
+};
+window.document.getElementById('tco-rescan-btn').click();
+await new Promise((r) => setTimeout(r, 1850));
+assert.match(window.document.getElementById('tco-main').textContent, /وقفه در ارتباط با سرور/);
+assert.ok(window.document.getElementById('tco-resume-scan-btn'), 'دکمهٔ ادامه از آخرین نقطهٔ ذخیره‌شده باید نمایش داده شود');
+
+// بازگردانی شبکه و کلیک روی «ادامه از آخرین نقطهٔ ذخیره‌شده»
+window.fetch = baseFetch;
+window.document.getElementById('tco-resume-scan-btn').click();
+await flush();
+assert.match(window.document.getElementById('tco-main').textContent, /کالبدشکافی مصرف فضای دیسک/);
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۰ بخش شامل اسکن مرحله‌ای scan_step و ریکاوری خطای ۵۰۴) با موفقیت اجرا شدند!');

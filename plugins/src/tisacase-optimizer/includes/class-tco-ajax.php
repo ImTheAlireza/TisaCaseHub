@@ -1,6 +1,6 @@
 <?php
 /**
- * مسیریاب مرکزی و امن AJAX برای تمام عملیات‌های مرکز بهینه‌سازی تیساکیس.
+ * مسیریاب مرکزی و ضد-تایم‌اوت AJAX برای تمام عملیات‌های مرکز بهینه‌سازی تیساکیس.
  *
  * @package TisaCase_Optimizer
  */
@@ -10,13 +10,19 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 
 	/**
-	 * هندلر AJAX با سقف زمانی تطبیقی و اعتبارسنجی سخت‌گیرانه.
+	 * هندلر AJAX با سقف زمانی تطبیقی، اسکن مرحله‌ای `scan_step` و محافظ خطای Fatal سطح سرور.
 	 */
 	final class TisaCase_Optimizer_Ajax {
 
 		const ACTION     = 'tisacase_optimizer';
 		const NONCE_NAME = 'tisacase_optimizer_nonce';
-		const BUDGET_SEC = 4.5; // سقف زمانی هر تیک دسته‌ای برای جلوگیری از تایم‌اوت سرور.
+		const BUDGET_SEC = 3.5;
+
+		/** @var string|null بافر اضطراری برای گزارش JSON تمیز در صورت اتمام حافظه/زمان PHP */
+		private static $emergency_buffer = null;
+
+		/** @var bool آیا پاسخ JSON با موفقیت ارسال شد؟ */
+		private static $responded = false;
 
 		/**
 		 * بررسی سطح دسترسی مجاز.
@@ -38,16 +44,73 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		}
 
 		/**
-		 * دریافت، اعتبارسنجی و هدایت درخواست‌های AJAX.
+		 * ارسال JSON موفقیت و علامت‌گذاری پایان سالم پاسخ.
+		 *
+		 * @param mixed $data دادهٔ پاسخ.
+		 * @return void
+		 */
+		private static function ok( $data ) {
+			self::$responded        = true;
+			self::$emergency_buffer = null;
+			wp_send_json_success( $data );
+		}
+
+		/**
+		 * ارسال JSON خطا و علامت‌گذاری پایان پاسخ.
+		 *
+		 * @param string $message پیام خطا.
+		 * @param int    $status کد HTTP.
+		 * @return void
+		 */
+		private static function fail( $message, $status = 400 ) {
+			self::$responded        = true;
+			self::$emergency_buffer = null;
+			wp_send_json_error( array( 'message' => $message ), $status );
+		}
+
+		/**
+		 * دریافت، اعتبارسنجی و هدایت درخواست‌های AJAX با محافظت ۱۰۰٪ در برابر Fatal Error.
 		 *
 		 * @return void
 		 */
 		public static function dispatch() {
+			self::$responded        = false;
+			self::$emergency_buffer = str_repeat( 'x', 65536 );
+
+			register_shutdown_function(
+				static function () {
+					self::$emergency_buffer = null;
+					if ( self::$responded ) {
+						return;
+					}
+					$err = error_get_last();
+					if ( $err && in_array( (int) $err['type'], array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR ), true ) ) {
+						if ( ! headers_sent() ) {
+							header( 'Content-Type: application/json; charset=utf-8' );
+						}
+						echo wp_json_encode(
+							array(
+								'success' => false,
+								'data'    => array(
+									'message' => sprintf(
+										'خطای سطح سرور PHP: %s (خط %d در %s)',
+										(string) $err['message'],
+										(int) $err['line'],
+										basename( (string) $err['file'] )
+									),
+								),
+							),
+							JSON_UNESCAPED_UNICODE
+						);
+					}
+				}
+			);
+
 			if ( ! check_ajax_referer( self::NONCE_NAME, 'nonce', false ) ) {
-				wp_send_json_error( array( 'message' => __( 'نشست امنیتی منقضی شده است؛ صفحه را یک‌بار نوسازی کنید.', 'tisacase-optimizer' ) ), 403 );
+				self::fail( __( 'نشست امنیتی منقضی شده است؛ صفحه را یک‌بار نوسازی کنید.', 'tisacase-optimizer' ), 403 );
 			}
 			if ( ! self::user_can_access() ) {
-				wp_send_json_error( array( 'message' => __( 'شما مجوز دسترسی به مرکز بهینه‌سازی را ندارید.', 'tisacase-optimizer' ) ), 403 );
+				self::fail( __( 'شما مجوز دسترسی به مرکز بهینه‌سازی را ندارید.', 'tisacase-optimizer' ), 403 );
 			}
 
 			if ( function_exists( 'ignore_user_abort' ) ) {
@@ -62,24 +125,37 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					case 'overview':
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$force = ! empty( $_POST['force_rescan'] );
-						wp_send_json_success( TisaCase_Optimizer_Media_Inspector::overview_stats( $force ) );
+						if ( $force || ! TisaCase_Optimizer_Media_Inspector::has_ready_catalog() ) {
+							self::ok( array( 'needs_scan' => true ) );
+						}
+						self::ok( TisaCase_Optimizer_Media_Inspector::overview_stats( false ) );
+						break;
+
+					case 'scan_step':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$reset = ! empty( $_POST['reset'] );
+						$step  = TisaCase_Optimizer_Reference_Scanner::step_scan( $reset );
+						if ( ! empty( $step['done'] ) ) {
+							TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+							$step['overview'] = TisaCase_Optimizer_Media_Inspector::overview_stats( false );
+						}
+						self::ok( $step );
 						break;
 
 					case 'query_media':
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$raw  = wp_unslash( $_POST );
 						$data = TisaCase_Optimizer_Media_Inspector::query_items( $raw );
-						wp_send_json_success( $data );
+						self::ok( $data );
 						break;
 
 					case 'toggle_pin':
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$ids    = self::read_int_list( 'ids' );
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$pin    = ! empty( $_POST['pin'] );
 						$pinned = TisaCase_Optimizer_Settings::set_pinned( $ids, $pin );
 						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
-						wp_send_json_success(
+						self::ok(
 							array(
 								'pinned_ids' => $pinned,
 								'overview'   => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
@@ -100,9 +176,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						break;
 
 					case 'get_duplicates':
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
-						$force = ! empty( $_POST['force_rescan'] );
-						wp_send_json_success( TisaCase_Optimizer_Deduplicator::find_duplicate_groups( $force ) );
+						self::ok( TisaCase_Optimizer_Deduplicator::find_duplicate_groups( false ) );
 						break;
 
 					case 'merge_duplicates':
@@ -110,11 +184,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						break;
 
 					case 'get_subsizes':
-						wp_send_json_success( array( 'sizes' => TisaCase_Optimizer_Subsizes::inspect_all_sizes() ) );
+						self::ok( array( 'sizes' => TisaCase_Optimizer_Subsizes::inspect_all_sizes() ) );
 						break;
 
 					case 'save_subsizes':
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$disabled = self::read_string_list( 'disabled_sizes' );
 						$updated  = TisaCase_Optimizer_Settings::update( array( 'disabled_sizes' => $disabled ) );
 						TisaCase_Optimizer_Session::log(
@@ -124,7 +197,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							0,
 							sprintf( '%d سایز غیرفعال شد', count( $disabled ) )
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'settings' => $updated,
 								'sizes'    => TisaCase_Optimizer_Subsizes::inspect_all_sizes(),
@@ -141,7 +214,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							$res['deleted_files'],
 							$res['saved_bytes']
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'result'   => $res,
 								'sizes'    => TisaCase_Optimizer_Subsizes::inspect_all_sizes(),
@@ -159,7 +232,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						$flt  = isset( $_POST['seo_filter'] ) ? sanitize_key( wp_unslash( (string) $_POST['seo_filter'] ) ) : 'missing_alt';
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$page = isset( $_POST['page'] ) ? max( 1, (int) $_POST['page'] ) : 1;
-						wp_send_json_success( TisaCase_Optimizer_Image_SEO::audit( $flt, $page ) );
+						self::ok( TisaCase_Optimizer_Image_SEO::audit( $flt, $page ) );
 						break;
 
 					case 'save_single_seo':
@@ -170,7 +243,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$title = isset( $_POST['title'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['title'] ) ) : null;
 						TisaCase_Optimizer_Image_SEO::update_single( $aid, $alt, $title );
-						wp_send_json_success( array( 'id' => $aid ) );
+						self::ok( array( 'id' => $aid ) );
 						break;
 
 					case 'bulk_generate_seo':
@@ -196,7 +269,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							$count,
 							0
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'updated' => $count,
 								'audit'   => TisaCase_Optimizer_Image_SEO::audit( 'missing_alt', 1 ),
@@ -205,19 +278,27 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						break;
 
 					case 'get_vault':
-						wp_send_json_success( self::vault_payload() );
+						self::ok( self::vault_payload() );
 						break;
 
 					case 'restore_quarantine':
-						$qids     = self::read_string_list( 'item_ids' );
-						$restored = 0;
+						$qids         = self::read_string_list( 'item_ids' );
+						$restored     = 0;
+						$restored_ids = array();
 						foreach ( $qids as $qid ) {
 							$r = TisaCase_Optimizer_Vault::restore_quarantine_item( $qid );
 							if ( ! is_wp_error( $r ) ) {
 								++$restored;
+								if ( is_int( $r ) && $r > 0 ) {
+									$restored_ids[] = $r;
+								} elseif ( is_array( $r ) && ! empty( $r['attachment_id'] ) ) {
+									$restored_ids[] = absint( $r['attachment_id'] );
+								}
 							}
 						}
-						TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
+						if ( ! empty( $restored_ids ) ) {
+							TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $restored_ids );
+						}
 						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
 						TisaCase_Optimizer_Session::log(
 							'restore_quarantine',
@@ -225,7 +306,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							$restored,
 							0
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'restored' => $restored,
 								'vault'    => self::vault_payload(),
@@ -257,7 +338,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							$count,
 							$freed
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'deleted'     => $count,
 								'saved_bytes' => $freed,
@@ -271,11 +352,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						$aid = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
 						$res = TisaCase_Optimizer_Vault::restore_original_backup( $aid );
 						if ( is_wp_error( $res ) ) {
-							wp_send_json_error( array( 'message' => $res->get_error_message() ), 400 );
+							self::fail( $res->get_error_message(), 400 );
 						}
-						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+						TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( array( $aid ) );
 						TisaCase_Optimizer_Session::log( 'restore_original', __( 'بازگردانی فایل اصلی اولیهٔ تصویر', 'tisacase-optimizer' ), 1, 0 );
-						wp_send_json_success( array( 'vault' => self::vault_payload() ) );
+						self::ok( array( 'vault' => self::vault_payload() ) );
 						break;
 
 					case 'purge_originals':
@@ -286,7 +367,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							$res['count'],
 							$res['bytes']
 						);
-						wp_send_json_success(
+						self::ok(
 							array(
 								'result' => $res,
 								'vault'  => self::vault_payload(),
@@ -296,28 +377,27 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 
 					case 'clear_history':
 						TisaCase_Optimizer_Session::clear_history();
-						wp_send_json_success( array( 'vault' => self::vault_payload() ) );
+						self::ok( array( 'vault' => self::vault_payload() ) );
 						break;
 
 					case 'save_settings':
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$raw_settings = isset( $_POST['settings'] ) && is_array( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
 						$updated      = TisaCase_Optimizer_Settings::update( $raw_settings );
-						TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
 						TisaCase_Optimizer_Session::log( 'save_settings', __( 'ذخیرهٔ تنظیمات مرکز بهینه‌سازی', 'tisacase-optimizer' ), 0, 0, '', 'info' );
-						wp_send_json_success( array( 'settings' => $updated ) );
+						self::ok( array( 'settings' => $updated ) );
 						break;
 
 					default:
-						wp_send_json_error( array( 'message' => __( 'عملیات درخواستی شناخته نشد.', 'tisacase-optimizer' ) ), 400 );
+						self::fail( __( 'عملیات درخواستی شناخته نشد.', 'tisacase-optimizer' ), 400 );
 				}
 			} catch ( Throwable $e ) {
-				wp_send_json_error( array( 'message' => $e->getMessage() ), 500 );
+				self::fail( $e->getMessage(), 500 );
 			}
 		}
 
 		/**
-		 * حذف یا قرنطینهٔ تکی/گروهی پیوست‌ها و فایل‌های یتیم دیسک با رعایت بودجهٔ زمانی سرور.
+		 * حذف یا قرنطینهٔ تکی/گروهی با به‌روزرسانی درجای کاتالوگ (بدون اسکن مجدد سنگین!).
 		 *
 		 * @return void
 		 */
@@ -333,6 +413,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 
 			$pinned_map  = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
 			$done_ids    = array();
+			$removed_ids = array();
 			$done_paths  = array();
 			$saved_bytes = 0;
 
@@ -344,12 +425,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				if ( 'permanent' === $mode ) {
 					$res = TisaCase_Optimizer_Vault::delete_attachment_permanently( $aid );
 					if ( ! is_wp_error( $res ) ) {
-						$saved_bytes += (int) $res['saved_bytes'];
+						$saved_bytes   += (int) $res['saved_bytes'];
+						$removed_ids[]  = $aid;
 					}
 				} else {
 					$res = TisaCase_Optimizer_Vault::quarantine_attachment( $aid, 'unused' );
 					if ( ! is_wp_error( $res ) ) {
-						$saved_bytes += (int) $res['total_bytes'];
+						$saved_bytes   += (int) $res['total_bytes'];
+						$removed_ids[]  = $aid;
 					}
 				}
 				$done_ids[] = $aid;
@@ -386,8 +469,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			}
 
 			$count_done = count( $done_ids ) + count( $done_paths );
-			TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
-			TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+			TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $removed_ids, $done_paths );
 
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			if ( ! empty( $_POST['log_final'] ) && $count_done > 0 ) {
@@ -401,18 +483,19 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				);
 			}
 
-			wp_send_json_success(
+			self::ok(
 				array(
 					'done_ids'    => $done_ids,
 					'done_paths'  => $done_paths,
 					'saved_bytes' => $saved_bytes,
 					'mode'        => $mode,
+					'overview'    => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
 				)
 			);
 		}
 
 		/**
-		 * فشرده‌سازی و تبدیل دسته‌ای تصاویر با بودجهٔ زمانی تطبیقی.
+		 * فشرده‌سازی و تبدیل دسته‌ای با به‌روزرسانی درجای کاتالوگ.
 		 *
 		 * @return void
 		 */
@@ -435,7 +518,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					)
 				);
 				$ids = isset( $q['matching_ids'] ) ? array_slice( (array) $q['matching_ids'], 0, 500 ) : array();
-				wp_send_json_success(
+				self::ok(
 					array(
 						'queue_ids' => $ids,
 						'total'     => count( $ids ),
@@ -444,6 +527,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			}
 
 			$processed   = array();
+			$touched_ids = array();
 			$saved_total = 0;
 
 			foreach ( $ids as $aid ) {
@@ -455,8 +539,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						'error' => $res->get_error_message(),
 					);
 				} else {
-					$saved_total += (int) $res['saved_bytes'];
-					$processed[]  = array(
+					$saved_total  += (int) $res['saved_bytes'];
+					$touched_ids[] = $aid;
+					$processed[]   = array(
 						'id'           => $aid,
 						'ok'           => true,
 						'before_bytes' => $res['before_bytes'],
@@ -469,6 +554,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
 					break;
 				}
+			}
+
+			if ( ! empty( $touched_ids ) ) {
+				TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $touched_ids );
 			}
 
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -485,7 +574,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				);
 			}
 
-			wp_send_json_success(
+			self::ok(
 				array(
 					'processed'   => $processed,
 					'saved_bytes' => $saved_total,
@@ -494,7 +583,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		}
 
 		/**
-		 * پاک‌سازی فایل‌های خام پنهان پشت `-scaled`.
+		 * پاک‌سازی فایل‌های خام پنهان پشت `-scaled` با به‌روزرسانی درجای کاتالوگ.
 		 *
 		 * @return void
 		 */
@@ -511,17 +600,20 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			}
 
 			$cleaned     = 0;
+			$touched_ids = array();
 			$saved_bytes = 0;
 			foreach ( $ids as $aid ) {
 				$res = TisaCase_Optimizer_Image_Processor::clean_unscaled_original( $aid );
 				if ( ! is_wp_error( $res ) && $res['saved_bytes'] > 0 ) {
 					++$cleaned;
-					$saved_bytes += (int) $res['saved_bytes'];
+					$touched_ids[] = $aid;
+					$saved_bytes  += (int) $res['saved_bytes'];
 				}
 			}
 
-			TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
-			TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+			if ( ! empty( $touched_ids ) ) {
+				TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $touched_ids );
+			}
 
 			if ( $cleaned > 0 ) {
 				TisaCase_Optimizer_Session::log(
@@ -532,7 +624,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				);
 			}
 
-			wp_send_json_success(
+			self::ok(
 				array(
 					'cleaned'     => $cleaned,
 					'saved_bytes' => $saved_bytes,
@@ -542,32 +634,34 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		}
 
 		/**
-		 * ادغام یک یا همهٔ گروه‌های تصاویر تکراری.
+		 * ادغام هوشمند تکراری‌ها با حذف فوری نسخه‌های اضافی از کاتالوگ کش‌شده.
 		 *
 		 * @return void
 		 */
 		private static function handle_merge_duplicates() {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$mode_raw    = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
-			$mode        = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
+			$mode_raw  = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
+			$mode      = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
 				? $mode_raw
 				: (string) TisaCase_Optimizer_Settings::get( 'delete_mode', 'quarantine' );
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$master_id   = isset( $_POST['master_id'] ) ? absint( $_POST['master_id'] ) : 0;
-			$dup_ids     = self::read_int_list( 'dup_ids' );
+			$master_id = isset( $_POST['master_id'] ) ? absint( $_POST['master_id'] ) : 0;
+			$dup_ids   = self::read_int_list( 'dup_ids' );
 
 			$merged_total   = 0;
 			$relinked_total = 0;
 			$saved_total    = 0;
+			$gone_ids       = array();
 
 			if ( $master_id > 0 && ! empty( $dup_ids ) ) {
 				$res = TisaCase_Optimizer_Deduplicator::merge_group( $master_id, $dup_ids, $mode );
 				if ( is_wp_error( $res ) ) {
-					wp_send_json_error( array( 'message' => $res->get_error_message() ), 400 );
+					self::fail( $res->get_error_message(), 400 );
 				}
 				$merged_total   = $res['merged'];
 				$relinked_total = $res['relinked'];
 				$saved_total    = $res['saved_bytes'];
+				$gone_ids       = $dup_ids;
 			} else {
 				$report = TisaCase_Optimizer_Deduplicator::find_duplicate_groups( false );
 				foreach ( $report['groups'] as $grp ) {
@@ -576,8 +670,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						$merged_total   += $res['merged'];
 						$relinked_total += $res['relinked'];
 						$saved_total    += $res['saved_bytes'];
+						$gone_ids        = array_merge( $gone_ids, (array) $grp['dup_ids'] );
 					}
 				}
+			}
+
+			if ( ! empty( $gone_ids ) ) {
+				TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $gone_ids );
 			}
 
 			TisaCase_Optimizer_Session::log(
@@ -588,12 +687,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				sprintf( '%d ارجاع منتقل شد', $relinked_total )
 			);
 
-			wp_send_json_success(
+			self::ok(
 				array(
 					'merged'     => $merged_total,
 					'relinked'   => $relinked_total,
 					'saved_bytes' => $saved_total,
-					'duplicates' => TisaCase_Optimizer_Deduplicator::find_duplicate_groups( true ),
+					'duplicates' => TisaCase_Optimizer_Deduplicator::find_duplicate_groups( false ),
 					'overview'   => TisaCase_Optimizer_Media_Inspector::overview_stats( false ),
 				)
 			);
@@ -615,7 +714,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					'absint',
 					(array) $wpdb->get_col( "SELECT ID FROM {$wpdb->posts} WHERE post_type = 'attachment' AND post_mime_type LIKE 'image/%' ORDER BY ID DESC" )
 				);
-				wp_send_json_success(
+				self::ok(
 					array(
 						'queue_ids' => $all_ids,
 						'total'     => count( $all_ids ),
@@ -632,6 +731,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				}
 			}
 
+			if ( ! empty( $done ) ) {
+				TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $done );
+			}
+
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			if ( ! empty( $_POST['log_final'] ) ) {
 				// phpcs:ignore WordPress.Security.NonceVerification.Missing
@@ -639,7 +742,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				TisaCase_Optimizer_Session::log( 'regen_thumbnails', __( 'بازسازی دسته‌ای زیرسایزهای بندانگشتی', 'tisacase-optimizer' ), $cnt, 0 );
 			}
 
-			wp_send_json_success( array( 'done_ids' => $done ) );
+			self::ok( array( 'done_ids' => $done ) );
 		}
 
 		/**

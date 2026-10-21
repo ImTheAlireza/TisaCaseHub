@@ -99,6 +99,15 @@
 			total: 0,
 			savedBytes: 0,
 		},
+		scan: {
+			running: false,
+			stageNum: 1,
+			stageLabel: 'آماده‌سازی موتور اسکن ۱۲لایه…',
+			detailLabel: '',
+			percent: 4,
+			elapsedSec: 0,
+		},
+		loadError: '',
 		explorerFilter: {
 			search: '',
 			sort_by: 'total_bytes',
@@ -177,15 +186,46 @@
 			}
 		});
 
-		const res = await window.fetch(boot.ajaxUrl || 'admin-ajax.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-			body: body.toString(),
-			credentials: 'same-origin',
-		});
-		const json = await res.json();
+		const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+		const timer = ctrl ? setTimeout(() => ctrl.abort(), 28000) : null;
+
+		let res;
+		try {
+			res = await window.fetch(boot.ajaxUrl || 'admin-ajax.php', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+				body: body.toString(),
+				credentials: 'same-origin',
+				signal: ctrl ? ctrl.signal : undefined,
+			});
+		} catch (netErr) {
+			if (timer) clearTimeout(timer);
+			const timedOut = netErr && netErr.name === 'AbortError';
+			throw new Error(
+				timedOut
+					? 'پاسخ سرور بیش از ۲۸ ثانیه طول کشید (Timeout شبکه/فایروال).'
+					: 'ارتباط با سرور قطع شد؛ اتصال اینترنت یا فایروال هاست را بررسی کنید.'
+			);
+		}
+		if (timer) clearTimeout(timer);
+
+		const rawText = await res.text();
+		let json = null;
+		try {
+			json = JSON.parse(rawText);
+		} catch (_parseErr) {
+			const cleanSnippet = String(rawText || '')
+				.replace(/<[^>]+>/g, ' ')
+				.replace(/\s+/g, ' ')
+				.trim()
+				.slice(0, 140);
+			throw new Error(
+				`خطای پاسخ سرور (کد HTTP ${res.status}): پاسخ معتبر JSON دریافت نشد${cleanSnippet ? ' — ' + cleanSnippet : ''}`
+			);
+		}
+
 		if (!json || !json.success) {
-			const msg = (json && json.data && json.data.message) || 'خطا در ارتباط با سرور';
+			const msg = (json && json.data && json.data.message) || `خطا در پردازش درخواست سرور (HTTP ${res.status})`;
 			throw new Error(msg);
 		}
 		return json.data;
@@ -253,10 +293,43 @@
 		</div>`;
 	}
 
+	function renderScanOrErrorCard() {
+		if (state.loadError) {
+			return `<div class="tco-card">
+				<div class="tco-card__head">
+					<div>
+						<h2 class="tco-card__title">وقفه در ارتباط با سرور هنگام بارگذاری داده</h2>
+						<p class="tco-card__desc">${esc(state.loadError)}</p>
+					</div>
+				</div>
+				<div class="tco-row-actions">
+					<button type="button" class="tisa-btn tisa-btn--primary" id="tco-resume-scan-btn">ادامه از آخرین نقطهٔ ذخیره‌شده</button>
+					<button type="button" class="tisa-btn tisa-btn--secondary" id="tco-rescan-btn">شروع اسکن تازه از صفر</button>
+				</div>
+			</div>`;
+		}
+
+		const pct = Math.max(4, Math.min(99, Number(state.scan.percent || 5)));
+		return `<div class="tco-card">
+			<div class="tco-card__head">
+				<div>
+					<h2 class="tco-card__title">${esc(state.scan.stageLabel || 'در حال اسکن مرحله‌ای ۱۲لایه و محاسبهٔ دیسک…')}</h2>
+					<p class="tco-card__desc">
+						${state.scan.detailLabel ? esc(faTextDigits(state.scan.detailLabel)) + ' · ' : ''}
+						اجرای تکه‌تکهٔ ۱٫۷۵ ثانیه‌ای ضد-تایم‌اوت (بدون فشار روی رم و CPU هاست)
+						${state.scan.elapsedSec > 0 ? ' · زمان سپری‌شده: ' + faNum(state.scan.elapsedSec) + ' ثانیه' : ''}
+					</p>
+				</div>
+				<span class="tco-pill tco-pill--ok">${faNum(pct)}٪</span>
+			</div>
+			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
+		</div>`;
+	}
+
 	function renderOverviewTab() {
 		const ov = state.overview;
-		if (!ov) {
-			return '<div class="tco-card"><div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال محاسبهٔ دقیق حجم دیسک و ایندکس ۱۲لایه…</span></div></div>';
+		if (!ov || state.scan.running || state.loadError) {
+			return renderScanOrErrorCard();
 		}
 		const layers = ov.layers || {};
 		const totalLayer = Math.max(1, (layers.main_bytes || 0) + (layers.subsizes_bytes || 0) + (layers.unscaled_bytes || 0) + (layers.quarantine_bytes || 0));
@@ -1209,18 +1282,84 @@
 		}
 	}
 
-	async function ensureDataForCurrentView(forceRescan = false) {
-		try {
-			if (!state.overview || forceRescan) {
-				state.overview = await api('overview', { force_rescan: forceRescan ? 1 : 0 });
+	async function runIncrementalScan(resetFromZero = false) {
+		if (state.scan.running) return;
+		state.loadError = '';
+		state.scan = {
+			running: true,
+			stageNum: 1,
+			stageLabel: 'گام ۱ از ۵: استخراج فهرست پیوست‌ها و آماده‌سازی اسکن ۱۲لایه…',
+			detailLabel: 'در حال شروع…',
+			percent: 4,
+			elapsedSec: 0,
+		};
+		render();
+
+		let firstTick = Boolean(resetFromZero);
+		let retries = 0;
+
+		while (true) {
+			try {
+				const step = await api('scan_step', { reset: firstTick ? 1 : 0 });
+				firstTick = false;
+				retries = 0;
+
+				state.scan.stageNum = step.stage_num || state.scan.stageNum;
+				state.scan.stageLabel = step.stage_label || state.scan.stageLabel;
+				state.scan.detailLabel = step.detail_label || '';
+				state.scan.percent = Number(step.percent || state.scan.percent);
+				state.scan.elapsedSec = Number(step.elapsed_sec || 0);
+
+				if (step.done) {
+					state.scan.running = false;
+					if (step.overview) {
+						state.overview = step.overview;
+					} else {
+						state.overview = await api('overview');
+					}
+					render();
+					return;
+				}
+				render();
+			} catch (err) {
+				retries += 1;
+				if (retries <= 2) {
+					state.scan.detailLabel = `وقفهٔ موقت شبکه — تلاش خودکار مجدد (${faNum(retries)}/۲)…`;
+					render();
+					await new Promise((r) => setTimeout(r, 800));
+					continue;
+				}
+				state.scan.running = false;
+				state.loadError = err.message || 'خطا در حین اسکن مرحله‌ای سایت';
+				render();
+				throw err;
 			}
+		}
+	}
+
+	async function ensureDataForCurrentView(forceRescan = false, resumeSaved = false) {
+		try {
+			state.loadError = '';
+			if (resumeSaved) {
+				await runIncrementalScan(false);
+			} else if (forceRescan) {
+				await runIncrementalScan(true);
+			} else if (!state.overview) {
+				const ov = await api('overview');
+				if (ov && ov.needs_scan) {
+					await runIncrementalScan(false);
+				} else {
+					state.overview = ov;
+				}
+			}
+
 			if (state.module === 'images') {
 				if (state.subtab === 'explorer') {
 					state.media = await api('query_media', state.explorerFilter);
 				} else if (state.subtab === 'unused') {
 					state.media = await api('query_media', state.unusedFilter);
 				} else if (state.subtab === 'duplicates') {
-					state.duplicates = await api('get_duplicates', { force_rescan: forceRescan ? 1 : 0 });
+					state.duplicates = await api('get_duplicates');
 				} else if (state.subtab === 'subsizes') {
 					const d = await api('get_subsizes');
 					state.subsizes = d.sizes || [];
@@ -1232,7 +1371,9 @@
 			}
 			render();
 		} catch (err) {
-			toast(err.message || 'خطا در دریافت اطلاعات', 'error');
+			state.loadError = err.message || 'خطا در دریافت اطلاعات';
+			render();
+			toast(state.loadError, 'error');
 		}
 	}
 
@@ -1262,6 +1403,9 @@
 				});
 				state.batch.done += (res.done_ids || []).length + (res.done_paths || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
+				if (res.overview) {
+					state.overview = res.overview;
+				}
 				render();
 			}
 			state.selectedIds.clear();
@@ -1271,7 +1415,8 @@
 			toast(e.message, 'error');
 		} finally {
 			state.batch.running = false;
-			await ensureDataForCurrentView(true);
+			state.overview = await api('overview');
+			await ensureDataForCurrentView(false);
 		}
 	}
 
@@ -1315,6 +1460,7 @@
 			toast(e.message, 'error');
 		} finally {
 			state.batch.running = false;
+			state.overview = await api('overview');
 			await ensureDataForCurrentView(false);
 		}
 	}
@@ -1402,10 +1548,16 @@
 			return;
 		}
 
+		if (ev.target.closest('#tco-resume-scan-btn')) {
+			toast('در حال ادامهٔ اسکن از آخرین نقطهٔ ذخیره‌شده…');
+			await ensureDataForCurrentView(false, true);
+			return;
+		}
+
 		if (ev.target.closest('#tco-rescan-btn')) {
-			toast('در حال اجرای اسکن عمیق ۱۲لایه روی کل سایت…');
+			toast('در حال اجرای اسکن مرحله‌ای ۱۲لایه روی کل سایت…');
 			await ensureDataForCurrentView(true);
-			toast('اسکن ۱۲لایه با موفقیت به‌روزرسانی شد.');
+			toast('اسکن ۱۲لایه با موفقیت کامل شد.');
 			return;
 		}
 
@@ -1417,6 +1569,7 @@
 
 		if (ev.target.closest('#tco-quick-clean-unscaled')) {
 			const res = await api('clean_unscaled', { ids: [] });
+			if (res.overview) state.overview = res.overview;
 			toast(`${faNum(res.cleaned)} فایل خام پشت -scaled پاک شد (${formatBytes(res.saved_bytes)} آزاد شد).`);
 			await ensureDataForCurrentView(false);
 			return;
@@ -1432,7 +1585,8 @@
 		if (pinBtn) {
 			const id = Number(pinBtn.getAttribute('data-pin-one'));
 			const isPinned = pinBtn.getAttribute('data-pinned') === '1';
-			await api('toggle_pin', { ids: [id], pin: isPinned ? 0 : 1 });
+			const res = await api('toggle_pin', { ids: [id], pin: isPinned ? 0 : 1 });
+			if (res.overview) state.overview = res.overview;
 			toast(isPinned ? 'از لیست سفید خارج شد.' : 'در لیست سفید محافظت دائمی پین شد ★');
 			await ensureDataForCurrentView(false);
 			return;
