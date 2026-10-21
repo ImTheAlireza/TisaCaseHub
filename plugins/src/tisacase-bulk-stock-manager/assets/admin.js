@@ -49,6 +49,7 @@
 		valueHay: [],       // متن قابل جست‌وجوی هر مقدار (کش‌شده)
 		group: null,        // {attrLabel, termLabel, keys[], values[]} مدل انتخاب‌شده
 		scopePids: {},      // والد‌های صفحه‌های بارگیری‌شده (شمارش تجمعی خط اطلاعات)
+		frozenScope: null,  // محدودهٔ «همین فهرست کارت‌ها»؛ هنگام اعمال/صفحهٔ بعدی دوباره خوانده نمی‌شود تا ویرایش ورودی‌های گام ۱ کارت‌ها را بی‌دلیل رد نکند
 		applyChunk: 300,    // سقف هر درخواست اعمال؛ با موتور SQL انبوه + پرش از هم‌خوان‌ها، هزینهٔ هر دسته تقریباً ثابت است
 		groupNoteHtml: '',
 
@@ -346,10 +347,12 @@
 			}).on('input', '.tbsm-var-stock', function () {
 				var $card = $(this).closest('.tbsm-var');
 				$card.removeClass('is-invalid');
+				$card.removeClass('is-rejected').removeAttr('title');
 				$card.removeAttr('data-applied');
 				self.paintStockbox($card);
 			}).on('change', '.tbsm-var-mode', function () {
 				var $card = $(this).closest('.tbsm-var');
+				$card.removeClass('is-rejected').removeAttr('title');
 				$card.removeAttr('data-applied');
 				self.setCardMode($card, this.value);
 			});
@@ -1171,6 +1174,7 @@
 		/** پاک‌کردن کارت‌ها وقتی مقدار مدل ناتمام است. */
 		resetGroupCards: function () {
 			this.group = null;
+			this.frozenScope = null;
 			$('#tbsm-grid').prop('hidden', true).empty();
 			$('#tbsm-group-note').prop('hidden', true).empty();
 			$('#tbsm-counts').empty();
@@ -1235,6 +1239,18 @@
 						termLabel: termLabel,
 						keys: attr.keys || [],
 						values: term.values || []
+					};
+					// محدودهٔ «همین فهرست» یخ می‌زند: اعمال و صفحهٔ بعدی باید دقیقاً
+					// با همان محدوده‌ای سنجیده شوند که کارت‌ها با آن فهرست شده‌اند.
+					// قبلاً applyPayload ورودی‌های گام ۱ را «زنده» می‌خواند (مثلاً متن
+					// SKU)؛ یک ویرایش بعدیِ آن ورودی‌ها، همهٔ کارت‌ها را موقع اعمال
+					// بی‌سروصدا رد می‌کرد.
+					self.frozenScope = {
+						scope_type: payload.scope_type,
+						product_ids: payload.product_ids,
+						category_id: payload.category_id,
+						sku: payload.sku,
+						sku_mode: payload.sku_mode
 					};
 					if (data.scope) {
 						self.scope = data.scope;
@@ -1331,7 +1347,7 @@
 
 			var self = this;
 			var seq = this.loadSeq;
-			var payload = this.scopePayload();
+			var payload = this.frozenScope ? $.extend({}, this.frozenScope) : this.scopePayload();
 			payload.action = 'tbsm_find_scope';
 			payload.attr_keys = this.group.keys || [];
 			payload.term_values = this.group.values || [];
@@ -1388,6 +1404,7 @@
 		/** بازنشانی حالت گروهی (محدوده دست‌نخورده می‌ماند اگر keepScope باشد). */
 		resetGroup: function (keepScope) {
 			this.group = null;
+			this.frozenScope = null;
 			this.groupNoteHtml = '';
 			this.variations = [];
 			this.scopePids = {};
@@ -1583,6 +1600,7 @@
 			this.variations = [];
 			this.categories = {};
 			this.group = null;
+			this.frozenScope = null;
 			this.groupNoteHtml = '';
 			this.confirmMode = false;
 			clearTimeout(this.confirmTimer);
@@ -1754,6 +1772,7 @@
 		toggleCard: function ($card) {
 			$card.toggleClass('is-selected');
 			$card.attr('data-touched', '1');
+			$card.removeClass('is-rejected').removeAttr('title');
 			$card.removeAttr('data-applied');
 			this.refreshCounts();
 		},
@@ -1777,6 +1796,7 @@
 				next = 0;
 			}
 			$input.val(next).removeClass('is-invalid').trigger('focus');
+			$card.removeClass('is-rejected').removeAttr('title');
 			$card.removeAttr('data-applied');
 			this.paintStockbox($card);
 		},
@@ -2113,6 +2133,7 @@
 
 			$('#tbsm-grid .tbsm-var:not(.is-hidden).is-selected').each(function () {
 				var $card = $(this);
+				$card.removeClass('is-rejected').removeAttr('title');
 				$card.removeAttr('data-applied');
 				if (mode === 'qty') {
 					if ($card.attr('data-mode') !== 'qty') {
@@ -2236,6 +2257,7 @@
 				parents_synced: 0,
 				report: [],
 				errors: [],
+				rejections: [],
 				pids: {},
 				failed: 0,
 				skipped: 0,
@@ -2316,7 +2338,14 @@
 						agg.applied += d.applied || 0;
 						agg.enabled_manage += d.enabled_manage || 0;
 						agg.report = agg.report.concat(d.report || []);
-						agg.errors = agg.errors.concat(d.errors || []);
+						// دلیل رد شدن ساخت‌یافته (سرور تازه) همان متن‌ها را در errors هم
+						// دارد؛ فقط یکی را نگه می‌داریم تا در گزارش دو بار نیایند.
+						var chunkRejections = d.rejections || null;
+						if (chunkRejections) {
+							agg.rejections = agg.rejections.concat(chunkRejections);
+						} else {
+							agg.errors = agg.errors.concat(d.errors || []);
+						}
 						agg.skipped += d.skipped || 0;
 						(d.report || []).forEach(function (row) {
 							if (row.sync_id) {
@@ -2329,7 +2358,15 @@
 
 						consec = 0;
 						retriedAt = -1;
-						markDone(cids);
+						// فقط کارت‌هایی «انجام‌شده» می‌شوند که سرور ردشان نکرده است؛
+						// ردشده‌ها بدون نشان می‌مانند تا «اعمال» بعدی دوباره بفرستدشان.
+						var rejectedIds = {};
+						(chunkRejections || []).forEach(function (row) {
+							if (row && row.id !== null && row.id !== undefined) {
+								rejectedIds[String(row.id)] = 1;
+							}
+						});
+						markDone(cids.filter(function (id) { return !rejectedIds[String(id)]; }));
 						off += cids.length;
 						// بهبود تدریجی: پس از موفقیت، دسته بزرگ‌تر شود
 						curSize = Math.min(maxSize, curSize * 2);
@@ -2449,7 +2486,8 @@
 			};
 
 			if (this.mode === 'group') {
-				var scope = this.scopePayload();
+				// محدودهٔ یخ‌زدهٔ همین فهرست، نه ورودی‌های زندهٔ گام ۱.
+				var scope = this.frozenScope || this.scopePayload();
 				payload.action = 'tbsm_apply_scope_stock';
 				payload.attr_keys = this.group.keys || [];
 				payload.term_values = this.group.values || [];
@@ -2593,17 +2631,21 @@
 		 */
 		finishApply: function (data) {
 			this.notice('');
-			if (data.report.length || data.errors.length) {
+			var problems = (data.errors || []).length + (data.rejections || []).length;
+			if (data.report.length || problems) {
 				this.renderReport(data);
 			}
 			if (data.aborted) {
 				this.notice(this.i18n('applyAborted').replace('%s', data.abortError || ''), 'error');
 			} else if (data.failed) {
 				this.notice(this.i18n('applySomeFailed').replace('%d', this.fmt(data.failed)), 'error');
-			} else if (!data.report.length && !data.errors.length && data.skipped) {
+			} else if (!data.report.length && !problems && data.skipped) {
 				this.notice(this.i18n('reportSkipped').replace('%d', this.fmt(data.skipped)), 'info');
-			} else if (!data.applied && data.errors.length) {
-				this.notice(this.i18n('applyError').replace('%s', data.errors[0]), 'error');
+			} else if (!data.applied && problems) {
+				var firstProblem = (data.rejections && data.rejections.length)
+					? (data.rejections[0].reason || '')
+					: data.errors[0];
+				this.notice(this.i18n('applyError').replace('%s', firstProblem), 'error');
 			}
 		},
 
@@ -2673,13 +2715,63 @@
 				html += '<div class="tbsm-report-note">' + this.esc(this.i18n('enabledManage').replace('%d', this.fmt(data.enabled_manage))) + '</div>';
 			}
 
-			if (data.errors && data.errors.length) {
-				var errs = '';
-				for (var j = 0; j < data.errors.length; j++) {
-					errs += '<div>• ' + this.esc(data.errors[j]) + '</div>';
+			// ردشده‌ها: کارت هرکدام علامت می‌خورد (و «اعمال‌شده» حساب نمی‌شود تا
+			// تلاش دوباره ممکن باشد) و دلیل‌ها «گروه‌بندی‌شده» می‌آیند؛ صدها مورد
+			// هم‌دلیل یک خط می‌شود با شمارش و نمونهٔ شناسه‌ها، نه صدها خط تکراری.
+			var rejections = data.rejections || [];
+			var plainErrors = data.errors || [];
+
+			for (var r = 0; r < rejections.length; r++) {
+				var rej = rejections[r] || {};
+				var $rcard = $('#tbsm-grid .tbsm-var[data-id="' + rej.id + '"]');
+				if ($rcard.length) {
+					$rcard.removeAttr('data-applied').addClass('is-rejected');
+					if (rej.reason) {
+						$rcard.attr('title', rej.reason);
+					}
 				}
+			}
+
+			if (rejections.length || plainErrors.length) {
+				var errs = '';
+				var groups = [];
+				var byGroup = {};
+
+				for (var gi = 0; gi < rejections.length; gi++) {
+					var item = rejections[gi] || {};
+					var gkey = item.group || item.reason || '';
+					if (!byGroup[gkey]) {
+						byGroup[gkey] = { group: gkey, first: item, ids: [] };
+						groups.push(byGroup[gkey]);
+					}
+					byGroup[gkey].ids.push(item.id);
+				}
+
+				for (var g = 0; g < groups.length; g++) {
+					var grp = groups[g];
+					if (grp.ids.length === 1) {
+						// تک‌مورد: متن کامل (با شناسه و نام محصول والد).
+						errs += '<div>• ' + this.esc(grp.first.reason || grp.group) + '</div>';
+					} else {
+						var shownIds = [];
+						for (var s = 0; s < grp.ids.length && s < 10; s++) {
+							shownIds.push('#' + grp.ids[s]);
+						}
+						errs += '<div>• ' + this.esc(grp.group)
+							+ ' — ' + this.esc(this.i18n('rejectGroupCount').replace('%d', this.fmt(grp.ids.length)))
+							+ '</div>'
+							+ '<div class="tbsm-report-reject-ids">'
+							+ this.esc(this.i18n('rejectIds').replace('%s', shownIds.join('، ') + (grp.ids.length > 10 ? '…' : '')))
+							+ '</div>';
+					}
+				}
+
+				for (var j = 0; j < plainErrors.length; j++) {
+					errs += '<div>• ' + this.esc(plainErrors[j]) + '</div>';
+				}
+
 				html += '<div class="tbsm-report-errors">'
-					+ this.esc(this.i18n('errorCount').replace('%d', this.fmt(data.errors.length)))
+					+ this.esc(this.i18n(rejections.length ? 'rejectCount' : 'errorCount').replace('%d', this.fmt(rejections.length + plainErrors.length)))
 					+ errs
 					+ '</div>';
 			}

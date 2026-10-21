@@ -156,6 +156,9 @@ if ( ! class_exists( 'TBSM_Admin' ) ) {
 						'outOfStockLabel'    => 'ناموجود',
 						'enabledManage'      => 'موجودی‌گیری برای %d متغیر خاموش بود و هنگام اعمال روشن شد.',
 						'errorCount'         => '%d مورد خطا داشت:',
+						'rejectCount'        => '%d متغیر رد شد — دلیل‌ها:',
+						'rejectGroupCount'   => '%d مورد با همین دلیل',
+						'rejectIds'          => 'شناسه‌ها: %s',
 						'applyError'         => 'اعمال ناموفق بود: %s',
 						'errorApplyEmpty'    => 'مقداری برای اعمال پیدا نشد.',
 

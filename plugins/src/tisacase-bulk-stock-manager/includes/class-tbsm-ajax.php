@@ -467,10 +467,13 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				);
 			}
 
-			if ( ! empty( $result['ok'] ) ) {
+			// دستهٔ «پردازش‌شده» (دارای report) همیشه پاسخ موفق است؛ حتی اگر
+			// همهٔ آیتم‌هایش رد شده باشند — دلیل هرکدام در rejections می‌آید
+			// و کلاینت نباید آن را مثل خطای سرور نصف‌ونصف دوباره بفرستد.
+			if ( ! empty( $result['ok'] ) || isset( $result['report'] ) ) {
 				self::send_success( $result );
 			}
-			self::send_error( isset( $result['message'] ) ? $result['message'] : 'اعمال موجودی ناموفق بود.', 'apply_failed', $result );
+			self::send_error( isset( $result['error'] ) ? $result['error'] : 'اعمال موجودی ناموفق بود.', 'apply_failed', $result );
 		}
 
 		/* ----------------------------------------------------------
@@ -722,10 +725,12 @@ if ( ! class_exists( 'TBSM_Ajax' ) ) {
 				);
 			}
 
-			if ( ! empty( $result['ok'] ) ) {
+			// مثل اعمال تکی: دستهٔ پردازش‌شده پاسخ موفق است و دلیل رد شدن
+			// تک‌تک آیتم‌ها در rejections می‌رسد، نه در قالب خطای کلی درخواست.
+			if ( ! empty( $result['ok'] ) || isset( $result['report'] ) ) {
 				self::send_success( $result );
 			}
-			self::send_error( isset( $result['message'] ) ? $result['message'] : 'اعمال گروهی ناموفق بود.', 'apply_failed', $result );
+			self::send_error( isset( $result['error'] ) ? $result['error'] : 'اعمال گروهی ناموفق بود.', 'apply_failed', $result );
 		}
 
 		/**

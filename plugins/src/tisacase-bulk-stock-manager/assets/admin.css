@@ -913,6 +913,12 @@ body.tbsm-page #wpfooter {
 	box-shadow: var(--tisa-ring-danger, 0 0 0 3px rgba(181, 69, 58, .2));
 }
 
+/* کارتی که سرور هنگام اعمال ردش کرده است (دلیل در title و در گزارش) */
+.tbsm-var.is-rejected {
+	border-color: var(--tisa-danger, #B5453A);
+	box-shadow: var(--tisa-ring-danger, 0 0 0 3px rgba(181, 69, 58, .2));
+}
+
 /* تنها نقطهٔ کلیک برای انتخاب: خودِ چک‌باکس */
 .tbsm-var-check {
 	position: absolute;
@@ -1224,6 +1230,15 @@ body.tbsm-page #wpfooter {
 	border-top: 1px dashed rgba(138, 36, 36, .35);
 	color: var(--tisa-danger-strong, #8A2424);
 	font-weight: 600;
+}
+
+/* نمونهٔ شناسه‌های یک گروه دلیلِ مشترک در گزارش ردشده‌ها */
+.tbsm-report-reject-ids {
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 400;
+	color: var(--tisa-muted, #77828A);
+	margin-inline-start: var(--tisa-sp-3, 12px);
+	unicode-bidi: isolate;
 }
 
 /* ------------------------------------------------------------------

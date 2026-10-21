@@ -42,7 +42,7 @@
 				<p class="tbsm-hero-sub">موجودی متغیرها را تکی یا گروهی روی چند محصول، دسته‌بندی یا بازهٔ شناسه اعمال کنید.</p>
 			</div>
 			<div class="tbsm-hero-meta">
-				<span class="tbsm-hero-pill tbsm-hero-pill--ver" dir="ltr">v1.4.0</span>
+				<span class="tbsm-hero-pill tbsm-hero-pill--ver" dir="ltr">v1.4.1</span>
 			</div>
 		</header>
 
@@ -680,7 +680,7 @@
 			};
 		}
 
-		var PREVIEW_VERSION = '1.4.0';
+		var PREVIEW_VERSION = '1.4.1';
 		var nonceSeq = 0;
 
 		// قرارداد tbsmData (مثل wp_localize_script)
@@ -728,6 +728,9 @@
 				outOfStockLabel: 'ناموجود',
 				enabledManage: 'موجودی‌گیری برای %d متغیر خاموش بود و هنگام اعمال روشن شد.',
 				errorCount: '%d مورد خطا داشت:',
+				rejectCount: '%d متغیر رد شد — دلیل‌ها:',
+				rejectGroupCount: '%d مورد با همین دلیل',
+				rejectIds: 'شناسه‌ها: %s',
 				applyError: 'اعمال ناموفق بود: %s',
 				errorApplyEmpty: 'مقداری برای اعمال پیدا نشد.',
 				groupHintEmpty: 'ابتدا محدودهٔ محصولات را مشخص کنید، بعد ویژگی و مقدار مدل را انتخاب کنید.',
@@ -990,7 +993,7 @@
 							});
 						});
 
-						var report = [], errors = [], enabled = 0, touched = {}, anyStock = false, skipped = 0;
+						var report = [], errors = [], rejections = [], enabled = 0, touched = {}, anyStock = false, skipped = 0;
 						var wanted = data.items || {};
 
 						targets.forEach(function (t) {
@@ -1017,11 +1020,44 @@
 							for (var i = 0; i < targets.length; i++) {
 								if (String(targets[i].variation.id) === String(vid)) { hit = true; break; }
 							}
-							if (!hit) {
-								errors.push(isModel
-									? 'متغیر #' + vid + ' با مدل/محدودهٔ انتخاب‌شده هم‌خوان نیست؛ رد شد.'
-									: 'متغیر #' + vid + ' متعلق به این محصول نیست؛ رد شد.');
+							if (hit) { return; }
+
+							// دلیل مشخص رد شدن — همان قرارداد سرور تازه (rejections ساخت‌یافته).
+							var host = null, hostVar = null;
+							PRODUCTS.forEach(function (p) {
+								p.vars.forEach(function (v) {
+									if (String(v.id) === String(vid)) { host = p; hostVar = v; }
+								});
+							});
+
+							var code, reason, group, expected = '', actual = '';
+							if (!hostVar) {
+								code = 'not_found';
+								group = 'متغیر پیدا نشد (حذف شده است یا متغیر محصول نیست)';
+								reason = 'متغیر #' + vid + ' پیدا نشد (حذف شده است یا متغیر محصول نیست)؛ رد شد.';
+							} else if (isModel && !inScope(host, data)) {
+								code = 'scope';
+								group = 'محصول والد خارج از محدودهٔ انتخاب‌شده است';
+								reason = 'متغیر #' + vid + ': محصول والد «' + host.name + '» خارج از محدودهٔ انتخاب‌شده است؛ رد شد.';
+							} else if (isModel) {
+								code = 'model_mismatch';
+								expected = (data.term_values || []).join('، ');
+								var seg = String(hostVar.cat || '').split('|')[0] || '';
+								actual = seg.indexOf(':') !== -1 ? seg.slice(seg.indexOf(':') + 1) : seg;
+								group = 'مقدار مدل آن «' + actual + '» است، نه «' + expected + '» انتخاب‌شده';
+								reason = 'متغیر #' + vid + ' (محصول «' + host.name + '»): ' + group + '؛ رد شد.';
+							} else {
+								code = 'wrong_product';
+								group = 'متغیر متعلق به محصول دیگری است';
+								reason = 'متغیر #' + vid + ' متعلق به محصول «' + host.name + '» است، نه محصول انتخاب‌شده؛ رد شد.';
 							}
+
+							errors.push(reason);
+							rejections.push({
+								id: Number(vid), code: code, reason: reason, group: group,
+								parent_id: host ? host.id : 0, product: host ? host.name : '',
+								expected: expected, actual: actual
+							});
 						});
 
 						var touchedIds = Object.keys(touched);
@@ -1037,14 +1073,15 @@
 						d.resolve({
 							success: true,
 							data: {
-								ok: report.length > 0,
+								ok: true,
 								applied: report.length,
 								enabled_manage: enabled,
 								parent_status: (touchedIds.length === 1) ? (anyStock ? 'instock' : 'outofstock') : null,
 								parents_synced: touchedIds.length,
 								skipped: skipped,
 								report: report,
-								errors: errors
+								errors: errors,
+								rejections: rejections
 							}
 						});
 						return;
