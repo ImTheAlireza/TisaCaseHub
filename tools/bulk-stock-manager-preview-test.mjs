@@ -275,6 +275,7 @@ await change('#tbsm-group-term', proMax.value);
 await waitFor('صفحهٔ نخست فهرست صفحه‌بندی‌شده', () => qa('#tbsm-grid .tbsm-var').length === 4);
 ok('با سقف ۴، فقط صفحهٔ نخست (۴ کارت) می‌آید', qa('#tbsm-grid .tbsm-var').length === 4);
 ok('دکمهٔ «نمایش موارد بعدی» آمد', !!q('#tbsm-more'), text('#tbsm-more'));
+ok('دکمهٔ ادامه بالای فهرست است (درست قبل از گرید کارت‌ها)', !!(q('#tbsm-grid').previousElementSibling && q('#tbsm-grid').previousElementSibling.id === 'tbsm-more-wrap'));
 ok('برچسب دکمه سقف صفحه را دارد', /۴/.test(text('#tbsm-more')), text('#tbsm-more'));
 ok('خط اطلاعات دربارهٔ صفحه‌بندی هشدار می‌دهد', /نمایش موارد بعدی/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
 ok('شمارش متغیر در خط اطلاعات تجمعی است', /۴ متغیر در/.test(text('#tbsm-group-note')), text('#tbsm-group-note'));
@@ -842,6 +843,8 @@ window.TBSM_PREVIEW_FAULT = null;
 	ok('README.md هم همان نسخه است', readmeMd.includes(faVer));
 	ok('فایل ترجمه (.pot) هم همان نسخه است', pot.includes('TisaCase Bulk Stock Manager ' + phpVer));
 	ok('بلوک چنج‌لاگ همان نسخه در readme هست', readme.includes('= ' + phpVer + ' ='));
+	const corePhp = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-core.php'), 'utf8');
+	ok('هر صفحهٔ فهرست گروهی ۳۰۰ متغیر می‌آورد (MAX_MODEL_ROWS)', /MAX_MODEL_ROWS\s*=\s*300/.test(corePhp));
 }
 
 

@@ -42,7 +42,7 @@
 				<p class="tbsm-hero-sub">موجودی متغیرها را تکی یا گروهی روی چند محصول، دسته‌بندی یا بازهٔ شناسه اعمال کنید.</p>
 			</div>
 			<div class="tbsm-hero-meta">
-				<span class="tbsm-hero-pill tbsm-hero-pill--ver" dir="ltr">v1.4.1</span>
+				<span class="tbsm-hero-pill tbsm-hero-pill--ver" dir="ltr">v1.4.2</span>
 			</div>
 		</header>
 
@@ -680,7 +680,7 @@
 			};
 		}
 
-		var PREVIEW_VERSION = '1.4.1';
+		var PREVIEW_VERSION = '1.4.2';
 		var nonceSeq = 0;
 
 		// قرارداد tbsmData (مثل wp_localize_script)
@@ -772,7 +772,7 @@
 				groupSearching: 'در حال فهرست‌کردن متغیرها…',
 				groupEmpty: 'برای این مدل در این محدوده متغیری پیدا نشد.',
 				groupNote: '%1$s • %2$s — %3$d متغیر در %4$d محصول',
-				groupTruncated: 'تنها %d مورد نخست فهرست شد؛ برای دیدن و اعمال بقیه، دکمهٔ «نمایش موارد بعدی» زیر فهرست را بزنید.',
+				groupTruncated: 'تنها %d مورد نخست فهرست شد؛ برای دیدن و اعمال بقیه، دکمهٔ «نمایش موارد بعدی» بالای فهرست را بزنید.',
 				groupMoreBtn: 'نمایش %d مورد بعدی',
 				groupMoreLoading: 'در حال آوردن صفحهٔ بعدی…',
 				applyProgress: 'اعمال دسته‌ای: تا مورد %1$d از %2$d…',
@@ -945,7 +945,7 @@
 							d.resolve({ success: false, data: { message: 'ابتدا ویژگی و مقدار مدل را انتخاب کنید.' } });
 							return;
 						}
-												var page = window.tbsmMockPageSize || 150;
+												var page = window.tbsmMockPageSize || 300;
 						var off = Math.max(0, parseInt(data.offset || 0, 10));
 						var all = scopeRows(data, data.attr_keys, data.term_values).rows;
 						var rows = all.slice(off, off + page);
