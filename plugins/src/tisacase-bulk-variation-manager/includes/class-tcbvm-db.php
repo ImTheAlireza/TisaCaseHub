@@ -18,8 +18,8 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 			if ( ! is_string( $str ) || '' === $str ) {
 				return '';
 			}
-			$arabic_chars  = array( 'ي', 'ك', 'ة', 'ۀ', "\xC2\xA0", "\xE2\x80\x8C" );
-			$persian_chars = array( 'ی', 'ک', 'ه', 'ه', ' ', ' ' );
+			$arabic_chars  = array( 'ي', 'ك', 'ة', 'ۀ', 'ؤ', "\xC2\xA0", "\xE2\x80\x8C" );
+			$persian_chars = array( 'ی', 'ک', 'ه', 'ه', 'و', ' ', ' ' );
 			$clean         = str_replace( $arabic_chars, $persian_chars, $str );
 			return trim( preg_replace( '/\s+/', ' ', $clean ) );
 		}
@@ -584,6 +584,12 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 			$total      = count( $ids );
 			$slice_ids  = array_slice( $ids, $offset, $limit );
 			$items      = array();
+
+			// پرایم گروهی کش پست/متا/ترم تا صفحه‌های بزرگ (۳۰۰تایی) هم با چند کوئری
+			// لود شوند و به سقف زمان سرور نرسند.
+			if ( function_exists( '_prime_post_caches' ) && ! empty( $slice_ids ) ) {
+				_prime_post_caches( $slice_ids );
+			}
 
 			foreach ( $slice_ids as $pid ) {
 				$product = wc_get_product( $pid );

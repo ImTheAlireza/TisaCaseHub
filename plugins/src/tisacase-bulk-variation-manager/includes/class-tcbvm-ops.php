@@ -355,13 +355,25 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			);
 		}
 
+		/**
+		 * هویت یک مقدار متغیر برای مقایسه/امضا: نرمال‌سازی فارسی، حذف نویسه‌های
+		 * نامرئی، حروف کوچک و یکدست‌کردن جداکننده‌ها (فاصله/خط‌تیره/آندرلاین) تا
+		 * شکل «نام» و شکل «اسلاگ» یک مقدار یکی شوند؛ اما علائم معنادار مثل + و / و .
+		 * حفظ می‌شوند تا «Galaxy S24» با «Galaxy S24+» یکی نشود. sanitize_title
+		 * این علائم را حذف می‌کرد و در حالت حذف/افزودن، مقدار اشتباه را منطبق
+		 * نشان می‌داد؛ به همین دلیل دیگر برای هویت مقدار به‌کار نمی‌رود (در مسیر
+		 * تاکسونومی، ورودی پیش از رسیدن به این تابع به اسلاگ واقعی ترم تبدیل شده
+		 * است و دو سمت مقایسه هر دو از همین هویت می‌گذرند).
+		 */
 		private static function normalize_variation_value( $value ) {
 			if ( ! is_scalar( $value ) ) {
 				return '';
 			}
 			$value = TCBVM_DB::normalize_persian( trim( (string) $value ) );
-			$slug  = sanitize_title( $value );
-			return '' !== $slug ? strtolower( $slug ) : strtolower( $value );
+			$value = preg_replace( '/[\x{200B}\x{200C}\x{200D}\x{200E}\x{200F}\x{202A}-\x{202E}\x{2060}\x{FEFF}]/u', '', (string) $value );
+			$value = function_exists( 'mb_strtolower' ) ? mb_strtolower( (string) $value, 'UTF-8' ) : strtolower( (string) $value );
+			$value = preg_replace( '/[\s\-_]+/u', '-', $value );
+			return trim( (string) $value, '-' );
 		}
 
 		private static function combination_signature( array $attributes, array $keys ) {
@@ -464,7 +476,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					if ( $term ) {
 						$resolved[] = self::normalize_variation_value( $term->slug );
 					} elseif ( $allow_missing_terms ) {
-						$resolved[] = self::normalize_variation_value( sanitize_title( (string) $value ) );
+						$resolved[] = self::normalize_variation_value( $value );
 					}
 				} else {
 					$resolved[] = self::normalize_variation_value( $value );
@@ -589,12 +601,22 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			}
 
 			$clean = array();
+			$seen  = array();
 			foreach ( $lines as $line ) {
 				$line = trim( (string) $line );
 				$line = trim( $line, "\"'`•- " );
-				if ( '' !== $line && ! in_array( $line, $clean, true ) ) {
-					$clean[] = $line;
+				if ( '' === $line ) {
+					continue;
 				}
+				// یکتاسازی بر اساس هویت نرمال‌شده تا «iPhone 12 Mini» و «iphone 12 mini»
+				// دو مقدار جدا حساب نشوند و ترکیب تکراری ساخته نشود؛ نخستین املا حفظ می‌شود.
+				$identity = self::normalize_variation_value( $line );
+				$key      = '' !== $identity ? $identity : $line;
+				if ( isset( $seen[ $key ] ) ) {
+					continue;
+				}
+				$seen[ $key ] = true;
+				$clean[]      = $line;
 			}
 
 			return array_values( $clean );
@@ -951,7 +973,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				if ( ! $product ) {
 					$preflight_error_count++;
 					if ( count( $preview_issues ) < $max_issue_ids ) {
-						$preview_issues[] = array( 'id' => $product_id, 'reason' => 'missing_product' );
+						$preview_issues[] = array( 'id' => $product_id, 'reason' => 'missing_product', 'message' => 'محصول در دسترس نیست.' );
 					} else {
 						$issues_truncated = true;
 					}
@@ -993,7 +1015,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					if ( '' !== $remove_error ) {
 						$preflight_error_count++;
 						if ( count( $preview_issues ) < $max_issue_ids ) {
-							$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed' );
+							$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed', 'message' => $remove_error );
 						} else {
 							$issues_truncated = true;
 						}
@@ -1088,7 +1110,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				if ( '' !== $preflight_error ) {
 					$preflight_error_count++;
 					if ( count( $preview_issues ) < $max_issue_ids ) {
-						$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed' );
+						$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed', 'message' => $preflight_error );
 					} else {
 						$issues_truncated = true;
 					}
@@ -1099,7 +1121,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						$over_limit_count++;
 						$total_new_capped = true;
 						if ( count( $preview_issues ) < $max_issue_ids ) {
-							$preview_issues[] = array( 'id' => $product_id, 'reason' => 'over_limit' );
+							$preview_issues[] = array( 'id' => $product_id, 'reason' => 'over_limit', 'message' => sprintf( 'تعداد ترکیب‌ها بیش از سقف %d است؛ محصول بدون تغییر رد می‌شود.', self::MAX_VARIATIONS_PER_PRODUCT ) );
 						} else {
 							$issues_truncated = true;
 						}
@@ -1113,7 +1135,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							$preflight_error = $missing_result['error'];
 							$preflight_error_count++;
 							if ( count( $preview_issues ) < $max_issue_ids ) {
-								$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed' );
+								$preview_issues[] = array( 'id' => $product_id, 'reason' => 'count_failed', 'message' => $preflight_error );
 							} else {
 								$issues_truncated = true;
 							}
@@ -1236,9 +1258,16 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					'items'     => array(),
 				);
 
+				// توقف ایمنی وسط بسته (مثلاً از دست رفتن قفل) نباید نتیجهٔ محصولاتِ
+				// پردازش‌شدهٔ همین بسته را دور بیندازد: آیتم‌های آماده همراه با پرچم
+				// stop برگردانده می‌شوند تا فرانت‌اند آن‌ها را در لاگ/تاریخچه درست
+				// ثبت کند و زنجیرهٔ بسته‌های بعدی را هم متوقف نگه دارد. پرتاب استثنا
+				// فقط برای اعتبارسنجی‌های پیش از حلقه است (هنوز آیتمی ساخته نشده).
+				$stop_message = '';
 				foreach ( $batch_ids as $batch_index => $product_id ) {
 					if ( 0 === ( $batch_index % 10 ) && ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
-						throw new RuntimeException( 'قفل اجرای هم‌زمان از دست رفت؛ batch متوقف شد.' );
+						$stop_message = 'قفل اجرای هم‌زمان از دست رفت؛ batch متوقف شد.';
+						break;
 					}
 					$results['processed']++;
 
@@ -1254,12 +1283,6 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							(bool) $combine_other,
 							$operation_mode
 						);
-						if ( ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
-							throw new RuntimeException( 'قفل اجرا پس از پردازش محصول از دست رفت؛ batch متوقف شد.' );
-						}
-						if ( empty( $res['success'] ) && ! empty( $res['message'] ) && false !== strpos( $res['message'], 'قفل' ) ) {
-							throw new RuntimeException( $res['message'] );
-						}
 
 						if ( ! empty( $res['success'] ) ) {
 							$results['success']++;
@@ -1280,10 +1303,17 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 								'message' => isset( $res['message'] ) ? $res['message'] : 'عملیات ناموفق بود.',
 							);
 						}
-					} catch ( \Throwable $e ) {
-						if ( false !== strpos( $e->getMessage(), 'قفل' ) ) {
-							throw $e;
+
+						// نتیجهٔ این محصول ثبت شد؛ حالا شرط‌های توقف ایمنی بررسی می‌شوند.
+						if ( ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
+							$stop_message = 'قفل اجرا پس از پردازش محصول از دست رفت؛ batch متوقف شد.';
+							break;
 						}
+						if ( empty( $res['success'] ) && ! empty( $res['message'] ) && false !== strpos( $res['message'], 'قفل' ) ) {
+							$stop_message = $res['message'];
+							break;
+						}
+					} catch ( \Throwable $e ) {
 						$results['failed']++;
 						$results['items'][] = array(
 							'id'      => $product_id,
@@ -1291,11 +1321,19 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							'title'   => "محصول #{$product_id}",
 							'message' => 'خطا: ' . $e->getMessage(),
 						);
+						if ( false !== strpos( $e->getMessage(), 'قفل' ) ) {
+							$stop_message = $e->getMessage();
+							break;
+						}
 					}
 				}
 
-				if ( ! TCBVM_Backup::flush( $run_id ) ) {
-					throw new RuntimeException( 'قفل اجرا یا ثبت variationهای ساخته‌شده در snapshot ناموفق بود؛ batch متوقف شد.' );
+				if ( ! TCBVM_Backup::flush( $run_id ) && '' === $stop_message ) {
+					$stop_message = 'قفل اجرا یا ثبت variationهای ساخته‌شده در snapshot ناموفق بود؛ batch متوقف شد.';
+				}
+				if ( '' !== $stop_message ) {
+					$results['stop']    = true;
+					$results['message'] = $stop_message;
 				}
 				return $results;
 			} finally {

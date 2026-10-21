@@ -148,7 +148,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 
 			$ids     = TCBVM_DB::query_product_ids( $filters );
 			$total   = count( $ids );
-			$summary = TCBVM_DB::get_products_summary( $ids, 100, 0 );
+			$summary = TCBVM_DB::get_products_summary( $ids, 300, 0 );
 
 			wp_send_json_success( array(
 				'total'   => $total,
@@ -160,7 +160,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 
 		/**
 		 * واکشی صفحه‌ای اطلاعات محصولات جهت تکمیل تدریجی لیست انتخاب.
-		 * صفحهٔ اول (۱۰۰ تای نخست) در پاسخ جستجو ارسال می‌شود و این مسیر
+		 * صفحهٔ اول (۳۰۰ تای نخست) در پاسخ جستجو ارسال می‌شود و این مسیر
 		 * جزئیات باقی شناسه‌ها را بسته‌به‌بسته می‌آورد تا هیچ سقفی در انتخاب نباشد.
 		 */
 		public static function ajax_products_summary_page() {
@@ -173,7 +173,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				wp_send_json_success( array( 'items' => array() ) );
 			}
 
-			$summary = TCBVM_DB::get_products_summary( $ids, 100, $offset );
+			$summary = TCBVM_DB::get_products_summary( $ids, 300, $offset );
 
 			wp_send_json_success( array(
 				'items' => $summary['items'],
@@ -314,8 +314,8 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$combine_other  = ! empty( $_POST['combine_other'] );
 			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 			$offset         = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
-			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 50;
-			$limit          = min( max( $limit, 1 ), 200 );
+			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 300;
+			$limit          = min( max( $limit, 1 ), 300 );
 
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'لطفاً ابتدا حداقل یک محصول را انتخاب کنید.' ) );
