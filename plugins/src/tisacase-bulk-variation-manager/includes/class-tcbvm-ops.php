@@ -342,17 +342,73 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$matches        = array();
 			foreach ( $attributes as $key => $value ) {
 				if ( array_intersect( $target_aliases, self::attribute_key_aliases( $key ) ) ) {
-					$matches[] = $value;
+					$matches[ $key ] = $value;
 				}
 			}
 			if ( count( $matches ) > 1 ) {
-				return array( 'found' => true, 'ambiguous' => true, 'value' => '' );
+				// چند کلید هم‌ارز فقط وقتی «مبهم» است که مقدارهایشان ناسازگار باشد.
+				// اگر همه یک مقدار هم‌هویت دارند (الگوی رایج داده‌های ایمپورتری که
+				// مدل را زیر دو کلید ذخیره کرده‌اند)، همان مقدار قطعی است و نباید به
+				// خطا همهٔ محصولات را رد کرد.
+				$identities = array();
+				foreach ( $matches as $matched_value ) {
+					$identities[] = self::normalize_variation_value( $matched_value );
+				}
+				if ( count( array_unique( $identities ) ) > 1 ) {
+					return array( 'found' => true, 'ambiguous' => true, 'value' => '', 'matches' => $matches );
+				}
+				return array( 'found' => true, 'ambiguous' => false, 'value' => reset( $matches ), 'matches' => $matches );
 			}
 			return array(
 				'found'     => ! empty( $matches ),
 				'ambiguous' => false,
 				'value'     => empty( $matches ) ? '' : reset( $matches ),
+				'matches'   => $matches,
 			);
+		}
+
+		/**
+		 * بریدن متن برای پیام‌های خطا تا مقادیر بلند، پیام را منفجر نکنند.
+		 */
+		private static function truncate_text( $text, $max = 40 ) {
+			$text = (string) $text;
+			if ( function_exists( 'mb_strlen' ) && mb_strlen( $text, 'UTF-8' ) > $max ) {
+				return mb_substr( $text, 0, $max, 'UTF-8' ) . '…';
+			}
+			return strlen( $text ) > $max * 3 ? substr( $text, 0, $max * 3 ) . '…' : $text;
+		}
+
+		/**
+		 * متن دقیقِ دلیل رد شدن یک variation در پیش‌بررسی: کدام ویژگی، چه حالتی
+		 * (مقدار نیست / خالیِ «هرکدام» / چند مقدار ناسازگار) و روی خود variation
+		 * چه کلید/مقادیری هست؛ تا به‌جای حدس، همان یک اجرا علت را نشان دهد.
+		 */
+		private static function variation_attribute_issue_text( $child_id, $matrix_key, array $find, array $attributes ) {
+			$child_id  = absint( $child_id );
+			$key_label = (string) $matrix_key;
+			if ( function_exists( 'wc_attribute_label' ) && 0 === strpos( $key_label, 'pa_' ) ) {
+				$label = wc_attribute_label( $key_label );
+				if ( is_string( $label ) && '' !== $label && $label !== $key_label ) {
+					$key_label = $label . ' (' . $key_label . ')';
+				}
+			}
+			if ( ! empty( $find['ambiguous'] ) ) {
+				$pairs = array();
+				foreach ( (array) ( isset( $find['matches'] ) ? $find['matches'] : array() ) as $matched_key => $matched_value ) {
+					$pairs[] = $matched_key . '=«' . self::truncate_text( $matched_value ) . '»';
+					if ( count( $pairs ) >= 3 ) {
+						break;
+					}
+				}
+				return sprintf( 'variation #%d برای ویژگی «%s» چند مقدار ناسازگار دارد (%s)؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label, implode( '، ', $pairs ) );
+			}
+			if ( empty( $find['found'] ) ) {
+				$keys  = array_map( 'strval', array_keys( $attributes ) );
+				$shown = array_slice( $keys, 0, 6 );
+				$more  = count( $keys ) > 6 ? sprintf( ' و %d کلید دیگر', count( $keys ) - 6 ) : '';
+				return sprintf( 'variation #%d برای ویژگی «%s» مقداری ندارد (کلیدهای موجود روی variation: %s%s)؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label, $shown ? implode( '، ', $shown ) : '—', $more );
+			}
+			return sprintf( 'variation #%d مقدار ویژگی «%s» خالی (هرکدام) است؛ برای جلوگیری از ترکیب تکراری، این محصول در اجرا رد می‌شود.', $child_id, $key_label );
 		}
 
 		/**
@@ -528,7 +584,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					foreach ( $keys as $key ) {
 						$value = self::find_variation_attribute_value( $attributes, $key );
 						if ( ! empty( $value['ambiguous'] ) || empty( $value['found'] ) || '' === (string) $value['value'] ) {
-							return array( 'count' => 0, 'error' => sprintf( 'variation #%d ترکیب کامل و یکتایی ندارد؛ افزودن امن ممکن نیست.', absint( $child_id ) ) );
+							return array( 'count' => 0, 'error' => self::variation_attribute_issue_text( $child_id, $key, $value, $attributes ) );
 						}
 					}
 					$signature = self::combination_signature( $attributes, $keys );
@@ -569,7 +625,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			foreach ( $children_attrs as $variation_id => $variation_attributes ) {
 				$value = self::find_variation_attribute_value( (array) $variation_attributes, $target_key );
 				if ( ! empty( $value['ambiguous'] ) ) {
-					return array( 'count' => $count, 'ambiguous' => true );
+					return array( 'count' => $count, 'ambiguous' => true, 'issue' => self::variation_attribute_issue_text( $variation_id, $target_key, $value, (array) $variation_attributes ) );
 				}
 				if ( ! empty( $value['found'] ) && in_array( self::normalize_variation_value( $value['value'] ), $comparison_values, true ) ) {
 					$count++;
@@ -1007,7 +1063,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						$comparison_values = self::comparison_values( $clean_vals, ! empty( $target_info['is_taxonomy'] ), $target_key, false );
 						$match_result      = self::count_matching_variations( $product, $target_key, $comparison_values, $preloaded_attrs );
 						if ( ! empty( $match_result['ambiguous'] ) ) {
-							$remove_error = 'مقدار ویژگی هدف در یکی از variationها مبهم است.';
+							$remove_error = ! empty( $match_result['issue'] ) ? $match_result['issue'] : 'مقدار ویژگی هدف در یکی از variationها مبهم است.';
 						} else {
 							$remove_count = absint( $match_result['count'] );
 						}
@@ -1379,9 +1435,10 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 					if ( ! $variation || ! $variation->is_type( 'variation' ) || absint( $variation->get_parent_id() ) !== $product_id ) {
 						continue;
 					}
-					$value = self::find_variation_attribute_value( (array) $variation->get_attributes(), $target_key );
+					$variation_attributes = (array) $variation->get_attributes();
+					$value = self::find_variation_attribute_value( $variation_attributes, $target_key );
 					if ( ! empty( $value['ambiguous'] ) ) {
-						return array( 'success' => false, 'title' => $title, 'message' => sprintf( 'variation #%d بیش از یک مقدار برای ویژگی هدف دارد؛ هیچ تغییری اعمال نشد.', absint( $variation_id ) ) );
+						return array( 'success' => false, 'title' => $title, 'message' => self::variation_attribute_issue_text( $variation_id, $target_key, $value, $variation_attributes ) );
 					}
 					if ( ! empty( $value['found'] ) && in_array( self::normalize_variation_value( $value['value'] ), $comparison_values, true ) ) {
 					$matching_ids[] = absint( $variation_id );
@@ -1638,7 +1695,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						foreach ( $preflight_keys as $matrix_key ) {
 							$child_value = self::find_variation_attribute_value( $child_attributes, $matrix_key );
 							if ( ! empty( $child_value['ambiguous'] ) || empty( $child_value['found'] ) || '' === (string) $child_value['value'] ) {
-								return array( 'success' => false, 'title' => $title, 'message' => sprintf( 'variation #%d مقدار یکتای ویژگی‌های لازم را ندارد؛ افزودن برای جلوگیری از ترکیب تکراری متوقف شد.', absint( $child_id ) ) );
+								return array( 'success' => false, 'title' => $title, 'message' => self::variation_attribute_issue_text( $child_id, $matrix_key, $child_value, $child_attributes ) );
 							}
 						}
 						$signature = self::combination_signature( $child_attributes, $preflight_keys );

@@ -89,6 +89,15 @@
 		},
 
 		/**
+		 * کلید گروه‌بندی پیام خطا: شناسه‌های داخل پیام (مثل variation #272441)
+		 * ماسک می‌شوند تا یک علت واحد که برای صدها محصول تکرار شده، به‌جای صدها
+		 * «دلیل متمایز» جعلی، یک گروه با تعداد واقعی شود.
+		 */
+		failureGroupKey: function(message) {
+			return String(message || '').replace(/#[0-9۰-۹]+/g, '#…');
+		},
+
+		/**
 		 * جمع‌بندی گروهی خطاهای یک اجرا در انتهای کنسول: به‌جای مرور صدها خط
 		 * تکراری، هر دلیل یک‌بار با تعداد و شناسه‌های درگیر چاپ می‌شود تا علت
 		 * اصلی ردشدن‌ها فوراً دیده شود.
@@ -99,7 +108,7 @@
 			const index = Object.create(null);
 			(items || []).forEach(function(it) {
 				if (!it || it.status !== 'error') return;
-				const message = String(it.message || 'خطای نامشخص');
+				const message = self.failureGroupKey(it.message || 'خطای نامشخص');
 				if (!Object.prototype.hasOwnProperty.call(index, message)) {
 					index[message] = groups.length;
 					groups.push({ message: message, ids: [] });
@@ -994,9 +1003,9 @@
 				const issueGroups = [];
 				const issueGroupIndex = Object.create(null);
 				previewIssues.forEach(function(issue) {
-					const reason = (issue && issue.message) ? String(issue.message) : (issue.reason === 'missing_product'
+					const reason = self.failureGroupKey((issue && issue.message) ? String(issue.message) : (issue.reason === 'missing_product'
 						? 'محصول در دسترس نیست.'
-						: (issue.reason === 'over_limit' ? 'بیش از سقف ۳۰۰۰ ترکیب؛ محصول بدون تغییر رد می‌شود.' : 'خواندن یا شمارش گزینه‌های ویژگی ناموفق بود.'));
+						: (issue.reason === 'over_limit' ? 'بیش از سقف ۳۰۰۰ ترکیب؛ محصول بدون تغییر رد می‌شود.' : 'خواندن یا شمارش گزینه‌های ویژگی ناموفق بود.')));
 					if (!Object.prototype.hasOwnProperty.call(issueGroupIndex, reason)) {
 						issueGroupIndex[reason] = issueGroups.length;
 						issueGroups.push({ reason: reason, ids: [] });
