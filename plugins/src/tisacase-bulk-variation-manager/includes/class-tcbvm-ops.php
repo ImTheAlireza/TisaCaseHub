@@ -63,6 +63,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$existing_attributes = $product instanceof WC_Product ? $product->get_attributes() : array();
 			$matched_key         = null;
 			$matched_is_taxonomy = false;
+			$matched_on_product  = false;
 			$keys_to_remove      = array();
 
 			// ۱) بررسی ویژگی‌های فعلی موجود روی خود این محصول
@@ -86,6 +87,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				}
 
 				if ( $is_match ) {
+					$matched_on_product = true;
 					$is_tax = ( $attr_obj instanceof WC_Product_Attribute && $attr_obj->is_taxonomy() ) || taxonomy_exists( $attr_name );
 					if ( null === $matched_key ) {
 						$matched_key         = $attr_name;
@@ -157,7 +159,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 						$existing_id = function_exists( 'wc_attribute_taxonomy_id_by_name' ) ? wc_attribute_taxonomy_id_by_name( $slug ) : 0;
 						if ( ! $existing_id ) {
 							$error_message = is_wp_error( $created ) ? $created->get_error_message() : 'شناسهٔ ویژگی سراسری ایجاد نشد.';
-							return array( 'name' => $user_attr_label, 'is_taxonomy' => false, 'keys_to_remove' => array(), 'error' => $error_message );
+							return array( 'name' => $user_attr_label, 'is_taxonomy' => false, 'keys_to_remove' => array(), 'on_product' => false, 'error' => $error_message );
 						}
 					}
 
@@ -183,6 +185,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				'name'           => $matched_key,
 				'is_taxonomy'    => $matched_is_taxonomy,
 				'keys_to_remove' => array_values( array_unique( $keys_to_remove ) ),
+				'on_product'     => $matched_on_product,
 			);
 		}
 
@@ -999,7 +1002,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		 * @param bool   $combine_other ترکیب با سایر ویژگی‌های متغیر.
 		 * @return array داده‌های پیش‌نمایش.
 		 */
-		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL, $offset = 0, $limit = 0, $drop_any_target = false ) {
+		public static function preview( array $product_ids, $attr_name, array $new_values, $price, $sale_price = '', $combine_other = true, $operation_mode = self::MODE_REPLACE_ALL, $offset = 0, $limit = 0, $drop_any_target = false, $only_existing_attr = false ) {
 			self::ensure_all_attribute_taxonomies_registered();
 			$operation_mode = self::sanitize_operation_mode( $operation_mode );
 
@@ -1017,6 +1020,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$total_new            = 0;
 			$total_remove         = 0;
 			$total_drop_any       = 0;
+			$skipped_missing_attr_count = 0;
 			$total_new_capped     = false;
 			$preflight_error_count = 0;
 			$over_limit_count      = 0;
@@ -1074,6 +1078,33 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				$total_old      += $old_count;
 				$target_info     = self::resolve_product_target_attribute( $product, $attr_name, false );
 				$target_key      = $target_info['name'];
+				// گزینهٔ «فقط محصولاتی که ویژگی را دارند»: محصول بدون این ویژگی در
+				// اجرا بدون تغییر رد (Skip) می‌شود؛ در برآورد هم شمرده نمی‌شود.
+				if ( $only_existing_attr && empty( $target_info['on_product'] ) ) {
+					$skipped_missing_attr_count++;
+					$skip_message = sprintf( 'محصول ویژگی «%s» را ندارد؛ طبق گزینهٔ انتخاب‌شده رد می‌شود.', $attr_name );
+					if ( count( $preview_issues ) < $max_issue_ids ) {
+						$preview_issues[] = array( 'id' => $product_id, 'reason' => 'missing_attribute', 'message' => $skip_message );
+					} else {
+						$issues_truncated = true;
+					}
+					if ( count( $samples ) < $max_samples ) {
+						$samples[] = array(
+							'id'              => $product_id,
+							'name'            => $product->get_name(),
+							'type'            => $product->get_type(),
+							'old_vars'        => $old_count,
+							'new_vars'        => 0,
+							'remove_vars'     => 0,
+							'drop_any_vars'   => 0,
+							'over_limit'      => false,
+							'preflight_error' => $skip_message,
+							'multiplier'      => 0,
+							'other_attrs'     => '—',
+						);
+					}
+					continue;
+				}
 				if ( self::MODE_REMOVE_VALUES === $operation_mode ) {
 					$remove_error = '';
 					$remove_count = 0;
@@ -1265,6 +1296,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				'total_remove_vars'          => $total_remove,
 				'total_drop_any_vars'        => $total_drop_any,
 				'drop_any_target'            => (bool) $drop_any_target,
+				'skipped_missing_attr_count' => $skipped_missing_attr_count,
+				'only_existing_attr'         => (bool) $only_existing_attr,
 				'total_new_vars_capped'      => $total_new_capped,
 				'preflight_error_count' => $preflight_error_count,
 				'over_limit_count'      => $over_limit_count,
@@ -1278,7 +1311,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		/**
 		 * اجرای یک بسته محصول در پس‌زمینهٔ ایجکس با پشتیبانی کامل از Rollback.
 		 */
-		public static function execute_batch( $run_id, array $batch_ids, $attr_name, array $new_values, $price, $sale_price = '', $stock_status = 'instock', $combine_other = true, $drop_any_target = false ) {
+		public static function execute_batch( $run_id, array $batch_ids, $attr_name, array $new_values, $price, $sale_price = '', $stock_status = 'instock', $combine_other = true, $drop_any_target = false, $only_existing_attr = false ) {
 			if ( ! TCBVM_Backup::lock_run( $run_id ) ) {
 				throw new RuntimeException( 'قفل اجرای هم‌زمان در دسترس نیست؛ این بسته اجرا نشد.' );
 			}
@@ -1319,6 +1352,9 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				}
 				if ( array_key_exists( 'drop_any_target', $run_meta ) ) {
 					$drop_any_target = (bool) $run_meta['drop_any_target'];
+				}
+				if ( array_key_exists( 'only_existing_attr', $run_meta ) ) {
+					$only_existing_attr = (bool) $run_meta['only_existing_attr'];
 				}
 				self::ensure_all_attribute_taxonomies_registered();
 
@@ -1367,7 +1403,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							$stock_st,
 							(bool) $combine_other,
 							$operation_mode,
-							(bool) $drop_any_target
+							(bool) $drop_any_target,
+							(bool) $only_existing_attr
 						);
 
 						if ( ! empty( $res['success'] ) ) {
@@ -1611,7 +1648,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			);
 		}
 
-		private static function generate_product_variations( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false ) {
+		private static function generate_product_variations( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false, $only_existing_attr = false ) {
 			if ( ! TCBVM_Backup::lock_product( $product_id ) ) {
 				return array( 'success' => false, 'message' => 'قفل محصول در دسترس نیست؛ تغییر انجام نشد.' );
 			}
@@ -1619,13 +1656,13 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				if ( ! TCBVM_Backup::refresh_product_lock( $product_id ) ) {
 					return array( 'success' => false, 'message' => 'قفل محصول از دست رفت؛ تغییر انجام نشد.' );
 				}
-				return self::generate_product_variations_locked( $product_id, $run_id, $attr_name, $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target );
+				return self::generate_product_variations_locked( $product_id, $run_id, $attr_name, $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target, $only_existing_attr );
 			} finally {
 				TCBVM_Backup::unlock_product( $product_id );
 			}
 		}
 
-		private static function generate_product_variations_locked( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false ) {
+		private static function generate_product_variations_locked( $product_id, $run_id, $attr_name, array $clean_values, $regular_price, $sale_price, $stock_status, $combine_other, $operation_mode, $drop_any_target = false, $only_existing_attr = false ) {
 			$start_time = microtime( true );
 
 			// ابتدا شمارش؛ محصولی که از سقف می‌گذرد نه snapshot می‌شود و نه تغییر می‌کند.
@@ -1636,6 +1673,17 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$title    = $product->get_name();
 			$pre_info = self::resolve_product_target_attribute( $product, $attr_name, false );
 			$pre_key  = $pre_info['name'];
+			// گزینهٔ «فقط محصولاتی که ویژگی را دارند»: محصولی که ویژگی هدف روی خودش
+			// نیست بدون snapshot و بدون هیچ تغییری رد (Skip) می‌شود.
+			if ( $only_existing_attr && empty( $pre_info['on_product'] ) ) {
+				return array(
+					'success' => true,
+					'title'   => $title,
+					'created' => 0,
+					'deleted' => 0,
+					'message' => sprintf( '⏭️ محصول ویژگی «%s» را ندارد؛ طبق گزینهٔ انتخاب‌شده بدون تغییر رد شد.', $attr_name ),
+				);
+			}
 			if ( self::MODE_REMOVE_VALUES === $operation_mode ) {
 				return self::remove_selected_variations_locked( $product, $run_id, $pre_info, $clean_values );
 			}

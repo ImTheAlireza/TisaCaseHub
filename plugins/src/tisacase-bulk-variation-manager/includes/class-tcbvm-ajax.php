@@ -269,6 +269,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$sale_price     = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
 			$combine_other  = ! empty( $_POST['combine_other'] );
 			$drop_any_target = ! empty( $_POST['drop_any_target'] );
+			$only_existing_attr = ! empty( $_POST['only_existing_attr'] );
 			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 
 			if ( empty( $product_ids ) ) {
@@ -285,7 +286,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			}
 
 			try {
-				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode, 0, 0, $drop_any_target );
+				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode, 0, 0, $drop_any_target, $only_existing_attr );
 			} catch ( \Throwable $e ) {
 				self::send_error_json( array(
 					'message' => 'خطا در محاسبه پیش‌نمایش: ' . $e->getMessage(),
@@ -314,6 +315,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$sale_price     = isset( $_POST['sale_price'] ) ? sanitize_text_field( wp_unslash( $_POST['sale_price'] ) ) : '';
 			$combine_other  = ! empty( $_POST['combine_other'] );
 			$drop_any_target = ! empty( $_POST['drop_any_target'] );
+			$only_existing_attr = ! empty( $_POST['only_existing_attr'] );
 			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 			$offset         = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
 			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 300;
@@ -333,7 +335,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			}
 
 			try {
-				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode, $offset, $limit, $drop_any_target );
+				$preview = TCBVM_OPS::preview( $product_ids, $attr_name, $clean_values, $price, $sale_price, $combine_other, $operation_mode, $offset, $limit, $drop_any_target, $only_existing_attr );
 			} catch ( \Throwable $e ) {
 				self::send_error_json( array(
 					'message' => 'خطا در محاسبه پیش‌نمایش: ' . $e->getMessage(),
@@ -361,6 +363,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$stock_status   = isset( $_POST['stock_status'] ) ? sanitize_key( $_POST['stock_status'] ) : 'instock';
 			$combine_other  = ! empty( $_POST['combine_other'] );
 			$drop_any_target = ! empty( $_POST['drop_any_target'] );
+			$only_existing_attr = ! empty( $_POST['only_existing_attr'] );
 			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 
 			if ( empty( $product_ids ) ) {
@@ -386,6 +389,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				'stock_status'  => $stock_status,
 				'combine_other' => $combine_other,
 				'drop_any_target' => $drop_any_target,
+				'only_existing_attr' => $only_existing_attr,
 				'operation_mode' => $operation_mode,
 			) );
 			if ( ! $run_id ) {
@@ -421,6 +425,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$stock_status  = isset( $_POST['stock_status'] ) ? sanitize_key( $_POST['stock_status'] ) : 'instock';
 			$combine_other = ! empty( $_POST['combine_other'] );
 			$drop_any_target = ! empty( $_POST['drop_any_target'] );
+			$only_existing_attr = ! empty( $_POST['only_existing_attr'] );
 
 			if ( empty( $run_id ) || empty( $batch_ids ) ) {
 				wp_send_json_error( array( 'message' => 'اطلاعات بسته یا شناسه اجرا ناقص است.' ) );
@@ -436,7 +441,8 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 					$sale_price,
 					$stock_status,
 					$combine_other,
-					$drop_any_target
+					$drop_any_target,
+					$only_existing_attr
 				);
 			} catch ( \Throwable $e ) {
 				TCBVM_Backup::flush( $run_id );
