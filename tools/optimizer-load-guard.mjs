@@ -1,0 +1,136 @@
+#!/usr/bin/env node
+/**
+ * محافظ «بار سرور» برای عملیات مخربِ حجیم (نسخهٔ ۱٫۰٫۶).
+ *
+ * چرا؟ کاربر ۱۵۰۰ تصویر را برای حذف انتخاب کرد و اجرا وسط کار ایستاد، بدون
+ * این‌که بداند چند مورد انجام شده یا چرا متوقف شده. ریشهٔ باگ این بود که مرورگر
+ * شناسه‌ها را از پیش به بسته‌های ۲۵تایی می‌برید و سرور در سکوت با بودجهٔ زمانی
+ * ۳٫۵ ثانیه `break` می‌کرد؛ باقی بسته ناپدید می‌شد. هم‌زمان هر بسته، کل کاتالوگ
+ * JSON را بازنویسی می‌کرد (IO سنگین).
+ *
+ * این محافظ تضمین می‌کند آن معماری برنگردد و افزونه خودش بار روی سرور نباشد:
+ *   A) صف در سرور (نه در مرورگر) و ذخیرهٔ وضعیت بعد از هر آیتم.
+ *   B) تیک‌های زمان‌بندی‌شده + سقف تعداد + مکث بین آیتم‌ها.
+ *   C) نوشتن کاتالوگ یک‌بار در پایان کار (نه هر بسته).
+ *   D) راستی‌آزمایی ارزان در حالت دسته‌ای (بدون بازرسی محتوای هر تصویر).
+ *   E) جابه‌جایی فایل با rename (نه copy+delete) و نشانگر خرابی برای بازیابی.
+ *   F) رابط کاربری: حلقهٔ تیک‌های سرورمحور + کارت «ادامه» + شمارش صادقانه.
+ *
+ * اجرا: node tools/optimizer-load-guard.mjs
+ * خروج ۱ = نقض.
+ */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const P = 'plugins/src/tisacase-optimizer';
+const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+
+const boot = read(`${P}/tisacase-optimizer.php`);
+const job = read(`${P}/includes/class-tco-job.php`);
+const ajax = read(`${P}/includes/class-tco-ajax.php`);
+const usage = read(`${P}/includes/class-tco-usage.php`);
+const inspector = read(`${P}/includes/class-tco-media-inspector.php`);
+const vault = read(`${P}/includes/class-tco-vault.php`);
+const settings = read(`${P}/includes/class-tco-settings.php`);
+const admin = read(`${P}/assets/admin.js`);
+
+let pass = 0;
+const fails = [];
+
+function ok(name, condition, hint = '') {
+	if (condition) {
+		pass += 1;
+		console.log(`  ✓ ${name}`);
+		return;
+	}
+	fails.push(`${name}${hint ? ' — ' + hint : ''}`);
+	console.log(`  ✗ ${name}${hint ? ' — ' + hint : ''}`);
+}
+
+function fnBody(source, name) {
+	const start = source.indexOf(`function ${name}(`);
+	if (start === -1) return '';
+	const rest = source.slice(start + 10);
+	const next = rest.search(/\n\t\t(?:public|private|protected|static)?\s*(?:static\s+)?function\s/);
+	return next === -1 ? rest : rest.slice(0, next);
+}
+
+console.log('── ۱) صف در سرور، نه در مرورگر ──');
+ok('کلاس موتور کار در Autoloader ثبت شده است', boot.includes("'TisaCase_Optimizer_Job'") && boot.includes("'class-tco-job.php'"));
+ok('صف در یک آپشن مستقل ذخیره می‌شود', /const\s+OPTION\s*=\s*'tisacase_optimizer_active_job'/.test(job));
+ok('آپشن کار autoload نمی‌شود (بار اضافه روی هر صفحهٔ سایت)', /update_option\(\s*self::OPTION,\s*\$job,\s*false\s*\)/.test(job));
+ok('فقط یک کار هم‌زمان مجاز است (پاسخ ۴۰۹ به شروع کار دوم)', ajax.includes('یک عملیات نیمه‌تمام در جریان است') && /409/.test(ajax));
+ok('ادامهٔ کار با تطبیق شناسهٔ کار انجام می‌شود', /\$job\['id'\]\s*!==\s*\$job_id/.test(ajax));
+ok('وضعیت بعد از هر آیتم ذخیره می‌شود (مقاوم به قطع ناگهانی)', /self::run_one\(\s*\$job\s*\);[\s\S]{0,400}?self::save\(\s*\$job\s*\);/.test(job));
+ok('وضعیت شامل شناسهٔ آیتم در حال پردازش است', job.includes("'current'"));
+ok('کار رهاشده در شروع کار بعدی تسویه می‌شود', /function\s+reap_orphans\s*\(/.test(job) && job.includes('reap_orphans()'));
+ok('لغو کار، صف را خالی و وضعیت را ثبت می‌کند', /function\s+cancel\s*\(/.test(job));
+ok('خطای کشنده قابل ثبت است (تا کارت ادامه دلیل واقعی را بگوید)', /function\s+mark_error\s*\(/.test(job));
+
+console.log('── ۲) تیک‌های کوتاه و قابل تنظیم (بار روی هاست اشتراکی) ──');
+ok('بودجهٔ زمانی هر تیک از تنظیمات خوانده می‌شود', /delete_tick_ms/.test(job));
+ok('بودجهٔ زمانی کران‌دار است', /max\(\s*1500,\s*min\(\s*15000/.test(job));
+ok('سقف تعداد آیتم در هر تیک وجود دارد', /max\(\s*5,\s*min\(\s*200/.test(job) && job.includes('delete_tick_max'));
+ok('مکث بین آیتم‌ها برای محافظت از IOPS وجود دارد', job.includes('delete_throttle_ms') && /usleep\(\s*\$throttle_ms/.test(job));
+ok('حلقهٔ اجرا با بودجهٔ زمانی محدود می‌شود', /\(\s*microtime\(\s*true\s*\)\s*-\s*\$started\s*\)\s*<\s*\$budget_s/.test(job));
+ok('پس از اتمام صف، کار به فاز پایان می‌رود (بدون حلقهٔ بی‌پایان)', job.includes("$job['phase'] = 'finish'"));
+ok('تنظیمات، هر سه کران را معتبر می‌سازد', /delete_tick_ms'\]\s*=\s*max\(\s*1500/.test(settings) && /delete_tick_max'\]\s*=\s*max\(\s*5/.test(settings) && /delete_throttle_ms'\]\s*=\s*max\(\s*0/.test(settings));
+ok('سه تنظیم در رابط کاربری قابل تغییر است', admin.includes('tco-cfg-tickms') && admin.includes('tco-cfg-tickmax') && admin.includes('tco-cfg-throttle'));
+
+console.log('── ۳) کاتالوگ یک‌بار نوشته می‌شود، نه در هر بسته ──');
+ok('حذف از کاتالوگ می‌تواند تعویق بیفتد', inspector.includes('function remove_from_cached_catalog(') && /\$defer\s*=\s*false/.test(inspector) && inspector.includes('if ( $defer )'));
+ok('صف حذف‌های معوق وجود دارد', /function\s+queue_pending_removals\s*\(/.test(inspector) && /function\s+flush_pending_removals\s*\(/.test(inspector));
+ok(
+	'flush کاتالوگ نه در حلقهٔ آیتم‌ها، بلکه فقط در تسویه و پایان انجام می‌شود',
+	(job.match(/flush_pending_removals\(/g) || []).length === 2 &&
+		/reap_orphans[\s\S]{0,400}?flush_pending_removals/.test(job) &&
+		/function\s+finish\s*\([\s\S]*?flush_pending_removals/.test(job) &&
+		!/while\s*\([\s\S]{0,600}?flush_pending_removals/.test(job)
+);
+ok('flush در فاز پایان انجام می‌شود', /function\s+finish\s*\([\s\S]*?flush_pending_removals\(/.test(job));
+ok('مسیر حذف هرگز اسکن سنگین نمی‌سازد', !fnBody(usage, 'verify_batch').includes('build_catalog') && !fnBody(job, 'finish').includes('build_catalog'));
+
+console.log('── ۴) راستی‌آزمایی ارزان در حالت دسته‌ای ──');
+ok('verify_batch حالت انبوه را می‌شناسد', /function\s+verify_batch\s*\([\s\S]{0,200}?\$bulk/.test(usage));
+ok('در کاتالوگ تازه و کامل، بازرسی محتوای هر تصویر حذف می‌شود', /\$bulk\s*&&\s*\$is_fresh/.test(usage) && usage.includes("'full' === $coverage"));
+ok('موتور کار راستی‌آزمایی را دسته‌ای صدا می‌زند', /verify_batch\(\s*\$pending,[\s\S]{0,220}?,\s*true\s*\)/.test(job));
+ok('سقف بازرسی محتوا هنوز کران‌دار است', /MAX_CONTENT_PROBES\s*=\s*\d+/.test(usage));
+
+console.log('── ۵) جابه‌جایی فایل بدون دوبرابر IO و با امکان بازیابی ──');
+ok('انتقال با rename انجام می‌شود', /@rename\(/.test(vault));
+ok('در صورت شکست rename، copy به‌عنوان جایگزین هست', /@rename\([\s\S]{0,600}?@copy\(/.test(vault));
+ok('نشانگر نیمه‌کارهٔ manifest قبل از جابه‌جایی نوشته می‌شود', vault.includes('manifest.partial.json'));
+ok(
+	'در صورت شکست manifest، همهٔ فایل‌ها به مسیر اصلی برمی‌گردند',
+	/manifest_failed/.test(vault) && /@rename\(\s*\$src,\s*\$back\s*\)/.test(vault) && /'manifest_failed'/.test(vault)
+);
+ok('قرنطینهٔ فایل یتیم هم منتقل‌شده را دوباره حذف نمی‌کند', /\$relocated/.test(vault));
+
+console.log('── ۶) رابط کاربری: حلقهٔ تیک سرورمحور و شمارش صادقانه ──');
+ok('جاوااسکریپت با job_id تیک می‌زند (نه بسته‌های از پیش بریده)', /job_id:\s*jobId/.test(admin));
+ok('شناسهٔ بستهٔ سمت کلاینت دیگر مصرف نمی‌شود', !admin.includes('chunk.splice(') || !/runBatchRemove[\s\S]{0,3000}chunk\.splice\(/.test(admin));
+ok('حلقهٔ کلاینت کران‌دار است (ضدقفل‌شدن)', /guard\s*<\s*\d+/.test(admin));
+ok('تعداد انجام‌شده/باقی‌مانده از سرور خوانده می‌شود', admin.includes('job.remaining') && admin.includes('job.done'));
+ok('کارت «ادامهٔ عملیات» رندر می‌شود', /function\s+renderResumeCard\s*\(/.test(admin) && admin.includes('tco-resume-job'));
+ok('دکمهٔ رهاکردن کار به سرور اعلام می‌شود', admin.includes('tco-discard-job') && admin.includes("api('job_cancel'"));
+ok('وضعیت کار در بارگذاری اولیه خوانده می‌شود', admin.includes('refreshJobStatus()'));
+ok('پس از قطع، عددها با سرور هم‌تراز می‌شوند', /await refreshJobStatus\(\)/.test(admin));
+ok('دلیل توقف به کاربر نشان داده می‌شود', /lastError/.test(admin) && admin.includes('عملیات نیمه‌تمام'));
+ok('کارت ادامه در همهٔ نماها بالای صفحه است', (admin.match(/renderResumeCard\(\)\s*\+/g) || []).length >= 3);
+
+console.log('── ۷) اندپوینت‌ها و امنیت ──');
+ok('اندپوینت job_status ثبت شده است', ajax.includes("'job_status'") && ajax.includes('TisaCase_Optimizer_Job::summary'));
+ok('اندپوینت job_cancel ثبت شده است', ajax.includes("'job_cancel'") && ajax.includes('TisaCase_Optimizer_Job::cancel'));
+ok('حذف دسته‌ای بر پایهٔ موتور کار است', /TisaCase_Optimizer_Job::start_remove/.test(ajax) && /TisaCase_Optimizer_Job::advance/.test(ajax));
+ok('همهٔ اندپوینت‌ها از مسیر مشترک با nonce و مجوز عبور می‌کنند', ajax.includes('check_ajax_referer') && ajax.includes("current_user_can( 'manage_options' )"));
+ok('حذف و ادامهٔ کار فقط برای مدیر مجاز است (بدون مسیر میان‌بر)', !/function\s+handle_job_cancel[\s\S]{0,200}?check_ajax_referer/.test(ajax) || ajax.includes('self::dispatch'));
+
+console.log('');
+if (fails.length) {
+	console.error(`✗ ${fails.length} نقض در محافظ «بار سرور»:`);
+	fails.forEach((f) => console.error(`   • ${f}`));
+	process.exit(1);
+}
+console.log(`✓ هر ${pass} سنجهٔ محافظ «بار سرور و کار قابل ادامه» سالم است.`);

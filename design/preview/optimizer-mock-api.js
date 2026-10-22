@@ -610,24 +610,64 @@
 			});
 			data = { pinned_ids: db.items.filter((i) => i.is_pinned).map((i) => i.id) };
 		} else if (op === 'remove_items') {
-			const ids = (req.ids || []).map(Number).filter(Boolean);
-			const paths = (req.rel_paths || []).filter(Boolean);
-			const batchId = req.batch_id || 'run' + Date.now();
-			let saved = 0;
-			const doneIds = [];
-			const donePaths = [];
+			// شبیه‌ساز موتور کار «قابل ادامه»: صف در سرور می‌ماند و هر تیک فقط
+			// بخشی را انجام می‌دهد؛ هیچ شناسه‌ای گم نمی‌شود.
+			const tickMax = Number(window.__tcoMockTickMax || 6);
+			const failAfter = Number(window.__tcoMockFailAfter || 0);
 
-			ids.forEach((id) => {
+			const makeJob = (ids, paths, mode) => ({
+				id: 'jobmock' + Date.now(),
+				mode,
+				batch_id: 'run' + Date.now(),
+				total: ids.length + paths.length,
+				done: 0,
+				saved_bytes: 0,
+				queue_ids: [...ids],
+				queue_paths: [...paths],
+				done_ids: [],
+				done_paths: [],
+				blocked_count: 0,
+				failed_count: 0,
+				last_error: '',
+				status: 'running',
+			});
+
+			if (req.job_id) {
+				if (!window.__tcoMockJob || window.__tcoMockJob.id !== req.job_id) {
+					throw new Error('این کار دیگر فعال نیست یا منقضی شده است.');
+				}
+			} else {
+				if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
+					throw new Error('یک عملیات نیمه‌تمام در جریان است.');
+				}
+				window.__tcoMockJob = makeJob(
+					(req.ids || []).map(Number).filter(Boolean),
+					(req.rel_paths || []).filter(Boolean),
+					req.delete_mode === 'permanent' ? 'permanent' : 'quarantine'
+				);
+				window.__tcoMockTicks = 0;
+			}
+
+			const job = window.__tcoMockJob;
+			let saved = 0;
+
+			for (let n = 0; n < tickMax && job.queue_ids.length; n += 1) {
+				const id = job.queue_ids.shift();
 				const idx = db.items.findIndex((x) => x.id === id && !x.is_pinned);
-				if (idx === -1) return;
+				if (idx === -1) {
+					// مورد محافظت‌شده/حذف‌شده: شمرده می‌شود تا حساب‌ها همیشه ببندد.
+					job.blocked_count += 1;
+					continue;
+				}
 				const item = db.items.splice(idx, 1)[0];
 				const bytes = item.main_bytes + item.subsizes_bytes + item.unscaled_bytes;
 				saved += bytes;
-				doneIds.push(id);
-				if (req.delete_mode !== 'permanent') {
+				job.done += 1;
+				job.done_ids.push(id);
+				if (job.mode !== 'permanent') {
 					db.quarantine.unshift({
 						id: 'q_' + Date.now() + '_' + id,
-						batch_id: batchId,
+						batch_id: job.batch_id,
 						attachment_id: item.id,
 						filename: item.filename,
 						rel_path: item.rel_path,
@@ -641,52 +681,129 @@
 				} else {
 					db.lifetime.deleted_count += 1;
 				}
-			});
+			}
 
-			paths.forEach((p) => {
+			// فایل‌های یتیم (در صورت وجود)
+			while (job.queue_paths.length && job.done_ids.length % 3 === 0) {
+				const p = job.queue_paths.shift();
 				const idx = db.diskOrphans.findIndex((o) => o.rel_path === p);
-				if (idx === -1) return;
+				if (idx === -1) continue;
 				const o = db.diskOrphans.splice(idx, 1)[0];
 				saved += o.bytes;
-				donePaths.push(p);
-				if (req.delete_mode !== 'permanent') {
-					db.quarantine.unshift({
-						id: 'qf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
-						batch_id: batchId,
-						attachment_id: 0,
-						filename: o.filename,
-						rel_path: o.rel_path,
-						reason: 'disk_orphan',
-						files_count: 1,
-						total_bytes: o.bytes,
-						created_at: '2026-10-21 15:45:00',
-					});
-					db.lifetime.quarantined_count += 1;
-				}
-			});
+				job.done += 1;
+				job.done_paths.push(p);
+			}
 
+			job.saved_bytes += saved;
 			db.lifetime.saved_bytes += saved;
-			db.history.unshift({
-				batch_id: batchId,
-				type: req.delete_mode === 'permanent' ? 'delete' : 'quarantine',
-				label: req.delete_mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)',
-				items_count: doneIds.length + donePaths.length,
-				saved_bytes: saved,
-				user: 'مدیر فروشگاه',
-				created_at: '2026-10-21 15:45:12',
-				note: '',
-			});
-			data = {
-				batch_id: batchId,
-				done_ids: doneIds,
-				done_paths: donePaths,
-				remaining_ids: [],
-				remaining_paths: [],
-				saved_bytes: saved,
+			window.__tcoMockTicks = (window.__tcoMockTicks || 0) + 1;
+
+			// شبیه‌سازی قطع ناگهانی (برای تست «ادامه از همان نقطه»).
+			if (failAfter > 0 && window.__tcoMockTicks >= failAfter) {
+				job.last_error = 'تایم‌اوت موقت سرور (شبیه‌سازی برای آزمون بازیابی)';
+				window.__tcoMockTicks = 0;
+				failAfter = 0;
+				window.__tcoMockFailAfter = 0;
+				throw new Error(job.last_error);
+			}
+
+			const finished = job.queue_ids.length === 0 && job.queue_paths.length === 0;
+
+			if (finished) {
+				job.status = 'done';
+				db.history.unshift({
+					batch_id: job.batch_id,
+					type: job.mode === 'permanent' ? 'delete' : 'quarantine',
+					label: job.mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)',
+					items_count: job.done,
+					saved_bytes: job.saved_bytes,
+					user: 'مدیر فروشگاه',
+					created_at: '2026-10-21 15:45:12',
+					note: '',
+				});
+			}
+
+			const summary = {
+				id: job.id,
+				op: 'remove',
+				mode: job.mode,
+				phase: finished ? 'finish' : 'run',
+				status: job.status,
+				batch_id: job.batch_id,
+				total: job.total,
+				done: job.done,
+				remaining: job.queue_ids.length + job.queue_paths.length,
+				verified: job.total,
+				blocked_count: job.blocked_count,
 				blocked: {},
 				blocked_paths: {},
-				blocked_count: 0,
-				done: true,
+				failed_count: job.failed_count,
+				failed: [],
+				saved_bytes: job.saved_bytes,
+				elapsed_sec: 1,
+				eta_sec: 0,
+				coverage: 'full',
+				needs_rescan: false,
+				last_error: job.last_error || '',
+				finished,
+			};
+
+			data = {
+				job: summary,
+				done_ids: job.done_ids,
+				done_paths: job.done_paths,
+				saved_bytes: job.saved_bytes,
+				batch_id: job.batch_id,
+				mode: job.mode,
+				blocked: {},
+				blocked_paths: {},
+				blocked_count: job.blocked_count,
+				needs_rescan: false,
+				coverage: 'full',
+				processed_now: tickMax,
+				overview: computeOverview(),
+			};
+		} else if (op === 'job_status') {
+			if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
+				const job = window.__tcoMockJob;
+				data = {
+					job: {
+						id: job.id,
+						op: 'remove',
+						mode: job.mode,
+						phase: 'run',
+						status: job.status,
+						batch_id: job.batch_id,
+						total: job.total,
+						done: job.done,
+						remaining: job.queue_ids.length + job.queue_paths.length,
+						verified: job.total,
+						blocked_count: job.blocked_count,
+						blocked: {},
+						blocked_paths: {},
+						failed_count: job.failed_count,
+						failed: [],
+						saved_bytes: job.saved_bytes,
+						elapsed_sec: 1,
+						eta_sec: 0,
+						coverage: 'full',
+						needs_rescan: false,
+						last_error: job.last_error || '',
+						finished: false,
+					},
+				};
+			} else {
+				data = { job: null };
+			}
+		} else if (op === 'job_cancel') {
+			const job = window.__tcoMockJob;
+			if (job && job.status === 'running') {
+				job.status = 'cancelled';
+				job.queue_ids = [];
+				job.queue_paths = [];
+			}
+			data = {
+				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
 				overview: computeOverview(),
 			};
 		} else if (op === 'clean_unscaled') {

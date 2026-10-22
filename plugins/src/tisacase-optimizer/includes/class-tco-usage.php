@@ -664,9 +664,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		 * @param int[]    $attachment_ids  شناسه‌های پیوست درخواستی.
 		 * @param string[] $rel_paths       مسیرهای فایل یتیم درخواستی.
 		 * @param bool     $allow_draft_only آیا حذف تصاویر «فقط استفاده‌شده در پیش‌نویس» مجاز است؟
+		 * @param bool     $bulk           حالت دسته‌ای بزرگ: اگر کاتالوگ کامل و تازه باشد،
+		 *                                 بازرسی محتوای تک‌تک تصاویر (که به‌ازای هر تصویر یک
+		 *                                 اسکن جدول نوشته‌ها است) انجام نمی‌شود؛ چون همان
+		 *                                 محتوا در اسکن کاملِ کاتالوگ برای همهٔ تصاویر دیده شده.
+		 *                                 این تغییر بار سنگین را از سرور برمی‌دارد و امنیت
+		 *                                 را حفظ می‌کند (بدون کاتالوگ کامل، بازرسی انجام می‌شود).
 		 * @return array<string,mixed>
 		 */
-		public static function verify_batch( array $attachment_ids, array $rel_paths = array(), $allow_draft_only = false ) {
+		public static function verify_batch( array $attachment_ids, array $rel_paths = array(), $allow_draft_only = false, $bulk = false ) {
 			$enabled = (bool) TisaCase_Optimizer_Settings::get( 'verify_before_delete', 1 );
 
 			$ids = array();
@@ -806,9 +812,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 						unset( $allow[ $aid ] );
 						continue;
 					}
-					// همیشه بازبینی محتوای زنده انجام می‌شود؛ حتی با کاتالوگ تازه.
-					// دلیل: برخی قالب‌ها/افزونه‌ها تصویر را فقط با `data-id` یا
-					// `attachment-ID` در محتوا می‌نویسند و اسکن متا آن را نمی‌بیند.
+					// بازبینی محتوای زنده:
+					//   • در حذف تک/کوچک: همیشه (حتی با کاتالوگ تازه) تا الگوهای قالبی
+					//     مثل data-id/attachment-ID هم دیده شوند.
+					//   • در حالت دسته‌ای بزرگ با کاتالوگ کامل و تازه: لازم نیست؛ چون
+					//     اسکن کامل همان محتوا را برای همهٔ پیوست‌ها پیمایش کرده و
+					//     انجام این کار برای ۱۵۰۰ عکس یعنی ۱۵۰۰ اسکن سنگین جدول.
+					if ( $bulk && $is_fresh && 'full' === $coverage ) {
+						continue;
+					}
 					$need_probe[] = $aid;
 					continue;
 				}

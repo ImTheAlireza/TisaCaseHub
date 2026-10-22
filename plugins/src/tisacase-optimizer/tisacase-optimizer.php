@@ -3,7 +3,7 @@
  * Plugin Name:          مرکز بهینه‌سازی تیساکیس (TisaCase Optimizer)
  * Plugin URI:           https://tisacase.com
  * Description:          مرکز چندبخشی بهینه‌سازی و نگهداری فروشگاه تیساکیس — تحلیل دقیق حجم واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با راستی‌آزمایی زندهٔ پیش از حذف و قرنطینهٔ ۳۰ روزه، فشرده‌سازی بومی WebP/AVIF، ادغام هوشمند تکراری‌ها، مدیریت زیرسایزها و سئوی خودکار.
- * Version:              1.0.5
+ * Version:              1.0.6
  * Requires at least:    5.8
  * Requires PHP:         7.4
  * Author:               علیرضا شعبان زاده
@@ -21,7 +21,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCO_VERSION', '1.0.5' );
+define( 'TCO_VERSION', '1.0.6' );
 define( 'TCO_FILE', __FILE__ );
 define( 'TCO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TCO_URL', plugin_dir_url( __FILE__ ) );
@@ -41,6 +41,7 @@ function tco_autoload( $class ) {
 		'TisaCase_Optimizer_Modules'           => 'class-tco-modules.php',
 		'TisaCase_Optimizer_Vault'             => 'class-tco-vault.php',
 		'TisaCase_Optimizer_Usage'             => 'class-tco-usage.php',
+		'TisaCase_Optimizer_Job'               => 'class-tco-job.php',
 		'TisaCase_Optimizer_Reference_Scanner' => 'class-tco-reference-scanner.php',
 		'TisaCase_Optimizer_Media_Inspector'   => 'class-tco-media-inspector.php',
 		'TisaCase_Optimizer_Image_Processor'   => 'class-tco-image-processor.php',

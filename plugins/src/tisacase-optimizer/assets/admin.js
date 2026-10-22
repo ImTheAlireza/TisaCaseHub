@@ -131,6 +131,8 @@
 		},
 		seoFilter: 'missing_alt',
 		seoPage: 1,
+		// کار نیمه‌تمامِ ذخیره‌شده در سرور (برای کارت «ادامه»).
+		activeJob: null,
 	};
 
 	function toast(msg, kind = 'success') {
@@ -174,6 +176,8 @@
 		get_subsizes: 'خواندن آمار زیرسایزها…',
 		scan_step: 'اسکن لایه‌های استفاده…',
 		remove_items: 'حذف ایمن تصاویر…',
+		job_status: 'خواندن وضعیت عملیات نیمه‌تمام…',
+		job_cancel: 'رهاکردن عملیات نیمه‌تمام…',
 		optimize_batch: 'فشرده‌سازی تصاویر…',
 		clean_unscaled: 'پاک‌سازی فایل‌های خام -scaled…',
 		merge_duplicates: 'ادغام تصاویر تکراری…',
@@ -511,18 +515,60 @@
 		</div>`;
 	}
 
+	/**
+	 * کارت «عملیات نیمه‌تمام» — قلبِ رفع مشکل «نمی‌دانم چقدر حذف شد».
+	 * همیشه تعداد انجام‌شده/کل، باقی‌مانده و دلیل توقف را نشان می‌دهد و
+	 * اجازهٔ ادامه یا رهاکردن می‌دهد.
+	 */
+	function renderResumeCard() {
+		const job = state.activeJob;
+		if (!job || state.batch.running) return '';
+
+		const done = Number(job.done || 0);
+		const total = Number(job.total || 0);
+		const remaining = Number(job.remaining != null ? job.remaining : Math.max(0, total - done));
+		const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+		const reason = job.lastError ? esc(job.lastError) : 'عملیات پیش از پایان متوقف شد';
+		const blocked = Number(job.blocked || 0);
+		const failed = Number(job.failed || 0);
+		const extra = `${blocked > 0 ? ` · ${faNum(blocked)} مورد محافظت‌شده (حذف نشد)` : ''}${failed > 0 ? ` · ${faNum(failed)} خطای فایل` : ''}`;
+
+		return `<div class="tco-card tco-resume" role="status">
+			<div class="tco-card__head">
+				<div>
+					<h2 class="tco-card__title">عملیات نیمه‌تمام: ${faNum(done)} از ${faNum(total)} انجام شده</h2>
+					<p class="tco-muted">${reason} — پیشرفت در سرور ذخیره شده است؛ با «ادامه» از همان نقطه تکمیل می‌شود. ${faNum(remaining)} مورد باقی مانده${extra}.</p>
+				</div>
+				<span class="tco-pill tco-pill--warn">${faNum(pct)}٪</span>
+			</div>
+			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
+			<div class="tco-win__foot">
+				<span>تا این لحظه: <strong>${faNum(done)}</strong> مورد پردازش شد</span>
+				<div class="tco-row-actions">
+					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-resume-job">ادامهٔ عملیات</button>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-discard-job">رها کردن (ثبت همان مقدار انجام‌شده)</button>
+				</div>
+			</div>
+		</div>`;
+	}
+
 	function renderBatchProgress() {
 		if (!state.batch.running) return '';
-		const pct = state.batch.total > 0 ? Math.min(100, Math.round((state.batch.done / state.batch.total) * 100)) : 15;
+		const b = state.batch;
+		const pct = b.total > 0 ? Math.min(100, Math.round((b.done / b.total) * 100)) : 15;
+		const remaining = b.remaining != null ? b.remaining : Math.max(0, b.total - b.done);
+		const eta = b.etaSec > 0 ? ` · حدود ${faNum(b.etaSec)} ثانیه باقی‌مانده` : '';
+		const failed = b.failed > 0 ? ` · ${faNum(b.failed)} خطای فایل` : '';
 		return `<div class="tco-progress-box">
 			<div class="tco-win__foot">
-				<strong>${esc(state.batch.title)} — ${faNum(state.batch.done)} از ${faNum(state.batch.total)} (${faNum(pct)}٪)</strong>
+				<strong>${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)${eta}${failed}</strong>
 				<div class="tco-row-actions">
-					<span>آزادشده تا این لحظه: <strong>${formatBytes(state.batch.savedBytes)}</strong></span>
-					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف محترمانه</button>
+					<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
 				</div>
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
+			<p class="tco-muted">پیشرفت هر تصویر در سرور ذخیره می‌شود؛ حتی با بستن مرورگر یا قطع اینترنت، از همین نقطه ادامه می‌دهید.</p>
 		</div>`;
 	}
 
@@ -1300,6 +1346,23 @@
 						<input type="number" class="tco-input" id="tco-cfg-qdays" value="${Number(s.quarantine_days || 30)}" min="1" max="365">
 					</div>
 				</div>
+				<div class="tco-form-grid" style="margin-top:16px">
+					<div class="tco-field">
+						<label for="tco-cfg-tickms">سقف زمان هر درخواست حذف (میلی‌ثانیه) — بار روی سرور</label>
+						<input type="number" class="tco-input" id="tco-cfg-tickms" value="${Number(s.delete_tick_ms || 4000)}" min="1500" max="15000" step="500">
+						<span class="tco-muted">پیش‌فرض ۴۰۰۰. کمتر = درخواست‌های کوتاه‌تر و فشار کمتر روی هاست اشتراکی؛ بیشتر = تمام‌شدن سریع‌تر کار.</span>
+					</div>
+					<div class="tco-field">
+						<label for="tco-cfg-tickmax">حداکثر تصویر در هر درخواست</label>
+						<input type="number" class="tco-input" id="tco-cfg-tickmax" value="${Number(s.delete_tick_max || 40)}" min="5" max="200">
+						<span class="tco-muted">پیش‌فرض ۴۰. هر تیک پس از این تعداد یا پس از رسیدن به سقف زمان، تمام می‌شود و کار در سرور ذخیره می‌ماند.</span>
+					</div>
+					<div class="tco-field">
+						<label for="tco-cfg-throttle">مکث بین تصاویر (میلی‌ثانیه)</label>
+						<input type="number" class="tco-input" id="tco-cfg-throttle" value="${Number(s.delete_throttle_ms || 15)}" min="0" max="250" step="5">
+						<span class="tco-muted">پیش‌فرض ۱۵. جلوگیری از اشباع دیسک (IOPS) در حذف‌های چندصدتایی.</span>
+					</div>
+				</div>
 				<div class="tco-field" style="margin-top:16px">
 					<label for="tco-cfg-excl">زیرپوشه‌های مستثنی در اسکن فیزیکی دیسک (هر خط یک پوشه داخل uploads/)</label>
 					<textarea class="tco-textarea tco-code" id="tco-cfg-excl">${esc(s.excluded_dirs || '')}</textarea>
@@ -1553,11 +1616,11 @@
 			else if (state.subtab === 'seo') body = renderSeoTab();
 			else body = renderSettingsTab();
 
-			main.innerHTML = renderImageSubnav() + renderBatchProgress() + body;
+			main.innerHTML = renderImageSubnav() + renderResumeCard() + renderBatchProgress() + body;
 		} else if (state.module === 'vault') {
-			main.innerHTML = renderBatchProgress() + renderVaultModule();
+			main.innerHTML = renderResumeCard() + renderBatchProgress() + renderVaultModule();
 		} else {
-			main.innerHTML = renderOtherModules();
+			main.innerHTML = renderResumeCard() + renderOtherModules();
 		}
 	}
 
@@ -1709,11 +1772,23 @@
 		return pct;
 	}
 
-	async function runBatchRemove(ids, relPaths) {
-		const queueIds = [...ids];
-		const queuePaths = [...relPaths];
-		const totalItems = queueIds.length + queuePaths.length;
-		const runBatchId = 'run' + Date.now();
+	/**
+	 * حذف/قرنطینه با موتور کار «قابل ادامه» در سرور.
+	 *
+	 * تفاوت بنیادین با نسخهٔ قبل: صف در سرور است، نه در مرورگر. هر تیک فقط
+	 * چند ثانیه کار می‌کند و «باقی‌مانده» را برمی‌گرداند؛ پس:
+	 *   • هیچ شناسه‌ای گم نمی‌شود (باگ قبلی: سرور در میانهٔ بسته به سقف زمان
+	 *     می‌رسید و بقیهٔ ۲۵تایی رها می‌شد).
+	 *   • اگر مرورگر بسته شود/اینترنت قطع شود/سرور خطا بدهد، کار ذخیره است و
+	 *     از همان نقطه ادامه می‌یابد.
+	 *   • فشار روی سرور: هر تیک کوتاه + فاصلهٔ تنفس بین تصاویر.
+	 *
+	 * @param {Array}  ids      شناسه‌های پیوست.
+	 * @param {Array}  relPaths مسیر فایل‌های یتیم.
+	 * @param {string} resumeJobId شناسهٔ کار برای ادامه (اختیاری).
+	 */
+	async function runBatchRemove(ids, relPaths, resumeJobId) {
+		const totalItems = (ids ? ids.length : 0) + (relPaths ? relPaths.length : 0);
 		state.batch = {
 			running: true,
 			stopRequested: false,
@@ -1723,59 +1798,158 @@
 			savedBytes: 0,
 			blocked: 0,
 			needsRescan: false,
+			jobId: resumeJobId || '',
+			etaSec: 0,
+			remaining: totalItems,
+			failed: 0,
+			error: '',
 		};
 		render();
 		const runToken = busyStart(state.batch.title, { pct: 0 });
 		batchPct(state.batch, 'شروع…');
 
+		let stoppedByUser = false;
+
 		try {
-			while ((queueIds.length > 0 || queuePaths.length > 0) && !state.batch.stopRequested) {
-				const chunkIds = queueIds.splice(0, 25);
-				const chunkPaths = queuePaths.splice(0, 25);
-				const isLast = queueIds.length === 0 && queuePaths.length === 0;
-				const res = await api('remove_items', {
-					ids: chunkIds,
-					rel_paths: chunkPaths,
-					batch_id: runBatchId,
+			let jobId = resumeJobId || '';
+			let finished = false;
+			let guard = 0;
+
+			while (!finished && guard < 4000) {
+				guard += 1;
+
+				if (state.batch.stopRequested) {
+					stoppedByUser = true;
+					break;
+				}
+
+				const payload = jobId ? { job_id: jobId } : {
+					ids: ids || [],
+					rel_paths: relPaths || [],
 					delete_mode: state.deleteMode,
 					allow_draft_only: (state.unusedFilter && state.unusedFilter.usage === 'draft_only') ? 1 : 0,
-					log_final: isLast ? 1 : 0,
-					summary_count: totalItems,
-					summary_bytes: state.batch.savedBytes,
-				});
-				state.batch.done += (res.done_ids || []).length + (res.done_paths || []).length;
-				state.batch.savedBytes += Number(res.saved_bytes || 0);
-				state.batch.blocked += Number(res.blocked_count || 0);
-				if (res.needs_rescan) {
-					state.batch.needsRescan = true;
-				}
-				if (res.overview) {
-					state.overview = res.overview;
-				}
+				};
+
+				const res = await api('remove_items', payload);
+				if (!res || !res.job) break;
+
+				const job = res.job;
+				jobId = job.id;
+
+				state.batch.jobId = job.id;
+				state.batch.total = job.total || state.batch.total;
+				state.batch.done = job.done || 0;
+				state.batch.remaining = job.remaining || 0;
+				state.batch.savedBytes = job.saved_bytes || 0;
+				state.batch.blocked = job.blocked_count || 0;
+				state.batch.failed = job.failed_count || 0;
+				state.batch.etaSec = job.eta_sec || 0;
+				state.batch.lastError = job.last_error || '';
+				if (job.needs_rescan) state.batch.needsRescan = true;
+				if (res.overview) state.overview = res.overview;
+
+				finished = Boolean(job.finished);
+
 				render();
-				batchPct(state.batch);
+				batchPct(state.batch, state.batch.etaSec > 0 ? `حدود ${faNum(state.batch.etaSec)} ثانیه باقی‌مانده` : 'در حال پردازش…');
+
+				// اگر سرور خطا داده باشد، همان‌جا متوقف می‌شویم؛ کار ذخیره است.
+				if (res.error) {
+					state.batch.error = res.error;
+					break;
+				}
+
+				if (!finished) {
+					// یک مکث کوتاه بین تیک‌ها تا مرورگر هم فرصت رندر داشته باشد.
+					await new Promise((r) => setTimeout(r, 60));
+				}
 			}
-			state.selectedIds.clear();
-			state.selectedPaths.clear();
-			const keptNote = state.batch.blocked > 0
-				? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود (یا اسکن کامل نیست) حذف نشد.`
-				: '';
-			toast(
-				state.deleteMode === 'permanent'
-					? `عملیات حذف قطعی انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد${keptNote}`
-					: `به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» همیشه قابل برگشت است${keptNote}`
-			);
-			if (state.batch.needsRescan) {
-				toast('برای حذف مطمئن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ نتایج «نمایش فوری» فقط برای مرور است.', 'error');
+
+			if (finished) {
+				state.selectedIds.clear();
+				state.selectedPaths.clear();
+				const keptNote = state.batch.blocked > 0
+					? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود (یا اسکن کامل نیست) حذف نشد.`
+					: '';
+				const failNote = state.batch.failed > 0
+					? ` · ${faNum(state.batch.failed)} مورد با خطای فایل مواجه شد.`
+					: '';
+				toast(
+					state.deleteMode === 'permanent'
+						? `حذف قطعی ${faNum(state.batch.done)} تصویر انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد${keptNote}${failNote}`
+						: `${faNum(state.batch.done)} تصویر به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» قابل برگشت است${keptNote}${failNote}`
+				);
+				if (state.batch.needsRescan) {
+					toast('برای حذف مطمئن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ نتایج «نمایش فوری» فقط برای مرور است.', 'error');
+				}
+				state.activeJob = null;
+			} else {
+				// نیمه‌کاره: کار در سرور ذخیره است و کارت «ادامه» نمایش داده می‌شود.
+				state.activeJob = {
+					id: jobId,
+					done: state.batch.done,
+					total: state.batch.total,
+					remaining: state.batch.remaining,
+					blocked: state.batch.blocked,
+					failed: state.batch.failed,
+					lastError: stoppedByUser ? 'توسط شما متوقف شد' : (state.batch.error || state.batch.lastError || 'ارتباط با سرور قطع شد'),
+				};
+				toast(
+					`عملیات متوقف شد — ${faNum(state.batch.done)} از ${faNum(state.batch.total)} انجام شده است. ` +
+					'می‌توانید از کارت «ادامهٔ عملیات» در بالای صفحه ادامه دهید.',
+					'error'
+				);
 			}
 		} catch (e) {
-			toast(e.message, 'error');
+			// کار در سرور ذخیره مانده است؛ فقط باید به کاربر بگوییم و امکان ادامه بدهیم.
+			state.activeJob = {
+				id: state.batch.jobId || '',
+				done: state.batch.done,
+				total: state.batch.total,
+				remaining: state.batch.remaining,
+				blocked: state.batch.blocked,
+				failed: state.batch.failed,
+				lastError: e.message || 'خطای نامشخص',
+			};
+			// عددهای نمایش‌داده‌شده را با حقیقتِ سرور هم‌تراز می‌کنیم تا هیچ‌گاه
+			// «چند مورد انجام شد» گمانه‌زنی نباشد.
+			await refreshJobStatus();
+			toast(
+				`عملیات قطع شد (${e.message || 'خطای شبکه'}) — ${faNum(state.batch.done)} از ${faNum(state.batch.total)} انجام شده و ذخیره است.`,
+				'error'
+			);
 		} finally {
 			busyEnd(runToken);
 			state.batch.running = false;
-			const ov = await api('overview');
+			render();
+			const ov = await api('overview').catch(() => null);
 			if (ov && !ov.needs_scan) state.overview = ov;
 			await ensureDataForCurrentView(false);
+		}
+	}
+
+	/**
+	 * خواندن وضعیت کار ذخیره‌شده (برای کارت ادامه، بعد از رفرش یا قطعی).
+	 */
+	async function refreshJobStatus() {
+		try {
+			const res = await api('job_status');
+			const job = res && res.job;
+			if (!job || job.finished) {
+				state.activeJob = null;
+				return;
+			}
+			state.activeJob = {
+				id: job.id,
+				done: job.done,
+				total: job.total,
+				remaining: job.remaining,
+				blocked: job.blocked_count || 0,
+				failed: job.failed_count || 0,
+				lastError: job.last_error || '',
+			};
+		} catch (e) {
+			state.activeJob = null;
 		}
 	}
 
@@ -1969,6 +2143,25 @@
 			toast('در حال اجرای اسکن مرحله‌ای ۱۲لایه روی کل سایت…');
 			await ensureDataForCurrentView(true);
 			toast('اسکن ۱۲لایه با موفقیت کامل شد.');
+			return;
+		}
+
+		if (ev.target.closest('#tco-resume-job')) {
+			const job = state.activeJob;
+			if (job && job.id) {
+				state.activeJob = null;
+				await runBatchRemove([], [], job.id);
+			}
+			return;
+		}
+
+		if (ev.target.closest('#tco-discard-job')) {
+			const res = await api('job_cancel');
+			if (res && res.overview) state.overview = res.overview;
+			const done = res && res.job ? Number(res.job.done || 0) : 0;
+			state.activeJob = null;
+			toast(`${faNum(done)} موردِ انجام‌شده ثبت شد؛ کار نیمه‌تمام رها شد.`);
+			await ensureDataForCurrentView(false);
 			return;
 		}
 
@@ -2193,6 +2386,12 @@
 				quarantine_days: document.getElementById('tco-cfg-qdays').value,
 				excluded_dirs: document.getElementById('tco-cfg-excl').value,
 			};
+			const tickMs = document.getElementById('tco-cfg-tickms');
+			const tickMax = document.getElementById('tco-cfg-tickmax');
+			const throttle = document.getElementById('tco-cfg-throttle');
+			if (tickMs) payload.delete_tick_ms = tickMs.value;
+			if (tickMax) payload.delete_tick_max = tickMax.value;
+			if (throttle) payload.delete_throttle_ms = throttle.value;
 			const saved = await api('save_settings', { settings: payload });
 			state.settings = saved.settings;
 			state.deleteMode = saved.settings.delete_mode;
@@ -2346,6 +2545,8 @@
 		'#tco-purge-all-orig',
 		'#tco-clear-history-btn',
 		'#tco-stop-batch',
+		'#tco-resume-job',
+		'#tco-discard-job',
 	].join(',');
 
 	document.addEventListener('click', (ev) => {
@@ -2458,6 +2659,11 @@
 	// بوت اولیه.
 	$(function () {
 		render();
-		ensureDataForCurrentView(false);
+		refreshJobStatus()
+			.catch(() => {})
+			.then(() => {
+				render();
+				return ensureDataForCurrentView(false);
+			});
 	});
 })(jQuery);

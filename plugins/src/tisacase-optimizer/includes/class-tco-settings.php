@@ -28,6 +28,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				// ایمنی حذف و قرنطینه.
 				'delete_mode'            => 'quarantine', // quarantine | permanent
 				'quarantine_days'        => 30,
+				// موتور کار قابل‌ادامه: سقف زمان هر تیک، حداکثر آیتم در تیک و
+				// فاصلهٔ تنفس بین تصاویر برای جلوگیری از اشباع IOPS هاست.
+				'delete_tick_ms'         => 4000,
+				'delete_tick_max'        => 40,
+				'delete_throttle_ms'     => 15,
 				'include_draft_in_scan'  => 1,
 				'scan_unregistered_disk' => 1,
 				// راستی‌آزمایی زندهٔ استفاده پیش از هر حذف (ضدحذف اشتباه عکس در حال استفاده).
@@ -107,6 +112,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			if ( isset( $raw['delete_mode'] ) ) {
 				$mode                 = sanitize_key( (string) $raw['delete_mode'] );
 				$clean['delete_mode'] = in_array( $mode, array( 'quarantine', 'permanent' ), true ) ? $mode : 'quarantine';
+			}
+
+			if ( isset( $raw['delete_tick_ms'] ) ) {
+				$clean['delete_tick_ms'] = max( 1500, min( 15000, (int) $raw['delete_tick_ms'] ) );
+			}
+			if ( isset( $raw['delete_tick_max'] ) ) {
+				$clean['delete_tick_max'] = max( 5, min( 200, (int) $raw['delete_tick_max'] ) );
+			}
+			if ( isset( $raw['delete_throttle_ms'] ) ) {
+				$clean['delete_throttle_ms'] = max( 0, min( 250, (int) $raw['delete_throttle_ms'] ) );
 			}
 
 			if ( isset( $raw['quarantine_days'] ) ) {

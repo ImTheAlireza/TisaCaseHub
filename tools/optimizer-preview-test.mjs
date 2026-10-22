@@ -297,4 +297,82 @@ assert.ok(undoRunBtn, 'دکمهٔ بازگردانی کامل نوبت اجرا 
 undoRunBtn.click();
 await flush();
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۲ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها و بازخورد جهانی «در حال انجام») با موفقیت اجرا شدند!');
+// ۱۲. موتور «کار قابل ادامه»: قطع ناگهانی وسط حذف انبوه، سپس ادامه از همان نقطه بدون گم‌شدن هیچ شناسه‌ای.
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+
+const qBtn = window.document.querySelector('[data-set-delmode="quarantine"]');
+if (qBtn) qBtn.click();
+await flush();
+
+const totalRows = window.document.querySelectorAll('#tco-main tbody tr').length;
+assert.ok(totalRows >= 2, 'برای آزمون حذف انبوه باید حداقل ۲ تصویر در کاوشگر موجود باشد');
+
+// انتخاب همهٔ ردیف‌های صفحه
+const pageCheck = window.document.getElementById('tco-check-page');
+pageCheck.checked = true;
+pageCheck.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+assert.ok(window.document.getElementById('tco-bulk-remove'), 'دکمهٔ حذف/قرنطینهٔ دسته‌ای باید با انتخاب موارد فعال شود');
+
+// تیک کوچک (۱ مورد) + قطع اجباری در تیک دوم => کار نیمه‌تمام در سرور می‌ماند.
+window.__tcoMockTickMax = 1;
+window.__tcoMockFailAfter = 2;
+window.document.getElementById('tco-bulk-remove').click();
+await new Promise((r) => setTimeout(r, 2500));
+
+const resumeBtn = window.document.getElementById('tco-resume-job');
+assert.ok(resumeBtn, 'پس از قطع، کارت «عملیات نیمه‌تمام» با دکمهٔ ادامه باید نمایش داده شود');
+assert.match(window.document.querySelector('.tco-resume').textContent, /انجام شده/, 'کارت باید تعداد انجام‌شده از کل را نشان دهد');
+
+const jobSnapshot = window.__tcoMockJob;
+assert.equal(jobSnapshot.status, 'running', 'کار باید در سرور «در جریان» باقی بماند و گم نشود');
+assert.ok(jobSnapshot.done > 0, 'قبل از قطع باید چند مورد واقعاً انجام شده باشد');
+assert.ok(jobSnapshot.queue_ids.length + jobSnapshot.queue_paths.length > 0, 'باید موارد باقی‌مانده در صف سرور وجود داشته باشد');
+const doneBeforeResume = jobSnapshot.done;
+const totalJob = jobSnapshot.total;
+
+// ادامه: تیک بزرگ‌تر تا پایان کار.
+window.__tcoMockTickMax = 25;
+resumeBtn.click();
+await new Promise((r) => setTimeout(r, 3200));
+
+const jobAfter = window.__tcoMockJob;
+assert.equal(jobAfter.status, 'done', 'پس از ادامه، کار باید کامل تمام شود');
+assert.equal(
+	jobAfter.done + jobAfter.blocked_count,
+	totalJob,
+	'حساب‌ها باید ببندد: انجام‌شده + محافظت‌شده = کل (هیچ شناسه‌ای گم نمی‌شود)'
+);
+assert.ok(jobAfter.done >= doneBeforeResume, 'شمارش انجام‌شده هرگز نباید عقب برود');
+assert.equal(window.document.getElementById('tco-resume-job'), null, 'کارت ادامه پس از پایان کار باید ناپدید شود');
+
+// آزمون «رها کردن»: یک کار تازه، قطع، سپس بستن آن از کارت.
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pageCheck2 = window.document.getElementById('tco-check-page');
+if (pageCheck2) {
+	pageCheck2.checked = true;
+	pageCheck2.dispatchEvent(new window.Event('change', { bubbles: true }));
+	await flush();
+	const bulk2 = window.document.getElementById('tco-bulk-remove');
+	if (bulk2 && !bulk2.disabled) {
+		window.__tcoMockTickMax = 1;
+		window.__tcoMockFailAfter = 1;
+		bulk2.click();
+		await new Promise((r) => setTimeout(r, 1500));
+		const discardBtn = window.document.getElementById('tco-discard-job');
+		assert.ok(discardBtn, 'کارت ادامه باید دکمهٔ «رها کردن» داشته باشد');
+		discardBtn.click();
+		await new Promise((r) => setTimeout(r, 1200));
+		assert.equal(window.document.getElementById('tco-resume-job'), null, 'پس از «رها کردن»، کارت ادامه نباید بماند');
+		assert.notEqual(window.__tcoMockJob.status, 'running', 'کار سرور باید بسته شود');
+	}
+}
+
+window.__tcoMockTickMax = 6;
+window.__tcoMockFailAfter = 0;
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۳ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام» و ادامهٔ کار حذف انبوه پس از قطع ناگهانی) با موفقیت اجرا شدند!');

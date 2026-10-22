@@ -206,6 +206,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			if ( '' === $vault_root ) {
 				return new WP_Error( 'vault_unavailable', __( 'امکان ساخت پوشهٔ قرنطینه در هاست وجود ندارد.', 'tisacase-optimizer' ) );
 			}
+			$uploads = wp_upload_dir();
 
 			$item_id = 'q-' . $attachment_id . '-' . gmdate( 'YmdHis' ) . '-' . strtolower( wp_generate_password( 5, false, false ) );
 			$pkg_dir = $vault_root . '/' . self::SUB_QUARANTINE . '/' . $item_id;
@@ -225,16 +226,54 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 				ARRAY_A
 			);
 
-			// ۲) کپی امن تمام فایل‌های پیوست به بستهٔ قرنطینه پیش از حذف از وردپرس.
+			// ۲) انتقال فایل‌ها به بستهٔ قرنطینه.
+			//
+			// بهینه‌سازی I/O: قبلاً هر فایل «کپی» می‌شد و بعد فایل اصلی حذف می‌شد
+			// (دو برابر نوشتن + دو برابر خواندن). اکنون ابتدا یک مانیفست مقدماتی
+			// نوشته می‌شود و سپس فایل‌ها با `rename` (جابه‌جایی اتمیک روی همان
+			// فایل‌سیستم) منتقل می‌شوند؛ اگر `rename` ممکن نبود، همان کپی امن
+			// انجام و فایل اصلی حذف می‌شود. نتیجه: نصف شدن I/O در قرنطینهٔ
+			// هزاران تصویر و مصون‌بودن در برابر قطع ناگهانی PHP وسط جابه‌جایی.
 			$files       = self::collect_attachment_files( $attachment_id );
 			$moved_files = array();
 			$total_bytes = 0;
 
+			$days       = max( 1, (int) TisaCase_Optimizer_Settings::get( 'quarantine_days', 30 ) );
+			$expires_at = time() + ( $days * DAY_IN_SECONDS );
+			$rel_main   = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
+
+			// مانیفست مقدماتی: اگر فرایند وسط انتقال قطع شود، بازیابی می‌داند
+			// چه فایل‌هایی باید در بسته باشد.
+			$prelim = array(
+				'id'            => $item_id,
+				'batch_id'      => sanitize_key( (string) $batch_id ),
+				'kind'          => 'attachment',
+				'attachment_id' => $attachment_id,
+				'rel_path'      => $rel_main,
+				'state'         => 'copying',
+				'created_at'    => current_time( 'mysql' ),
+				'files'         => array(),
+			);
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			@file_put_contents( $pkg_dir . '/manifest.partial.json', wp_json_encode( $prelim, JSON_UNESCAPED_UNICODE ) );
+
 			foreach ( $files as $f ) {
 				$dest = $pkg_dir . '/files/' . $f['rel'];
 				wp_mkdir_p( dirname( $dest ) );
-				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-				if ( @copy( $f['abs'], $dest ) ) {
+
+				$moved = false;
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+				if ( @rename( $f['abs'], $dest ) ) {
+					$moved = true;
+				} else {
+					// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+					if ( @copy( $f['abs'], $dest ) ) {
+						wp_delete_file( $f['abs'] );
+						$moved = true;
+					}
+				}
+
+				if ( $moved ) {
 					$moved_files[] = array(
 						'rel'   => $f['rel'],
 						'role'  => $f['role'],
@@ -243,10 +282,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 					$total_bytes  += $f['bytes'];
 				}
 			}
-
-			$days       = max( 1, (int) TisaCase_Optimizer_Settings::get( 'quarantine_days', 30 ) );
-			$expires_at = time() + ( $days * DAY_IN_SECONDS );
-			$rel_main   = (string) get_post_meta( $attachment_id, '_wp_attached_file', true );
 
 			$manifest = array(
 				'id'            => $item_id,
@@ -271,11 +306,26 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			$written = @file_put_contents( $pkg_dir . '/manifest.json', wp_json_encode( $manifest, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) );
 			if ( false === $written ) {
+				// بازگرداندن فایل‌ها به محل اول تا هیچ تصویری در حالت «نه اینجا نه آنجا» نماند.
+				foreach ( $moved_files as $mf ) {
+					$back = wp_normalize_path( trailingslashit( $uploads['basedir'] ) . $mf['rel'] );
+					$src  = $pkg_dir . '/files/' . $mf['rel'];
+					if ( is_file( $src ) && is_file( $back ) === false ) {
+						wp_mkdir_p( dirname( $back ) );
+						// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+						@rename( $src, $back );
+					}
+				}
 				return new WP_Error( 'manifest_failed', __( 'ذخیرهٔ مانیفست قرنطینه ناموفق بود؛ هیچ فایلی حذف نشد.', 'tisacase-optimizer' ) );
+			}
+			if ( is_file( $pkg_dir . '/manifest.partial.json' ) ) {
+				wp_delete_file( $pkg_dir . '/manifest.partial.json' );
 			}
 
 			// ۳) اکنون با خیال آسوده پیوست و فایل‌هایش را از وردپرس پاک می‌کنیم.
 			wp_delete_attachment( $attachment_id, true );
+			// فایل‌ها معمولاً با rename جابه‌جا شده‌اند؛ این حلقه فقط بازمانده‌ها
+			// (فایل‌هایی که انتقالشان ناموفق بود) را پاک می‌کند.
 			foreach ( $files as $f ) {
 				if ( is_file( $f['abs'] ) ) {
 					wp_delete_file( $f['abs'] );
@@ -343,10 +393,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			$dest       = $pkg_dir . '/files/' . $rel_clean;
 			wp_mkdir_p( dirname( $dest ) );
 
-			$bytes = max( 0, (int) @filesize( $safe ) );
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-			if ( ! @copy( $safe, $dest ) ) {
-				return new WP_Error( 'copy_failed', __( 'انتقال فایل به قرنطینه ناموفق بود.', 'tisacase-optimizer' ) );
+			$bytes   = max( 0, (int) @filesize( $safe ) );
+			$relocated = false;
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.WP.AlternativeFunctions.rename_rename
+			if ( @rename( $safe, $dest ) ) {
+				$relocated = true;
+			} else {
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				if ( ! @copy( $safe, $dest ) ) {
+					return new WP_Error( 'copy_failed', __( 'انتقال فایل به قرنطینه ناموفق بود.', 'tisacase-optimizer' ) );
+				}
 			}
 
 			$days       = max( 1, (int) TisaCase_Optimizer_Settings::get( 'quarantine_days', 30 ) );
@@ -379,7 +435,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
 			@file_put_contents( $pkg_dir . '/manifest.json', wp_json_encode( $manifest, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT ) );
-			wp_delete_file( $safe );
+			if ( ! $relocated && is_file( $safe ) ) {
+				wp_delete_file( $safe );
+			}
 
 			$summary = $manifest;
 			unset( $summary['files'] );

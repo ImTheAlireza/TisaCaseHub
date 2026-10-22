@@ -18,6 +18,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 	 */
 	final class TisaCase_Optimizer_Media_Inspector {
 
+		/** نام آپشن صف حذف‌های معلق (غیر-autoload). */
+		const OPTION_PENDING = 'tisacase_optimizer_pending_removals';
+
 		/** @var array<string,mixed>|null کش در-درخواستی */
 		private static $catalog_cache = null;
 
@@ -82,13 +85,86 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 		}
 
 		/**
-		 * حذف فوری آیتم‌ها یا فایل‌های یتیم از کاتالوگ کش‌شده روی دیسک (در ۵ میلی‌ثانیه بدون نیاز به اسکن مجدد کل سایت!).
+		 * ثبت حذف‌های معلق (بدون نوشتن کاتالوگ).
 		 *
-		 * @param int[]    $removed_ids شناسه‌های پیوست حذف/قرنطینه‌شده.
-		 * @param string[] $removed_paths مسیرهای نسبی فایل‌های یتیم حذف‌شده.
+		 * چرا؟ نوشتن فایل کاتالوگ برای هر بستهٔ ۲۵تایی، در فروشگاه با ۱۵۰۰ تصویر
+		 * یعنی ۶۰ بار خواندن و نوشتن یک JSON چندمگابایتی — یکی از دلایل اصلی
+		 * کندی و قطع‌شدن عملیات. اکنون فقط در پایان کار یک‌بار نوشته می‌شود.
+		 *
+		 * @param int[]    $ids   شناسه‌ها.
+		 * @param string[] $paths مسیرها.
 		 * @return void
 		 */
-		public static function remove_from_cached_catalog( array $removed_ids, array $removed_paths = array() ) {
+		public static function queue_pending_removals( array $ids, array $paths = array() ) {
+			$pending = get_option( self::OPTION_PENDING, array() );
+			if ( ! is_array( $pending ) ) {
+				$pending = array();
+			}
+			$ids_map   = isset( $pending['ids'] ) && is_array( $pending['ids'] ) ? array_fill_keys( array_map( 'intval', $pending['ids'] ), true ) : array();
+			$paths_map = isset( $pending['paths'] ) && is_array( $pending['paths'] ) ? array_fill_keys( (array) $pending['paths'], true ) : array();
+
+			foreach ( $ids as $id ) {
+				$id = absint( $id );
+				if ( $id > 0 ) {
+					$ids_map[ $id ] = true;
+				}
+			}
+			foreach ( $paths as $path ) {
+				$path = ltrim( wp_normalize_path( (string) $path ), '/' );
+				if ( '' !== $path ) {
+					$paths_map[ $path ] = true;
+				}
+			}
+
+			update_option(
+				self::OPTION_PENDING,
+				array(
+					'ids'   => array_map( 'intval', array_keys( $ids_map ) ),
+					'paths' => array_keys( $paths_map ),
+				),
+				false
+			);
+		}
+
+		/**
+		 * اعمال یک‌بارهٔ حذف‌های معلق روی کاتالوگ.
+		 *
+		 * @return int تعداد آیتم‌های اعمال‌شده.
+		 */
+		public static function flush_pending_removals() {
+			$pending = get_option( self::OPTION_PENDING, array() );
+			if ( ! is_array( $pending ) || ( empty( $pending['ids'] ) && empty( $pending['paths'] ) ) ) {
+				delete_option( self::OPTION_PENDING );
+				return 0;
+			}
+
+			$ids   = isset( $pending['ids'] ) ? (array) $pending['ids'] : array();
+			$paths = isset( $pending['paths'] ) ? (array) $pending['paths'] : array();
+
+			// پاک‌کردن قبل از نوشتن تا اگر نوشتن کاتالوگ نیمه‌کاره ماند، دوباره اعمال شود.
+			delete_option( self::OPTION_PENDING );
+			self::remove_from_cached_catalog( $ids, $paths, false );
+
+			return count( $ids ) + count( $paths );
+		}
+
+		/**
+		 * حذف فوری آیتم‌ها یا فایل‌های یتیم از کاتالوگ کش‌شده روی دیسک (در ۵ میلی‌ثانیه بدون نیاز به اسکن مجدد کل سایت!).
+		 *
+		 * @param int[]    $removed_ids   شناسه‌های پیوست حذف/قرنطینه‌شده.
+		 * @param string[] $removed_paths مسیرهای نسبی فایل‌های یتیم حذف‌شده.
+		 * @param bool     $defer         اگر true باشد، به‌جای بازنویسی فوری کل JSON
+		 *                                (که برای هر ۲۵ تصویر یک نوشتن سنگین بود) فقط
+		 *                                در «صف حذف معلق» ثبت می‌شود و در پایان کار
+		 *                                یک‌جا اعمال می‌گردد.
+		 * @return void
+		 */
+		public static function remove_from_cached_catalog( array $removed_ids, array $removed_paths = array(), $defer = false ) {
+			if ( $defer ) {
+				self::queue_pending_removals( $removed_ids, $removed_paths );
+				return;
+			}
+
 			$raw = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
 			if ( ! is_array( $raw ) ) {
 				self::flush_runtime_cache();

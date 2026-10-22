@@ -28,6 +28,8 @@ const usage = read(`${P}/includes/class-tco-usage.php`);
 const ajax = read(`${P}/includes/class-tco-ajax.php`);
 const cli = read(`${P}/includes/class-tco-cli.php`);
 const boot = read(`${P}/tisacase-optimizer.php`);
+// موتور کارِ قابل‌ادامه: راستی‌آزمایی و فیلتر مسدودها این‌جا انجام می‌شود.
+const job = read(`${P}/includes/class-tco-job.php`);
 
 let pass = 0;
 const fails = [];
@@ -100,10 +102,28 @@ ok('تابع file_refs برای فایل‌های یتیم وجود دارد', h
 ok('پین (لیست سفید) در راستی‌آزمایی لحاظ می‌شود', usage.includes('pinned_ids()'));
 ok('کاتالوگ کهنه باعث بازرسی محتوای زنده می‌شود', usage.includes('catalog_age_hours') && usage.includes('verify_fresh_hours'));
 ok('سقف بازرسی محتوا برای حفظ سرعت وجود دارد', /MAX_CONTENT_PROBES\s*=\s*\d+/.test(usage));
-ok('AJAX پیش از قرنطینه راستی‌آزمایی می‌کند', ajax.indexOf('TisaCase_Optimizer_Usage::verify_batch') !== -1 && ajax.indexOf('TisaCase_Optimizer_Usage::verify_batch') < ajax.indexOf('quarantine_attachment( $aid'));
-ok('AJAX پیش از حذف قطعی راستی‌آزمایی می‌کند', ajax.indexOf('TisaCase_Optimizer_Usage::verify_batch') < ajax.indexOf('delete_attachment_permanently( $aid'));
-ok('نتایج مسدودشده به رابط کاربری برگردانده می‌شود', ajax.includes("'blocked'") && ajax.includes("'blocked_count'"));
-ok('آیتم مسدودشده در حلقهٔ حذف نادیده گرفته می‌شود', ajax.includes('! isset( $allow_ids[ $aid ] )') && ajax.includes('! isset( $allow_paths[ $rp ] )'));
+const verifyAt = job.indexOf('TisaCase_Optimizer_Usage::verify_batch');
+const quarantineAt = job.indexOf('quarantine_attachment( $aid');
+const deleteAt = job.indexOf('delete_attachment_permanently( $aid');
+ok(
+	'موتور کار پیش از قرنطینه راستی‌آزمایی می‌کند',
+	verifyAt !== -1 && quarantineAt !== -1 && verifyAt < quarantineAt,
+	`verify@${verifyAt} quarantine@${quarantineAt}`
+);
+ok(
+	'موتور کار پیش از حذف قطعی راستی‌آزمایی می‌کند',
+	verifyAt !== -1 && deleteAt !== -1 && verifyAt < deleteAt,
+	`verify@${verifyAt} delete@${deleteAt}`
+);
+ok('موتور کار فقط صف تأییدشده را اجرا می‌کند (فاز verify سپس run)', job.includes("'verify' === $job['phase']") && job.includes("'run' === $job['phase']"));
+ok('نتایج مسدودشده به رابط کاربری برگردانده می‌شود', job.includes("'blocked_count'") && ajax.includes("'blocked'") && ajax.includes("'blocked_count'"));
+ok(
+	'آیتم مسدودشده هرگز وارد صف اجرا نمی‌شود',
+	/if \( isset\( \$verify\['blocked'\]\[ \$aid \] \) \) \{[\s\S]{0,200}?continue;/.test(job) &&
+		/if \( isset\( \$verify\['blocked_paths'\]\[ \$path \] \) \) \{[\s\S]{0,200}?continue;/.test(job)
+);
+ok('حذف فقط از شناسه‌های تأییدشده انجام می‌شود (safe_ids)', job.includes("array_shift( $job['safe_ids'] )"));
+ok('مسیر حذف/نهایی‌سازی کاتالوگ را دوباره نمی‌سازد', !fnBody(job, 'finish').includes('build_catalog'));
 ok('WP-CLI هم راستی‌آزمایی می‌کند', cli.includes('TisaCase_Optimizer_Usage::verify_attachment'));
 ok('حذف تصاویر «فقط پیش‌نویس» فقط با تأیید صریح کاربر مجاز است', usage.includes('allow_draft_only') && ajax.includes('allow_draft_only'));
 ok('مسیر حذف هرگز اسکن سنگین را اجرا نمی‌کند (فقط کاتالوگ آماده)', !fnBody(usage, 'verify_batch').includes('build_catalog'));

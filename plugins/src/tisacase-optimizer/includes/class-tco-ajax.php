@@ -169,6 +169,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						self::handle_remove_items();
 						break;
 
+					case 'job_status':
+						self::handle_job_status();
+						break;
+
+					case 'job_cancel':
+						self::handle_job_cancel();
+						break;
+
 					case 'optimize_batch':
 						self::handle_optimize_batch();
 						break;
@@ -453,142 +461,144 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		}
 
 		/**
-		 * حذف یا قرنطینهٔ تکی/گروهی با به‌روزرسانی درجای کاتالوگ (بدون اسکن مجدد سنگین!).
+		 * حذف یا قرنطینهٔ دسته‌ای با موتور کار «قابل ادامه».
+		 *
+		 * قرارداد فراخوانی:
+		 *   • اولین درخواست: `ids[]` و/یا `rel_paths[]` (+ `delete_mode`) ⇒ کار ساخته
+		 *     می‌شود، همهٔ شناسه‌ها راستی‌آزمایی می‌شوند و یک تیک اجرا می‌گردد.
+		 *   • درخواست‌های بعدی: فقط `job_id` ⇒ تیک بعدی.
+		 * پاسخ همیشه شامل `job` (خلاصهٔ کامل) و `done_ids` همان تیک است.
+		 *
+		 * چرا؟ قبلاً پیمایش در مرورگر بود و اگر سرور در میانهٔ یک بسته به سقف
+		 * زمانی می‌رسید، بقیهٔ شناسه‌ها برای همیشه رها می‌شدند. اکنون صف در
+		 * سرور است و هیچ شناسه‌ای گم نمی‌شود.
 		 *
 		 * @return void
 		 */
 		private static function handle_remove_items() {
-			$started     = microtime( true );
-			$ids         = self::read_int_list( 'ids' );
-			$rel_paths   = self::read_string_list( 'rel_paths' );
+			$ids       = self::read_int_list( 'ids' );
+			$rel_paths = self::read_string_list( 'rel_paths' );
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$batch_id    = isset( $_POST['batch_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['batch_id'] ) ) : '';
+			$job_id    = isset( $_POST['job_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['job_id'] ) ) : '';
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$mode_raw    = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
-			$mode        = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
+			$mode_raw  = isset( $_POST['delete_mode'] ) ? sanitize_key( wp_unslash( (string) $_POST['delete_mode'] ) ) : '';
+			$mode      = in_array( $mode_raw, array( 'quarantine', 'permanent' ), true )
 				? $mode_raw
 				: (string) TisaCase_Optimizer_Settings::get( 'delete_mode', 'quarantine' );
-
-			if ( '' === $batch_id && 'quarantine' === $mode ) {
-				$batch_id = 'run' . gmdate( 'YmdHis' ) . strtolower( wp_generate_password( 4, false, false ) );
-			}
-
-			$pinned_map  = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
-			$done_ids    = array();
-			$removed_ids = array();
-			$done_paths  = array();
-			$saved_bytes = 0;
-
-			// راستی‌آزمایی نهایی «آیا این مورد واقعاً هیچ‌جا استفاده نشده است؟» پیش از هر حذف/قرنطینه.
-			// حتی اگر مرورگر لیست دستکاری‌شده بفرستد، عکسِ در حال استفاده هرگز حذف نمی‌شود.
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			$allow_draft   = ! empty( $_POST['allow_draft_only'] );
-			$verify        = TisaCase_Optimizer_Usage::verify_batch( $ids, $rel_paths, $allow_draft );
-			$allow_ids     = array_fill_keys( array_map( 'absint', $verify['allow_ids'] ), true );
-			$allow_paths   = array_fill_keys( $verify['allow_paths'], true );
-			$blocked_ids   = $verify['blocked'];
-			$blocked_paths = $verify['blocked_paths'];
+			$allow_draft = ! empty( $_POST['allow_draft_only'] );
 
-			foreach ( $ids as $aid ) {
-				if ( isset( $pinned_map[ $aid ] ) ) {
-					$done_ids[] = $aid;
-					continue;
+			$job = TisaCase_Optimizer_Job::get();
+
+			// ادامهٔ کار موجود (حتی اگر مرورگر رفرش شده باشد).
+			if ( '' !== $job_id ) {
+				if ( ! $job || (string) $job['id'] !== $job_id ) {
+					self::fail( __( 'این کار دیگر فعال نیست یا منقضی شده است.', 'tisacase-optimizer' ), 409 );
 				}
-				if ( ! isset( $allow_ids[ $aid ] ) ) {
-					// به‌دلیل داشتن مرجع واقعی در سایت حذف نمی‌شود.
-					continue;
+				if ( (string) $job['status'] !== 'running' ) {
+					self::ok(
+						array(
+							'job'      => TisaCase_Optimizer_Job::summary( $job ),
+							'done_ids' => array(),
+						)
+					);
 				}
-				if ( 'permanent' === $mode ) {
-					$res = TisaCase_Optimizer_Vault::delete_attachment_permanently( $aid );
-					if ( ! is_wp_error( $res ) ) {
-						$saved_bytes   += (int) $res['saved_bytes'];
-						$removed_ids[]  = $aid;
-					}
-				} else {
-					$res = TisaCase_Optimizer_Vault::quarantine_attachment( $aid, 'unused', $batch_id );
-					if ( ! is_wp_error( $res ) ) {
-						$saved_bytes   += (int) $res['total_bytes'];
-						$removed_ids[]  = $aid;
-					}
+			} elseif ( empty( $ids ) && empty( $rel_paths ) ) {
+				self::fail( __( 'هیچ تصویری برای حذف انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
+			} else {
+				if ( $job && 'running' === (string) $job['status'] ) {
+					self::fail(
+						__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
+						409
+					);
 				}
-				$done_ids[] = $aid;
-				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
-					break;
-				}
+				$job = TisaCase_Optimizer_Job::start_remove( $ids, $rel_paths, $mode, $allow_draft );
 			}
 
-			foreach ( $rel_paths as $rp ) {
-				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
-					break;
-				}
-				if ( ! isset( $allow_paths[ $rp ] ) ) {
-					// مسیر در محتوای سایت ذکر شده است؛ حذف نمی‌شود.
-					continue;
-				}
-				if ( 'permanent' === $mode ) {
-					$uploads = wp_upload_dir();
-					$safe    = TisaCase_Optimizer_Vault::assert_inside_uploads( trailingslashit( $uploads['basedir'] ) . ltrim( $rp, '/' ) );
-					if ( false !== $safe && is_file( $safe ) ) {
-						$fbytes       = max( 0, (int) @filesize( $safe ) );
-						wp_delete_file( $safe );
-						$saved_bytes += $fbytes;
-						TisaCase_Optimizer_Settings::bump_stats(
-							array(
-								'deleted_count' => 1,
-								'saved_bytes'   => $fbytes,
-							)
-						);
-					}
-				} else {
-					$res = TisaCase_Optimizer_Vault::quarantine_orphan_file( $rp, $batch_id );
-					if ( ! is_wp_error( $res ) ) {
-						$saved_bytes += (int) $res['total_bytes'];
-					}
-				}
-				$done_paths[] = $rp;
-			}
+			$before_done = (int) $job['done'];
+			$before_ids  = count( (array) $job['done_ids'] ) + count( (array) $job['done_paths'] );
 
-			$count_done = count( $done_ids ) + count( $done_paths );
-			TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $removed_ids, $done_paths );
-
-			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			if ( ! empty( $_POST['log_final'] ) && $count_done > 0 ) {
-				// phpcs:ignore WordPress.Security.NonceVerification.Missing
-				$total_n = isset( $_POST['summary_count'] ) ? max( $count_done, absint( $_POST['summary_count'] ) ) : $count_done;
-				// phpcs:ignore WordPress.Security.NonceVerification.Missing
-				$total_b = isset( $_POST['summary_bytes'] ) ? max( $saved_bytes, absint( $_POST['summary_bytes'] ) ) : $saved_bytes;
-				$blocked_n = count( $blocked_ids ) + count( $blocked_paths );
-				$log_msg   = 'permanent' === $mode
-					? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
-					: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)', 'tisacase-optimizer' );
-				if ( $blocked_n > 0 ) {
-					/* translators: %d: number of skipped items. */
-					$log_msg .= ' — ' . sprintf( __( '%d مورد به‌دلیل استفادهٔ واقعی در سایت حذف نشد', 'tisacase-optimizer' ), $blocked_n );
-				}
-				TisaCase_Optimizer_Session::log(
-					'permanent' === $mode ? 'delete_permanent' : 'move_quarantine',
-					$log_msg,
-					$total_n,
-					$total_b,
-					'',
-					'success',
-					$batch_id
+			try {
+				$job = TisaCase_Optimizer_Job::advance( $job );
+			} catch ( Throwable $e ) {
+				// خطا نباید کار را نابود کند؛ وضعیت ذخیره‌شده می‌ماند تا قابل ادامه باشد.
+				$job = TisaCase_Optimizer_Job::mark_error( $job, $e->getMessage() );
+				self::ok(
+					array(
+						'job'      => TisaCase_Optimizer_Job::summary( $job ),
+						'done_ids' => array_slice( (array) $job['done_ids'], $before_ids ),
+						'error'    => $e->getMessage(),
+					)
 				);
+			}
+
+			$summary = TisaCase_Optimizer_Job::summary( $job );
+
+			// گزارش نهایی فقط یک‌بار در پایان کار خوانده می‌شود (نه در هر تیک).
+			$overview = null;
+			if ( ! empty( $summary['finished'] ) ) {
+				$overview = TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+					? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
+					: null;
 			}
 
 			self::ok(
 				array(
-					'batch_id'      => $batch_id,
-					'done_ids'      => $done_ids,
-					'done_paths'    => $done_paths,
-					'saved_bytes'   => $saved_bytes,
-					'blocked'       => $blocked_ids,
-					'blocked_paths' => $blocked_paths,
-					'blocked_count' => count( $blocked_ids ) + count( $blocked_paths ),
-					'needs_rescan'  => ! empty( $verify['needs_rescan'] ),
-					'coverage'      => isset( $verify['coverage'] ) ? (string) $verify['coverage'] : 'none',
-					'mode'          => $mode,
-					'overview'      => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+					'job'           => $summary,
+					'done_ids'      => array_slice( (array) $job['done_ids'], $before_ids ),
+					'done_paths'    => array_slice( (array) $job['done_paths'], $before_ids ),
+					'saved_bytes'   => max( 0, (int) $job['saved_bytes'] ),
+					'batch_id'      => (string) $job['batch_id'],
+					'mode'          => (string) $job['mode'],
+					'blocked'       => $summary['blocked'],
+					'blocked_paths' => $summary['blocked_paths'],
+					'blocked_count' => $summary['blocked_count'],
+					'needs_rescan'  => $summary['needs_rescan'],
+					'coverage'      => $summary['coverage'],
+					'overview'      => $overview,
+					'processed_now' => (int) $job['done'] - $before_done,
+				)
+			);
+		}
+
+		/**
+		 * وضعیت کار جاری (برای کارت «ادامهٔ عملیات نیمه‌تمام» بعد از رفرش یا قطعی).
+		 *
+		 * @return void
+		 */
+		private static function handle_job_status() {
+			$job = TisaCase_Optimizer_Job::get();
+			if ( ! $job ) {
+				self::ok( array( 'job' => null ) );
+			}
+			self::ok( array( 'job' => TisaCase_Optimizer_Job::summary( $job ) ) );
+		}
+
+		/**
+		 * رهاکردن کار نیمه‌تمام (با نهایی‌سازی همان مقدار انجام‌شده).
+		 *
+		 * @return void
+		 */
+		private static function handle_job_cancel() {
+			$job = TisaCase_Optimizer_Job::get();
+			if ( ! $job ) {
+				self::ok(
+					array(
+						'job'      => null,
+						'overview' => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+							? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
+							: null,
+					)
+				);
+			}
+
+			$job     = TisaCase_Optimizer_Job::cancel( $job );
+			$summary = TisaCase_Optimizer_Job::summary( $job );
+
+			self::ok(
+				array(
+					'job'      => $summary,
+					'overview' => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
 						? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
 						: null,
 				)
