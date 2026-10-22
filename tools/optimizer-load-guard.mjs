@@ -146,6 +146,17 @@ ok('خلاصهٔ کار دلایل مسدودشدن را تجمیع می‌کن�
 ok('کلاینت در برابر بی‌حرکتی سرور می‌ایستد (نه چرخیدن بی‌پایان)', /stallTicks\s*>=\s*\d+/.test(admin));
 ok('کارت ادامه در همهٔ نماها بالای صفحه است', (admin.match(/renderResumeCard\(\)\s*\+/g) || []).length >= 3);
 
+console.log('── ۶-۲) «فشرده‌سازی + جایگزینی» خودکار ──');
+ok('دکمهٔ «فشرده‌سازی و جایگزینی» در نوار بالای جدول وجود دارد', admin.includes('tco-bulk-opt-replace') && admin.includes('فشرده‌سازی و جایگزینی'));
+ok('دکمهٔ جایگزینی انبوه در تب فشرده‌سازی هم هست', admin.includes('tco-start-replace-compress'));
+ok('جایگزینی انبوه دو مرحله‌ای (ضد اشتباه) است', /armConfirm\('bulk-opt-replace'\)/.test(admin) && /armConfirm\('bulk-opt-replace-all'\)/.test(admin));
+ok('هر دو دکمه با replaceMode اجرا می‌شوند', (admin.match(/replaceMode: true/g) || []).length >= 2);
+ok('حالت جایگزینی به سرور فرستاده می‌شود', /overrides: replaceMode \? \{ replace_mode: 1 \}/.test(admin));
+ok('سرور حالت جایگزینی را به webp_mode=replace تبدیل می‌کند', ajax.includes("$clean_ovr['webp_mode']      = 'replace'"));
+ok('صف «جایگزینی» تصاویری را که فقط WebP موازی دارند هم شامل می‌شود', ajax.includes("'not_webp'") && inspector.includes("'not_webp'"));
+ok('پشتیبان فایل اصلی پیش از جایگزینی گرفته می‌شود', /backup_origins|backup_original_before_optimize/.test(read(`${P}/includes/class-tco-image-processor.php`)));
+ok('اعلان پایان، کاهش واقعی حجم دیسک را گزارش می‌کند', admin.includes('جایگزینی تمام شد'));
+
 console.log('── ۷) اندپوینت‌ها و امنیت ──');
 ok('اندپوینت job_status ثبت شده است', ajax.includes("'job_status'") && ajax.includes('TisaCase_Optimizer_Job::summary'));
 ok('اندپوینت job_cancel ثبت شده است', ajax.includes("'job_cancel'") && ajax.includes('TisaCase_Optimizer_Job::cancel'));

@@ -865,27 +865,6 @@
 				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
 				overview: computeOverview(),
 			};
-		} else if (op === 'optimize_batch' && req.overrides && req.overrides.replace_mode) {
-			const ids = (req.ids || []).map(Number);
-			const processed = [];
-			let saved = 0;
-			ids.forEach((id) => {
-				const item = db.items.find((x) => x.id === id);
-				if (!item) return;
-				const before = item.main_bytes + item.subsizes_bytes;
-				item.main_bytes = Math.round(item.main_bytes * 0.22);
-				item.subsizes_bytes = Math.round(item.subsizes_bytes * 0.3);
-				item.format = 'WEBP';
-				item.has_webp = true;
-				item.filename = item.filename.replace(/\.(png|jpe?g)$/i, '.webp');
-				item.rel_path = item.rel_path.replace(/\.(png|jpe?g)$/i, '.webp');
-				item.total_bytes = item.main_bytes + item.subsizes_bytes + item.unscaled_bytes;
-				const gained = before - (item.main_bytes + item.subsizes_bytes);
-				saved += Math.max(0, gained);
-				processed.push({ id, ok: true });
-			});
-			db.lifetime.saved_bytes += saved;
-			data = { processed, saved_bytes: saved, overview: computeOverview() };
 		} else if (op === 'inspect_sizes') {
 			const id = Number(req.id);
 			const item = db.items.find((x) => x.id === id);
@@ -984,28 +963,49 @@
 			db.lifetime.saved_bytes += saved;
 			data = { cleaned, saved_bytes: saved };
 		} else if (op === 'optimize_batch') {
+			const replaceMode = Boolean(req.overrides && req.overrides.replace_mode) || db.settings.webp_mode === 'replace';
 			const ids = (req.ids || []).map(Number).filter(Boolean);
 			if (!ids.length) {
-				data = { queue_ids: db.items.filter((i) => !i.is_optimized).map((i) => i.id) };
+				// در حالت جایگزینی، حتی بهینه‌شده‌های «نسخهٔ موازی» هم صف می‌شوند.
+				data = {
+					queue_ids: db.items
+						.filter((i) => (replaceMode ? i.format !== 'WEBP' : !i.is_optimized))
+						.map((i) => i.id),
+					replace_mode: replaceMode,
+				};
 			} else {
 				let saved = 0;
 				ids.forEach((id) => {
 					const it = db.items.find((x) => x.id === id);
-					if (!it || it.is_optimized) return;
-					const cut = Math.round(it.main_bytes * (it.is_opaque_png ? 0.72 : 0.45));
-					it.main_bytes -= cut;
-					it.saved_bytes += cut;
-					it.is_optimized = true;
-					it.has_webp = true;
-					if (db.settings.webp_mode === 'replace') {
+					if (!it) return;
+					if (!replaceMode && it.is_optimized) return;
+
+					if (replaceMode) {
+						// فشرده‌سازی + جایگزینی: فایل اصل و زیرسایزها کوچک و WebP می‌شوند.
+						const before = it.main_bytes + it.subsizes_bytes;
+						it.main_bytes = Math.round(it.main_bytes * (it.is_opaque_png ? 0.22 : 0.3));
+						it.subsizes_bytes = Math.round(it.subsizes_bytes * 0.3);
+						it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
 						it.format = 'WEBP';
-						it.filename = it.filename.replace(/\.(png|jpe?g)$/i, '.webp');
+						it.mime = 'image/webp';
+						it.has_webp = true;
+						it.filename = it.filename.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
+						it.rel_path = it.rel_path.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
+						saved += Math.max(0, before - (it.main_bytes + it.subsizes_bytes));
+					} else {
+						const cut = Math.round(it.main_bytes * (it.is_opaque_png ? 0.72 : 0.45));
+						it.main_bytes -= cut;
+						it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
+						saved += cut;
+						it.has_webp = true;
 					}
-					saved += cut;
+
+					it.is_optimized = true;
+					it.saved_bytes += saved;
 					db.lifetime.optimized_count += 1;
 				});
 				db.lifetime.saved_bytes += saved;
-				data = { processed: ids, remaining_ids: [], saved_bytes: saved, done: true };
+				data = { processed: ids, remaining_ids: [], saved_bytes: saved, done: true, replace_mode: replaceMode };
 			}
 		} else if (op === 'get_duplicates') {
 			data = computeDuplicates();

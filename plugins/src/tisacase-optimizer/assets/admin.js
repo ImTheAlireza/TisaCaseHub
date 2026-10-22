@@ -870,6 +870,7 @@
 		const maxBytes = rows.reduce((m, r) => Math.max(m, r.total_bytes || 0), 0);
 		const selCount = state.selectedIds.size;
 		const bulkArm = state.armedKey === 'bulk-remove';
+		const replaceArm = state.armedKey === 'bulk-opt-replace';
 
 		return `<div class="tco-card">
 			<div class="tco-card__head">
@@ -923,7 +924,10 @@
 					${selCount > 0 ? ' <button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-sel">لغو انتخاب</button>' : ''}
 				</div>
 				<div class="tco-bulkbar__actions">
-					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-bulk-opt" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را از ستون انتخاب تیک بزنید"' : 'title="فشرده‌سازی و تبدیل تصاویر انتخاب‌شده"'}>فشرده‌سازی و WebP (${faNum(selCount)})</button>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-bulk-opt" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را از ستون انتخاب تیک بزنید"' : 'title="فشرده‌سازی و ساخت نسخهٔ WebP کنار فایل (فایل اصل دست‌نخورده می‌ماند)"'}>فشرده‌سازی و WebP (${faNum(selCount)})</button>
+					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm ${replaceArm ? 'is-armed' : ''}" id="tco-bulk-opt-replace" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را از ستون انتخاب تیک بزنید"' : 'title="فشرده‌سازی + جایگزینی خودکار فایل اصل با WebP؛ لینک‌ها اصلاح می‌شوند، حجم دیسک واقعاً کم می‌شود و فایل قبلی در خزانه پشتیبان می‌ماند"'}>
+						${replaceArm ? `کلیک مجدد برای جایگزینی ${faNum(selCount)} فایل!` : `فشرده‌سازی و جایگزینی (${faNum(selCount)})`}
+					</button>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : ''} ${bulkArm ? 'is-armed' : ''}" id="tco-bulk-remove" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را انتخاب کنید"' : ''}>
 						${state.deleteMode === 'permanent' ? (bulkArm ? 'کلیک مجدد برای حذف قطعی!' : `حذف قطعی انتخابی (${faNum(selCount)})`) : `انتقال به قرنطینه (${faNum(selCount)})`}
 					</button>
@@ -1160,7 +1164,10 @@
 					</div>
 					<div class="tco-bulkbar__actions">
 						<button type="button" class="tisa-btn tisa-btn--secondary" id="tco-save-compress-cfg">ذخیرهٔ تنظیمات فشرده‌سازی</button>
-						<button type="button" class="tisa-btn tisa-btn--primary" id="tco-start-bulk-compress">شروع بهینه‌سازی انبوه کل کتابخانه</button>
+						<button type="button" class="tisa-btn tisa-btn--secondary" id="tco-start-bulk-compress" title="فشرده‌سازی + ساخت نسخهٔ WebP کنار فایل؛ اصل و زیرسایزها دست‌نخورده می‌مانند">شروع بهینه‌سازی انبوه (نسخهٔ موازی)</button>
+						<button type="button" class="tisa-btn tisa-btn--primary ${state.armedKey === 'bulk-opt-replace-all' ? 'is-armed' : ''}" id="tco-start-replace-compress" title="فشرده‌سازی + جایگزینی خودکار فایل اصل با WebP؛ لینک‌ها اصلاح می‌شوند و حجم دیسک واقعاً کم می‌شود (فایل قبلی در خزانه پشتیبان می‌ماند)">
+							${state.armedKey === 'bulk-opt-replace-all' ? 'کلیک مجدد برای تأیید جایگزینی انبوه!' : 'فشرده‌سازی و جایگزینی انبوه (کاهش حجم دیسک)'}
+						</button>
 					</div>
 				</div>
 			</div>
@@ -2442,6 +2449,15 @@
 			return;
 		}
 
+		if (ev.target.closest('#tco-bulk-opt-replace')) {
+			// فشرده‌سازی + جایگزینی خودکار: دو کلیک (ضد اشتباه)، چون فایل اصل عوض می‌شود.
+			if (!armConfirm('bulk-opt-replace')) {
+				return;
+			}
+			await runBatchOptimize([...state.selectedIds], { replaceMode: true });
+			return;
+		}
+
 		if (ev.target.closest('#tco-bulk-remove')) {
 			if (state.deleteMode === 'permanent' && !armConfirm('bulk-remove')) {
 				return;
@@ -2566,6 +2582,27 @@
 			state.seo = res.audit;
 			toast(`متن جایگزین برای ${faNum(res.updated)} تصویر به‌طور خودکار تکمیل شد.`);
 			await ensureDataForCurrentView(false);
+			return;
+		}
+
+		if (ev.target.closest('#tco-start-replace-compress')) {
+			if (!armConfirm('bulk-opt-replace-all')) {
+				return;
+			}
+			// تنظیمات فعلی فرم را ذخیره کن، بعد کل کتابخانه را با جایگزینی مستقیم بهینه کن.
+			const cfg = {
+				quality_preset: document.getElementById('tco-s-preset').value,
+				nextgen_format: document.getElementById('tco-s-nextgen').value,
+				delivery_method: document.getElementById('tco-s-delivery').value,
+				max_width: document.getElementById('tco-s-maxw').value,
+				max_height: document.getElementById('tco-s-maxh').value,
+				backup_originals: document.getElementById('tco-s-backuporig').checked ? 1 : 0,
+				convert_opaque_png: document.getElementById('tco-s-opaque').checked ? 1 : 0,
+				keep_icc_profile: document.getElementById('tco-s-icc').checked ? 1 : 0,
+			};
+			const savedCfg = await api('save_settings', { settings: cfg });
+			state.settings = savedCfg.settings;
+			await runBatchOptimize(null, { replaceMode: true });
 			return;
 		}
 
@@ -2740,6 +2777,8 @@
 		'#tco-rescan-btn',
 		'#tco-quick-clean-unscaled',
 		'#tco-bulk-opt',
+		'#tco-bulk-opt-replace',
+		'#tco-start-replace-compress',
 		'#tco-bulk-remove',
 		'#tco-sweep-all',
 		'#tco-select-all-matching',

@@ -69,6 +69,32 @@ assert.match(
 );
 assert.match(window.document.querySelector('.tco-subsize-box').textContent, /uploads\//, 'مسیر داخل uploads باید ذکر شود');
 
+// دکمهٔ «فشرده‌سازی و جایگزینی» بالای جدول: دو کلیک، سپس جایگزینی خودکار فایل‌ها.
+const pageChk = window.document.getElementById('tco-check-page');
+pageChk.checked = true;
+pageChk.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+const replaceAllBtn = window.document.getElementById('tco-bulk-opt-replace');
+assert.ok(replaceAllBtn, 'دکمهٔ «فشرده‌سازی و جایگزینی» باید در نوار بالای جدول باشد');
+assert.match(replaceAllBtn.textContent, /فشرده‌سازی و جایگزینی/, 'برچسب دکمه باید «فشرده‌سازی و جایگزینی» باشد');
+replaceAllBtn.click();
+await flush();
+assert.match(
+	window.document.getElementById('tco-bulk-opt-replace').textContent,
+	/کلیک مجدد|تأیید/,
+	'کلیک اول باید دکمه را مسلح کند (ضد جایگزینی اشتباهی)'
+);
+const beforeReplace = window.__tcoMockItem(5011);
+const beforeTotal = beforeReplace.main_bytes + beforeReplace.subsizes_bytes + (beforeReplace.unscaled_bytes || 0);
+window.document.getElementById('tco-bulk-opt-replace').click();
+await new Promise((r) => setTimeout(r, 1200));
+const afterReplace = window.__tcoMockItem(5011);
+assert.ok(afterReplace, 'تصویر باید پس از جایگزینی هنوز وجود داشته باشد');
+assert.equal(afterReplace.format, 'WEBP', 'پس از «فشرده‌سازی و جایگزینی» فرمت فایل باید WEBP شود');
+const afterTotal = afterReplace.main_bytes + afterReplace.subsizes_bytes + (afterReplace.unscaled_bytes || 0);
+assert.ok(afterTotal < beforeTotal, 'حجم کل دیسک باید پس از جایگزینی کمتر شود');
+assert.match(window.document.getElementById('tco-toasts').textContent, /جایگزینی تمام شد/, 'اعلان پایان جایگزینی باید نمایش داده شود');
+
 // دکمهٔ جایگزینی بعد از بستن مودال آزمون می‌شود (پایین).
 assert.equal(window.document.getElementById('tco-modal').hidden, false, 'مودال مقایسه قبل/بعد باید باز شود');
 const slider = window.document.getElementById('tco-cmp-slider');

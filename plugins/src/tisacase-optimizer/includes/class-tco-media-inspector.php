@@ -541,6 +541,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					continue;
 				} elseif ( 'optimized' === $opt_flt && ! $it['is_optimized'] ) {
 					continue;
+				} elseif ( 'not_webp' === $opt_flt && ( 'WEBP' === $it['format'] || 'image/webp' === $it['mime'] ) ) {
+					// «هنوز با WebP جایگزین نشده»: چه بهینه‌شده باشد (نسخهٔ موازی) چه نباشد.
+					continue;
 				} elseif ( 'has_unscaled' === $opt_flt && $it['unscaled_bytes'] <= 0 ) {
 					continue;
 				} elseif ( 'missing_alt' === $opt_flt && '' !== $it['alt'] ) {

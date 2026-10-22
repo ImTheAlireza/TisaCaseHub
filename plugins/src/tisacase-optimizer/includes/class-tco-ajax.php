@@ -761,9 +761,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			}
 
 			if ( empty( $ids ) ) {
-				$q   = TisaCase_Optimizer_Media_Inspector::query_items(
+				// در حالت «جایگزینی» تصاویری هم لازم است که قبلاً فقط نسخهٔ موازی
+				// WebP گرفته‌اند (فایل اصلشان هنوز WebP نیست)؛ وگرنه هرگز جایگزین نمی‌شدند.
+				$wants_replace = ! empty( $clean_ovr['webp_mode'] ) && 'replace' === $clean_ovr['webp_mode'];
+				$q             = TisaCase_Optimizer_Media_Inspector::query_items(
 					array(
-						'opt_state' => 'unoptimized',
+						'opt_state' => $wants_replace ? 'not_webp' : 'unoptimized',
 						'sort_by'   => 'total_bytes',
 						'per_page'  => 100,
 					)
