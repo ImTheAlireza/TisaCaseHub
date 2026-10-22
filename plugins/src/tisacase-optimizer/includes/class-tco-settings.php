@@ -42,6 +42,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				// اندازهٔ هر گام «بازرسی ایمنی پیش از حذف». کوچک بماند تا هیچ تیک
 				// با کوئری‌های چندصدشرطی تایم‌اوت نشود (باگ «۰ از ۱۴۸۰»).
 				'verify_chunk'           => 100,
+				// تعداد ردیف در هر صفحهٔ فهرست‌ها (کاربر選択؛ پیش‌فرض ۲۵).
+				'per_page'               => 25,
 				'include_draft_in_scan'  => 1,
 				'scan_unregistered_disk' => 1,
 				// راستی‌آزمایی زندهٔ استفاده پیش از هر حذف (ضدحذف اشتباه عکس در حال استفاده).
@@ -125,6 +127,22 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		}
 
 		/**
+		 * محدودکردن «تعداد در هر صفحه» به بازهٔ امن.
+		 *
+		 * ۰ یعنی «همهٔ موارد» (فقط برای فهرست‌های سبک مثل گروه‌های تکراری).
+		 *
+		 * @param mixed $value مقدار ورودی.
+		 * @return int
+		 */
+		public static function clamp_per_page( $value ) {
+			$value = (int) $value;
+			if ( 0 === $value ) {
+				return 0;
+			}
+			return max( 10, min( 500, $value ) );
+		}
+
+		/**
 		 * اعتبارسنجی و ذخیرهٔ تنظیمات ورودی (جزئی یا کامل).
 		 *
 		 * @param array<string,mixed> $raw ورودی خام.
@@ -150,6 +168,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			}
 			if ( isset( $raw['verify_chunk'] ) ) {
 				$clean['verify_chunk'] = max( 10, min( 200, (int) $raw['verify_chunk'] ) );
+			}
+			if ( isset( $raw['per_page'] ) ) {
+				$clean['per_page'] = self::clamp_per_page( $raw['per_page'] );
 			}
 
 			if ( isset( $raw['quarantine_days'] ) ) {

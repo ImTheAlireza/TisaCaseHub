@@ -743,15 +743,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 			global $wpdb;
 
-			$media_meta_keys = array(
-				'_thumbnail_id',
-				'_product_image_gallery',
-				'_wc_additional_variation_images',
-				'woodmart_wc_video_gallery',
-				'_variation_image_gallery',
-				'_yoast_wpseo_opengraph-image-id',
-				'rank_math_facebook_image_id',
-			);
+			// مهم: این فهرست باید *دقیقاً* همان فهرست موتور بازرسی زندهٔ حذف باشد.
+			// قبلاً اینجا یک فهرست محلی و کوتاه‌تر بود (۷ کلید) در حالی که بازرسی
+			// زندهٔ قبل از حذف ۱۱ کلید را می‌دید؛ نتیجه: تصویری که فقط به‌عنوان
+			// «تصویر توییتر/المنتور» استفاده می‌شد در کاتالوگ «بلااستفاده» ثبت
+			// می‌شد و موقع حذف با پیام «هنوز استفاده می‌شود» رد می‌شد — همان
+			// ناهم‌خوانی‌ای که کاربر گزارش کرد (۱۳ مورد).
+			$media_meta_keys = TisaCase_Optimizer_Usage::gallery_meta_keys();
 			$placeholders = implode( ', ', array_fill( 0, count( $media_meta_keys ), '%s' ) );
 
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
@@ -779,8 +777,27 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				$display_name = ! empty( $row['post_title'] ) ? (string) $row['post_title'] : ( ! empty( $row['parent_title'] ) ? (string) $row['parent_title'] : '#' . $target_post );
 				$label        = self::role_label_for_meta( (string) $row['meta_key'], $ptype ) . ': ' . wp_html_excerpt( $display_name, 38, '…' );
 
-				foreach ( explode( ',', (string) $row['meta_value'] ) as $piece ) {
-					self::record_ref( $state, absint( trim( $piece ) ), $bucket, $label, $target_post );
+				$raw_meta = trim( (string) $row['meta_value'] );
+				$from_meta = array();
+				if ( '' !== $raw_meta && is_numeric( $raw_meta ) ) {
+					$from_meta[] = absint( $raw_meta );
+				} else {
+					foreach ( explode( ',', $raw_meta ) as $piece ) {
+						$piece = trim( $piece );
+						if ( '' !== $piece && is_numeric( $piece ) ) {
+							$from_meta[] = absint( $piece );
+						}
+					}
+					// مقدارهای JSON/سریالایز (مثل `_elementor_page_image` یا
+					// `woodmart_wc_video_gallery`) که شناسه را داخل ساختار دارند.
+					if ( empty( $from_meta ) && '' !== $raw_meta ) {
+						foreach ( self::extract_ids_from_text_or_data( $raw_meta, $state['stem_map'], true, $state['ref_url_hash'] ) as $mid ) {
+							$from_meta[] = absint( $mid );
+						}
+					}
+				}
+				foreach ( array_unique( $from_meta ) as $piece_id ) {
+					self::record_ref( $state, absint( $piece_id ), $bucket, $label, $target_post );
 				}
 			}
 
@@ -847,11 +864,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				}
 			}
 
-			$direct_option_keys = array(
-				'site_icon'                     => 'فاوآیکون سایت',
-				'custom_logo'                   => 'لوگوی اصلی سایت',
-				'woocommerce_placeholder_image' => 'تصویر پیش‌فرض ووکامرس',
-			);
+			// همان فهرست کانونی موتور بازرسی زنده (تا هر دو یک چیز ببینند).
+			$direct_option_keys = TisaCase_Optimizer_Usage::direct_option_labels();
 			foreach ( $direct_option_keys as $opt_key => $opt_label ) {
 				$opt_val = absint( get_option( $opt_key, 0 ) );
 				if ( $opt_val > 0 ) {
@@ -1992,6 +2006,23 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			$m_blk = array();
 			if ( false !== strpos( $raw, '"id"' ) && preg_match_all( '/"id"\s*:\s*([0-9]{1,10})/', $raw, $m_blk ) ) {
 				foreach ( $m_blk[1] as $id_str ) {
+					$found[ (int) $id_str ] = true;
+				}
+			}
+
+			// الگوهای «فقط شناسه‌ای» که در محتوا/متا زیاد دیده می‌شوند و پیش‌تر
+			// فقط در بازرسی زندهٔ حذف دیده می‌شدند (منشأ اختلاف «۱۳ مورد»).
+			// record_ref خودش فقط شناسه‌های موجود در فهرست را ثبت می‌کند.
+			$m_attr = array();
+			if ( preg_match_all( '/(?:data-id|data-attachment-id|data-image-id|attachment_id|image_id)\s*[=:]\s*["\']?([0-9]{1,10})/', $raw, $m_attr ) ) {
+				foreach ( $m_attr[1] as $id_str ) {
+					$found[ (int) $id_str ] = true;
+				}
+			}
+
+			// آرایه‌های سریالایز PHP: `a:1:{i:0;i:5011;}` یا `s:1:"5";`
+			if ( false !== strpos( $raw, 'i:' ) && preg_match_all( '/i:([0-9]{1,10});/', $raw, $m_ser ) ) {
+				foreach ( $m_ser[1] as $id_str ) {
 					$found[ (int) $id_str ] = true;
 				}
 			}

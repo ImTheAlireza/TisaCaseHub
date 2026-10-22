@@ -43,6 +43,94 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		const OPS = array( 'remove', 'restore', 'optimize' );
 
 		/**
+		 * چند ثانیه بی‌خبری از یک کار یعنی «رها شده»؟
+		 *
+		 * چرا؟ در هر تیک موفق، وضعیت کار ذخیره می‌شود؛ پس اگر یک کار
+		 * «در جریان» چند دقیقه هیچ به‌روزرسانی نداشته باشد، یعنی مرورگر بسته
+		 * شده یا درخواست هرگز ادامه پیدا نکرده. پیش از ۱٫۲٫۱ چنین کاری
+		 * برای همیشه همهٔ عملیات‌ها را با خطای «یک عملیات نیمه‌تمام در جریان
+		 * است» قفل می‌کرد و کاربر هیچ راهی جز پیدا کردن کارت «ادامه» نداشت.
+		 */
+		const STALE_AFTER = 180;
+
+		/** چقدر بی‌خبری یعنی رها شده؟ (قابل تغییر با فیلتر) */
+		public static function stale_after() {
+			$seconds = (int) apply_filters( 'tisacase_optimizer_job_stale_after', self::STALE_AFTER );
+			return max( 60, min( 3600, $seconds ) );
+		}
+
+		/**
+		 * چند ثانیه از آخرین پیشرفت این کار گذشته است؟
+		 *
+		 * @param array<string,mixed> $job کار.
+		 * @return int
+		 */
+		public static function age_sec( array $job ) {
+			$last = isset( $job['updated'] ) ? (int) $job['updated'] : ( isset( $job['started_at'] ) ? (int) $job['started_at'] : 0 );
+			return max( 0, time() - $last );
+		}
+
+		/**
+		 * آیا این کار «در جریان» است ولی واقعاً کسی دنبالش نیست؟
+		 *
+		 * @param array<string,mixed> $job کار.
+		 * @return bool
+		 */
+		public static function is_stale( array $job ) {
+			if ( 'running' !== ( isset( $job['status'] ) ? (string) $job['status'] : '' ) ) {
+				return false;
+			}
+			return self::age_sec( $job ) >= self::stale_after();
+		}
+
+		/**
+		 * بستن کار رهاشده (اگر وجود داشته باشد) و آزادکردن مسیر عملیات تازه.
+		 *
+		 * حسابداری کار قبلی حفظ می‌شود (همان مقدار انجام‌شده ثبت و در تاریخچه
+		 * می‌آید) و سپس کار فعال پاک می‌شود تا هیچ خطای «در جریان است» برای
+		 * همیشه باقی نماند.
+		 *
+		 * @return array<string,mixed>|null خلاصهٔ کارِ رهاشده یا null.
+		 */
+		public static function reclaim_stale() {
+			$job = self::get();
+			if ( ! is_array( $job ) || ! self::is_stale( $job ) ) {
+				return null;
+			}
+
+			$age    = self::age_sec( $job );
+			$before = self::summary( $job );
+			$job    = self::cancel( $job );
+			self::clear();
+
+			try {
+				TisaCase_Optimizer_Session::log(
+					'job_reaped',
+					__( 'بسته‌شدن کار رهاشدهٔ قبلی (بدون ادامه) و آزادکردن صف', 'tisacase-optimizer' ),
+					(int) $before['done'],
+					(int) $before['saved_bytes'],
+					sprintf(
+						/* translators: 1: operation label, 2: idle minutes. */
+						__( 'عملیات «%1$s» %2$d دقیقه بی‌خبر بود؛ رها شد.', 'tisacase-optimizer' ),
+						$before['op_label'],
+						(int) ceil( $age / 60 )
+					)
+				);
+			} catch ( Throwable $e ) {
+				unset( $e );
+			}
+
+			return array(
+				'op'          => (string) $before['op'],
+				'op_label'    => (string) $before['op_label'],
+				'done'        => (int) $before['done'],
+				'total'       => (int) $before['total'],
+				'age_sec'     => (int) $age,
+				'idle_minutes' => (int) ceil( $age / 60 ),
+			);
+		}
+
+		/**
 		 * خواندن کار فعال.
 		 *
 		 * @return array<string,mixed>|null
@@ -758,6 +846,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			}
 
 			$elapsed = max( 0, time() - (int) $job['started_at'] );
+			$idle    = self::age_sec( $job );
 			$rate    = $elapsed > 0 ? ( (int) $job['done'] / $elapsed ) : 0;
 			$eta     = ( $rate > 0 && $remaining > 0 ) ? (int) ceil( $remaining / $rate ) : 0;
 
@@ -841,6 +930,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				'failed'        => $failed,
 				'saved_bytes'   => (int) $job['saved_bytes'],
 				'elapsed_sec'   => $elapsed,
+				'idle_sec'      => $idle,
+				'stale'         => self::is_stale( $job ),
+				'stale_after'   => self::stale_after(),
 				'eta_sec'       => $eta,
 				'coverage'      => (string) $job['coverage'],
 				'needs_rescan'  => ! empty( $job['needs_rescan'] ),

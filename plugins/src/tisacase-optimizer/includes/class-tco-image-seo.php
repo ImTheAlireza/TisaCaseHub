@@ -21,7 +21,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_SEO' ) ) {
 		 * @param int    $page شمارهٔ صفحه.
 		 * @return array<string,mixed>
 		 */
-		public static function audit( $filter = 'missing_alt', $page = 1 ) {
+		public static function audit( $filter = 'missing_alt', $page = 1, $per_page = 0 ) {
 			$cat        = TisaCase_Optimizer_Media_Inspector::build_catalog( false );
 			$items      = $cat['items'];
 			$missing    = 0;
@@ -47,9 +47,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_SEO' ) ) {
 				$matched[]       = $it;
 			}
 
-			$per_page  = 25;
-			$page      = max( 1, (int) $page );
-			$total     = count( $matched );
+			// «تعداد در هر صفحه» انتخاب کاربر است؛ پیش‌فرض از تنظیمات خوانده می‌شود
+			// تا فهرست سئو هم دقیقاً مثل بقیهٔ فهرست‌ها رفتار کند.
+			$per_page_raw = (int) $per_page > 0
+				? (int) $per_page
+				: (int) TisaCase_Optimizer_Settings::get( 'per_page', 25 );
+			$per_page = $per_page_raw > 0 ? max( 10, min( 500, $per_page_raw ) ) : 0; // 0 = همه
+			$page     = max( 1, (int) $page );
+			$total    = count( $matched );
+			$per_page = $per_page > 0 ? $per_page : max( 1, $total ); // «همه» یعنی یک صفحه
 			$page_rows = array_slice( $matched, ( $page - 1 ) * $per_page, $per_page );
 			$pattern   = (string) TisaCase_Optimizer_Settings::get( 'seo_alt_pattern', '{product_title} — {site_name}' );
 
@@ -66,10 +72,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_SEO' ) ) {
 					'healthy_alt'  => max( 0, count( $items ) - $missing ),
 					'coverage_pct' => count( $items ) > 0 ? round( ( ( count( $items ) - $missing ) / count( $items ) ) * 100 ) : 100,
 				),
-				'total'   => $total,
-				'page'    => $page,
-				'pages'   => max( 1, (int) ceil( $total / $per_page ) ),
-				'rows'    => $page_rows,
+				'total'    => $total,
+				'page'     => $page,
+				'pages'    => max( 1, (int) ceil( $total / $per_page ) ),
+				'per_page' => (int) $per_page,
+				'rows'     => $page_rows,
 			);
 		}
 

@@ -889,9 +889,70 @@ body.tco-page #wpfooter {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: var(--tisa-sp-2, 8px);
 	margin-top: var(--tisa-sp-3, 12px);
+	padding-top: var(--tisa-sp-2, 8px);
+	border-top: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
 	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-pager__info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 132px;
+}
+
+.tco-pager__actions {
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--tisa-sp-1, 4px);
+}
+
+.tco-pager__jump {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.tco-pager__jump .tco-input {
+	width: 68px;
+	text-align: center;
+}
+
+.tco-perpage {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+	padding-inline-start: var(--tisa-sp-2, 8px);
+	border-inline-start: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+}
+
+.tco-input--sm,
+.tco-select--sm {
+	padding: 2px 6px;
+	font-size: var(--tisa-fs-meta, 12px);
+	height: 30px;
+	min-height: 30px;
+}
+
+@media (max-width: 782px) {
+	.tco-pager {
+		align-items: stretch;
+	}
+
+	.tco-pager__actions {
+		width: 100%;
+		justify-content: flex-start;
+	}
+
+	.tco-perpage {
+		border-inline-start: 0;
+		padding-inline-start: 0;
+	}
 }
 
 /* مودال و اسلایدر مقایسهٔ زندهٔ قبل / بعد */
@@ -1301,4 +1362,37 @@ body.tco-page #wpfooter {
 }
 .tco-next .tisa-btn {
 	align-self: flex-start;
+}
+
+/* ── هشدار کار رهاشده در کارت «ادامهٔ عملیات» ──────────────── */
+.tco-hint--warn {
+	color: #8a5a00;
+	font-weight: 600;
+}
+
+/* کارت «نتیجهٔ آخرین عملیات» و فهرست دلایل — شفافیت کامل حذف‌های انجام‌نشده */
+.tco-result-card {
+	border-inline-start: 4px solid var(--tisa-warn, #dba617);
+}
+
+.tco-reason-list {
+	margin: 8px 0 0;
+	padding-inline-start: 20px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 1.9;
+	color: var(--tisa-text, #1e1e1e);
+}
+
+.tco-reason-list li {
+	margin-bottom: 2px;
+}
+
+.tco-details {
+	margin-top: 10px;
+}
+
+.tco-details summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: var(--tisa-fs-meta, 12px);
 }

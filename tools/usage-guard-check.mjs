@@ -70,13 +70,27 @@ const requiredMetaKeys = [
 	'_yoast_wpseo_opengraph-image-id',
 	'rank_math_facebook_image_id',
 ];
+// اسکنر و بازرسی زنده باید از یک فهرست کانونی بخوانند؛ پس کافی است کلید
+// یا در خودِ اسکنر باشد یا در فهرست کانونی `Usage::gallery_meta_keys()`.
+const canonicalMeta = scanner.includes('Usage::gallery_meta_keys()') && usage.includes('function gallery_meta_keys(');
 for (const key of requiredMetaKeys) {
-	ok(`مرجع متای «${key}» پوشش داده می‌شود`, scanner.includes(`'${key}'`));
+	ok(
+		`مرجع متای «${key}» پوشش داده می‌شود`,
+		scanner.includes(`'${key}'`) || (canonicalMeta && usage.includes(`'${key}'`))
+	);
 }
+ok('اسکنر از فهرست کانونی کلیدهای متا استفاده می‌کند (بدون فهرست محلی کوتاه‌تر)', canonicalMeta);
 
 ok('مراجع termmeta (دسته/برند/سواچ) بررسی می‌شوند', scanner.includes('$wpdb->termmeta'));
 ok('مراجع تنظیمات/ابزارک/theme_mods بررسی می‌شوند', scanner.includes('theme_mods_%') && scanner.includes('widget_%'));
-ok('لوگو، فاوآیکون و پلیس‌هولدر ووکامرس مستقیم بررسی می‌شوند', scanner.includes("'site_icon'") && scanner.includes("'custom_logo'") && scanner.includes('woocommerce_placeholder_image'));
+ok(
+	'لوگو، فاوآیکون و پلیس‌هولدر ووکامرس مستقیم بررسی می‌شوند',
+	(scanner.includes("'site_icon'") && scanner.includes("'custom_logo'") && scanner.includes('woocommerce_placeholder_image')) ||
+		(scanner.includes('Usage::direct_option_labels()') &&
+			usage.includes("'site_icon'") &&
+			usage.includes("'custom_logo'") &&
+			usage.includes('woocommerce_placeholder_image'))
+);
 ok('محتوای نوشته‌ها و توضیحات محصولات اسکن می‌شود', scanner.includes('post_content LIKE') && scanner.includes('post_excerpt LIKE'));
 ok('دیتای صفحه‌ساز المنتور اسکن می‌شود', scanner.includes('_elementor_data'));
 ok('الگوی wp-image-ID شناسایی می‌شود', scanner.includes('/wp-image-'));

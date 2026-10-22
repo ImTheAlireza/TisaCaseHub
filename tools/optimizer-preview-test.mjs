@@ -330,8 +330,8 @@ window.document.querySelector('[data-go-module="images"]').click();
 await flush();
 window.document.querySelector('[data-go-subtab="explorer"]').click();
 await flush();
-const qModeBtn = window.document.querySelector('[data-set-delmode="quarantine"]');
-if (qModeBtn) qModeBtn.click();
+const qModeBtn6 = window.document.querySelector('[data-set-delmode="quarantine"]');
+if (qModeBtn6) qModeBtn6.click();
 await flush();
 const anyRemoveBtn = window.document.querySelector('[data-remove-one]');
 assert.ok(anyRemoveBtn, 'دکمهٔ انتقال به قرنطینه در کاوشگر تصاویر باید فعال باشد');
@@ -424,7 +424,10 @@ if (pageCheck2) {
 		discardBtn.click();
 		await new Promise((r) => setTimeout(r, 1200));
 		assert.equal(window.document.getElementById('tco-resume-job'), null, 'پس از «رها کردن»، کارت ادامه نباید بماند');
-		assert.notEqual(window.__tcoMockJob.status, 'running', 'کار سرور باید بسته شود');
+		assert.ok(
+			!window.__tcoMockJob || window.__tcoMockJob.status !== 'running',
+			'کار سرور باید بسته و از حافظه پاک شود (تا عملیات بعدی قفل نشود)'
+		);
 	}
 }
 
@@ -491,6 +494,17 @@ window.__tcoMockFailAfter = 0;
 
 // ۱۵. موتور کار برای «فشرده‌سازی» و «بازگردانی»: توقف وسط راه ⇒ کارت «ادامه» با نام درست
 // عملیات ⇒ ادامه از همان نقطه بدون تکرار یا گم‌شدن هیچ موردی.
+
+// پاک‌سازی: کار نیمه‌تمامِ باقی‌مانده از سناریوی قبلی رها می‌شود؛ وگرنه — درست —
+// قاعدهٔ «فقط یک کار هم‌زمان» جلوی سناریوی تازه را می‌گیرد.
+const leftoverDiscard = window.document.getElementById('tco-discard-job');
+if (leftoverDiscard) {
+	leftoverDiscard.click();
+	await new Promise((r) => setTimeout(r, 700));
+}
+window.__tcoMockJob = null;
+window.__tcoMockJobs = {};
+
 // مجموعهٔ آزمون: همهٔ قرنطینه‌شده‌ها را برمی‌گردانیم تا صف فشرده‌سازی چند موردی باشد.
 for (let i = 0; i < 30; i += 1) {
 	const rr = await window.fetch('http://localhost/wp-admin/admin-ajax.php', {
@@ -590,7 +604,141 @@ window.__tcoMockTickMax = 6;
 window.__tcoMockVerifyMax = 0;
 window.__tcoMockFailAfter = 0;
 
-// ۱۶. «قدم بعدی» (B1)، «توصیهٔ هوشمند زیرسایز» (B2) و «چکاپ سرور» (B7).
+// ۱۶. سناریوی واقعی گزارش‌شده: «هنگام بازگردانی موارد از قرنطینه، عملیات شروع نشد چون
+// یک کار نیمه‌تمام باز بود». باید: (۱) هیچ پیام موفقیت دروغینی ندهد، (۲) کارت «ادامه یا
+// رهاکردن» را با نام و عدد همان کار نشان دهد، (۳) با یک کلیک رها و همان بازگردانی شروع شود.
+window.__tcoMockTickMax = 6;
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockFailAfter = 0;
+
+// داده‌های آزمون: چند تصویر تازه (برای صف فشرده‌سازی) و چند مورد قرنطینه (برای دکمهٔ بازگردانی).
+window.__tcoMockSeedItems(6);
+window.__tcoMockSeedQuarantine(4);
+
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+
+// حالا یک کار فشرده‌سازی شروع و عمداً نیمه‌تمام رها می‌کنیم (کار زنده، نه کهنه).
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+[...window.document.querySelectorAll('#tco-main tbody tr')].forEach((tr) => {
+	const it = window.__tcoMockItem(tr.getAttribute('data-row-id'));
+	if (it) it.is_optimized = false;
+});
+const pc7 = window.document.getElementById('tco-check-page');
+pc7.checked = true;
+pc7.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+window.__tcoMockTickMax = 1;
+window.__tcoMockLatency = 150;
+window.document.getElementById('tco-bulk-opt').click();
+await new Promise((r) => setTimeout(r, 380));
+window.__tcoMockLatency = 0;
+const stop6 = window.document.getElementById('tco-stop-batch');
+if (!stop6) {
+}
+assert.ok(stop6, 'کار فشرده‌سازی باید شروع شده باشد');
+stop6.click();
+await new Promise((r) => setTimeout(r, 1800));
+
+const liveOptJob = Object.values(window.__tcoMockJobs || {}).find((j) => j.op === 'optimize' && j.status === 'running');
+assert.ok(liveOptJob, 'کار فشرده‌سازی نیمه‌تمام باید در «سرور» باز بماند');
+
+// اکنون بازگردانی از قرنطینه را می‌زنیم: باید با تعارض صریح روبه‌رو شود، نه پیام موفقیت.
+window.document.querySelector('[data-go-subtab="restore"]').click();
+await new Promise((r) => setTimeout(r, 300));
+const qTab6 = window.document.querySelector('[data-vault-tab="quarantine"]');
+if (qTab6) qTab6.click();
+await flush();
+const restoreAll6 = window.document.getElementById('tco-restore-all-quarantine');
+assert.ok(restoreAll6, 'دکمهٔ «بازگردانی همه» باید در دسترس باشد');
+const toastsBefore = window.document.getElementById('tco-toasts').textContent;
+restoreAll6.click();
+await new Promise((r) => setTimeout(r, 900));
+
+const toastAfter = window.document.getElementById('tco-toasts').textContent;
+assert.ok(
+	toastAfter.length > toastsBefore.length && /شروع نشد|هنوز باز است/.test(toastAfter),
+	'باید صریحاً گفته شود که این عملیات شروع نشد و دلیلش کار قبلی است'
+);
+assert.ok(
+	!/تصویر با همان ID و تمام زیرسایزها به جای اول بازگردانده شد/.test(toastAfter),
+	'هرگز نباید پیام موفقیت بازگردانی داده شود وقتی کاری انجام نشده است'
+);
+assert.match(toastAfter, /فشرده‌سازی/, 'پیام باید نام عملیات مسدودکننده را بگوید');
+
+const conflictCard = window.document.querySelector('.tco-resume');
+assert.ok(conflictCard, 'کارت «ادامه یا رهاکردن» باید ظاهر شود');
+assert.match(conflictCard.textContent, /فشرده‌سازی/, 'کارت باید نوع کار بازمانده را نشان دهد');
+const discardAndRun = window.document.getElementById('tco-discard-and-run');
+assert.ok(discardAndRun, 'دکمهٔ «رها کردن و شروع» باید در دسترس باشد');
+assert.match(discardAndRun.textContent, /رها کردن و شروع/, 'برچسب دکمه باید صریح باشد');
+
+// یک کلیک: کار قبلی رها و همان بازگردانی شروع می‌شود.
+window.__tcoMockTickMax = 50;
+discardAndRun.click();
+await new Promise((r) => setTimeout(r, 2500));
+const afterRun = window.document.getElementById('tco-toasts').textContent;
+assert.ok(/کار قبلی رها شد/.test(afterRun), 'رهاکردن کار قبلی باید گزارش شود');
+assert.ok(
+	/بازگردانده شد|بازگردانی تمام شد|هیچ موردی بازگردانده نشد/.test(afterRun),
+	'پس از رهاکردن، بازگردانی باید واقعاً اجرا و گزارش شود'
+);
+window.__tcoMockTickMax = 6;
+
+// ۱۷. کار «رهاشده» (بی‌خبر برای مدتی طولانی) نباید برای همیشه همه‌چیز را قفل کند؛
+// باید خودکار رها شود و همان عملیات تازه اجرا شود، با گزارش صریح به کاربر.
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pc8 = window.document.getElementById('tco-check-page');
+pc8.checked = true;
+pc8.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+window.__tcoMockTickMax = 1;
+window.__tcoMockLatency = 150;
+window.document.getElementById('tco-bulk-remove').click();
+await new Promise((r) => setTimeout(r, 380));
+window.__tcoMockLatency = 0;
+const stop7 = window.document.getElementById('tco-stop-batch');
+if (stop7) stop7.click();
+await new Promise((r) => setTimeout(r, 1500));
+
+const staleJob = window.__tcoMockJob;
+assert.ok(staleJob && staleJob.status === 'running', 'یک کار نیمه‌تمام باید باز مانده باشد');
+// شبیه‌سازی «هیچ پیشرفتی برای ۱۰ دقیقه» (مرورگر بسته شده بود).
+staleJob.updated = Math.floor(Date.now() / 1000) - 600;
+
+window.__tcoMockTickMax = 50;
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pc9 = window.document.getElementById('tco-check-page');
+pc9.checked = true;
+pc9.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+window.document.getElementById('tco-bulk-remove').click();
+await new Promise((r) => setTimeout(r, 2200));
+
+const staleToast = window.document.getElementById('tco-toasts').textContent;
+assert.match(staleToast, /رها شد/, 'کار کهنه باید خودکار رها و به کاربر گزارش شود');
+assert.ok(
+	!/یک عملیات نیمه‌تمام در جریان است/.test(staleToast),
+	'کار کهنه نباید خطای «در جریان است» بدهد و مسیر را قفل کند'
+);
+window.__tcoMockTickMax = 6;
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockFailAfter = 0;
+window.__tcoMockJob = null;
+window.__tcoMockJobs = {};
+
+// ۱۸. «قدم بعدی» (B1)، «توصیهٔ هوشمند زیرسایز» (B2) و «چکاپ سرور» (B7).
 window.document.querySelector('[data-go-module="images"]').click();
 await flush();
 const overviewNav = window.document.querySelector('[data-go-subtab="overview"]');
@@ -621,4 +769,168 @@ await new Promise((r) => setTimeout(r, 500));
 assert.match(window.document.getElementById('tco-main').textContent, /امتیاز آمادگی/, 'پس از چکاپ، امتیاز آمادگی باید نمایش داده شود');
 assert.ok(window.document.querySelectorAll('#tco-main .tco-table tbody tr').length >= 3, 'چکاپ باید چند مورد بررسی‌شده نشان دهد');
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۷ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور») با موفقیت اجرا شدند!');
+// ۱۹. هیچ فهرستی نباید بی‌صدا بریده شود: کنترل صفحه‌بندی کامل + انتخاب
+// «تعداد در هر صفحه» (شامل «همهٔ موارد») در کاوشگر، تکراری‌ها، بلااستفاده و سئو.
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+
+window.__tcoMockSeedItems(30);
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+
+const expPager = window.document.querySelector('#tco-main .tco-pager');
+assert.ok(expPager, 'کاوشگر باید نوار صفحه‌بندی داشته باشد');
+assert.ok(expPager.querySelector('[data-page-edge="first"]'), 'نوار صفحه‌بندی باید دکمهٔ «اول» داشته باشد');
+assert.ok(expPager.querySelector('[data-page-edge="last"]'), 'نوار صفحه‌بندی باید دکمهٔ «آخر» داشته باشد');
+assert.ok(expPager.querySelector('#tco-page-jump'), 'نوار صفحه‌بندی باید امکان پرش به شمارهٔ صفحه بدهد');
+const perSel = expPager.querySelector('#tco-per-page');
+assert.ok(perSel, 'هر فهرست باید امکان انتخاب «تعداد در هر صفحه» را بدهد');
+assert.equal(perSel.querySelectorAll('option').length, 6, 'گزینه‌های «تعداد در هر صفحه» باید شامل ۲۵ تا ۵۰۰ و «همه» باشند');
+assert.ok(
+	[...perSel.options].some((o) => o.value === '0' && /همه/.test(o.textContent)),
+	'گزینهٔ «همهٔ موارد» باید وجود داشته باشد'
+);
+
+const expPagerInfo = () => window.document.querySelector('#tco-main .tco-pager__info').textContent;
+assert.match(expPagerInfo(), /صفحهٔ/, 'شمارهٔ صفحه باید دیده شود');
+assert.ok(/۲/.test(expPagerInfo()), 'با ۳۷ تصویر و ۲۵ ردیف در صفحه باید حداقل ۲ صفحه باشد');
+
+const expBefore = window.document.querySelector('#tco-main tbody tr').getAttribute('data-row-id');
+window.document.querySelector('#tco-main [data-page-edge="last"]').click();
+await flush();
+assert.match(expPagerInfo(), /صفحهٔ ۲/, 'دکمهٔ «آخر» باید به صفحهٔ آخر ببرد');
+assert.notEqual(
+	window.document.querySelector('#tco-main tbody tr').getAttribute('data-row-id'),
+	expBefore,
+	'صفحهٔ دوم باید ردیف‌های دیگری نشان دهد'
+);
+window.document.querySelector('#tco-main [data-page-edge="first"]').click();
+await flush();
+assert.match(expPagerInfo(), /صفحهٔ ۱/, 'دکمهٔ «اول» باید به صفحهٔ اول برگرداند');
+
+// تغییر «تعداد در هر صفحه» به ۵۰: بلافاصله اعمال و در صفحهٔ اول بازنشانی می‌شود.
+const perSel2 = window.document.getElementById('tco-per-page');
+perSel2.value = '50';
+perSel2.dispatchEvent(new window.Event('change', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 120));
+assert.equal(window.document.getElementById('tco-per-page').value, '50', 'انتخاب کاربر باید حفظ شود');
+assert.match(expPagerInfo(), /صفحهٔ ۱ از ۱/, 'با ۵۰ مورد در صفحه، ۳۷ ردیف در یک صفحه جا می‌شود');
+
+// بازگرداندن «تعداد در هر صفحه» به ۲۵ (انتخاب کاربر باید ذخیره و دوباره خوانده شود).
+const perSel3 = window.document.getElementById('tco-per-page');
+perSel3.value = '25';
+perSel3.dispatchEvent(new window.Event('change', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 120));
+assert.equal(window.document.getElementById('tco-per-page').value, '25', 'تغییر دوم «تعداد در هر صفحه» هم باید حفظ شود');
+
+// فهرست تکراری‌ها: قبلاً هیچ صفحه‌بندی و هیچ راهی برای دیدن بیشتر از ۲۵ گروه نداشت.
+window.__tcoMockSeedDuplicates(30);
+window.document.querySelector('[data-go-subtab="duplicates"]').click();
+await flush();
+await new Promise((r) => setTimeout(r, 120));
+const dupGroups = () => window.document.querySelectorAll('#tco-main .tco-dup-group').length;
+const dupPager = () => window.document.querySelector('#tco-main .tco-pager');
+assert.ok(dupPager(), 'فهرست تصاویر تکراری باید نوار صفحه‌بندی داشته باشد');
+assert.equal(dupGroups(), 25, 'صفحهٔ اول تکراری‌ها باید ۲۵ گروه نشان دهد');
+assert.match(window.document.querySelector('#tco-main .tco-pager__info').textContent, /۳۰ مورد در مجموع/, 'تعداد کل گروه‌ها باید صریح گفته شود');
+window.document.querySelector('#tco-main [data-page-delta="1"]').click();
+await flush();
+assert.equal(dupGroups(), 5, 'صفحهٔ دوم تکراری‌ها باید ۵ گروه باقی‌مانده را نشان دهد');
+
+// «همهٔ موارد»: هر ۳۰ گروه یک‌جا.
+const dupPer = window.document.getElementById('tco-per-page');
+dupPer.value = '0';
+dupPer.dispatchEvent(new window.Event('change', { bubbles: true }));
+await new Promise((r) => setTimeout(r, 150));
+assert.equal(dupGroups(), 30, 'انتخاب «همهٔ موارد» باید کل ۳۰ گروه را نشان دهد');
+assert.match(window.document.querySelector('#tco-main .tco-pager__info').textContent, /صفحهٔ ۱ از ۱/, 'در حالت «همه» تنها یک صفحه وجود دارد');
+
+// بخش سئو هم باید نوار صفحه‌بندی داشته باشد (قبلاً هیچ کنترلی نداشت).
+window.document.querySelector('[data-go-subtab="seo"]').click();
+await flush();
+await new Promise((r) => setTimeout(r, 150));
+assert.ok(window.document.querySelector('#tco-main .tco-pager'), 'فهرست سئو باید نوار صفحه‌بندی داشته باشد');
+assert.ok(window.document.getElementById('tco-per-page'), 'فهرست سئو باید انتخاب «تعداد در هر صفحه» داشته باشد');
+
+// بخش «بلااستفاده» هم باید نوار صفحه‌بندی داشته باشد.
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+await new Promise((r) => setTimeout(r, 150));
+assert.ok(window.document.querySelector('#tco-main .tco-pager'), 'فهرست «مطلقاً بلااستفاده» باید نوار صفحه‌بندی داشته باشد');
+
+// ۲۰. فهرست «مطلقاً بلااستفاده» باید قبل از نمایش با دیتابیس زنده مقایسه شود؛
+// هر تصویری که واقعاً استفاده شده باشد نباید در این فهرست دیده شود (گزارش کاربر:
+// «۱۲ حذف شد و ۱۳ مورد چون هنوز استفاده می‌شود حذف نشد»).
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.__tcoMockLiveUsed = [];
+window.__tcoMockSeedItems(6, 'strict_unused');
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+await new Promise((r) => setTimeout(r, 200));
+
+const unusedRowIds = () =>
+	[...window.document.querySelectorAll('#tco-main tbody tr[data-row-id]')].map((tr) =>
+		Number(tr.getAttribute('data-row-id'))
+	);
+const beforeIds = unusedRowIds();
+assert.ok(beforeIds.length >= 3, 'فهرست بلااستفاده باید چند ردیف داشته باشد');
+assert.match(
+	window.document.getElementById('tco-main').textContent,
+	/با دیتابیس زنده مقایسه شدند/,
+	'فهرست بلااستفاده باید شفاف بگوید با دیتابیس زنده بازرسی شده است'
+);
+
+// شبیه‌سازی: دو تصویر از این فهرست، همین حالا در سایت استفاده می‌شوند.
+const nowUsed = beforeIds.slice(0, 2);
+window.__tcoMockLiveUsed = nowUsed;
+// رفتن به دستهٔ دیگر و برگشتن = بارگذاری تازه از سرور (همان کاری که کاربر می‌کند).
+window.document.querySelector('[data-unused-bucket="draft_only"]').click();
+await flush();
+window.document.querySelector('[data-unused-bucket="strict_unused"]').click();
+await flush();
+await new Promise((r) => setTimeout(r, 250));
+
+const afterIds = unusedRowIds();
+assert.equal(
+	afterIds.length,
+	beforeIds.length - 2,
+	'تصاویری که در دیتابیس زنده استفاده می‌شوند باید از فهرست بلااستفاده حذف شوند'
+);
+nowUsed.forEach((id) => {
+	assert.ok(!afterIds.includes(id), `تصویر #${id} که استفاده می‌شود نباید در فهرست بلااستفاده بماند`);
+});
+const verifyText = window.document.getElementById('tco-main').textContent;
+assert.match(verifyText, /۲ تصویر از این فهرست خارج شد/, 'تعداد موارد خارج‌شده باید صریح گفته شود');
+assert.match(verifyText, /تصویر شاخص محصول/, 'دلیل استفاده‌شدن باید به فارسی نمایش داده شود');
+
+// کارت «نتیجهٔ آخرین عملیات»: بعد از یک اجرای نیمه‌موفق باید دقیقاً بگوید
+// کدام مورد و چرا حذف نشد (نه جملهٔ مبهم «چون هنوز استفاده می‌شود»).
+const twoIds = unusedRowIds().slice(0, 2);
+window.__tcoMockBlockedIds = [twoIds[0]];
+window.__tcoMockTickMax = 50;
+window.__tcoMockVerifyMax = 50;
+twoIds.forEach((id) => {
+	const cb = window.document.querySelector(`#tco-main .tco-row-check[value="${id}"]`);
+	if (cb) {
+		cb.checked = true;
+		cb.dispatchEvent(new window.Event('change', { bubbles: true }));
+	}
+});
+await flush();
+const bulkBtn = window.document.getElementById('tco-bulk-remove');
+assert.ok(bulkBtn, 'با انتخاب دو ردیف باید دکمهٔ پردازش انتخاب‌شده‌ها فعال شود');
+bulkBtn.click();
+await new Promise((r) => setTimeout(r, 2600));
+const afterRunText = window.document.getElementById('tco-main').textContent;
+assert.match(afterRunText, /نتیجهٔ آخرین عملیات حذف/, 'بعد از اجرا کارت «نتیجهٔ آخرین عملیات» باید نمایش داده شود');
+assert.match(afterRunText, /چرا این موارد حذف نشدند/, 'کارت باید دلیل حذف‌نشدن را توضیح دهد');
+assert.match(afterRunText, /تصویر شاخص محصول/, 'دلیل دقیق (نه جملهٔ کلی) باید نمایش داده شود');
+window.__tcoMockBlockedIds = [];
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockTickMax = 6;
+window.__tcoMockLiveUsed = [];
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۰ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» و «دقت فهرست بلااستفاده با بازرسی زنده») با موفقیت اجرا شدند!');

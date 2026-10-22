@@ -92,12 +92,18 @@
 		selectedPaths: new Set(),
 		masterChoices: {},
 		deleteMode: (boot.settings && boot.settings.delete_mode) || 'quarantine',
+		// «تعداد در هر صفحه» — انتخاب کاربر و ذخیره‌شده در تنظیمات (۰ = همه).
+		perPage: Number((boot.settings && boot.settings.per_page) || 25),
+		dupPage: 1,
 		armedKey: null,
 		armedTimer: null,
 		batch: {
 			running: false,
 			stopRequested: false,
 			title: '',
+			op: 'remove',
+			blockReasons: [],
+			blockedSample: {},
 			done: 0,
 			total: 0,
 			savedBytes: 0,
@@ -132,8 +138,13 @@
 		},
 		seoFilter: 'missing_alt',
 		seoPage: 1,
+		// نتیجهٔ بازرسی زندهٔ فهرست «بلااستفاده» (سرور آن را برمی‌گرداند).
+		unusedVerify: null,
+		// خلاصهٔ آخرین عملیات حذف/فشرده‌سازی برای نمایش شفاف «چه شد و چرا».
+		lastRun: null,
 		// کار نیمه‌تمامِ ذخیره‌شده در سرور (برای کارت «ادامه»).
 		activeJob: null,
+		conflictRun: null,
 	};
 
 	function toast(msg, kind = 'success') {
@@ -445,8 +456,15 @@
 		}
 
 		if (!json || !json.success) {
-			const msg = (json && json.data && json.data.message) || `خطا در پردازش درخواست سرور (HTTP ${res.status})`;
-			throw new Error(msg);
+			const payload = (json && json.data) || {};
+			const msg = payload.message || `خطا در پردازش درخواست سرور (HTTP ${res.status})`;
+			const err = new Error(msg);
+			// کد وضعیت و دادهٔ همراه خطا حفظ می‌شود تا رابط بتواند دقیقاً بگوید
+			// چه کاری مانع شده و «ادامه/رهاکردن» را همان‌جا پیشنهاد دهد.
+			err.status = res.status;
+			err.data = payload;
+			err.isConflict = Boolean(payload.conflict) || res.status === 409;
+			throw err;
 		}
 		return json.data;
 	}
@@ -534,9 +552,22 @@
 		const blocked = Number(job.blocked || 0);
 		const failed = Number(job.failed || 0);
 		const op = job.op || 'remove';
-		const opLabel = op === 'optimize' ? 'فشرده‌سازی' : (op === 'restore' ? 'بازگردانی' : 'حذف');
+		const opLabel = opLabelOf(op);
 		const verifying = op === 'remove' && job.phase === 'verify';
 		const reason = job.lastError ? esc(job.lastError) : (verifying ? 'بازرسی ایمنی پیش از حذف در جریان است…' : 'عملیات پیش از پایان متوقف شد');
+
+		// کار «رهاشده» (چند دقیقه بی‌خبر): صریح بگوییم و راه یک‌کلیکی بدهیم.
+		const idleMin = Math.max(0, Math.round(Number(job.idleSec || 0) / 60));
+		const idleNote = job.stale || idleMin >= 3
+			? `<p class="tco-muted tco-hint tco-hint--warn">این کار ${faNum(idleMin)} دقیقه هیچ پیشرفتی نداشته (احتمالاً مرورگر بسته شده)؛ می‌توانید «ادامه» را بزنید یا آن را رها کنید.</p>`
+			: '';
+
+		// اگر کاربر عملیات تازه‌ای را شروع کرده و با تعارض روبه‌رو شده، این‌جا
+		// با یک کلیک کار قبلی رها و همان عملیات شروع می‌شود.
+		const pending = state.conflictRun;
+		const startOverBtn = pending
+			? `<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-discard-and-run">رها کردن و شروع ${esc(opLabelOf(pending.op))}</button>`
+			: '';
 
 		const chips = `${
 			blocked > 0 ? `<span class="tco-pill tco-pill--warn">${faNum(blocked)} مورد محافظت‌شده</span>` : ''
@@ -558,6 +589,7 @@
 				<div>
 					<h2 class="tco-card__title">عملیات نیمه‌تمام ${opLabel}: ${faNum(done)} از ${faNum(total)} انجام شده</h2>
 					<p class="tco-muted">${reason} — پیشرفت در سرور ذخیره شده است؛ با «ادامه» از همان نقطه تکمیل می‌شود. ${faNum(remaining)} مورد در صف باقی مانده.</p>
+					${idleNote}
 					${hint}
 					${reasonList}
 					<div class="tco-row-actions" style="margin-top:8px">${chips}</div>
@@ -569,11 +601,22 @@
 				<span>تا این لحظه: <strong>${faNum(done)}</strong> مورد پردازش شد${job.verified ? ` · بازرسی‌شده: ${faNum(job.verified)}` : ''}</span>
 				<div class="tco-row-actions">
 					${rescanBtn}
-					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-resume-job">ادامهٔ عملیات</button>
+					${startOverBtn}
+					<button type="button" class="tisa-btn ${pending ? 'tisa-btn--secondary' : 'tisa-btn--primary'} tisa-btn--sm" id="tco-resume-job">ادامهٔ ${esc(opLabel)}</button>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-discard-job">رها کردن (ثبت همان مقدار انجام‌شده)</button>
 				</div>
 			</div>
 		</div>`;
+	}
+
+	/**
+	 * نام فارسی نوع عملیات (برای همهٔ پیام‌ها و کارت‌ها).
+	 *
+	 * @param {string} op نوع عملیات.
+	 * @return {string}
+	 */
+	function opLabelOf(op) {
+		return op === 'optimize' ? 'فشرده‌سازی' : op === 'restore' ? 'بازگردانی' : 'حذف';
 	}
 
 	function renderBatchProgress() {
@@ -991,13 +1034,12 @@
 				</table>
 			</div>
 
-			<div class="tco-pager">
-				<span>صفحهٔ ${faNum(data ? data.page : 1)} از ${faNum(data ? data.pages : 1)}</span>
-				<div class="tco-row-actions">
-					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="-1" ${!data || data.page <= 1 ? 'disabled title="در صفحهٔ اول هستید"' : 'title="صفحهٔ قبل"'}>قبلی</button>
-					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="1" ${!data || data.page >= data.pages ? 'disabled title="در آخرین صفحه هستید"' : 'title="صفحهٔ بعد"'}>بعدی</button>
-				</div>
-			</div>
+			${renderPager({
+				page: data ? data.page : 1,
+				pages: data ? data.pages : 1,
+				total: data ? data.total : rows.length,
+				scope: data && data.matching_ids ? data.matching_ids.length : rows.length,
+			})}
 		</div>`;
 	}
 
@@ -1011,7 +1053,27 @@
 		const selCount = isDiskOrphans ? state.selectedPaths.size : state.selectedIds.size;
 		const sweepArm = state.armedKey === 'sweep-all-unused';
 
+		const v = state.unusedVerify;
+		const verifyBanner = v
+			? `<div class="tco-hint ${v.reclassified > 0 ? 'tco-hint--warn' : ''}">
+					${
+						v.reclassified > 0
+							? `<strong>${faNum(v.reclassified)} تصویر از این فهرست خارج شد.</strong> بازرسی زنده نشان داد همین حالا در سایت استفاده می‌شوند (تصویر شاخص، گالری، متن یا تنظیمات)؛ پس دیگر «بلااستفاده» نیستند و در فهرست نمی‌آیند.`
+							: '✓ همهٔ ردیف‌های این فهرست همین حالا با دیتابیس زنده مقایسه شدند و هیچ‌کدام در سایت استفاده نمی‌شوند.'
+					}
+					${v.complete ? '' : ` <span class="tco-muted">(بازرسی زنده ادامه دارد: ${faNum(v.checked)} از ${faNum(v.total)})</span>`}
+					${
+						(v.samples || []).length
+							? `<ul class="tco-reason-list">${(v.samples || [])
+									.map((x) => `<li><span class="tco-code">${esc(x.filename)}</span> — ${esc((x.reasons || []).join(' · '))}</li>`)
+									.join('')}</ul>`
+							: ''
+					}
+				</div>`
+			: '';
+
 		return `<div class="tco-stack">
+			${renderLastRunCard()}
 			<div class="tco-card">
 				<div class="tco-card__head">
 					<div>
@@ -1039,6 +1101,8 @@
 						رکوردهای شکستهٔ ۴۰۴ (${faNum(qw.missing_db)})
 					</button>
 				</div>
+
+				${u.usage === 'strict_unused' ? verifyBanner : ''}
 
 				<div class="tco-bulkbar">
 					<div>
@@ -1108,6 +1172,12 @@
 							</table>
 						</div>`
 				}
+				${renderPager({
+					page: data ? data.page : 1,
+					pages: data ? data.pages : 1,
+					total: data ? data.total : rows.length,
+					scope: data && data.matching_ids ? data.matching_ids.length : rows.length,
+				})}
 			</div>
 		</div>`;
 	}
@@ -1215,11 +1285,270 @@
 		</div>`;
 	}
 
+	/**
+	 * انتخاب «تعداد در هر صفحه» — همان چیزی که کاربر خواسته بود: خودش تعیین کند
+	 * در هر صفحه چند مورد ببیند (۲۵ تا ۵۰۰ یا همه).
+	 *
+	 * @return {string}
+	 */
+	function renderPerPageSelect() {
+		const options = [
+			[25, '۲۵ مورد'],
+			[50, '۵۰ مورد'],
+			[100, '۱۰۰ مورد'],
+			[200, '۲۰۰ مورد'],
+			[500, '۵۰۰ مورد'],
+			[0, 'همهٔ موارد'],
+		];
+		return `<label class="tco-perpage" title="تعداد مواردی که در هر صفحه نمایش داده می‌شود (ذخیره می‌شود)">
+			<span>در هر صفحه:</span>
+			<select class="tco-select tco-select--sm" id="tco-per-page">
+				${options
+					.map(
+						([v, label]) =>
+							`<option value="${v}" ${Number(state.perPage) === v ? 'selected' : ''}>${label}</option>`
+					)
+					.join('')}
+			</select>
+		</label>`;
+	}
+
+	/**
+	 * نوار صفحه‌بندی کامل: اول/قبلی/بعدی/آخر + پرش به شمارهٔ صفحه + تعداد کل.
+	 *
+	 * قبلاً فقط دو دکمهٔ قبلی/بعدی وجود داشت (و در برخی بخش‌ها هیچ چیز)؛ حالا
+	 * هیچ فهرستی بدون راه رفتن بین صفحات و بدون انتخاب تعداد در صفحه نمی‌ماند.
+	 *
+	 * @param {Object} o تنظیمات نوار.
+	 * @return {string}
+	 */
+	function renderPager(o) {
+		const page = Math.max(1, Number(o.page || 1));
+		const pages = Math.max(1, Number(o.pages || 1));
+		const total = Math.max(0, Number(o.total || 0));
+		const scope = o.scope ? Number(o.scope) : 0;
+		const isFirst = page <= 1;
+		const isLast = page >= pages;
+		const jumpValue = o.total > 0 ? page : 1;
+
+		return `<div class="tco-pager">
+			<div class="tco-pager__info">
+				<span>صفحهٔ <strong>${faNum(page)}</strong> از <strong>${faNum(pages)}</strong></span>
+				<span class="tco-muted">${total > 0 ? `${faNum(total)} مورد در مجموع` : 'موردی نیست'}${
+					scope > 0 && scope !== total ? ` · ${faNum(scope)} مورد در همین فهرست` : ''
+				}</span>
+			</div>
+			<div class="tco-row-actions tco-pager__actions">
+				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-edge="first" ${isFirst ? 'disabled title="در صفحهٔ اول هستید"' : 'title="صفحهٔ اول"'}>« اول</button>
+				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="-1" ${isFirst ? 'disabled title="در صفحهٔ اول هستید"' : 'title="صفحهٔ قبل"'}>قبلی</button>
+				<label class="tco-pager__jump">
+					<span>برو به صفحه</span>
+					<input type="number" min="1" max="${pages}" step="1" class="tco-input tco-input--sm" id="tco-page-jump" value="${faNum(jumpValue)}">
+				</label>
+				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-page-go="1" ${pages <= 1 ? 'disabled title="تنها یک صفحه وجود دارد"' : ''}>برو</button>
+				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="1" ${isLast ? 'disabled title="در آخرین صفحه هستید"' : 'title="صفحهٔ بعد"'}>بعدی</button>
+				<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-edge="last" ${isLast ? 'disabled title="در آخرین صفحه هستید"' : 'title="آخرین صفحه"'}>آخر »</button>
+				${renderPerPageSelect()}
+			</div>
+		</div>`;
+	}
+
+	/**
+	 * بخش فعال، صفحهٔ جاری و شمارهٔ کل صفحاتش را برمی‌گرداند.
+	 *
+	 * @return {?{get: function():number, set: function(number):void, name: string}}
+	 */
+	function pageState() {
+		if (state.subtab === 'explorer') {
+			return {
+				name: 'explorer',
+				get: () => Number(state.explorerFilter.page || 1),
+				set: (p) => {
+					state.explorerFilter.page = p;
+				},
+			};
+		}
+		if (state.subtab === 'unused') {
+			return {
+				name: 'unused',
+				get: () => Number(state.unusedFilter.page || 1),
+				set: (p) => {
+					state.unusedFilter.page = p;
+				},
+			};
+		}
+		if (state.subtab === 'seo') {
+			return {
+				name: 'seo',
+				get: () => Number(state.seoPage || 1),
+				set: (p) => {
+					state.seoPage = p;
+				},
+			};
+		}
+		if (state.subtab === 'duplicates') {
+			const total = Number((state.duplicates && state.duplicates.groups_count) || 0);
+			const per = Number(state.perPage);
+			const perPageUsed = per > 0 ? per : Math.max(1, total);
+			return {
+				name: 'duplicates',
+				pages: Math.max(1, Math.ceil(total / perPageUsed)),
+				get: () => Number(state.dupPage || 1),
+				set: (p) => {
+					state.dupPage = p;
+				},
+			};
+		}
+		return null;
+	}
+
+	/**
+	 * رفتن به صفحهٔ دلخواه در بخش فعال — با محدودسازی بین ۱ و آخرین صفحه.
+	 *
+	 * @param {number|string} target شمارهٔ صفحه.
+	 */
+	async function goToPage(target) {
+		const info = pageState();
+		if (!info) return;
+		const pages = info.pages || Math.max(1, Number((state.media && state.media.pages) || (state.seo && state.seo.pages) || 1));
+		const page = Math.min(Math.max(1, Number(target) || 1), Math.max(1, pages));
+		if (page === info.get()) return;
+		info.set(page);
+		if (info.name === 'duplicates') {
+			render();
+			return;
+		}
+		await ensureDataForCurrentView(false);
+	}
+
+	/**
+	 * تعیین «تعداد در هر صفحه» توسط کاربر، ذخیره در تنظیمات و بازگرداندن
+	 * همهٔ فهرست‌ها به صفحهٔ اول (چون شمارهٔ صفحات با اندازهٔ جدید عوض می‌شود).
+	 *
+	 * @param {number} value ۰ یعنی «همهٔ موارد».
+	 */
+	async function applyPerPage(value) {
+		const perPage = Math.max(0, Math.min(500, Number(value) || 0));
+		state.perPage = perPage;
+		['explorerFilter', 'unusedFilter'].forEach((k) => {
+			state[k].page = 1;
+		});
+		state.dupPage = 1;
+		state.seoPage = 1;
+		const settings = Object.assign({}, state.settings, { per_page: perPage });
+		// تنظیمات در پس‌زمینه ذخیره می‌شود تا کاربر معطل نماند؛ خطا فقط اطلاع داده می‌شود.
+		api('save_settings', { settings })
+			.then((res) => {
+				if (res && res.settings) state.settings = res.settings;
+			})
+			.catch((err) => toast(`ذخیرهٔ «تعداد در هر صفحه» انجام نشد: ${err.message || 'خطای نامشخص'}`, 'error'));
+		await ensureDataForCurrentView(false);
+	}
+
+	/**
+	 * ادامهٔ بازرسی زندهٔ فهرست بلااستفاده تا پایان (با سقف امنیت‌بخش).
+	 *
+	 * سرور در هر درخواست بخشی از کاندیدها را با دیتابیس زنده مقایسه می‌کند و
+	 * نتیجه را کش می‌کند؛ این تابع همان مسیر را ادامه می‌دهد و در نهایت یک‌بار
+	 * فهرست اصلاح‌شده را نشان می‌دهد. هیچ درخواستی بی‌پاسخ نمی‌ماند و پیشرفت
+	 * به‌صورت «X از Y» دیده می‌شود.
+	 */
+	async function continueUnusedVerify() {
+		let guard = 0;
+		while (
+			state.subtab === 'unused' &&
+			state.unusedFilter.usage === 'strict_unused' &&
+			state.unusedVerify &&
+			!state.unusedVerify.complete &&
+			guard < 20
+		) {
+			guard += 1;
+			busyProgress(
+				100,
+				`بازرسی زندهٔ استفاده: ${faNum(state.unusedVerify.checked)} از ${faNum(state.unusedVerify.total)} بررسی شد…`
+			);
+			try {
+				const res = await api(
+					'query_media',
+					Object.assign({}, state.unusedFilter, { per_page: state.perPage })
+				);
+				const prevChecked = state.unusedVerify ? state.unusedVerify.checked : 0;
+				state.media = res;
+				state.unusedVerify = res && res.verify ? res.verify : null;
+				state.overview = res && res.overview ? res.overview : state.overview;
+				render();
+				// اگر پیشرفتی حاصل نشد، برای جلوگیری از حلقهٔ بی‌پایان متوقف می‌شویم.
+				if (state.unusedVerify && state.unusedVerify.checked <= prevChecked) break;
+			} catch (err) {
+				toast(`ادامهٔ بازرسی زنده ممکن نشد: ${err.message || 'خطای شبکه'}`, 'error');
+				break;
+			}
+		}
+		busyEnd();
+	}
+
+	/**
+	 * کارت شفاف «نتیجهٔ آخرین عملیات» — دقیقاً می‌گوید چند مورد انجام شد،
+	 * چند مورد چرا انجام نشد و فهرست همان موارد.
+	 *
+	 * @return {string}
+	 */
+	function renderLastRunCard() {
+		const r = state.lastRun;
+		if (!r) return '';
+		const reasons = (r.blockReasons || [])
+			.map((x) => `<li><strong>${faNum(x.count)} مورد:</strong> ${esc(x.reason)}</li>`)
+			.join('');
+		const sample = Object.keys(r.blockedItems || {})
+			.slice(0, 8)
+			.map((id) => {
+				const rs = (r.blockedItems[id] || []).join(' · ');
+				return `<li><span class="tco-code">#${faNum(id)}</span> — ${esc(rs || 'دلیل نامشخص')}</li>`;
+			})
+			.join('');
+
+		return `<div class="tco-card tco-result-card">
+			<div class="tco-card__head">
+				<div>
+					<h2 class="tco-card__title">نتیجهٔ آخرین عملیات حذف</h2>
+					<p class="tco-card__desc">
+						${r.done > 0 ? `<strong>${faNum(r.done)}</strong> مورد با موفقیت انجام شد` : 'هیچ موردی انجام نشد'}
+						${r.blocked > 0 ? ` · <strong>${faNum(r.blocked)}</strong> مورد عمداً انجام نشد` : ''}
+						${r.failed > 0 ? ` · <strong>${faNum(r.failed)}</strong> مورد خطای فایل داشت` : ''}
+					</p>
+				</div>
+				<div class="tco-row-actions">
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-dismiss-run">بستن این کارت</button>
+				</div>
+			</div>
+			${
+				r.blocked > 0
+					? `<div class="tco-hint tco-hint--warn">
+							<strong>چرا این موارد حذف نشدند؟</strong> این تصاویر در سایت واقعاً استفاده می‌شوند؛ حذفشان عکس محصول را می‌شکست. حالا از فهرست «مطلقاً بلااستفاده» خارج شده‌اند و دیگر پیش‌نهاد حذف نمی‌شوند.
+						</div>
+						${reasons ? `<ul class="tco-reason-list">${reasons}</ul>` : ''}
+						${sample ? `<details class="tco-details"><summary>دیدن نمونهٔ همان تصاویر (${faNum(Object.keys(r.blockedItems || {}).length)} مورد)</summary><ul class="tco-reason-list">${sample}</ul></details>` : ''}
+						${r.needsRescan ? '<p class="tco-hint">برای حذف مطمئن، یک‌بار «اسکن کامل تصاویر» را اجرا کنید تا کاتالوگ تازه شود.</p>' : ''}`
+					: ''
+			}
+		</div>`;
+	}
+
 	function renderDuplicatesTab() {
 		const dup = state.duplicates;
 		if (!dup) {
 			return '<div class="tco-card"><div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال محاسبهٔ اثر انگشت محتوایی SHA-1 روی فایل‌ها…</span></div></div>';
 		}
+
+		// نمایش گروه‌ها با «تعداد در هر صفحه»ی انتخابی کاربر (قبلاً همه یک‌جا
+		// می‌آمد یا بی‌دلیل محدود می‌شد و راه رفتن بین صفحه‌ها نبود).
+		const perPage = Number(state.perPage);
+		const allGroups = dup.groups || [];
+		const groupsPerPage = perPage > 0 ? perPage : Math.max(1, allGroups.length);
+		const dupPages = Math.max(1, Math.ceil(allGroups.length / groupsPerPage));
+		const dupPage = Math.min(Math.max(1, Number(state.dupPage || 1)), dupPages);
+		const startIdx = (dupPage - 1) * groupsPerPage;
+		const visibleGroups = allGroups.slice(startIdx, startIdx + groupsPerPage);
 
 		return `<div class="tco-card">
 			<div class="tco-card__head">
@@ -1239,7 +1568,7 @@
 				dup.groups_count === 0
 					? '<div class="tco-empty-state">هیچ تصویر تکراری بایت‌به‌بایتی در کتابخانهٔ رسانه وجود ندارد.</div>'
 					: `<div class="tco-stack">
-						${dup.groups
+						${visibleGroups
 							.map((g) => {
 								const chosenMaster = state.masterChoices[g.hash] || g.master_id;
 								const dupIds = g.members.map((m) => m.id).filter((id) => id !== chosenMaster);
@@ -1274,6 +1603,12 @@
 							.join('')}
 					</div>`
 			}
+			${renderPager({
+				page: dupPage,
+				pages: dupPages,
+				total: dup.groups_count,
+				scope: dup.groups_count,
+			})}
 		</div>`;
 	}
 
@@ -1403,6 +1738,12 @@
 					</tbody>
 				</table>
 			</div>
+			${renderPager({
+				page: seo.page || 1,
+				pages: seo.pages || 1,
+				total: seo.total || 0,
+				scope: seo.rows ? seo.rows.length : 0,
+			})}
 		</div>`;
 	}
 
@@ -1876,9 +2217,16 @@
 
 			if (state.module === 'images') {
 				if (state.subtab === 'explorer') {
-					state.media = await api('query_media', state.explorerFilter);
+					state.media = await api('query_media', Object.assign({}, state.explorerFilter, { per_page: state.perPage }));
 				} else if (state.subtab === 'unused') {
-					state.media = await api('query_media', state.unusedFilter);
+					state.media = await api('query_media', Object.assign({}, state.unusedFilter, { per_page: state.perPage }));
+					state.unusedVerify = state.media && state.media.verify ? state.media.verify : null;
+					render();
+					// اگر بازرسی زنده در سقف زمانی این درخواست تمام نشد، بی‌صدا ادامه
+					// می‌دهیم تا بالاخره هیچ تصویر «استفاده‌شده»یی در فهرست نماند.
+					if (state.unusedVerify && !state.unusedVerify.complete) {
+						await continueUnusedVerify();
+					}
 				} else if (state.subtab === 'restore') {
 					state.vault = await api('get_vault');
 				} else if (state.subtab === 'duplicates') {
@@ -1887,7 +2235,7 @@
 					const d = await api('get_subsizes');
 					state.subsizes = d.sizes || [];
 				} else if (state.subtab === 'seo') {
-					state.seo = await api('get_seo', { seo_filter: state.seoFilter, page: state.seoPage });
+					state.seo = await api('get_seo', { seo_filter: state.seoFilter, page: state.seoPage, per_page: state.perPage });
 				}
 			}
 			render();
@@ -1951,6 +2299,7 @@
 		batchPct(state.batch, 'شروع…');
 
 		let stoppedByUser = false;
+		let announcedReclaim = false;
 
 		try {
 			let jobId = resumeJobId || '';
@@ -1979,6 +2328,17 @@
 				const res = await api('remove_items', payload);
 				if (!res || !res.job) break;
 
+				// سرور ممکن است پیش از شروع، کار رهاشدهٔ قبلی را بسته باشد.
+				if (res.reclaimed && !announcedReclaim) {
+					announcedReclaim = true;
+					const rec = res.reclaimed;
+					toast(
+						`کار قبلی (${opLabelOf(rec.op)}: ${faNum(rec.done)} از ${faNum(rec.total)}) که ${faNum(
+							rec.idle_minutes
+						)} دقیقه هیچ پیشرفتی نداشت رها شد؛ نتایج انجام‌شده‌اش ثبت ماند و این عملیات شروع شد.`
+					);
+				}
+
 				const job = res.job;
 				jobId = job.id;
 
@@ -1995,6 +2355,7 @@
 				state.batch.phase = job.phase || '';
 				state.batch.hint = job.hint || '';
 				state.batch.blockReasons = job.block_reasons || [];
+				state.batch.blockedSample = job.blocked || {};
 				if (job.needs_rescan) state.batch.needsRescan = true;
 				if (res.overview) state.overview = res.overview;
 
@@ -2035,6 +2396,16 @@
 				// هیچ چیزی حذف نشد: هرگز «انجام شد» نگوییم؛ دلیل واقعی را بگوییم.
 				state.selectedIds.clear();
 				state.selectedPaths.clear();
+				state.lastRun = {
+					op: state.batch.op || 'remove',
+					done: 0,
+					blocked: state.batch.blocked,
+					failed: state.batch.failed,
+					blockReasons: state.batch.blockReasons || [],
+					blockedItems: state.batch.blockedSample || {},
+					needsRescan: Boolean(state.batch.needsRescan),
+					at: Date.now(),
+				};
 				const top = (state.batch.blockReasons || []).slice(0, 2)
 					.map((r) => `${faNum(r.count)} مورد: ${r.reason}`)
 					.join(' · ');
@@ -2048,9 +2419,23 @@
 			} else if (finished) {
 				state.selectedIds.clear();
 				state.selectedPaths.clear();
+				// جزئیات واقعی به‌جای جملهٔ مبهم: دقیقاً چه چیزی و چرا حذف نشد.
+				const reasons = (state.batch.blockReasons || [])
+					.map((x) => `${faNum(x.count)} مورد: ${x.reason}`)
+					.join(' · ');
 				const keptNote = state.batch.blocked > 0
-					? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود (یا اسکن کامل نیست) حذف نشد.`
+					? ` · ${faNum(state.batch.blocked)} مورد حذف نشد${reasons ? ` (${reasons})` : ' — چون هنوز در سایت استفاده می‌شود'}.`
 					: '';
+				state.lastRun = {
+					op: state.batch.op || 'remove',
+					done: state.batch.done,
+					blocked: state.batch.blocked,
+					failed: state.batch.failed,
+					blockReasons: state.batch.blockReasons || [],
+					blockedItems: state.batch.blockedSample || {},
+					needsRescan: Boolean(state.batch.needsRescan),
+					at: Date.now(),
+				};
 				const failNote = state.batch.failed > 0
 					? ` · ${faNum(state.batch.failed)} مورد با خطای فایل مواجه شد.`
 					: '';
@@ -2086,6 +2471,12 @@
 				);
 			}
 		} catch (e) {
+			// تعارض کار: عملیات تازه حتی شروع نشده؛ پیام «انجام شد» دادن دروغ است.
+			if (e && e.isConflict) {
+				await handleJobConflict(e, opts);
+				return;
+			}
+
 			// کار در سرور ذخیره مانده است؛ فقط باید به کاربر بگوییم و امکان ادامه بدهیم.
 			state.activeJob = {
 				id: state.batch.jobId || '',
@@ -2143,11 +2534,62 @@
 				hint: job.hint || '',
 				needsRescan: Boolean(job.needs_rescan),
 				blockReasons: job.block_reasons || [],
+				idleSec: Number(job.idle_sec || 0),
+				stale: Boolean(job.stale),
 				lastError: job.last_error || '',
 			};
 		} catch (e) {
 			state.activeJob = null;
 		}
+	}
+
+	/**
+	 * مدیریت «تعارض کار»: عملیات تازه شروع نشد چون کار قبلی هنوز باز است.
+	 *
+	 * رفتار درست: هرگز پیام مبهم یا «انجام شد» دروغین ندهیم؛ کارت «ادامه یا
+	 * رهاکردن» را با جزئیات واقعی همان کار نشان دهیم و اگر کاربر خواست، با
+	 * یک کلیک کار قبلی را رها و همین عملیات را شروع کنیم.
+	 *
+	 * @param {Error}  error خطای دریافتی از سرور (status=409).
+	 * @param {Object} opts  تنظیمات اجرای فعلی (برای شروع دوباره).
+	 * @return {Promise<void>}
+	 */
+	async function handleJobConflict(error, opts) {
+		const info = (error && error.data && error.data.job) || null;
+		state.conflictRun = opts || null;
+
+		if (info) {
+			state.activeJob = {
+				id: info.id,
+				op: info.op || 'remove',
+				mode: info.mode || '',
+				done: Number(info.done || 0),
+				total: Number(info.total || 0),
+				remaining: Number(info.remaining || 0),
+				blocked: Number(info.blocked_count || 0),
+				failed: Number(info.failed_count || 0),
+				verified: Number(info.verified || 0),
+				phase: info.phase || '',
+				hint: info.hint || '',
+				needsRescan: Boolean(info.needs_rescan),
+				blockReasons: info.block_reasons || [],
+				idleSec: Number(info.idle_sec || 0),
+				stale: Boolean(info.stale),
+				lastError: '',
+			};
+		} else {
+			await refreshJobStatus();
+		}
+
+		const j = state.activeJob;
+		const name = j ? opLabelOf(j.op) : 'قبلی';
+		const where = j ? ` — ${faNum(j.done)} از ${faNum(j.total)}` : '';
+		toast(
+			`این عملیات شروع نشد: کار نیمه‌تمام قبلی (${name}${where}) هنوز باز است. ` +
+				'از کارت بالای صفحه «ادامهٔ عملیات» را بزنید، یا با دکمهٔ «رها کردن و شروع» همین عملیات را آغاز کنید.',
+			'error'
+		);
+		render();
 	}
 
 	/**
@@ -2164,6 +2606,7 @@
 	 */
 	async function driveJob(opts) {
 		const totalItems = Number(opts.total || 0);
+		state.lastRun = opts;
 		state.batch = {
 			running: true,
 			stopRequested: false,
@@ -2191,6 +2634,7 @@
 		let stoppedByUser = false;
 		let finished = false;
 		let jobId = opts.resumeJobId || '';
+		let announcedReclaim = false;
 
 		try {
 			let guard = 0;
@@ -2231,6 +2675,18 @@
 				if (res.overview) state.overview = res.overview;
 				if (res.vault) state.vault = res.vault;
 
+				// سرور ممکن است پیش از شروع، یک کار رهاشدهٔ قدیمی را بسته باشد؛
+				// این را صریح به کاربر بگوییم تا هیچ چیز بی‌دلیل عوض نشده باشد.
+				if (res.reclaimed && !announcedReclaim) {
+					announcedReclaim = true;
+					const rec = res.reclaimed;
+					toast(
+						`کار قبلی (${opLabelOf(rec.op)}: ${faNum(rec.done)} از ${faNum(rec.total)}) که ${faNum(
+							rec.idle_minutes
+						)} دقیقه هیچ پیشرفتی نداشت رها شد؛ نتایج انجام‌شده‌اش ثبت ماند و این عملیات شروع شد.`
+					);
+				}
+
 				finished = Boolean(job.finished);
 
 				const signature = `${state.batch.done}|${state.batch.verified}|${state.batch.remaining}`;
@@ -2267,6 +2723,7 @@
 
 			if (finished) {
 				state.activeJob = null;
+				state.conflictRun = null;
 				opts.onFinish(state.batch);
 			} else {
 				// نیمه‌کاره: کار در سرور ذخیره است و کارت «ادامه» نمایش داده می‌شود.
@@ -2292,6 +2749,12 @@
 				);
 			}
 		} catch (e) {
+			// تعارض کار: عملیات تازه حتی شروع نشده؛ پیام «انجام شد» دادن دروغ است.
+			if (e && e.isConflict) {
+				await handleJobConflict(e, opts);
+				return;
+			}
+
 			// کار در سرور ذخیره مانده است؛ فقط باید به کاربر بگوییم و امکان ادامه بدهیم.
 			state.activeJob = {
 				id: jobId,
@@ -2325,6 +2788,39 @@
 		}
 	}
 
+	/**
+	 * اجرای دوبارهٔ یک عملیات ذخیره‌شده (برای دکمهٔ «رها کردن و شروع»).
+	 *
+	 * @param {Object} opts همان تنظیمات driveJob.
+	 * @return {Promise<void>}
+	 */
+	async function startRun(opts) {
+		if (!opts) return;
+		if (opts.op === 'optimize') {
+			await runBatchOptimize(opts.ids || [], { resumeJobId: '', replaceMode: Boolean(opts.replaceMode) });
+		} else if (opts.op === 'restore') {
+			await runBatchRestoreQuarantine(opts.ids || [], '');
+		} else if (opts.op === 'remove') {
+			await runBatchRemove(opts.ids || [], opts.relPaths || [], '');
+		}
+	}
+
+	/**
+	 * رهاکردن کار فعال با گزارش صادقانه و بازکردن مسیر عملیات بعدی.
+	 *
+	 * @return {Promise<void>}
+	 */
+	async function discardActiveJob() {
+		const res = await api('job_cancel');
+		if (res && res.overview) state.overview = res.overview;
+		const done = res && res.job ? Number(res.job.done || 0) : 0;
+		state.activeJob = null;
+		state.conflictRun = null;
+		toast(`${faNum(done)} موردِ انجام‌شده ثبت شد؛ کار نیمه‌تمام رها شد و مسیر عملیات بعدی آزاد است.`);
+		await ensureDataForCurrentView(false);
+		render();
+	}
+
 	async function runBatchRestoreQuarantine(itemIds, resumeJobId) {
 		const ids = (itemIds || []).filter(Boolean);
 		if (!ids.length && !resumeJobId) {
@@ -2337,6 +2833,7 @@
 			title: 'بازگردانی تصاویر به مسیر و ID اصلی وردپرس',
 			total: ids.length,
 			resumeJobId: resumeJobId || '',
+			ids,
 			firstPayload: { item_ids: ids },
 			onFinish(b) {
 				state.selectedQuarantineIds.clear();
@@ -2376,6 +2873,8 @@
 				: 'فشرده‌سازی و تبدیل نسل جدید تصاویر',
 			total: queue ? queue.length : 0,
 			resumeJobId,
+			ids: queue || [],
+			replaceMode,
 			firstPayload: {
 				ids: queue || [],
 				overrides: replaceMode ? { replace_mode: 1 } : {},
@@ -2628,16 +3127,6 @@
 			return;
 		}
 
-		if (ev.target.closest('#tco-discard-job')) {
-			const res = await api('job_cancel');
-			if (res && res.overview) state.overview = res.overview;
-			const done = res && res.job ? Number(res.job.done || 0) : 0;
-			state.activeJob = null;
-			toast(`${faNum(done)} موردِ انجام‌شده ثبت شد؛ کار نیمه‌تمام رها شد.`);
-			await ensureDataForCurrentView(false);
-			return;
-		}
-
 		if (ev.target.closest('#tco-preflight-btn')) {
 			state.preflight = await api('preflight');
 			render();
@@ -2648,6 +3137,30 @@
 					: `چکاپ تمام شد — ${faNum(pf.score)} از ۱۰۰؛ موارد هشدار را ببینید.`,
 				pf.level === 'ok' ? undefined : 'error'
 			);
+			return;
+		}
+
+		if (ev.target.closest('#tco-discard-and-run')) {
+			const pending = state.conflictRun;
+			if (!pending) return;
+			state.conflictRun = null;
+			const res = await api('job_cancel');
+			if (res && res.overview) state.overview = res.overview;
+			if (res && res.job) {
+				toast(
+					`کار قبلی رها شد — ${faNum(Number(res.job.done || 0))} موردِ انجام‌شده ثبت ماند. حالا همین عملیات شروع می‌شود.`
+				);
+			}
+			state.activeJob = null;
+			// همان عملیات درخواستی دوباره اجرا می‌شود (این بار مسیر آزاد است).
+			await startRun(pending);
+			return;
+		}
+
+		// «رها کردن» باید همیشه کارت را ببندد و مسیر عملیات تازه را باز کند؛
+		// حتی وقتی هنوز کارت «ادامه» کامل رندر نشده باشد.
+		if (ev.target.closest('#tco-discard-job')) {
+			await discardActiveJob();
 			return;
 		}
 
@@ -2762,8 +3275,27 @@
 		const pageBtn = ev.target.closest('[data-page-delta]');
 		if (pageBtn) {
 			const delta = Number(pageBtn.getAttribute('data-page-delta'));
-			state.explorerFilter.page = Math.max(1, state.explorerFilter.page + delta);
-			await ensureDataForCurrentView(false);
+			const info = pageState();
+			if (!info) return;
+			await goToPage(info.get() + delta);
+			return;
+		}
+
+		const edgeBtn = ev.target.closest('[data-page-edge]');
+		if (edgeBtn) {
+			await goToPage(edgeBtn.getAttribute('data-page-edge') === 'last' ? 999999 : 1);
+			return;
+		}
+
+		if (ev.target.closest('#tco-dismiss-run')) {
+			state.lastRun = null;
+			render();
+			return;
+		}
+
+		if (ev.target.closest('[data-page-go]')) {
+			const input = document.getElementById('tco-page-jump');
+			await goToPage(input ? input.value : 1);
 			return;
 		}
 
@@ -3072,6 +3604,9 @@
 		'[data-merge-hash]',
 		'[data-pick-master]',
 		'[data-page-delta]',
+		'[data-page-edge]',
+		'#tco-dismiss-run',
+		'[data-page-go]',
 		'[data-save-seo]',
 		'[data-modal-close]',
 		'#tco-fast-finish-btn',
@@ -3103,6 +3638,7 @@
 		'#tco-preflight-btn',
 		'#tco-stop-batch',
 		'#tco-resume-job',
+		'#tco-discard-and-run',
 		'#tco-discard-job',
 		'#tco-resume-rescan',
 		'#tco-replace-one',
@@ -3178,6 +3714,11 @@
 				else state.selectedPaths.delete(o.rel_path);
 			});
 			render();
+			return;
+		}
+
+		if (ev.target.id === 'tco-per-page') {
+			await applyPerPage(ev.target.value);
 			return;
 		}
 

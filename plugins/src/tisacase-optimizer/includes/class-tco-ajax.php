@@ -62,10 +62,56 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		 * @param int    $status کد HTTP.
 		 * @return void
 		 */
-		private static function fail( $message, $status = 400 ) {
+		private static function fail( $message, $status = 400, array $extra = array() ) {
 			self::$responded        = true;
 			self::$emergency_buffer = null;
-			wp_send_json_error( array( 'message' => $message ), $status );
+			$payload                = array( 'message' => $message );
+			foreach ( $extra as $k => $v ) {
+				$payload[ $k ] = $v;
+			}
+			wp_send_json_error( $payload, $status );
+		}
+
+		/**
+		 * تعیین تکلیف کار قبلی پیش از شروع عملیات تازه.
+		 *
+		 * دو حالت دارد:
+		 *   • کار قبلی «رهاشده» است (چند دقیقه هیچ پیشرفتی نداشته): بسته و
+		 *     آزاد می‌شود تا کاربر پشت خطای همیشگی «در جریان است» گیر نکند.
+		 *   • کار قبلی واقعاً زنده است: خطای ۴۰۹ با جزئیات کامل (نوع عملیات،
+		 *     انجام‌شده، کل، دقیقه‌های بی‌خبری) تا رابط بتواند کارت «ادامه یا
+		 *     رهاکردن» را دقیق نشان دهد — نه پیام مبهم.
+		 *
+		 * @return array<string,mixed>|null اطلاعات کار رهاشده (برای گزارش به کاربر).
+		 */
+		private static function clear_way_for_new_job() {
+			$job = TisaCase_Optimizer_Job::get();
+			if ( ! $job || 'running' !== (string) $job['status'] ) {
+				return null;
+			}
+
+			$reclaimed = TisaCase_Optimizer_Job::reclaim_stale();
+			if ( is_array( $reclaimed ) ) {
+				return $reclaimed;
+			}
+
+			// هنوز زنده است: دقیقاً بگوییم چه کاری، کجا مانده و چه باید کرد.
+			$sum = TisaCase_Optimizer_Job::summary( $job );
+			self::fail(
+				sprintf(
+					/* translators: 1: operation label, 2: done, 3: total, 4: idle minutes */
+					__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید. (%1$s: %2$s از %3$s — آخرین پیشرفت %4$s دقیقه پیش)', 'tisacase-optimizer' ),
+					$sum['op_label'],
+					number_format_i18n( (int) $sum['done'] ),
+					number_format_i18n( (int) $sum['total'] ),
+					number_format_i18n( max( 1, (int) ceil( (int) $sum['idle_sec'] / 60 ) ) )
+				),
+				409,
+				array(
+					'conflict' => true,
+					'job'      => $sum,
+				)
+			);
 		}
 
 		/**
@@ -250,7 +296,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						$flt  = isset( $_POST['seo_filter'] ) ? sanitize_key( wp_unslash( (string) $_POST['seo_filter'] ) ) : 'missing_alt';
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$page = isset( $_POST['page'] ) ? max( 1, (int) $_POST['page'] ) : 1;
-						self::ok( TisaCase_Optimizer_Image_SEO::audit( $flt, $page ) );
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$per_page = isset( $_POST['per_page'] ) ? (int) $_POST['per_page'] : 0;
+						self::ok( TisaCase_Optimizer_Image_SEO::audit( $flt, $page, $per_page ) );
 						break;
 
 					case 'save_single_seo':
@@ -328,13 +376,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						if ( empty( $qids ) ) {
 							self::fail( __( 'هیچ بستهٔ قرنطینه‌ای برای بازگردانی انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
 						}
-						if ( $job && 'running' === (string) $job['status'] ) {
-							self::fail(
-								__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
-								409
-							);
-						}
-						$job = TisaCase_Optimizer_Job::start_restore( $qids );
+						$reclaimed = self::clear_way_for_new_job();
+						$job       = TisaCase_Optimizer_Job::start_restore( $qids );
 					}
 
 					$before_done = (int) $job['done'];
@@ -373,6 +416,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							'restored'      => (int) $job['done'],
 							'restored_now'  => max( 0, $this_tick ),
 							'restored_ids'  => array_slice( (array) $job['done_ids'], 0, 50 ),
+							'reclaimed'     => $reclaimed,
 							'vault'         => $finished ? self::vault_payload() : null,
 							'overview'      => ( $finished && TisaCase_Optimizer_Media_Inspector::has_ready_catalog() )
 								? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
@@ -650,7 +694,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$allow_draft = ! empty( $_POST['allow_draft_only'] );
 
-			$job = TisaCase_Optimizer_Job::get();
+			$job       = TisaCase_Optimizer_Job::get();
+			$reclaimed = null;
 
 			// ادامهٔ کار موجود (حتی اگر مرورگر رفرش شده باشد).
 			if ( '' !== $job_id ) {
@@ -668,13 +713,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			} elseif ( empty( $ids ) && empty( $rel_paths ) ) {
 				self::fail( __( 'هیچ تصویری برای حذف انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
 			} else {
-				if ( $job && 'running' === (string) $job['status'] ) {
-					self::fail(
-						__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
-						409
-					);
-				}
-				$job = TisaCase_Optimizer_Job::start_remove( $ids, $rel_paths, $mode, $allow_draft );
+				$reclaimed = self::clear_way_for_new_job();
+				$job       = TisaCase_Optimizer_Job::start_remove( $ids, $rel_paths, $mode, $allow_draft );
 			}
 
 			$before_done = (int) $job['done'];
@@ -722,6 +762,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					'verify_chunk'  => (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 100 ),
 					'overview'      => $overview,
 					'processed_now' => (int) $job['done'] - $before_done,
+					'reclaimed'     => $reclaimed,
 				)
 			);
 		}
@@ -759,6 +800,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 
 			$job     = TisaCase_Optimizer_Job::cancel( $job );
 			$summary = TisaCase_Optimizer_Job::summary( $job );
+			// کار رهاشده نباید به‌عنوان «کار فعال» باقی بماند؛ وگرنه عملیات بعدی
+			// دوباره با همان خطای «در جریان است» روبه‌رو می‌شود.
+			TisaCase_Optimizer_Job::clear();
 
 			self::ok(
 				array(
@@ -793,7 +837,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				$clean_ovr['webp_mode']      = 'replace';
 			}
 
-			$job = TisaCase_Optimizer_Job::get();
+			$job       = TisaCase_Optimizer_Job::get();
+			$reclaimed = null;
 
 			if ( '' !== $job_id ) {
 				if ( ! $job || (string) $job['id'] !== $job_id ) {
@@ -857,13 +902,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					)
 				);
 			} else {
-				if ( $job && 'running' === (string) $job['status'] ) {
-					self::fail(
-						__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
-						409
-					);
-				}
-				$job = TisaCase_Optimizer_Job::start_optimize( $ids, $clean_ovr );
+				$reclaimed = self::clear_way_for_new_job();
+				$job       = TisaCase_Optimizer_Job::start_optimize( $ids, $clean_ovr );
 			}
 
 			$before_done = (int) $job['done'];
@@ -897,6 +937,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					'processed_now' => (int) $job['done'] - $before_done,
 					'replace_mode'  => 'replace' === (string) $job['mode'],
 					'overview'      => $overview,
+					'reclaimed'     => $reclaimed,
 				)
 			);
 		}

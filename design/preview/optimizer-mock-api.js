@@ -42,6 +42,87 @@
 	// ارقام فارسی برای متن‌های راهنما (هم‌سان با رابط کاربری).
 	// دسترسی تست به یک آیتم (برای سنجش نتیجهٔ جایگزینی در E2E).
 	window.__tcoMockItem = (id) => db.items.find((x) => x.id === Number(id));
+
+	// ابزار آزمون: افزودن تصویر ساختگی (برای سناریوهای انبوه در E2E).
+	window.__tcoMockSeedItems = (n, usageStatus) => {
+		const base = db.items[0];
+		let id = 9000;
+		for (let i = 0; i < Number(n); i += 1) {
+			id += 1;
+			db.items.unshift(
+				Object.assign({}, base, {
+					id,
+					filename: `seed-${id}.jpg`,
+					rel_path: `2026/03/seed-${id}.jpg`,
+					title: `تصویر آزمون ${id}`,
+					alt: '',
+					format: 'JPEG',
+					mime: 'image/jpeg',
+					is_optimized: false,
+					has_webp: false,
+					saved_bytes: 0,
+					saved_ratio: 0,
+					is_pinned: false,
+					sha1: `seed${id}`,
+					usage_status: usageStatus || 'used',
+					refs: [],
+				})
+			);
+		}
+		return db.items.length;
+	};
+
+	// ابزار آزمون: ساخت گروه‌های تکراری (برای سنجش صفحه‌بندی فهرست تکراری‌ها).
+	window.__tcoMockSeedDuplicates = (groups) => {
+		const base = db.items[0];
+		let id = 9500;
+		for (let g = 0; g < Number(groups); g += 1) {
+			const sha = `dupseed${g}`;
+			for (let k = 0; k < 2; k += 1) {
+				id += 1;
+				db.items.unshift(
+					Object.assign({}, base, {
+						id,
+						filename: `dup-${id}.jpg`,
+						rel_path: `2026/05/dup-${id}.jpg`,
+						title: `تصویر تکراری ${id}`,
+						alt: 'تکراری',
+						format: 'JPEG',
+						mime: 'image/jpeg',
+						is_optimized: true,
+						has_webp: false,
+						saved_bytes: 0,
+						saved_ratio: 0,
+						is_pinned: false,
+						sha1: sha,
+						usage_status: 'used',
+						refs: [],
+					})
+				);
+			}
+		}
+		return db.items.length;
+	};
+
+	// ابزار آزمون: افزودن موارد ساختگی به قرنطینه (تا دکمهٔ «بازگردانی همه» موجود باشد).
+	window.__tcoMockSeedQuarantine = (n) => {
+		for (let i = 0; i < Number(n); i += 1) {
+			const aid = 9500 + i;
+			db.quarantine.unshift({
+				id: `q_seed_${aid}`,
+				batch_id: 'runseed',
+				attachment_id: aid,
+				filename: `seed-quarantine-${aid}.jpg`,
+				rel_path: `2026/03/seed-quarantine-${aid}.jpg`,
+				reason: 'manual_unused',
+				files_count: 1,
+				total_bytes: 512000,
+				created_at: '2026-10-20 21:15:00',
+				snapshot: null,
+			});
+		}
+		return db.quarantine.length;
+	};
 	const faNum = (n) => String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 	const db = {
@@ -64,6 +145,7 @@
 			convert_opaque_png: 1,
 			backup_originals: 1,
 			seo_alt_pattern: '{product_title} — {site_name}',
+			per_page: 25,
 			disabled_sizes: ['1536x1536', '2048x2048', 'woodmart_shop_catalog_x2'],
 			excluded_dirs: 'tisa-opt-vault\ntisa-exports\nwc-logs\nelementor',
 		},
@@ -635,6 +717,116 @@
 	 *   • هر تیک فقط چند مورد کار می‌کند و همیشه «چند تا انجام شد / چند تا ماند»
 	 *     را برمی‌گرداند، تا هیچ عددی گمانه‌زنی نباشد.
 	 */
+	const MOCK_STALE_AFTER = 180;
+
+	function mockNowSec() {
+		return Math.floor(Date.now() / 1000);
+	}
+
+	// همهٔ کارهای «در جریان» (هم کار حذف و هم کارهای فشرده‌سازی/بازگردانی).
+	function mockRunningJobs() {
+		const out = [];
+		if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') out.push(window.__tcoMockJob);
+		Object.keys(window.__tcoMockJobs || {}).forEach((k) => {
+			const j = window.__tcoMockJobs[k];
+			if (j.status === 'running') out.push(j);
+		});
+		return out;
+	}
+
+	function mockIdleSec(job) {
+		const last = Number(job.updated || job.startedAt || 0);
+		return last > 0 ? Math.max(0, mockNowSec() - last) : 0;
+	}
+
+	function mockJobSnapshot(job) {
+		const idle = mockIdleSec(job);
+		const queueIds = job.queue_ids || job.queue || [];
+		const total = job.total || 0;
+		return {
+			id: job.id,
+			op: job.op || 'remove',
+			op_label: job.op === 'optimize' ? 'فشرده‌سازی' : job.op === 'restore' ? 'بازگردانی' : 'حذف',
+			mode: job.mode || '',
+			phase: job.phase || 'run',
+			status: job.status,
+			total,
+			done: job.done || 0,
+			remaining: job.phase === 'verify'
+				? queueIds.length + (job.queue_paths || []).length
+				: queueIds.length + (job.queue_paths || []).length + (job.safe_ids || []).length + (job.safe_paths || []).length,
+			verified: job.verified || 0,
+			blocked_count: Object.keys(job.blocked || {}).length,
+			blocked: job.blocked || {},
+			blocked_paths: job.blocked_paths || {},
+			failed_count: job.failed_count || job.failed || 0,
+			failed: [],
+			saved_bytes: job.saved_bytes || job.saved || 0,
+			elapsed_sec: 1,
+			idle_sec: idle,
+			stale: idle >= MOCK_STALE_AFTER,
+			stale_after: MOCK_STALE_AFTER,
+			eta_sec: 0,
+			coverage: 'full',
+			needs_rescan: Boolean(job.needs_rescan),
+			last_error: job.last_error || '',
+			hint: '',
+			block_reasons: [],
+			finished: false,
+		};
+	}
+
+	/**
+	 * همان قاعدهٔ سرور واقعی: فقط یک کار هم‌زمان.
+	 *   • کار «رهاشده» (۳ دقیقه بی‌خبر) خودکار بسته می‌شود و اطلاعاتش برمی‌گردد.
+	 *   • کار زنده ⇒ پاسخ ۴۰۹ با جزئیات کامل (تا رابط کارت «ادامه یا رهاکردن» را نشان دهد).
+	 */
+	function mockGuardNewJob() {
+		const running = mockRunningJobs();
+		if (!running.length) return { reclaimed: null };
+		const job = running[0];
+		const idle = mockIdleSec(job);
+		if (idle >= MOCK_STALE_AFTER) {
+			const info = {
+				op: job.op || 'remove',
+				op_label: job.op === 'optimize' ? 'فشرده‌سازی' : job.op === 'restore' ? 'بازگردانی' : 'حذف',
+				done: job.done || 0,
+				total: job.total || 0,
+				age_sec: idle,
+				idle_minutes: Math.ceil(idle / 60),
+			};
+			job.status = 'cancelled';
+			job.queue = [];
+			job.queue_ids = [];
+			job.queue_paths = [];
+			job.safe_ids = [];
+			job.safe_paths = [];
+			return { reclaimed: info };
+		}
+		return {
+			blocked: {
+				job: mockJobSnapshot(job),
+				conflict: true,
+				message: `یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید. (${
+					job.op === 'optimize' ? 'فشرده‌سازی' : job.op === 'restore' ? 'بازگردانی' : 'حذف'
+				}: ${faNum(job.done || 0)} از ${faNum(job.total || 0)} — آخرین پیشرفت ${faNum(
+					Math.max(1, Math.ceil(idle / 60))
+				)} دقیقه پیش)`,
+			},
+		};
+	}
+
+	// شکست HTTP واقعی (با کد وضعیت و دادهٔ کامل) تا رفتار ۴۰۹ در پیش‌نمایش هم آزمون‌پذیر باشد.
+	function mockHttpFailure(status, payload) {
+		const serialized = JSON.stringify({ success: false, data: payload });
+		return {
+			ok: false,
+			status,
+			text: async () => serialized,
+			json: async () => ({ success: false, data: payload }),
+		};
+	}
+
 	function mockJobStep(op, req, extra, worker) {
 		window.__tcoMockJobs = window.__tcoMockJobs || {};
 		const opts = extra || {};
@@ -644,11 +836,14 @@
 		if (req.job_id && !job) {
 			throw new Error('این کار دیگر فعال نیست یا منقضی شده است.');
 		}
+		let reclaimed = null;
 		if (!job) {
-			const busy = Object.keys(window.__tcoMockJobs).some((k) => window.__tcoMockJobs[k].status === 'running');
-			if (busy) {
-				throw new Error('یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.');
+			const guard = mockGuardNewJob();
+			if (guard.blocked) {
+				// پاسخ HTTP با کد ۴۰۹ (نه دادهٔ موفق) — دقیقاً مثل سرور واقعی.
+				return { __conflict: { status: 409, payload: guard.blocked } };
 			}
+			reclaimed = guard.reclaimed;
 			job = {
 				id: 'jobmock' + Date.now(),
 				op,
@@ -660,6 +855,7 @@
 				saved: 0,
 				status: 'running',
 				last_error: '',
+				updated: mockNowSec(),
 			};
 			window.__tcoMockJobs[job.id] = job;
 		}
@@ -676,8 +872,11 @@
 			payload = res.payload || null;
 		}
 		if (!job.queue.length) job.status = 'done';
+		job.updated = mockNowSec();
+		if (job.status === 'done') job.updated = mockNowSec();
 
 		const finished = job.status === 'done';
+		const idle = mockIdleSec(job);
 		const summary = {
 			id: job.id,
 			op,
@@ -697,6 +896,9 @@
 			failed: [],
 			saved_bytes: job.saved,
 			elapsed_sec: 1,
+			idle_sec: idle,
+			stale: idle >= MOCK_STALE_AFTER,
+			stale_after: MOCK_STALE_AFTER,
 			eta_sec: 0,
 			coverage: 'full',
 			needs_rescan: false,
@@ -713,6 +915,7 @@
 			saved_bytes: job.saved,
 			processed_now: chunk.length,
 			overview: finished ? computeOverview() : null,
+			reclaimed: reclaimed || null,
 		};
 		if (finished && payload) Object.assign(out, payload);
 		return out;
@@ -835,15 +1038,25 @@
 				overview: ov,
 			};
 		} else if (op === 'query_media') {
+			// «تعداد در هر صفحه» دقیقاً مثل سرور: مقدار ارسالی کاربر، وگرنه تنظیمات،
+			// و صفر یعنی همهٔ موارد در یک صفحه.
+			const mockPerRaw =
+				req.per_page !== undefined && req.per_page !== ''
+					? Number(req.per_page)
+					: Number(db.settings.per_page || 25);
+			const mockPer = mockPerRaw > 0 ? Math.max(10, Math.min(500, mockPerRaw)) : 0;
+			const mockPage = Math.max(1, Number(req.page) || 1);
+
 			if (req.usage === 'unregistered_disk') {
 				const rows = [...db.diskOrphans];
+				const per = mockPer > 0 ? mockPer : Math.max(1, rows.length);
 				data = {
 					mode: 'disk_orphans',
-					rows,
+					rows: rows.slice((mockPage - 1) * per, (mockPage - 1) * per + per),
 					total: rows.length,
-					page: 1,
-					per_page: 25,
-					pages: 1,
+					page: mockPage,
+					per_page: per,
+					pages: Math.max(1, Math.ceil(rows.length / per)),
 					matched_bytes: rows.reduce((s, r) => s + r.bytes, 0),
 				};
 			} else {
@@ -858,20 +1071,55 @@
 				if (req.usage && req.usage !== 'all') {
 					rows = rows.filter((r) => r.usage_status === req.usage);
 				}
+
+				// شبیه‌سازی «بازرسی زندهٔ استفاده»: همان کاری که سرور پیش از نمایش
+				// فهرست «مطلقاً بلااستفاده» می‌کند — هر تصویری که در دیتابیس زنده
+				// مرجع دارد از فهرست بیرون می‌رود و در کاتالوگ «استفاده‌شده» می‌شود.
+				let verifyMeta = null;
+				if (req.usage === 'strict_unused') {
+					const liveIds = new Set((window.__tcoMockLiveUsed || []).map(Number));
+					const reclassified = [];
+					if (liveIds.size) {
+						db.items.forEach((it) => {
+							if (liveIds.has(Number(it.id)) && it.usage_status === 'strict_unused') {
+								it.usage_status = 'used';
+								it.refs_count = 1;
+								it.refs = [{ label: 'تصویر شاخص محصول «قاب آزمون»' }];
+								reclassified.push(it);
+							}
+						});
+						rows = rows.filter((r) => !liveIds.has(Number(r.id)));
+					}
+					const totalChecked = rows.length + reclassified.length;
+					verifyMeta = {
+						checked: totalChecked,
+						total: totalChecked,
+						complete: true,
+						reclassified: reclassified.length,
+						samples: reclassified.slice(0, 5).map((it) => ({
+							id: it.id,
+							filename: it.filename,
+							reasons: ['تصویر شاخص محصول «قاب آزمون»'],
+						})),
+					};
+				}
+
 				if (Number(req.min_bytes) > 0) {
 					rows = rows.filter((r) => r.total_bytes >= Number(req.min_bytes));
 				}
 				const sb = req.sort_by || 'total_bytes';
 				rows.sort((a, b) => (b[sb] || 0) - (a[sb] || 0));
+				const per = mockPer > 0 ? mockPer : Math.max(1, rows.length);
 				data = {
 					mode: 'attachments',
-					rows,
-					matching_ids: rows.map((r) => r.id),
+					rows: rows.slice((mockPage - 1) * per, (mockPage - 1) * per + per),
+					matching_ids: rows.map((r) => r.id).slice(0, 5000),
 					total: rows.length,
-					page: 1,
-					per_page: 25,
-					pages: 1,
+					page: mockPage,
+					per_page: per,
+					pages: Math.max(1, Math.ceil(rows.length / per)),
 					matched_bytes: rows.reduce((s, r) => s + r.total_bytes, 0),
+					verify: verifyMeta,
 				};
 			}
 		} else if (op === 'toggle_pin') {
@@ -890,6 +1138,8 @@
 
 			const makeJob = (ids, paths, mode) => ({
 				id: 'jobmock' + Date.now(),
+				op: 'remove',
+				updated: mockNowSec(),
 				mode,
 				batch_id: 'run' + Date.now(),
 				phase: 'verify',
@@ -952,6 +1202,9 @@
 					failed: [],
 					saved_bytes: job.saved_bytes,
 					elapsed_sec: 1,
+					idle_sec: mockIdleSec(job),
+					stale: mockIdleSec(job) >= MOCK_STALE_AFTER,
+					stale_after: MOCK_STALE_AFTER,
 					eta_sec: 0,
 					coverage: job.needs_rescan ? 'partial' : 'full',
 					needs_rescan: job.needs_rescan,
@@ -962,14 +1215,17 @@
 				};
 			};
 
+			let reclaimedRemove = null;
 			if (req.job_id) {
 				if (!window.__tcoMockJob || window.__tcoMockJob.id !== req.job_id) {
 					throw new Error('این کار دیگر فعال نیست یا منقضی شده است.');
 				}
 			} else {
-				if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
-					throw new Error('یک عملیات نیمه‌تمام در جریان است.');
+				const guard = mockGuardNewJob();
+				if (guard.blocked) {
+					return mockHttpFailure(409, guard.blocked);
 				}
+				reclaimedRemove = guard.reclaimed;
 				window.__tcoMockJob = makeJob(
 					(req.ids || []).map(Number).filter(Boolean),
 					(req.rel_paths || []).filter(Boolean),
@@ -979,6 +1235,7 @@
 			}
 
 			const job = window.__tcoMockJob;
+			job.updated = mockNowSec();
 			let saved = 0;
 			const newlyDone = [];
 
@@ -1078,6 +1335,7 @@
 				needs_rescan: job.needs_rescan,
 				coverage: job.needs_rescan ? 'partial' : 'full',
 				overview: computeOverview(),
+				reclaimed: reclaimedRemove || null,
 			};
 		} else if (op === 'job_status') {
 			if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
@@ -1106,6 +1364,9 @@
 						failed: [],
 						saved_bytes: j.saved_bytes,
 						elapsed_sec: 1,
+						idle_sec: mockIdleSec(j),
+						stale: mockIdleSec(j) >= MOCK_STALE_AFTER,
+						stale_after: MOCK_STALE_AFTER,
 						eta_sec: 0,
 						coverage: j.needs_rescan ? 'partial' : 'full',
 						needs_rescan: j.needs_rescan,
@@ -1139,6 +1400,9 @@
 								failed: [],
 								saved_bytes: other.saved,
 								elapsed_sec: 1,
+								idle_sec: mockIdleSec(other),
+								stale: mockIdleSec(other) >= MOCK_STALE_AFTER,
+								stale_after: MOCK_STALE_AFTER,
 								eta_sec: 0,
 								coverage: 'full',
 								needs_rescan: false,
@@ -1152,6 +1416,10 @@
 			}
 		} else if (op === 'job_cancel') {
 			const job = window.__tcoMockJob;
+			// پیش از هر تغییری، کار «در جریان» را نگه می‌داریم تا گزارش دقیق بدهیم.
+			const cancelled = (job && job.status === 'running' ? job : null)
+				|| Object.values(window.__tcoMockJobs || {}).find((j) => j.status === 'running')
+				|| job;
 			if (job && job.status === 'running') {
 				job.status = 'cancelled';
 				job.queue_ids = [];
@@ -1167,8 +1435,11 @@
 					other.queue = [];
 				}
 			});
+			// همان کاری که سرور واقعی می‌کند: کار فعال پاک می‌شود تا عملیات بعدی
+			// دیگر با خطای «در جریان است» روبه‌رو نشود.
+			window.__tcoMockJob = null;
 			data = {
-				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
+				job: cancelled ? { id: cancelled.id, done: cancelled.done || 0, total: cancelled.total || 0, status: 'cancelled', finished: true } : null,
 				overview: computeOverview(),
 			};
 		} else if (op === 'inspect_sizes') {
@@ -1279,7 +1550,7 @@
 					.map((i) => i.id);
 				data = { queue_ids: queue, total: queue.length, replace_mode: replaceMode };
 			} else {
-				data = mockJobStep(
+				const step = mockJobStep(
 					'optimize',
 					req,
 					{
@@ -1294,6 +1565,10 @@
 						return { done: chunk.length, saved, payload: { replace_mode: replaceMode } };
 					}
 				);
+				if (step && step.__conflict) {
+					return mockHttpFailure(step.__conflict.status, step.__conflict.payload);
+				}
+				data = step;
 			}
 		} else if (op === 'get_duplicates') {
 			data = computeDuplicates();
@@ -1365,6 +1640,12 @@
 				});
 			}
 			const missing = db.items.filter((i) => !i.alt);
+			const seoPerRaw =
+				req.per_page !== undefined && req.per_page !== ''
+					? Number(req.per_page)
+					: Number(db.settings.per_page || 25);
+			const seoPer = seoPerRaw > 0 ? Math.max(10, Math.min(500, seoPerRaw)) : Math.max(1, missing.length);
+			const seoPage = Math.max(1, Number(req.page) || 1);
 			const audit = {
 				summary: {
 					total_images: db.items.length,
@@ -1372,14 +1653,17 @@
 					bad_titles: 2,
 					coverage_pct: Math.round(((db.items.length - missing.length) / Math.max(1, db.items.length)) * 100),
 				},
-				rows: missing.map((m) =>
-					Object.assign(hydrateRow(m), {
-						suggested_alt: ((m.refs[0] && m.refs[0].label) || m.filename.replace(/\.[^.]+$/, '')) + ' — تیساکیس',
-					})
-				),
+				rows: missing
+					.slice((seoPage - 1) * seoPer, (seoPage - 1) * seoPer + seoPer)
+					.map((m) =>
+						Object.assign(hydrateRow(m), {
+							suggested_alt: ((m.refs[0] && m.refs[0].label) || m.filename.replace(/\.[^.]+$/, '')) + ' — تیساکیس',
+						})
+					),
 				total: missing.length,
-				page: 1,
-				pages: 1,
+				page: seoPage,
+				per_page: seoPer,
+				pages: Math.max(1, Math.ceil(missing.length / seoPer)),
 			};
 			data = op === 'bulk_generate_seo' ? { updated, audit } : audit;
 		} else if (op === 'restore_quarantine') {
@@ -1391,7 +1675,7 @@
 					targetIds = db.quarantine.map((q) => q.id);
 				}
 			}
-			data = mockJobStep('restore', req, { mode: 'restore', queue: targetIds }, (qids) => {
+			const stepRestore = mockJobStep('restore', req, { mode: 'restore', queue: targetIds }, (qids) => {
 				let restored = 0;
 				qids.forEach((qid) => {
 					const idx = db.quarantine.findIndex((q) => q.id === qid);
@@ -1429,6 +1713,10 @@
 				});
 				return { done: restored, failed: qids.length - restored, payload: { vault: mockVaultPayload(), restored: restored } };
 			});
+			if (stepRestore && stepRestore.__conflict) {
+				return mockHttpFailure(stepRestore.__conflict.status, stepRestore.__conflict.payload);
+			}
+			data = stepRestore;
 		} else if (op === 'get_vault' || op === 'purge_quarantine' || op === 'restore_original' || op === 'purge_originals' || op === 'clear_history') {
 			let savedBytes = 0;
 			let restoredCount = 0;
