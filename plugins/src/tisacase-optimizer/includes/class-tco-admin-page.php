@@ -78,7 +78,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Admin_Page' ) ) {
 						'slug'   => self::SLUG,
 					),
 					array(
-						'label'  => __( 'قرنطینه و تاریخچه', 'tisacase-optimizer' ),
+						'label'  => __( 'پشتیبان و بازگردانی', 'tisacase-optimizer' ),
 						'path'   => 'admin.php?page=' . self::SLUG . '&module=vault',
 						'screen' => 'woocommerce_page_' . self::SLUG,
 					),
@@ -98,10 +98,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Admin_Page' ) ) {
 		 * @return string[]
 		 */
 		public static function action_links( $links ) {
-			$open = '<a href="' . esc_url( admin_url( 'admin.php?page=' . self::SLUG ) ) . '"><strong>'
-				. esc_html__( 'باز کردن مرکز بهینه‌سازی', 'tisacase-optimizer' )
+			$vault = '<a href="' . esc_url( admin_url( 'admin.php?page=' . self::SLUG . '&module=vault' ) ) . '">'
+				. esc_html__( 'پشتیبان و بازگردانی', 'tisacase-optimizer' )
+				. '</a>';
+			$open  = '<a href="' . esc_url( admin_url( 'admin.php?page=' . self::SLUG ) ) . '"><strong>'
+				. esc_html__( 'مرکز بهینه‌سازی', 'tisacase-optimizer' )
 				. '</strong></a>';
-			array_unshift( $links, $open );
+			array_unshift( $links, $open, $vault );
 			return $links;
 		}
 
@@ -219,6 +222,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Admin_Page' ) ) {
 						<p class="tco-hero__sub"><?php esc_html_e( 'مدیریت عمیق تصاویر، پاک‌سازی ۱۲لایه با قرنطینهٔ ۳۰ روزه، فشرده‌سازی بومی WebP/AVIF، ادغام هوشمند تکراری‌ها و پایش منابع هاست.', 'tisacase-optimizer' ); ?></p>
 					</div>
 					<div class="tco-hero__pills">
+						<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-go-module="vault" id="tco-hero-vault-btn"><?php esc_html_e( 'پشتیبان و بازگردانی', 'tisacase-optimizer' ); ?></button>
 						<span class="tco-hero__pill"><?php echo esc_html( 'موتور: ' . $caps['engine'] ); ?></span>
 						<span class="tco-hero__pill" dir="ltr"><?php echo esc_html( 'v' . TCO_VERSION ); ?></span>
 					</div>

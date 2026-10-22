@@ -173,4 +173,26 @@ window.document.getElementById('tco-resume-scan-btn').click();
 await flush();
 assert.match(window.document.getElementById('tco-main').textContent, /کالبدشکافی مصرف فضای دیسک/);
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۰ بخش شامل اسکن مرحله‌ای scan_step و ریکاوری خطای ۵۰۴) با موفقیت اجرا شدند!');
+// ۱۱. تست مرکز کامل «پشتیبان و بازگردانی» (زیرتب مستقیم در بخش تصاویر + بازگردانی یک‌کلیکی کل نوبت اجرا!)
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const qModeBtn = window.document.querySelector('[data-set-delmode="quarantine"]');
+if (qModeBtn) qModeBtn.click();
+await flush();
+const anyRemoveBtn = window.document.querySelector('[data-remove-one]');
+assert.ok(anyRemoveBtn, 'دکمهٔ انتقال به قرنطینه در کاوشگر تصاویر باید فعال باشد');
+anyRemoveBtn.click();
+await flush();
+window.document.querySelector('[data-go-subtab="restore"]').click();
+await flush();
+assert.match(window.document.getElementById('tco-main').textContent, /پشتیبان و بازگردانی تصاویر قرنطینه‌شده/);
+window.document.querySelector('[data-vault-tab="history"]').click();
+await flush();
+const undoRunBtn = window.document.querySelector('[data-restore-batch]');
+assert.ok(undoRunBtn, 'دکمهٔ بازگردانی کامل نوبت اجرا باید در گزارش نوبت‌ها فعال باشد');
+undoRunBtn.click();
+await flush();
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۱ بخش شامل موتور اسکن نسل ۳ و بازگردانی کامل نوبت‌ها) با موفقیت اجرا شدند!');

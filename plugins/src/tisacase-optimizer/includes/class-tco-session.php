@@ -124,21 +124,23 @@ if ( ! class_exists( 'TisaCase_Optimizer_Session' ) ) {
 		}
 
 		/**
-		 * ثبت یک رویداد در تاریخچهٔ عملیات‌ها (حداکثر ۵۰ رکورد اخیر).
+		 * ثبت یک رویداد در تاریخچهٔ عملیات‌ها (حداکثر ۵۰ رکورد اخیر) همراه شناسهٔ نوبت برای بازگردانی یک‌کلیکی.
 		 *
-		 * @param string              $action      کلید عملیات.
-		 * @param string              $label       عنوان فارسی عملیات.
-		 * @param int                 $items_count تعداد موارد پردازش‌شده.
-		 * @param int                 $saved_bytes بایت آزادشده/صرفه‌جویی‌شده.
-		 * @param string              $note        توضیح کوتاه.
-		 * @param string              $status      وضعیت (success | warning | info).
+		 * @param string $action      کلید عملیات.
+		 * @param string $label       عنوان فارسی عملیات.
+		 * @param int    $items_count تعداد موارد پردازش‌شده.
+		 * @param int    $saved_bytes بایت آزادشده/صرفه‌جویی‌شده.
+		 * @param string $note        توضیح کوتاه.
+		 * @param string $status      وضعیت (success | warning | info).
+		 * @param string $batch_id    شناسهٔ بستهٔ پشتیبان برای بازگردانی یک‌جای کل نوبت.
 		 * @return array<string,mixed> رکورد ثبت‌شده.
 		 */
-		public static function log( $action, $label, $items_count = 0, $saved_bytes = 0, $note = '', $status = 'success' ) {
+		public static function log( $action, $label, $items_count = 0, $saved_bytes = 0, $note = '', $status = 'success', $batch_id = '' ) {
 			$history = self::history();
 			$user    = wp_get_current_user();
 			$entry   = array(
 				'id'          => 'log-' . gmdate( 'YmdHis' ) . '-' . strtolower( wp_generate_password( 4, false, false ) ),
+				'batch_id'    => sanitize_key( (string) $batch_id ),
 				'action'      => sanitize_key( $action ),
 				'label'       => sanitize_text_field( $label ),
 				'items_count' => max( 0, (int) $items_count ),

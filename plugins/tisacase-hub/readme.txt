@@ -4,7 +4,7 @@ Tags: admin, woocommerce, dashboard, design system
 Requires at least: 5.8
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 1.9.17
+Stable tag: 1.9.18
 License: GPL-2.0-or-later
 
 منوی واحد همهٔ افزونه‌های اختصاصی + زبان طراحی مشترک + پایش سلامت.

@@ -469,7 +469,7 @@
 		editPostBase: '#post-',
 		action: 'tisacase_optimizer',
 		nonce: 'preview-nonce-1405',
-		version: '1.0.0',
+		version: '1.0.2',
 		initialModule: 'images',
 		initialTab: 'overview',
 		settings: Object.assign({}, db.settings),
@@ -477,13 +477,14 @@
 		modules: [
 			{
 				id: 'images',
-				title: 'بهینه‌سازی تصاویر',
+				title: 'تصاویر و رسانه',
 				icon: 'image',
-				badge: 'فعال · ۷ ابزار',
+				badge: 'فعال · ۸ ابزار کامل',
 				subtabs: {
-					overview: 'نمای کلی و دیسک',
+					overview: 'نمای کلی دیسک',
 					explorer: 'سنگین‌ترین تصاویر',
 					unused: 'تصاویر بدون استفاده',
+					restore: 'پشتیبان و بازگردانی',
 					compress: 'فشرده‌سازی و WebP',
 					duplicates: 'تصاویر تکراری',
 					subsizes: 'زیرسایزها و بازسازی',
@@ -491,7 +492,7 @@
 					settings: 'تنظیمات و اتوماسیون',
 				},
 			},
-			{ id: 'vault', title: 'قرنطینه و تاریخچه', icon: 'shield', badge: 'محافظ ۳۰ روزه' },
+			{ id: 'vault', title: 'پشتیبان و بازیابی', icon: 'shield', badge: 'بازگردانی ۳۰ روزه' },
 			{ id: 'system', title: 'سلامت سرور و کرون', icon: 'activity', badge: 'رادار زنده + فاز ۴' },
 			{
 				id: 'database',
@@ -611,6 +612,7 @@
 		} else if (op === 'remove_items') {
 			const ids = (req.ids || []).map(Number).filter(Boolean);
 			const paths = (req.rel_paths || []).filter(Boolean);
+			const batchId = req.batch_id || 'run' + Date.now();
 			let saved = 0;
 			const doneIds = [];
 			const donePaths = [];
@@ -625,10 +627,11 @@
 				if (req.delete_mode !== 'permanent') {
 					db.quarantine.unshift({
 						id: 'q_' + Date.now() + '_' + id,
+						batch_id: batchId,
 						attachment_id: item.id,
 						filename: item.filename,
 						rel_path: item.rel_path,
-						reason: 'manual_unused',
+						reason: 'unused',
 						files_count: 1 + item.subsizes_count,
 						total_bytes: bytes,
 						created_at: '2026-10-21 15:45:00',
@@ -646,19 +649,43 @@
 				const o = db.diskOrphans.splice(idx, 1)[0];
 				saved += o.bytes;
 				donePaths.push(p);
+				if (req.delete_mode !== 'permanent') {
+					db.quarantine.unshift({
+						id: 'qf_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+						batch_id: batchId,
+						attachment_id: 0,
+						filename: o.filename,
+						rel_path: o.rel_path,
+						reason: 'disk_orphan',
+						files_count: 1,
+						total_bytes: o.bytes,
+						created_at: '2026-10-21 15:45:00',
+					});
+					db.lifetime.quarantined_count += 1;
+				}
 			});
 
 			db.lifetime.saved_bytes += saved;
 			db.history.unshift({
+				batch_id: batchId,
 				type: req.delete_mode === 'permanent' ? 'delete' : 'quarantine',
-				label: req.delete_mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه',
+				label: req.delete_mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)',
 				items_count: doneIds.length + donePaths.length,
 				saved_bytes: saved,
 				user: 'مدیر فروشگاه',
 				created_at: '2026-10-21 15:45:12',
 				note: '',
 			});
-			data = { done_ids: doneIds, done_paths: donePaths, remaining_ids: [], remaining_paths: [], saved_bytes: saved, done: true };
+			data = {
+				batch_id: batchId,
+				done_ids: doneIds,
+				done_paths: donePaths,
+				remaining_ids: [],
+				remaining_paths: [],
+				saved_bytes: saved,
+				done: true,
+				overview: computeOverview(),
+			};
 		} else if (op === 'clean_unscaled') {
 			let cleaned = 0;
 			let saved = 0;
@@ -784,39 +811,60 @@
 			data = op === 'bulk_generate_seo' ? { updated, audit } : audit;
 		} else if (op === 'get_vault' || op === 'restore_quarantine' || op === 'purge_quarantine' || op === 'restore_original' || op === 'purge_originals' || op === 'clear_history') {
 			let savedBytes = 0;
+			let restoredCount = 0;
 			if (op === 'restore_quarantine') {
-				const qid = (req.item_ids || [])[0];
-				const idx = db.quarantine.findIndex((q) => q.id === qid);
-				if (idx > -1) {
-					const q = db.quarantine.splice(idx, 1)[0];
-					db.items.unshift(
-						q.snapshot || {
-							id: q.attachment_id || 4901,
-							filename: q.filename,
-							rel_path: q.rel_path,
-							folder: '2026/03',
-							title: q.filename,
-							alt: '',
-							mime_type: 'image/jpeg',
-							format: 'JPEG',
-							date: '2026-03-10',
-							width: 1920,
-							height: 1080,
-							main_bytes: q.total_bytes,
-							subsizes_bytes: 0,
-							unscaled_bytes: 0,
-							subsizes_count: 8,
-							is_opaque_png: false,
-							is_optimized: false,
-							has_webp: false,
-							saved_bytes: 0,
-							is_pinned: false,
-							sha1: 'restored998877',
-							usage_status: 'strict_unused',
-							refs: [],
-							thumb_url: svgCaseThumb('#0E7C6B', '#129786', 'RESTORED', '#0A5F52'),
-						}
-					);
+				let targetIds = (req.item_ids || []).filter(Boolean);
+				if (!targetIds.length && req.batch_id) {
+					targetIds = db.quarantine.filter((q) => q.batch_id === req.batch_id).map((q) => q.id);
+				} else if (!targetIds.length && Number(req.restore_all) === 1) {
+					targetIds = db.quarantine.map((q) => q.id);
+				}
+				targetIds.forEach((qid) => {
+					const idx = db.quarantine.findIndex((q) => q.id === qid);
+					if (idx > -1) {
+						const q = db.quarantine.splice(idx, 1)[0];
+						restoredCount += 1;
+						db.items.unshift(
+							q.snapshot || {
+								id: q.attachment_id || 4901,
+								filename: q.filename,
+								rel_path: q.rel_path,
+								folder: '2026/03',
+								title: q.filename,
+								alt: '',
+								mime_type: 'image/jpeg',
+								format: 'JPEG',
+								date: '2026-03-10',
+								width: 1920,
+								height: 1080,
+								main_bytes: q.total_bytes,
+								subsizes_bytes: 0,
+								unscaled_bytes: 0,
+								subsizes_count: 8,
+								is_opaque_png: false,
+								is_optimized: false,
+								has_webp: false,
+								saved_bytes: 0,
+								is_pinned: false,
+								sha1: 'restored998877',
+								usage_status: 'strict_unused',
+								refs: [],
+								thumb_url: svgCaseThumb('#0E7C6B', '#129786', 'RESTORED', '#0A5F52'),
+							}
+						);
+					}
+				});
+			} else if (op === 'restore_original') {
+				if (Number(req.restore_all) === 1) {
+					restoredCount = db.originals.length;
+					db.originals = [];
+				} else {
+					const oid = Number(req.id);
+					const oidx = db.originals.findIndex((o) => o.attachment_id === oid);
+					if (oidx > -1) {
+						db.originals.splice(oidx, 1);
+						restoredCount = 1;
+					}
 				}
 			} else if (op === 'purge_quarantine') {
 				const ids = req.item_ids || [];
@@ -832,10 +880,15 @@
 			} else if (op === 'clear_history') {
 				db.history = [];
 			}
+			const enrichedHistory = db.history.map((h) =>
+				Object.assign({}, h, {
+					recoverable_count: h.batch_id ? db.quarantine.filter((q) => q.batch_id === h.batch_id).length : 0,
+				})
+			);
 			const vaultPayload = {
 				quarantine: db.quarantine,
 				originals: db.originals,
-				history: db.history,
+				history: enrichedHistory,
 				summary: {
 					quarantine_count: db.quarantine.length,
 					quarantine_bytes: db.quarantine.reduce((s, q) => s + q.total_bytes, 0),
@@ -846,7 +899,13 @@
 			data =
 				op === 'get_vault'
 					? vaultPayload
-					: { vault: vaultPayload, overview: computeOverview(), saved_bytes: savedBytes, result: { bytes: savedBytes } };
+					: {
+							restored: restoredCount,
+							vault: vaultPayload,
+							overview: computeOverview(),
+							saved_bytes: savedBytes,
+							result: { bytes: savedBytes },
+					  };
 		} else if (op === 'save_settings') {
 			Object.assign(db.settings, req.settings || {});
 			data = { settings: Object.assign({}, db.settings) };

@@ -85,6 +85,8 @@
 		seo: null,
 		vault: null,
 		vaultTab: 'quarantine',
+		vaultSearch: '',
+		selectedQuarantineIds: new Set(),
 		selectedIds: new Set(),
 		selectedPaths: new Set(),
 		masterChoices: {},
@@ -101,10 +103,12 @@
 		},
 		scan: {
 			running: false,
+			fastFinishRequested: false,
+			canSkip: false,
 			stageNum: 1,
-			stageLabel: 'آماده‌سازی موتور اسکن ۱۲لایه…',
+			stageLabel: 'آماده‌سازی موتور اسکن سریع…',
 			detailLabel: '',
-			percent: 4,
+			percent: 5,
 			elapsedSec: 0,
 		},
 		loadError: '',
@@ -253,17 +257,37 @@
 			.join('');
 	}
 
+	function getRecoverableCount() {
+		if (state.vault && state.vault.summary) {
+			return (state.vault.summary.quarantine_count || 0) + (state.vault.summary.originals_count || 0);
+		}
+		if (state.overview && state.overview.vault) {
+			return (state.overview.vault.quarantine_count || 0) + (state.overview.vault.originals_count || 0);
+		}
+		if (boot.moduleBoot && boot.moduleBoot.vault && boot.moduleBoot.vault.summary) {
+			return (boot.moduleBoot.vault.summary.quarantine_count || 0) + (boot.moduleBoot.vault.summary.originals_count || 0);
+		}
+		return 0;
+	}
+
 	function renderImageSubnav() {
 		const imgMod = (boot.modules || []).find((m) => m.id === 'images');
 		const subtabs = (imgMod && imgMod.subtabs) || {};
 		const ov = state.overview;
+		const recCount = getRecoverableCount();
 		const counts = {
 			explorer: ov ? faNum(ov.total_images) : '',
 			unused: ov ? faNum(ov.quick_wins.unused.count + ov.quick_wins.unused.orphan_count) : '',
+			restore: recCount > 0 ? faNum(recCount) : '',
 			compress: ov ? faNum(ov.quick_wins.compress.count) : '',
 			duplicates: ov ? faNum(ov.quick_wins.duplicates.groups) : '',
 			seo: ov ? faNum(ov.quick_wins.seo.missing_alt) : '',
 		};
+
+		const heroBtn = document.getElementById('tco-hero-vault-btn');
+		if (heroBtn) {
+			heroBtn.textContent = recCount > 0 ? `پشتیبان و بازگردانی (${faNum(recCount)})` : 'پشتیبان و بازگردانی';
+		}
 
 		return `<div class="tco-subnav" role="tablist">
 			${Object.keys(subtabs)
@@ -309,18 +333,26 @@
 			</div>`;
 		}
 
-		const pct = Math.max(4, Math.min(99, Number(state.scan.percent || 5)));
+		const pct = Math.max(5, Math.min(99, Number(state.scan.percent || 5)));
 		return `<div class="tco-card">
 			<div class="tco-card__head">
 				<div>
-					<h2 class="tco-card__title">${esc(state.scan.stageLabel || 'در حال اسکن مرحله‌ای ۱۲لایه و محاسبهٔ دیسک…')}</h2>
+					<h2 class="tco-card__title">${esc(state.scan.stageLabel || 'در حال اسکن سریع تک‌گذرهٔ رسانه و دیسک…')}</h2>
 					<p class="tco-card__desc">
 						${state.scan.detailLabel ? esc(faTextDigits(state.scan.detailLabel)) + ' · ' : ''}
-						اجرای تکه‌تکهٔ ۱٫۷۵ ثانیه‌ای ضد-تایم‌اوت (بدون فشار روی رم و CPU هاست)
+						موتور تک‌گذرهٔ نسل ۳ (بدون فشار IOPS و بدون قفل دیتابیس)
 						${state.scan.elapsedSec > 0 ? ' · زمان سپری‌شده: ' + faNum(state.scan.elapsedSec) + ' ثانیه' : ''}
 					</p>
 				</div>
-				<span class="tco-pill tco-pill--ok">${faNum(pct)}٪</span>
+				<div class="tco-row-actions">
+					${
+						state.scan.canSkip
+							? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-fast-finish-btn">نمایش فوری نتایج همین الان</button>'
+							: ''
+					}
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-go-module="vault">رفتن به پشتیبان و بازگردانی</button>
+					<span class="tco-pill tco-pill--ok">${faNum(pct)}٪</span>
+				</div>
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
 		</div>`;
@@ -661,7 +693,8 @@
 					</div>
 					<div class="tco-row-actions">
 						${renderDeleteModeSwitch()}
-						<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-rescan-btn">اجرای اسکن عمیق تازه</button>
+						<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-go-subtab="restore">پشتیبان و بازگردانی (${faNum(getRecoverableCount())})</button>
+						<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-rescan-btn">اسکن مجدد</button>
 					</div>
 				</div>
 
@@ -1073,37 +1106,46 @@
 	function renderVaultModule() {
 		const v = state.vault;
 		if (!v) {
-			return '<div class="tco-card"><div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال خواندن خزانهٔ قرنطینه و تاریخچهٔ عملیات‌ها…</span></div></div>';
+			return '<div class="tco-card"><div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال باز کردن مرکز پشتیبان و بازگردانی…</span></div></div>';
 		}
+
+		const qSearch = (state.vaultSearch || '').trim().toLowerCase();
+		const filteredQ = qSearch
+			? (v.quarantine || []).filter((q) =>
+					`${q.filename || ''} ${q.rel_path || ''} ${q.attachment_id || ''} ${q.title || ''}`.toLowerCase().includes(qSearch)
+			  )
+			: v.quarantine || [];
+		const qSelCount = state.selectedQuarantineIds.size;
+		const recoverableRuns = (v.history || []).filter((h) => Number(h.recoverable_count || 0) > 0).length;
 
 		return `<div class="tco-stack">
 			<div class="tco-kpi-grid">
 				<div class="tco-kpi">
-					<span class="tco-kpi__label">موارد موجود در قرنطینهٔ ۳۰ روزه</span>
-					<span class="tco-kpi__val">${faNum(v.summary.quarantine_count)} بسته</span>
-					<span class="tco-kpi__meta">حجم قابل تخلیهٔ نهایی: ${formatBytes(v.summary.quarantine_bytes)}</span>
+					<span class="tco-kpi__label">تصاویر آمادهٔ بازگردانی در قرنطینه</span>
+					<span class="tco-kpi__val">${faNum(v.summary.quarantine_count)} تصویر</span>
+					<span class="tco-kpi__meta">نگهداری خودکار ۳۰ روزه · حجم: ${formatBytes(v.summary.quarantine_bytes)}</span>
 				</div>
 				<div class="tco-kpi">
-					<span class="tco-kpi__label">پشتیبان‌های اولیهٔ فشرده‌سازی</span>
+					<span class="tco-kpi__label">نوبت‌های اجرای قابل بازگردانی یک‌جا</span>
+					<span class="tco-kpi__val">${faNum(recoverableRuns)} نوبت</span>
+					<span class="tco-kpi__meta">بازگردانی کل یک عملیات با یک کلیک</span>
+				</div>
+				<div class="tco-kpi">
+					<span class="tco-kpi__label">پشتیبان‌های خام قبل از فشرده‌سازی</span>
 					<span class="tco-kpi__val">${faNum(v.summary.originals_count)} تصویر</span>
-					<span class="tco-kpi__meta">حجم: ${formatBytes(v.summary.originals_bytes)}</span>
-				</div>
-				<div class="tco-kpi">
-					<span class="tco-kpi__label">عملیات‌های ثبت‌شده در تاریخچه</span>
-					<span class="tco-kpi__val">${faNum((v.history || []).length)} نوبت</span>
-					<span class="tco-kpi__meta">قابل ممیزی کامل توسط مدیر</span>
+					<span class="tco-kpi__meta">حجم فایل‌های خام: ${formatBytes(v.summary.originals_bytes)}</span>
 				</div>
 				<div class="tco-kpi tco-kpi--accent">
-					<span class="tco-kpi__label">بازگردانی دقیق با همان ID</span>
-					<span class="tco-kpi__val">۱۰۰٪ فعال</span>
-					<span class="tco-kpi__meta">همراه تمام زیرسایزها و متاهای قبلی</span>
+					<span class="tco-kpi__label">تضمین بازگردانی ۱۰۰٪ بدون شکست لینک</span>
+					<span class="tco-kpi__val">همان ID قبلی</span>
+					<span class="tco-kpi__meta">بازسازی کامل فایل اصلی، زیرسایزها و متاها</span>
 				</div>
 			</div>
 
 			<div class="tco-subnav">
-				<button type="button" class="tco-subnav__btn${state.vaultTab === 'quarantine' ? ' is-active' : ''}" data-vault-tab="quarantine">قرنطینهٔ ۳۰ روزه (${faNum(v.quarantine.length)})</button>
-				<button type="button" class="tco-subnav__btn${state.vaultTab === 'originals' ? ' is-active' : ''}" data-vault-tab="originals">پشتیبان‌های اولیهٔ فشرده‌سازی (${faNum(v.originals.length)})</button>
-				<button type="button" class="tco-subnav__btn${state.vaultTab === 'history' ? ' is-active' : ''}" data-vault-tab="history">تاریخچهٔ عملیات‌ها (${faNum(v.history.length)})</button>
+				<button type="button" class="tco-subnav__btn${state.vaultTab === 'quarantine' ? ' is-active' : ''}" data-vault-tab="quarantine">قرنطینه و بازگردانی تصاویر حذف‌شده (${faNum(v.quarantine.length)})</button>
+				<button type="button" class="tco-subnav__btn${state.vaultTab === 'history' ? ' is-active' : ''}" data-vault-tab="history">گزارش نوبت‌ها و بازگردانی گروهی (${faNum(v.history.length)})</button>
+				<button type="button" class="tco-subnav__btn${state.vaultTab === 'originals' ? ' is-active' : ''}" data-vault-tab="originals">پشتیبان‌های اولیهٔ فشرده‌سازی / WebP (${faNum(v.originals.length)})</button>
 			</div>
 
 			<div class="tco-card">
@@ -1111,20 +1153,34 @@
 					state.vaultTab === 'quarantine'
 						? `<div class="tco-card__head">
 							<div>
-								<h2 class="tco-card__title">بسته‌های قرنطینه‌شده (امکان بازگردانی تک‌کلیکی به مسیر و ID قبلی)</h2>
-								<p class="tco-card__desc">پوشهٔ <span class="tco-code">uploads/tisa-opt-vault/quarantine/</span> از بیرون وب‌سرور کاملاً مسدود است.</p>
+								<h2 class="tco-card__title">پشتیبان و بازگردانی تصاویر قرنطینه‌شده (تکی، انتخابی یا بازگردانی همه با ۱ کلیک)</h2>
+								<p class="tco-card__desc">هر تصویر دقیقاً به همان مسیر <span class="tco-code">uploads/</span>، همان <span class="tco-code">Attachment ID</span>، زیرسایزها و متاهای ووکامرس برمی‌گردد.</p>
 							</div>
-							<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger" id="tco-purge-all-quarantine" ${v.quarantine.length === 0 ? 'disabled' : ''}>تخلیهٔ دائمی کل قرنطینه و آزادسازی کامل دیسک</button>
+							<div class="tco-row-actions">
+								${
+									qSelCount > 0
+										? `<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-selected-q">بازگردانی انتخاب‌شده‌ها (${faNum(qSelCount)})</button>`
+										: ''
+								}
+								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-quarantine" ${v.quarantine.length === 0 ? 'disabled' : ''}>بازگردانی همهٔ موارد (${faNum(v.quarantine.length)})</button>
+								<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger" id="tco-purge-all-quarantine" ${v.quarantine.length === 0 ? 'disabled' : ''}>تخلیهٔ دائمی قرنطینه</button>
+							</div>
+						</div>
+						<div class="tco-bulkbar">
+							<input type="search" class="tco-input" id="tco-vault-search" placeholder="جستجوی نام فایل، مسیر یا شناسهٔ پیوست در قرنطینه…" value="${esc(state.vaultSearch || '')}">
+							<span>نمایش <strong>${faNum(filteredQ.length)}</strong> بسته از ${faNum(v.quarantine.length)}</span>
 						</div>
 						<div class="tco-table-wrap">
 							<table class="tco-table">
-								<thead><tr><th>فایل / پیوست</th><th>علت</th><th>حجم بسته</th><th>زمان قرنطینه</th><th>عملیات</th></tr></thead>
+								<thead><tr><th><input type="checkbox" id="tco-check-q-all"></th><th>فایل / پیوست</th><th>علت</th><th>حجم بسته</th><th>زمان قرنطینه</th><th>عملیات بازگردانی / حذف</th></tr></thead>
 								<tbody>
 									${
-										v.quarantine.length
-											? v.quarantine
-													.map(
-														(q) => `<tr>
+										filteredQ.length
+											? filteredQ
+													.map((q) => {
+														const qck = state.selectedQuarantineIds.has(q.id);
+														return `<tr class="${qck ? 'is-selected' : ''}">
+														<td><input type="checkbox" class="tco-q-check" value="${esc(q.id)}" ${qck ? 'checked' : ''}></td>
 														<td><strong class="tco-code">${esc(q.filename)}</strong><span class="tco-subtext">${q.attachment_id ? '#' + faNum(q.attachment_id) + ' · ' : ''}${esc(q.rel_path)}</span></td>
 														<td><span class="tco-pill tco-pill--neutral">${esc(q.reason)}</span></td>
 														<td><strong>${formatBytes(q.total_bytes)}</strong> (${faNum(q.files_count)} فایل)</td>
@@ -1135,10 +1191,10 @@
 																<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger" data-purge-q="${esc(q.id)}">حذف قطعی</button>
 															</div>
 														</td>
-													</tr>`
-													)
+													</tr>`;
+													})
 													.join('')
-											: '<tr><td colspan="5"><div class="tco-empty-state">قرنطینه خالی است.</div></td></tr>'
+											: '<tr><td colspan="6"><div class="tco-empty-state">هیچ بسته‌ای در قرنطینه وجود ندارد.</div></td></tr>'
 									}
 								</tbody>
 							</table>
@@ -1147,9 +1203,12 @@
 						? `<div class="tco-card__head">
 							<div>
 								<h2 class="tco-card__title">نسخه‌های پشتیبان پیش از فشرده‌سازی / جایگزینی WebP</h2>
-								<p class="tco-card__desc">هر زمان از کیفیت تمام تصاویر مطمئن شدید، می‌توانید این پوشه را تخلیه کنید.</p>
+								<p class="tco-card__desc">در صورت نیاز می‌توانید یک تصویر یا همهٔ تصاویر فشرده‌شده را با ۱ کلیک به فایل خام اولیه برگردانید.</p>
 							</div>
-							<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-purge-all-orig" ${v.originals.length === 0 ? 'disabled' : ''}>حذف همهٔ پشتیبان‌های اولیه (${formatBytes(v.summary.originals_bytes)})</button>
+							<div class="tco-row-actions">
+								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-orig" ${v.originals.length === 0 ? 'disabled' : ''}>بازگردانی همه به فایل اولیه (${faNum(v.originals.length)})</button>
+								<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-purge-all-orig" ${v.originals.length === 0 ? 'disabled' : ''}>آزادسازی فضای پشتیبان‌ها (${formatBytes(v.summary.originals_bytes)})</button>
+							</div>
 						</div>
 						<div class="tco-table-wrap">
 							<table class="tco-table">
@@ -1164,7 +1223,7 @@
 														<td><span class="tco-pill tco-pill--neutral">${esc(o.mime_type)}</span></td>
 														<td><strong>${formatBytes(o.bytes)}</strong></td>
 														<td><span class="tco-code">${esc(o.created_at)}</span></td>
-														<td><button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-restore-orig="${o.attachment_id}">بازگردانی فایل اولیه</button></td>
+														<td><button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" data-restore-orig="${o.attachment_id}">بازگردانی فایل اولیه</button></td>
 													</tr>`
 													)
 													.join('')
@@ -1174,25 +1233,35 @@
 							</table>
 						</div>`
 						: `<div class="tco-card__head">
-							<h2 class="tco-card__title">تاریخچهٔ ممیزی عملیات‌ها</h2>
-							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-history-btn" ${v.history.length === 0 ? 'disabled' : ''}>پاک کردن لاگ</button>
+							<div>
+								<h2 class="tco-card__title">گزارش نوبت‌های اجرا و بازگردانی یک‌جای هر نوبت</h2>
+								<p class="tco-card__desc">هر نوبت پاک‌سازی در حالت قرنطینه دارای دکمهٔ «بازگردانی کامل این نوبت» است تا دقیقاً مثل سایر افزونه‌های تیساکیس با یک کلیک کل عملیات برگردد.</p>
+							</div>
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-history-btn" ${v.history.length === 0 ? 'disabled' : ''}>پاک کردن گزارش</button>
 						</div>
 						<div class="tco-table-wrap">
 							<table class="tco-table">
-								<thead><tr><th>عملیات</th><th>تعداد موارد</th><th>فضای آزادشده</th><th>توسط</th><th>زمان</th></tr></thead>
+								<thead><tr><th>عملیات انجام‌شده</th><th>تعداد موارد</th><th>فضای آزادشده</th><th>توسط / زمان</th><th>بازگردانی نوبت</th></tr></thead>
 								<tbody>
 									${
 										v.history.length
 											? v.history
-													.map(
-														(h) => `<tr>
+													.map((h) => {
+														const recN = Number(h.recoverable_count || 0);
+														return `<tr>
 														<td><strong>${esc(h.label)}</strong>${h.note ? `<span class="tco-subtext">${esc(h.note)}</span>` : ''}</td>
-														<td>${faNum(h.items_count)}</td>
+														<td>${faNum(h.items_count)} مورد</td>
 														<td><strong>${formatBytes(h.saved_bytes)}</strong></td>
-														<td>${esc(h.user)}</td>
-														<td><span class="tco-code">${esc(h.created_at)}</span></td>
-													</tr>`
-													)
+														<td>${esc(h.user)}<span class="tco-subtext tco-code">${esc(h.created_at)}</span></td>
+														<td>
+															${
+																recN > 0 && h.batch_id
+																	? `<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" data-restore-batch="${esc(h.batch_id)}">بازگردانی کامل این نوبت (${faNum(recN)})</button>`
+																	: '<span class="tco-pill tco-pill--neutral">—</span>'
+															}
+														</td>
+													</tr>`;
+													})
 													.join('')
 											: '<tr><td colspan="5"><div class="tco-empty-state">هنوز عملیاتی ثبت نشده است.</div></td></tr>'
 									}
@@ -1268,6 +1337,7 @@
 			if (state.subtab === 'overview') body = renderOverviewTab();
 			else if (state.subtab === 'explorer') body = renderExplorerTab();
 			else if (state.subtab === 'unused') body = renderUnusedTab();
+			else if (state.subtab === 'restore') body = renderVaultModule();
 			else if (state.subtab === 'compress') body = renderCompressTab();
 			else if (state.subtab === 'duplicates') body = renderDuplicatesTab();
 			else if (state.subtab === 'subsizes') body = renderSubsizesTab();
@@ -1282,15 +1352,24 @@
 		}
 	}
 
-	async function runIncrementalScan(resetFromZero = false) {
+	function isVaultViewActive() {
+		return state.module === 'vault' || (state.module === 'images' && state.subtab === 'restore');
+	}
+
+	async function runIncrementalScan(resetFromZero = false, immediateFastFinish = false) {
+		if (immediateFastFinish) {
+			state.scan.fastFinishRequested = true;
+		}
 		if (state.scan.running) return;
 		state.loadError = '';
 		state.scan = {
 			running: true,
+			fastFinishRequested: Boolean(immediateFastFinish),
+			canSkip: false,
 			stageNum: 1,
-			stageLabel: 'گام ۱ از ۵: استخراج فهرست پیوست‌ها و آماده‌سازی اسکن ۱۲لایه…',
+			stageLabel: 'گام ۱ از ۵: خواندن فهرست تصاویر کتابخانهٔ رسانه…',
 			detailLabel: 'در حال شروع…',
-			percent: 4,
+			percent: 5,
 			elapsedSec: 0,
 		};
 		render();
@@ -1300,7 +1379,10 @@
 
 		while (true) {
 			try {
-				const step = await api('scan_step', { reset: firstTick ? 1 : 0 });
+				const step = await api('scan_step', {
+					reset: firstTick ? 1 : 0,
+					fast_finish: state.scan.fastFinishRequested ? 1 : 0,
+				});
 				firstTick = false;
 				retries = 0;
 
@@ -1308,10 +1390,12 @@
 				state.scan.stageLabel = step.stage_label || state.scan.stageLabel;
 				state.scan.detailLabel = step.detail_label || '';
 				state.scan.percent = Number(step.percent || state.scan.percent);
+				state.scan.canSkip = Boolean(step.can_skip);
 				state.scan.elapsedSec = Number(step.elapsed_sec || 0);
 
 				if (step.done) {
 					state.scan.running = false;
+					state.scan.fastFinishRequested = false;
 					if (step.overview) {
 						state.overview = step.overview;
 					} else {
@@ -1330,7 +1414,7 @@
 					continue;
 				}
 				state.scan.running = false;
-				state.loadError = err.message || 'خطا در حین اسکن مرحله‌ای سایت';
+				state.loadError = err.message || 'خطا در حین اسکن سایت';
 				render();
 				throw err;
 			}
@@ -1340,6 +1424,18 @@
 	async function ensureDataForCurrentView(forceRescan = false, resumeSaved = false) {
 		try {
 			state.loadError = '';
+
+			// بخش «پشتیبان و بازگردانی» و سایر ماژول‌ها فوراً در کمتر از ۱۵ میلی‌ثانیه باز می‌شوند و هرگز منتظر اسکن نمی‌مانند!
+			if (isVaultViewActive()) {
+				state.vault = await api('get_vault');
+				render();
+				return;
+			}
+			if (state.module !== 'images') {
+				render();
+				return;
+			}
+
 			if (resumeSaved) {
 				await runIncrementalScan(false);
 			} else if (forceRescan) {
@@ -1358,6 +1454,8 @@
 					state.media = await api('query_media', state.explorerFilter);
 				} else if (state.subtab === 'unused') {
 					state.media = await api('query_media', state.unusedFilter);
+				} else if (state.subtab === 'restore') {
+					state.vault = await api('get_vault');
 				} else if (state.subtab === 'duplicates') {
 					state.duplicates = await api('get_duplicates');
 				} else if (state.subtab === 'subsizes') {
@@ -1366,8 +1464,6 @@
 				} else if (state.subtab === 'seo') {
 					state.seo = await api('get_seo', { seo_filter: state.seoFilter, page: state.seoPage });
 				}
-			} else if (state.module === 'vault') {
-				state.vault = await api('get_vault');
 			}
 			render();
 		} catch (err) {
@@ -1380,12 +1476,14 @@
 	async function runBatchRemove(ids, relPaths) {
 		const queueIds = [...ids];
 		const queuePaths = [...relPaths];
+		const totalItems = queueIds.length + queuePaths.length;
+		const runBatchId = 'run' + Date.now();
 		state.batch = {
 			running: true,
 			stopRequested: false,
-			title: state.deleteMode === 'permanent' ? 'حذف قطعی تصاویر' : 'انتقال ایمن به قرنطینهٔ ۳۰ روزه',
+			title: state.deleteMode === 'permanent' ? 'حذف قطعی تصاویر' : 'انتقال ایمن به قرنطینهٔ ۳۰ روزه (با قابلیت بازگردانی)',
 			done: 0,
-			total: queueIds.length + queuePaths.length,
+			total: totalItems,
 			savedBytes: 0,
 		};
 		render();
@@ -1398,8 +1496,11 @@
 				const res = await api('remove_items', {
 					ids: chunkIds,
 					rel_paths: chunkPaths,
+					batch_id: runBatchId,
 					delete_mode: state.deleteMode,
 					log_final: isLast ? 1 : 0,
+					summary_count: totalItems,
+					summary_bytes: state.batch.savedBytes,
 				});
 				state.batch.done += (res.done_ids || []).length + (res.done_paths || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
@@ -1410,13 +1511,53 @@
 			}
 			state.selectedIds.clear();
 			state.selectedPaths.clear();
-			toast(`عملیات با موفقیت انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد.`);
+			toast(
+				state.deleteMode === 'permanent'
+					? `عملیات حذف قطعی انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد.`
+					: `به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» همیشه قابل برگشت است.`
+			);
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {
 			state.batch.running = false;
-			state.overview = await api('overview');
+			const ov = await api('overview');
+			if (ov && !ov.needs_scan) state.overview = ov;
 			await ensureDataForCurrentView(false);
+		}
+	}
+
+	async function runBatchRestoreQuarantine(itemIds) {
+		const queue = [...itemIds];
+		if (!queue.length) return;
+		state.batch = {
+			running: true,
+			stopRequested: false,
+			title: 'بازگردانی تصاویر به مسیر و ID اصلی وردپرس',
+			done: 0,
+			total: queue.length,
+			savedBytes: 0,
+		};
+		render();
+		try {
+			while (queue.length > 0 && !state.batch.stopRequested) {
+				const chunk = queue.splice(0, 25);
+				const isLast = queue.length === 0;
+				const r = await api('restore_quarantine', {
+					item_ids: chunk,
+					silent_log: isLast ? 0 : 1,
+				});
+				state.batch.done += Number(r.restored || chunk.length);
+				state.vault = r.vault;
+				if (r.overview) state.overview = r.overview;
+				render();
+			}
+			state.selectedQuarantineIds.clear();
+			toast(`${faNum(state.batch.done)} تصویر با همان ID و تمام زیرسایزها به جای اول بازگردانده شد!`);
+		} catch (e) {
+			toast(e.message, 'error');
+		} finally {
+			state.batch.running = false;
+			render();
 		}
 	}
 
@@ -1545,6 +1686,15 @@
 			state.deleteMode = delModeBtn.getAttribute('data-set-delmode');
 			state.armedKey = null;
 			render();
+			return;
+		}
+
+		if (ev.target.closest('#tco-fast-finish-btn')) {
+			toast('در حال نهایی‌سازی فوری نتایج از روی متادیتای رسانه…');
+			state.scan.fastFinishRequested = true;
+			if (!state.scan.running) {
+				await runIncrementalScan(false, true);
+			}
 			return;
 		}
 
@@ -1790,11 +1940,36 @@
 
 		const resQ = ev.target.closest('[data-restore-q]');
 		if (resQ) {
-			const r = await api('restore_quarantine', { item_ids: [resQ.getAttribute('data-restore-q')] });
-			state.vault = r.vault;
-			state.overview = r.overview;
-			toast('تصویر با همان ID و مسیر اصلی به کتابخانه بازگردانده شد!');
-			render();
+			await runBatchRestoreQuarantine([resQ.getAttribute('data-restore-q')]);
+			return;
+		}
+
+		if (ev.target.closest('#tco-restore-selected-q')) {
+			await runBatchRestoreQuarantine([...state.selectedQuarantineIds]);
+			return;
+		}
+
+		if (ev.target.closest('#tco-restore-all-quarantine')) {
+			const allIds = ((state.vault && state.vault.quarantine) || []).map((q) => q.id).filter(Boolean);
+			await runBatchRestoreQuarantine(allIds);
+			return;
+		}
+
+		const resBatchBtn = ev.target.closest('[data-restore-batch]');
+		if (resBatchBtn) {
+			const bid = resBatchBtn.getAttribute('data-restore-batch');
+			const matchIds = ((state.vault && state.vault.quarantine) || [])
+				.filter((q) => q.batch_id === bid)
+				.map((q) => q.id);
+			if (matchIds.length) {
+				await runBatchRestoreQuarantine(matchIds);
+			} else {
+				const r = await api('restore_quarantine', { batch_id: bid });
+				state.vault = r.vault;
+				if (r.overview) state.overview = r.overview;
+				toast(`${faNum(r.restored)} مورد از این نوبت به جای اول بازگردانده شد!`);
+				render();
+			}
 			return;
 		}
 
@@ -1810,6 +1985,7 @@
 		if (ev.target.closest('#tco-purge-all-quarantine')) {
 			const r = await api('purge_quarantine', { item_ids: [] });
 			state.vault = r.vault;
+			state.selectedQuarantineIds.clear();
 			toast(`کل قرنطینه تخلیه شد (${formatBytes(r.saved_bytes)} آزاد شد).`);
 			render();
 			return;
@@ -1819,7 +1995,17 @@
 		if (resOrig) {
 			const r = await api('restore_original', { id: Number(resOrig.getAttribute('data-restore-orig')) });
 			state.vault = r.vault;
+			if (r.overview) state.overview = r.overview;
 			toast('فایل اولیهٔ تصویر با موفقیت بازگردانی شد.');
+			render();
+			return;
+		}
+
+		if (ev.target.closest('#tco-restore-all-orig')) {
+			const r = await api('restore_original', { restore_all: 1 });
+			state.vault = r.vault;
+			if (r.overview) state.overview = r.overview;
+			toast(`${faNum(r.restored)} تصویر به فایل خام اولیه بازگردانی شدند.`);
 			render();
 			return;
 		}
@@ -1852,6 +2038,24 @@
 	});
 
 	document.addEventListener('change', async (ev) => {
+		if (ev.target.classList.contains('tco-q-check')) {
+			const qid = ev.target.value;
+			if (ev.target.checked) state.selectedQuarantineIds.add(qid);
+			else state.selectedQuarantineIds.delete(qid);
+			render();
+			return;
+		}
+
+		if (ev.target.id === 'tco-check-q-all') {
+			const check = ev.target.checked;
+			((state.vault && state.vault.quarantine) || []).forEach((q) => {
+				if (check) state.selectedQuarantineIds.add(q.id);
+				else state.selectedQuarantineIds.delete(q.id);
+			});
+			render();
+			return;
+		}
+
 		if (ev.target.classList.contains('tco-row-check')) {
 			const id = Number(ev.target.value);
 			if (ev.target.checked) state.selectedIds.add(id);
@@ -1904,6 +2108,16 @@
 			const afterLayer = document.getElementById('tco-cmp-after');
 			if (afterLayer) {
 				afterLayer.style.clipPath = `inset(0 0 0 ${Number(ev.target.value)}%)`;
+			}
+			return;
+		}
+		if (ev.target.id === 'tco-vault-search') {
+			state.vaultSearch = ev.target.value;
+			render();
+			const el = document.getElementById('tco-vault-search');
+			if (el) {
+				el.focus();
+				el.setSelectionRange(el.value.length, el.value.length);
 			}
 			return;
 		}

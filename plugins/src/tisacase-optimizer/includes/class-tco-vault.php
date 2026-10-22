@@ -193,7 +193,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 * @param string $reason        علت قرنطینه (unused | duplicate | manual).
 		 * @return array<string,mixed>|WP_Error
 		 */
-		public static function quarantine_attachment( $attachment_id, $reason = 'unused' ) {
+		public static function quarantine_attachment( $attachment_id, $reason = 'unused', $batch_id = '' ) {
 			global $wpdb;
 
 			$attachment_id = absint( $attachment_id );
@@ -250,6 +250,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 
 			$manifest = array(
 				'id'            => $item_id,
+				'batch_id'      => sanitize_key( (string) $batch_id ),
 				'kind'          => 'attachment',
 				'attachment_id' => $attachment_id,
 				'title'         => (string) $post->post_title,
@@ -283,6 +284,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 
 			$summary = array(
 				'id'            => $item_id,
+				'batch_id'      => $manifest['batch_id'],
 				'kind'          => 'attachment',
 				'attachment_id' => $attachment_id,
 				'title'         => $manifest['title'],
@@ -317,7 +319,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 * @param string $rel_path مسیر نسبی داخل `uploads/`.
 		 * @return array<string,mixed>|WP_Error
 		 */
-		public static function quarantine_orphan_file( $rel_path ) {
+		public static function quarantine_orphan_file( $rel_path, $batch_id = '' ) {
 			$uploads = wp_upload_dir();
 			if ( empty( $uploads['basedir'] ) ) {
 				return new WP_Error( 'no_uploads', __( 'پوشهٔ بارگذاری یافت نشد.', 'tisacase-optimizer' ) );
@@ -353,6 +355,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 
 			$manifest = array(
 				'id'            => $item_id,
+				'batch_id'      => sanitize_key( (string) $batch_id ),
 				'kind'          => 'disk_orphan',
 				'attachment_id' => 0,
 				'title'         => basename( $rel_clean ),

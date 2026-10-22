@@ -27,9 +27,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Module_Vault' ) ) {
 		public function meta() {
 			return array(
 				'id'       => 'vault',
-				'title'    => __( 'قرنطینه و تاریخچه', 'tisacase-optimizer' ),
-				'subtitle' => __( 'بازگردانی تک‌کلیکی تصاویر قرنطینه‌شده به همان ID و مسیر اصلی، بازیابی فایل اولیهٔ تصاویر فشرده‌شده، و گزارش کامل تاریخچهٔ عملیات‌ها.', 'tisacase-optimizer' ),
-				'badge'    => __( 'فعال', 'tisacase-optimizer' ),
+				'title'    => __( 'پشتیبان و بازیابی', 'tisacase-optimizer' ),
+				'subtitle' => __( 'بازگردانی تکی، دسته‌جمعی یا کل نوبت اجرای قبلی به همان Attachment ID و مسیر اصلی + بازیابی فایل اولیهٔ پیش از فشرده‌سازی WebP.', 'tisacase-optimizer' ),
+				'badge'    => __( 'بازگردانی ۳۰ روزه', 'tisacase-optimizer' ),
 				'active'   => true,
 				'icon'     => 'shield',
 			);
