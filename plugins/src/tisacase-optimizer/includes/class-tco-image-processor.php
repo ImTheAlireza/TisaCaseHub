@@ -166,7 +166,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 			$webp_mode   = ( 'none' !== $nextgen && 'replace' === (string) $cfg['webp_mode'] ) ? 'replace' : 'sidecar';
 			$max_w       = ! empty( $cfg['max_dimension_enabled'] ) ? max( 400, (int) $cfg['max_width'] ) : 0;
 			$max_h       = ! empty( $cfg['max_dimension_enabled'] ) ? max( 400, (int) $cfg['max_height'] ) : 0;
-			$is_opaque   = ( 'image/png' === $mime ) ? TisaCase_Optimizer_Media_Inspector::detect_opaque_png( $main_abs ) : false;
+			$is_opaque   = ( 'image/png' === $mime ) ? TisaCase_Optimizer_Reference_Scanner::fast_detect_opaque_png( $main_abs ) : false;
 
 			if ( 'replace' === $webp_mode && 'none' !== $nextgen && $mime !== 'image/' . $nextgen ) {
 				$convert_res = self::replace_attachment_format( $attachment_id, $main_abs, $rel_main, $nextgen, $cfg, $max_w, $max_h );

@@ -30,6 +30,8 @@ const cli = read(`${P}/includes/class-tco-cli.php`);
 const boot = read(`${P}/tisacase-optimizer.php`);
 // موتور کارِ قابل‌ادامه: راستی‌آزمایی و فیلتر مسدودها این‌جا انجام می‌شود.
 const job = read(`${P}/includes/class-tco-job.php`);
+const processor = read(`${P}/includes/class-tco-image-processor.php`);
+const scannerSrc = read(`${P}/includes/class-tco-reference-scanner.php`);
 
 let pass = 0;
 const fails = [];
@@ -128,6 +130,16 @@ ok('WP-CLI هم راستی‌آزمایی می‌کند', cli.includes('TisaCase
 ok('حذف تصاویر «فقط پیش‌نویس» فقط با تأیید صریح کاربر مجاز است', usage.includes('allow_draft_only') && ajax.includes('allow_draft_only'));
 ok('مسیر حذف هرگز اسکن سنگین را اجرا نمی‌کند (فقط کاتالوگ آماده)', !fnBody(usage, 'verify_batch').includes('build_catalog'));
 ok('سقف بازرسی محتوا با اندازهٔ بستهٔ کلاینت هم‌تراز است', /MAX_CONTENT_PROBES\s*=\s*(2[0-9]|[3-9][0-9])/.test(usage));
+
+ok(
+	'تشخیص PNG مات در فشرده‌سازی از متد موجود همان کلاس صدا زده می‌شود',
+	processor.includes('TisaCase_Optimizer_Reference_Scanner::fast_detect_opaque_png') &&
+		/function\s+fast_detect_opaque_png\s*\(/.test(scannerSrc)
+);
+ok(
+	'فراخوانی متد ناموجود در بازرس رسانه تکرار نمی‌شود (رفع خطای کشندهٔ ۱٫۰٫۷)',
+	!processor.includes('Media_Inspector::detect_opaque_png')
+);
 
 console.log('── ۴) رفتار واقعی id_list_contains() ──');
 
