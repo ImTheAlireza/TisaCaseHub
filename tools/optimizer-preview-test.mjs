@@ -913,4 +913,40 @@ window.__tcoMockBlockedIds = [];
 window.__tcoMockVerifyMax = 0;
 window.__tcoMockTickMax = 6;
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۰ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» و «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف») با موفقیت اجرا شدند!');
+// ۲۱. دستهٔ حذف باید «کوتاه و پیوسته» باشد: نوار پیشرفت در فاز بازرسی
+// حرکت می‌کند (نه ۰٪ گیرکرده) و پیام قطع نیمه‌کاره دقیقاً می‌گوید هنوز
+// چیزی حذف نشده و چند مورد بررسی و ذخیره شده است.
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+window.__tcoMockTickMax = 1;
+window.__tcoMockVerifyMax = 1;
+window.__tcoMockLatency = 120;
+const pc10 = window.document.getElementById('tco-check-page');
+if (pc10) {
+	pc10.checked = true;
+	pc10.dispatchEvent(new window.Event('change', { bubbles: true }));
+}
+await flush();
+const bulk10 = window.document.getElementById('tco-bulk-remove');
+if (bulk10) bulk10.click();
+await new Promise((r) => setTimeout(r, 420));
+
+const progressBox = window.document.querySelector('.tco-progress-box');
+assert.ok(progressBox, 'در حین حذف، کادر پیشرفت باید دیده شود');
+assert.match(
+	progressBox.textContent,
+	/بازرسی ایمنی/,
+	'در فاز بازرسی، متن پیشرفت باید صریحاً «بازرسی ایمنی» بگوید'
+);
+const stopBtn10 = window.document.getElementById('tco-stop-batch');
+if (stopBtn10) stopBtn10.click();
+await new Promise((r) => setTimeout(r, 900));
+window.__tcoMockLatency = 0;
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockTickMax = 6;
+window.__tcoMockJob = null;
+window.__tcoMockJobs = {};
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۱ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف») با موفقیت اجرا شدند!');

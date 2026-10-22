@@ -35,7 +35,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		const MAX_CONTENT_PROBES = 25;
 
 		/** حداکثر تعداد الگوی LIKE در هر کوئری (جلوگیری از کوئری غول‌آسا). */
-		const MAX_PATTERNS_PER_QUERY = 40;
+		// هر کوئری LIKE فقط با ۲۰ شناسه ساخته می‌شود: روی فروشگاه بزرگ، هر ۱۰
+		// شناسهٔ اضافه یعنی چند ثانیه جست‌وجوی بیشتر در جدول متا.
+		const MAX_PATTERNS_PER_QUERY = 20;
 
 		/** حداکثر تعداد دلیل نمایش‌داده‌شده برای هر آیتم. */
 		const MAX_REASONS = 4;
@@ -47,6 +49,25 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		 * چندمیلیون‌تایی می‌ساخت و پیش از ذخیرهٔ پیشرفت تایم‌اوت می‌شد.
 		 */
 		const MAX_LIVE_IDS = 100;
+
+		/**
+		 * حداکثر تعداد تصویری که در «یک فراخوانی» بازرسی می‌شود.
+		 * کوچک نگه داشته می‌شود تا هیچ درخواستی به سقف ۲۸ ثانیهٔ هاست نرسد؛
+		 * باقی موارد به تیک بعدی برمی‌گردند (`deferred`) و کار ادامه می‌یابد.
+		 */
+		const VERIFY_SLICE = 20;
+
+		/**
+		 * کش کوتاه‌مدت نتیجهٔ بازرسی ایمنی.
+		 *
+		 * چرا؟ اگر یک تیک وسط کار قطع شود (تایم‌اوت شبکه/هاست) و کاربر «ادامه»
+		 * را بزند، بازرسی دوباره از صفر اجرا می‌شد و همان تصاویر گران‌قیمت دو
+		 * بار بررسی می‌شدند. با این کش، نتیجهٔ هر تصویر ۱۰ دقیقه معتبر می‌ماند
+		 * و ادامهٔ کار فوری است — بدون کم‌شدن ایمنی (کش کوتاه و فقط برای
+		 * همین تصمیم است).
+		 */
+		const VERIFY_CACHE_KEY = 'tco_verify_cache_v1';
+		const VERIFY_CACHE_TTL = 600;
 
 		/** @var array<int,array<int,string>>|null کش در-درخواستی مراجع زنده. */
 		private static $live_cache = null;
@@ -771,8 +792,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		 *                                 را حفظ می‌کند (بدون کاتالوگ کامل، بازرسی انجام می‌شود).
 		 * @return array<string,mixed>
 		 */
-		public static function verify_batch( array $attachment_ids, array $rel_paths = array(), $allow_draft_only = false, $bulk = false ) {
+		public static function verify_batch( array $attachment_ids, array $rel_paths = array(), $allow_draft_only = false, $bulk = false, $deadline = 0 ) {
 			$enabled = (bool) TisaCase_Optimizer_Settings::get( 'verify_before_delete', 1 );
+
+			// زمان پایان مجاز این فراخوانی (microtime). موتور کار آن را می‌فرستد تا
+			// هر درخواست کوتاه بماند؛ صفر یعنی «بدون سقف زمانی» (مسیرهای قدیمی).
+			$deadline = (float) $deadline;
 
 			$ids = array();
 			foreach ( $attachment_ids as $id ) {
@@ -792,6 +817,24 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			}
 			$paths = array_keys( $paths );
 
+			// چرا برش می‌زنیم؟ کاربر گزارش داد حذف ۲۰۰ موردی با «Timeout بیش از
+			// ۲۸ ثانیه» قطع می‌شود. علت: بازرسی ایمنی ۱۰۰ تصویر در یک درخواست
+			// اجرا می‌شد و هر تصویر چند کوئری LIKE سنگین دارد. حالا هر فراخوانی
+			// حداکثر `VERIFY_SLICE` مورد را بررسی می‌کند و بقیه به تیک بعد
+			// برمی‌گردند — بدون خطا، بدون گم‌شدن، با پیشرفت پیوسته.
+			$deferred_ids   = array();
+			$deferred_paths = array();
+			if ( $deadline > 0 ) {
+				if ( count( $ids ) > self::VERIFY_SLICE ) {
+					$deferred_ids = array_slice( $ids, self::VERIFY_SLICE );
+					$ids          = array_slice( $ids, 0, self::VERIFY_SLICE );
+				}
+				if ( count( $paths ) > self::VERIFY_SLICE ) {
+					$deferred_paths = array_slice( $paths, self::VERIFY_SLICE );
+					$paths          = array_slice( $paths, 0, self::VERIFY_SLICE );
+				}
+			}
+
 			$result = array(
 				'allow_ids'     => $ids,
 				'blocked'       => array(),
@@ -802,9 +845,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				'needs_rescan'  => false,
 				'enabled'       => $enabled,
 				'draft_allowed' => (bool) $allow_draft_only,
+				'deferred'      => array(),
+				'deferred_ids'  => array(),
+				'deferred_paths' => array(),
 			);
 
 			if ( ! $enabled || ( empty( $ids ) && empty( $paths ) ) ) {
+				$result['deferred_ids']   = array_values( $deferred_ids );
+				$result['deferred_paths'] = array_values( $deferred_paths );
+				$result['deferred']       = array_values( array_merge( $deferred_ids, $deferred_paths ) );
 				return $result;
 			}
 
@@ -823,9 +872,30 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				}
 			}
 
+			// کش کوتاه‌مدت: فقط برای تصاویری که همین چند دقیقه پیش بررسی شده‌اند.
+			$cache     = get_transient( self::VERIFY_CACHE_KEY );
+			$cache     = is_array( $cache ) ? $cache : array();
+			$now_ts    = time();
+			$cached_id = array();
+			foreach ( array_keys( $allow ) as $aid ) {
+				if ( ! isset( $cache[ $aid ] ) || ! is_array( $cache[ $aid ] ) ) {
+					continue;
+				}
+				if ( ( $now_ts - (int) ( $cache[ $aid ]['t'] ?? 0 ) ) > self::VERIFY_CACHE_TTL ) {
+					unset( $cache[ $aid ] );
+					continue;
+				}
+				$cached_id[ $aid ] = (array) ( $cache[ $aid ]['r'] ?? array() );
+				if ( ! empty( $cached_id[ $aid ] ) ) {
+					$result['blocked'][ $aid ] = array_slice( $cached_id[ $aid ], 0, self::MAX_REASONS );
+					unset( $allow[ $aid ] );
+				}
+			}
+			$fresh_ids = array_values( array_diff( array_keys( $allow ), array_keys( $cached_id ) ) );
+
 			// گام ۱: مراجع زندهٔ دیتابیس (سریع، دقیق و همیشه فعال).
 			if ( ! empty( $ids ) ) {
-				$live       = self::live_refs( $ids );
+				$live       = self::live_refs( $fresh_ids );
 				$pinned_map = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
 				foreach ( $ids as $aid ) {
 					if ( isset( $pinned_map[ $aid ] ) ) {
@@ -841,6 +911,25 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 						unset( $allow[ $aid ] );
 					}
 				}
+			}
+
+			// ثبت نتیجهٔ بررسی زنده در کش کوتاه‌مدت.
+			$live = isset( $live ) && is_array( $live ) ? $live : array();
+			foreach ( $fresh_ids as $fid ) {
+				$cache[ $fid ] = array(
+					't' => $now_ts,
+					'r' => isset( $live[ $fid ] ) ? array_slice( (array) $live[ $fid ], 0, self::MAX_REASONS ) : array(),
+				);
+			}
+			if ( ! empty( $fresh_ids ) ) {
+				if ( count( $cache ) > 5000 ) {
+					foreach ( $cache as $cid => $crow ) {
+						if ( ! is_array( $crow ) || ( $now_ts - (int) ( $crow['t'] ?? 0 ) ) > self::VERIFY_CACHE_TTL ) {
+							unset( $cache[ $cid ] );
+						}
+					}
+				}
+				set_transient( self::VERIFY_CACHE_KEY, $cache, self::VERIFY_CACHE_TTL );
 			}
 
 			// گام ۲: مراجع ثبت‌شده در کاتالوگ (نتیجهٔ اسکن کامل لایه‌ای).
@@ -931,22 +1020,40 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 
 			// گام ۳: بازرسی محتوای زنده فقط برای موارد مشکوک/کاتالوگ قدیمی (با سقف زمانی).
 			if ( ! empty( $need_probe ) ) {
-				$slice = array_slice( $need_probe, 0, self::MAX_CONTENT_PROBES );
-				$text  = self::content_refs( $slice );
-				$result['probed'] = count( $slice );
+				// بازرسی محتوا «به‌ازای هر تصویر» یک اسکن جدول نوشته‌ها است؛ پس با
+				// سقف تعداد و سقف زمانی اجرا می‌شود. هر موردی که در این نوبت نرسد،
+				// به‌جای پیام «جداگانه حذف کنید»، به تیک بعد برمی‌گردد.
+				$cap   = min( self::MAX_CONTENT_PROBES, 8 );
+				$slice = array_slice( $need_probe, 0, $cap );
+				$rest  = array_slice( $need_probe, $cap );
 
+				$probed = 0;
 				foreach ( $slice as $aid ) {
+					if ( $deadline > 0 && microtime( true ) >= $deadline ) {
+						$rest[] = $aid;
+						continue;
+					}
+					$text = self::content_refs( array( $aid ) );
+					++$probed;
 					if ( ! empty( $text[ $aid ] ) ) {
 						$result['blocked'][ $aid ] = $text[ $aid ];
 						unset( $allow[ $aid ] );
 					}
 				}
+				$result['probed'] = $probed;
 
-				$rest = array_slice( $need_probe, self::MAX_CONTENT_PROBES );
 				if ( ! empty( $rest ) ) {
-					foreach ( $rest as $aid ) {
-						unset( $allow[ $aid ] );
-						$result['blocked'][ $aid ] = array( 'برای بازبینی محتوا، این موارد را جداگانه حذف کنید' );
+					if ( $deadline > 0 ) {
+						// برگشت به صف برای تیک بعد (هیچ موردی بی‌بررسی حذف نمی‌شود).
+						$result['deferred'] = array_values( array_unique( array_merge( (array) $result['deferred'], $rest ) ) );
+						foreach ( $rest as $aid ) {
+							unset( $allow[ $aid ] );
+						}
+					} else {
+						foreach ( $rest as $aid ) {
+							unset( $allow[ $aid ] );
+							$result['blocked'][ $aid ] = array( 'برای بازبینی محتوا، این موارد را جداگانه حذف کنید' );
+						}
 					}
 				}
 
@@ -968,6 +1075,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 
 			$result['allow_ids']   = array_values( array_map( 'intval', array_keys( $allow ) ) );
 			$result['allow_paths'] = $allow_paths;
+			// مواردی که در این نوبت بررسی نشدند به تیک بعد برمی‌گردند.
+			// شناسه‌ها و مسیرها جدا برمی‌گردند تا موتور کار هر کدام را به صف
+			// درست خودش برگرداند (مسیر فایل عدد نیست و نباید absint شود).
+			$result['deferred_ids']   = array_values( array_unique( array_merge( (array) $result['deferred_ids'], $deferred_ids ) ) );
+			$result['deferred_paths'] = array_values( array_unique( array_merge( (array) $result['deferred_paths'], $deferred_paths ) ) );
+			$result['deferred']       = array_values( array_merge( $result['deferred_ids'], $result['deferred_paths'] ) );
 
 			return $result;
 		}

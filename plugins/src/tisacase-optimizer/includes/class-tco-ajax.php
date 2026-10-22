@@ -759,7 +759,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					'coverage'      => $summary['coverage'],
 					'hint'          => $summary['hint'],
 					'block_reasons' => $summary['block_reasons'],
-					'verify_chunk'  => (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 100 ),
+					'verify_chunk'  => (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 20 ),
 					'overview'      => $overview,
 					'processed_now' => (int) $job['done'] - $before_done,
 					'reclaimed'     => $reclaimed,

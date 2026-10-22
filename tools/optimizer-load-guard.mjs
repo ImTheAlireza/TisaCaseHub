@@ -94,10 +94,25 @@ ok('مسیر حذف هرگز اسکن سنگین نمی‌سازد', !fnBody(usa
 
 console.log('── ۴) راستی‌آزمایی ارزان و «بسته‌بندی‌شده» (رفع «۰ از ۱٬۴۸۰») ──');
 ok('فاز بازرسی، صف را بسته‌بسته برمی‌دارد (نه یک‌جا)', /array_splice\(\s*\$job\['queue_ids'\],\s*0,\s*\$chunk_size\s*\)/.test(job));
-ok('اندازهٔ بستهٔ بازرسی کران‌دار و قابل تنظیم است', /verify_chunk/.test(job) && /max\(\s*10,\s*min\(\s*200/.test(job));
-ok('پس از هر بستهٔ بازرسی، وضعیت ذخیره می‌شود (پیشرفت گم نمی‌شود)', /verify_batch\([\s\S]{0,900}?self::save\(\s*\$job\s*\);/.test(job));
-ok('حلقهٔ بازرسی هم با بودجهٔ زمانی بسته می‌شود', /while \( \( microtime\( true \) - \$started \) < \$budget_s \) \{[\s\S]{0,120}?queue_ids/.test(job));
-ok('تنظیم اندازهٔ بستهٔ بازرسی اعتبارسنجی می‌شود', /verify_chunk'\]\s*=\s*max\(\s*10,\s*min\(\s*200/.test(settings));
+ok('اندازهٔ بستهٔ بازرسی کران‌دار و قابل تنظیم است', /verify_chunk/.test(job) && /max\(\s*5,\s*min\(\s*50/.test(job));
+ok('پس از هر بستهٔ بازرسی، وضعیت ذخیره می‌شود (پیشرفت گم نمی‌شود)', /verify_batch\([\s\S]{0,2200}?self::save\(\s*\$job\s*\);/.test(job));
+ok('حلقهٔ بازرسی هم با بودجهٔ زمانی بسته می‌شود', /while \( microtime\( true \) < \$until \) \{[\s\S]{0,160}?queue_ids/.test(job));
+ok('تنظیم اندازهٔ بستهٔ بازرسی اعتبارسنجی می‌شود', /verify_chunk'\]\s*=\s*max\(\s*5,\s*min\(\s*50/.test(settings));
+
+console.log('── ۴-۱) هیچ تیکی به سقف ۲۸ ثانیهٔ هاست نمی‌رسد ──');
+ok('سقف زمانی مخصوص بازرسی وجود دارد (جدا از بودجهٔ تیک)', /verify_step_cap/.test(job) && /\$until\s*=\s*min\(/.test(job));
+ok('بازرسی با سقف زمانی مطلق اجرا می‌شود', /while \( microtime\( true \) < \$until \)/.test(job));
+ok('سقف تعداد تصویر در هر فراخوانی بازرسی وجود دارد', /const VERIFY_SLICE\s*=\s*\d+/.test(usage));
+ok('بازرسی، مازادِ بسته را به تیک بعد موکول می‌کند', /deferred_ids/.test(usage) && /\$deferred_ids\s*=\s*array_slice/.test(usage));
+ok('موتور کار موارد موکول‌شده را به صف برمی‌گرداند', /\$job\['queue_ids'\]\s*=\s*array_values\(\s*array_merge\(\s*\$deferred/.test(job));
+ok('مسیرهای موکول‌شده به صف مسیرها برمی‌گردند (نه absint)', /deferred_paths/.test(usage) && /\$job\['queue_paths'\]\s*=\s*array_values\(\s*array_merge\(\s*\$deferred_path_chunks/.test(job));
+ok('بازرسی محتوا هم سقف زمانی دارد', /microtime\( true \) >= \$deadline/.test(usage));
+ok(
+	'هیچ موردی بی‌بررسی حذف نمی‌شود (موکول ≠ مجاز)',
+	!/deferred[\s\S]{0,120}allow\[ \$aid \]\s*=\s*true/.test(usage)
+);
+ok('نتیجهٔ بازرسی کوتاه‌مدت کش می‌شود (ادامهٔ کار پس از قطع، فوری است)', /VERIFY_CACHE_KEY/.test(usage) && /VERIFY_CACHE_TTL/.test(usage));
+ok('کش هرگز باعث حذف بدون بررسی نمی‌شود (فقط برای ۱۰ دقیقه)', /VERIFY_CACHE_TTL\s*=\s*\d+/.test(usage) && /set_transient\( self::VERIFY_CACHE_KEY/.test(usage));
 
 console.log('── ۴-۲) کران سخت روی کوئری‌های «مراجع زنده» ──');
 ok('سقف شناسه در هر فراخوانی مراجع زنده وجود دارد', /const MAX_LIVE_IDS\s*=\s*\d+/.test(usage));
@@ -113,7 +128,7 @@ ok(
 console.log('── ۴-۳) راستی‌آزمایی ارزان در حالت دسته‌ای ──');
 ok('verify_batch حالت انبوه را می‌شناسد', /function\s+verify_batch\s*\([\s\S]{0,200}?\$bulk/.test(usage));
 ok('در کاتالوگ تازه و کامل، بازرسی محتوای هر تصویر حذف می‌شود', /\$bulk\s*&&\s*\$is_fresh/.test(usage) && usage.includes("'full' === $coverage"));
-ok('موتور کار راستی‌آزمایی را دسته‌ای صدا می‌زند', /verify_batch\(\s*\$chunk,\s*\$pchunk,[\s\S]{0,120}?,\s*true\s*\)/.test(job));
+ok('موتور کار راستی‌آزمایی را دسته‌ای صدا می‌زند', /verify_batch\(\s*\$chunk,\s*\$pchunk,[\s\S]{0,160}?\$until\s*\)/.test(job));
 ok('سقف بازرسی محتوا هنوز کران‌دار است', /MAX_CONTENT_PROBES\s*=\s*\d+/.test(usage));
 
 console.log('── ۵) جابه‌جایی فایل بدون دوبرابر IO و با امکان بازیابی ──');

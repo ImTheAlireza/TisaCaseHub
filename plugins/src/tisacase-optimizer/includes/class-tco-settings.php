@@ -41,7 +41,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				'delete_throttle_ms'     => 15,
 				// اندازهٔ هر گام «بازرسی ایمنی پیش از حذف». کوچک بماند تا هیچ تیک
 				// با کوئری‌های چندصدشرطی تایم‌اوت نشود (باگ «۰ از ۱۴۸۰»).
-				'verify_chunk'           => 100,
+				// اندازهٔ بستهٔ بازرسی ایمنی پیش از حذف (کوچک = درخواست کوتاه‌تر).
+				'verify_chunk'           => 20,
 				// تعداد ردیف در هر صفحهٔ فهرست‌ها (کاربر選択؛ پیش‌فرض ۲۵).
 				'per_page'               => 25,
 				'include_draft_in_scan'  => 1,
@@ -167,7 +168,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				$clean['delete_throttle_ms'] = max( 0, min( 250, (int) $raw['delete_throttle_ms'] ) );
 			}
 			if ( isset( $raw['verify_chunk'] ) ) {
-				$clean['verify_chunk'] = max( 10, min( 200, (int) $raw['verify_chunk'] ) );
+				$clean['verify_chunk'] = max( 5, min( 50, (int) $raw['verify_chunk'] ) );
 			}
 			if ( isset( $raw['per_page'] ) ) {
 				$clean['per_page'] = self::clamp_per_page( $raw['per_page'] );

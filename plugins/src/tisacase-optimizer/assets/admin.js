@@ -404,8 +404,21 @@
 			}
 		});
 
+		// عملیات‌های سنگین (تیک‌های حذف/فشرده‌سازی/بازگردانی و اسکن) سقف زمانی
+		// بالاتری می‌گیرند؛ هر تیک در سرور خودش ۴ ثانیه کار می‌کند، پس اگر پاسخ
+		// بیش از این طول بکشد یعنی میزبان کند است و باید صریح گفته شود.
+		const HEAVY_OPS = new Set([
+			'remove_items',
+			'optimize_items',
+			'restore_quarantine',
+			'scan_tick',
+			'merge_duplicates',
+			'regen_thumbnails',
+		]);
+		const timeoutMs = HEAVY_OPS.has(op) ? 60000 : 28000;
+
 		const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-		const timer = ctrl ? setTimeout(() => ctrl.abort(), 28000) : null;
+		const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : null;
 
 		// هر درخواست، حتی آن‌هایی که دکمه‌ای ندارند (بارگذاری خودکار، اسکن مرحله‌ای،
 		// به‌روزرسانی خزانه) بازخورد بصری می‌گیرد؛ عملیات دسته‌ای درصد را خودش
@@ -427,7 +440,7 @@
 			const timedOut = netErr && netErr.name === 'AbortError';
 			throw new Error(
 				timedOut
-					? 'پاسخ سرور بیش از ۲۸ ثانیه طول کشید (Timeout شبکه/فایروال).'
+					? `پاسخ سرور بیش از ${faNum(Math.round(timeoutMs / 1000))} ثانیه طول کشید (Timeout شبکه/فایروال). هر تیک فقط ۴ ثانیه کار می‌کند؛ اگر این تکرار شد، «سقف زمان هر درخواست» را در تنظیمات کمتر کنید.`
 					: 'ارتباط با سرور قطع شد؛ اتصال اینترنت یا فایروال هاست را بررسی کنید.'
 			);
 		}
@@ -620,14 +633,23 @@
 	function renderBatchProgress() {
 		if (!state.batch.running) return '';
 		const b = state.batch;
-		const pct = b.total > 0 ? Math.min(100, Math.round((b.done / b.total) * 100)) : 15;
+		// در فاز بازرسی هنوز هیچ حذفی انجام نشده؛ پس درصد را از «بازرسی‌شده»
+		// می‌گیریم تا نوار پیشرفت واقعاً حرکت کند (قبلاً ۰٪ می‌ماند و کاربر فکر
+		// می‌کرد کار گیر کرده).
+		const inVerify = b.phase === 'verify' && b.done === 0;
+		const shown = inVerify ? Number(b.verified || 0) : b.done;
+		const pct = b.total > 0 ? Math.min(100, Math.round((shown / b.total) * 100)) : 15;
 		const remaining = b.remaining != null ? b.remaining : Math.max(0, b.total - b.done);
 		const eta = b.etaSec > 0 ? ` · حدود ${faNum(b.etaSec)} ثانیه باقی‌مانده` : '';
 		const failed = b.failed > 0 ? ` · ${faNum(b.failed)} خطای فایل` : '';
 		return `<div class="tco-progress-box">
 			<div class="tco-win__foot">
-				<strong>${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)${eta}${failed}</strong>
-				${b.phase === 'verify' ? `<span class="tco-pill tco-pill--neutral">در حال بازرسی ایمنی — ${faNum(b.verified)} از ${faNum(b.total)} بررسی شد</span>` : ''}
+				<strong>${
+					inVerify
+						? `بازرسی ایمنی پیش از ${esc(b.title)} — ${faNum(shown)} از ${faNum(b.total)} بررسی شد (${faNum(pct)}٪)`
+						: `${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)`
+				}${eta}${failed}</strong>
+				${inVerify ? '<span class="tco-pill tco-pill--neutral">هنوز چیزی حذف نشده؛ در حال بررسی استفاده‌بودن</span>' : ''}
 				<div class="tco-row-actions">
 					<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
@@ -1435,6 +1457,35 @@
 	}
 
 	/**
+	 * پیام قطع نیمه‌کاره — دقیقاً می‌گوید در چه مرحله‌ای بودیم و چه چیزی ذخیره است.
+	 *
+	 * قبلاً در مرحلهٔ بازرسی (که هنوز هیچ حذفی انجام نشده) پیام می‌گفت
+	 * «۰ از ۲۰۰ انجام شده» و کاربر فکر می‌کرد کار بی‌نتیجه مانده است.
+	 *
+	 * @return {string}
+	 */
+	function interruptedMessage() {
+		const b = state.batch;
+		const label = opLabelOf(b.op || 'remove');
+		if (b.phase === 'verify' && b.done === 0) {
+			return (
+				`${label} هنوز شروع نشده — بازرسی ایمنی ${faNum(b.verified || 0)} از ${faNum(b.total || 0)} مورد را بررسی کرده و ذخیره است. ` +
+				'از کارت «ادامهٔ عملیات» ادامه دهید؛ هیچ موردی گم نمی‌شود.'
+			);
+		}
+		if (b.done === 0) {
+			return (
+				`${label} متوقف شد و هنوز موردی انجام نشده — ${faNum(b.verified || 0)} از ${faNum(b.total || 0)} بررسی شده، بقیه ذخیره است. ` +
+				'از کارت «ادامهٔ عملیات» ادامه دهید.'
+			);
+		}
+		return (
+			`عملیات متوقف شد — ${faNum(b.done)} از ${faNum(b.total)} انجام شده است. ` +
+			'می‌توانید از کارت «ادامهٔ عملیات» در بالای صفحه ادامه دهید.'
+		);
+	}
+
+	/**
 	 * کارت شفاف «نتیجهٔ آخرین عملیات» — دقیقاً می‌گوید چند مورد انجام شد،
 	 * چند مورد چرا انجام نشد و فهرست همان موارد.
 	 *
@@ -1730,8 +1781,8 @@
 					</div>
 					<div class="tco-field">
 						<label for="tco-cfg-verifychunk">تعداد تصویر در هر گام بازرسی ایمنی</label>
-						<input type="number" class="tco-input" id="tco-cfg-verifychunk" value="${Number(s.verify_chunk || 100)}" min="10" max="200">
-						<span class="tco-muted">پیش‌فرض ۱۰۰. اگر حذف انبوه در مراحل اول «۰ از N» می‌ماند، این عدد را کمتر کنید تا هر گام سریع‌تر تمام شود.</span>
+						<input type="number" class="tco-input" id="tco-cfg-verifychunk" value="${Number(s.verify_chunk || 20)}" min="5" max="50">
+						<span class="tco-muted">پیش‌فرض ۲۰ (حداکثر ۵۰). هر چه کمتر، هر درخواست کوتاه‌تر و امن‌تر؛ اگر هاست کند است ۱۰ بگذارید.</span>
 					</div>
 					<div class="tco-field">
 						<label for="tco-cfg-throttle">مکث بین تصاویر (میلی‌ثانیه)</label>
@@ -2194,8 +2245,16 @@
 	 */
 	function batchPct(batch, suffix) {
 		if (!batch || !batch.total) return null;
-		const pct = Math.min(100, Math.round((batch.done / batch.total) * 100));
-		busyProgress(pct, `${batch.title} — ${faNum(batch.done)} از ${faNum(batch.total)}${suffix ? ' · ' + suffix : ''}`);
+		// در فاز بازرسی، «پیشرفت» یعنی تعداد بررسی‌شده‌ها (هیچ حذفی هنوز نشده).
+		const inVerify = batch.phase === 'verify' && batch.done === 0;
+		const shown = inVerify ? Number(batch.verified || 0) : batch.done;
+		const pct = Math.min(100, Math.round((shown / batch.total) * 100));
+		busyProgress(
+			pct,
+			inVerify
+				? `بازرسی ایمنی — ${faNum(shown)} از ${faNum(batch.total)}${suffix ? ' · ' + suffix : ''}`
+				: `${batch.title} — ${faNum(batch.done)} از ${faNum(batch.total)}${suffix ? ' · ' + suffix : ''}`
+		);
 		return pct;
 	}
 
@@ -2405,11 +2464,7 @@
 					blockReasons: state.batch.blockReasons,
 					lastError: stoppedByUser ? 'توسط شما متوقف شد' : (state.batch.error || state.batch.lastError || 'ارتباط با سرور قطع شد'),
 				};
-				toast(
-					`عملیات متوقف شد — ${faNum(state.batch.done)} از ${faNum(state.batch.total)} انجام شده است. ` +
-					'می‌توانید از کارت «ادامهٔ عملیات» در بالای صفحه ادامه دهید.',
-					'error'
-				);
+				toast(interruptedMessage(), 'error');
 			}
 		} catch (e) {
 			// تعارض کار: عملیات تازه حتی شروع نشده؛ پیام «انجام شد» دادن دروغ است.
@@ -2547,7 +2602,9 @@
 	 */
 	async function driveJob(opts) {
 		const totalItems = Number(opts.total || 0);
-		state.lastRun = opts;
+		// کارت «نتیجهٔ آخرین عملیات» فقط پس از پایان کار پر می‌شود؛ شروع یک کار
+		// تازه نباید کارت قدیمی را با داده‌های ناقص بازنویسی کند.
+		state.lastRun = null;
 		state.batch = {
 			running: true,
 			stopRequested: false,
@@ -2683,11 +2740,7 @@
 					blockReasons: state.batch.blockReasons,
 					lastError: stoppedByUser ? 'توسط شما متوقف شد' : (state.batch.error || state.batch.lastError || 'ارتباط با سرور قطع شد'),
 				};
-				toast(
-					`عملیات متوقف شد — ${faNum(state.batch.done)} از ${faNum(state.batch.total)} انجام شده است. ` +
-					'می‌توانید از کارت «ادامهٔ عملیات» در بالای صفحه ادامه دهید.',
-					'error'
-				);
+				toast(interruptedMessage(), 'error');
 			}
 		} catch (e) {
 			// تعارض کار: عملیات تازه حتی شروع نشده؛ پیام «انجام شد» دادن دروغ است.

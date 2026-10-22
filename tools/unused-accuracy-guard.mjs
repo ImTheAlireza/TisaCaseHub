@@ -120,7 +120,7 @@ console.log('── ۵) یادآوری اسکن کهنه و بازرسی ایم�
 ok('سن کاتالوگ در خلاصهٔ داشبورد هست', /'scan_age_hours'\s*=>/.test(inspector));
 ok('یادآوری «اسکن مجدد» برای کاتالوگ کهنه وجود دارد', /scan_age_hours/.test(js) && /tco-rescan-unused/.test(js));
 ok('دکمهٔ یادآوری به اسکن تازه وصل است', /#tco-rescan-unused[\s\S]{0,120}ensureDataForCurrentView\(true\)/.test(js));
-ok('بازرسی ایمن پیش از حذف حذف نشده', /live_refs\( \$ids \)/.test(phpBody(usage, 'verify_batch')));
+ok('بازرسی ایمن پیش از حذف حذف نشده', /self::live_refs\( \$fresh_ids \)/.test(phpBody(usage, 'verify_batch')));
 ok('گام بازرسی پیش از حذف در موتور کار هست', /verify_step/.test(job) && /verify_batch\(/.test(job));
 
 console.log('── ۶) شفافیت نتیجهٔ حذف ──');

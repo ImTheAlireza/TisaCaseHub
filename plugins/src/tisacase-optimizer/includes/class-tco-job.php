@@ -449,9 +449,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		private static function verify_step( array $job, $started, $budget_s ) {
 			// اندازهٔ هر گام بازرسی: کوچک بماند تا هیچ کوئری‌ای غول‌آسا نشود و
 			// پیشرفت بعد از هر گام در سرور ذخیره شود (کاربر عدد را زنده می‌بیند).
-			$chunk_size = max( 10, min( 200, (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 100 ) ) );
+			// سقف ۵۰: با ۱۰۰+ شناسه در یک درخواست، بازرسی روی فروشگاه بزرگ از
+			// سقف ۲۸ ثانیهٔ هاست رد می‌شد و کار با «Timeout» قطع می‌شد.
+			$chunk_size = max( 5, min( 50, (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 20 ) ) );
 
-			while ( ( microtime( true ) - $started ) < $budget_s ) {
+			// سقف زمانی مخصوص خودِ بازرسی: حتی اگر بودجهٔ تیک بزرگ باشد، بازرسی
+			// بیشتر از این طول نمی‌کشد و بقیه در تیک‌های بعد ادامه پیدا می‌کند.
+			$verify_cap = max( 1.0, (float) apply_filters( 'tisacase_optimizer_verify_step_cap', 2.5 ) );
+			$until      = min( $started + $budget_s, $started + $verify_cap );
+
+			while ( microtime( true ) < $until ) {
 				$ids_left   = array_values( (array) $job['queue_ids'] );
 				$paths_left = array_values( (array) $job['queue_paths'] );
 
@@ -465,34 +472,75 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				$chunk   = array_splice( $job['queue_ids'], 0, $chunk_size );
 				$pchunk  = empty( $chunk ) ? array_splice( $job['queue_paths'], 0, $chunk_size ) : array();
 
-				$verify = TisaCase_Optimizer_Usage::verify_batch( $chunk, $pchunk, ! empty( $job['allow_draft'] ), true );
+				$verify = TisaCase_Optimizer_Usage::verify_batch(
+					$chunk,
+					$pchunk,
+					! empty( $job['allow_draft'] ),
+					true,
+					$until
+				);
 
 				$job['coverage']     = isset( $verify['coverage'] ) ? (string) $verify['coverage'] : $job['coverage'];
 				$job['needs_rescan'] = ! empty( $verify['needs_rescan'] );
 
+				// مواردی که در سقف زمانی این نوبت جا نشدند، بی‌هیچ خطایی به ابتدای
+				// صف برمی‌گردند تا در تیک بعد (چند ثانیه بعد) بررسی شوند.
+				$deferred = array();
+				if ( ! empty( $verify['deferred_ids'] ) ) {
+					$deferred = array_values( array_filter( array_map( 'absint', (array) $verify['deferred_ids'] ) ) );
+				}
+				$deferred_path_chunks = array_values( array_filter( array_map( 'strval', (array) ( $verify['deferred_paths'] ?? array() ) ) ) );
+				$deferred_lookup      = array_fill_keys( $deferred, true );
+
+				$done_in_chunk = 0;
 				foreach ( $chunk as $aid ) {
 					$aid = absint( $aid );
+					if ( isset( $deferred_lookup[ $aid ] ) ) {
+						continue;
+					}
 					if ( isset( $verify['blocked'][ $aid ] ) ) {
 						$job['blocked'][ $aid ] = (array) $verify['blocked'][ $aid ];
+						++$done_in_chunk;
 						continue;
 					}
 					$job['safe_ids'][] = $aid;
+					++$done_in_chunk;
 				}
 
+				$deferred_path_lookup = array_fill_keys( $deferred_path_chunks, true );
 				foreach ( $pchunk as $path ) {
+					if ( isset( $deferred_path_lookup[ (string) $path ] ) ) {
+						continue;
+					}
 					if ( isset( $verify['blocked_paths'][ $path ] ) ) {
 						$job['blocked_paths'][ $path ] = (array) $verify['blocked_paths'][ $path ];
+						++$done_in_chunk;
 						continue;
 					}
 					$job['safe_paths'][] = (string) $path;
+					++$done_in_chunk;
 				}
 
-				$job['verified'] += count( $chunk ) + count( $pchunk );
+				if ( ! empty( $deferred ) ) {
+					// برگشت به ابتدای صف (بدون تکرار/گم‌شدن).
+					$job['queue_ids'] = array_values( array_merge( $deferred, (array) $job['queue_ids'] ) );
+				}
+				if ( ! empty( $deferred_path_chunks ) ) {
+					$job['queue_paths'] = array_values( array_merge( $deferred_path_chunks, (array) $job['queue_paths'] ) );
+				}
+
+				$job['verified'] += $done_in_chunk;
 
 				// ذخیرهٔ فوری: اگر همین‌جا تایم‌اوت شود، پیشرفت از دست نمی‌رود.
 				self::save( $job );
 
 				if ( empty( $chunk ) && empty( $pchunk ) ) {
+					break;
+				}
+
+				// اگر همهٔ این بسته به تیک بعد موکول شد، همین‌جا متوقف می‌شویم تا
+				// درخواست طولانی نشود (پیشرفت ذخیره شده و کاربر عدد را می‌بیند).
+				if ( ( ! empty( $deferred ) || ! empty( $deferred_path_chunks ) ) && 0 === $done_in_chunk ) {
 					break;
 				}
 			}
