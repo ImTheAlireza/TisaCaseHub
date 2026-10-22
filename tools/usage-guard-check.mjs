@@ -146,6 +146,16 @@ ok(
 	ajax.includes("'inspect_sizes'") && ajax.includes('wp_get_attachment_metadata') && !/function\s+handle_inspect_sizes[\s\S]{0,1200}?build_catalog/.test(ajax)
 );
 
+ok(
+	'جایگزینی مستقیم برای «همین تصویر» از مسیر امن پشتیبان و بازنویسی لینک عبور می‌کند',
+	ajax.includes("'replace_mode'") && ajax.includes("$clean_ovr['webp_mode']      = 'replace'") &&
+		/function\s+replace_attachment_format/.test(read(`${P}/includes/class-tco-image-processor.php`))
+);
+ok(
+	'فهرست فایل‌های واقعی (شامل .webp) برای پاسخ «فایل webp کجاست» وجود دارد',
+	ajax.includes("'files'") && ajax.includes("$sc_rel = $f['rel'] . '.' . $ext") && ajax.includes("'webp_mode'")
+);
+
 console.log('── ۴) رفتار واقعی id_list_contains() ──');
 
 const body = fnBody(usage, 'id_list_contains');

@@ -53,21 +53,37 @@ assert.equal(expRows[0].getAttribute('data-row-id'), '5011', 'سنگین‌تر�
 // باز کردن مودال مقایسهٔ زندهٔ قبل و بعد + تغییر اسلایدر
 window.document.querySelector('[data-inspect="5012"]').click();
 await flush();
-// تفکیک زیرسایزها باید خوانده و فهرست شود («زیرسایز چیست؟»)
-await new Promise((r) => setTimeout(r, 350));
+// فهرست فایل‌های واقعی روی دیسک (شامل نسخهٔ موازی webp) باید خوانده و نمایش داده شود.
+await new Promise((r) => setTimeout(r, 400));
 const subBox = window.document.querySelector('.tco-subsize-box');
-assert.ok(subBox, 'مودال باید بخش «زیرسایز چیست» را داشته باشد');
-assert.match(subBox.textContent, /زیرسایز/, 'توضیح فارسی زیرسایز باید نمایش داده شود');
+assert.ok(subBox, 'مودال باید بخش «فایل‌های واقعی روی دیسک» را داشته باشد');
 const subRows = window.document.querySelectorAll('#tco-subsize-detail tbody tr');
-assert.ok(subRows.length >= 1, 'فهرست تفکیک زیرسایزها باید پر شود');
-assert.match(subRows[0].textContent, /B|KB|MB|بایت/, 'حجم هر زیرسایز باید نمایش داده شود');
+assert.ok(subRows.length >= 2, 'فهرست فایل‌ها باید شامل اصل و زیرسایز باشد');
+const paths = [...window.document.querySelectorAll('#tco-subsize-detail .tco-path-cell')].map((td) => td.textContent);
+assert.ok(paths.some((p) => /\.webp$/.test(p.trim())), 'مسیر فایل WebP باید با پسوند .webp نشان داده شود');
+assert.ok(paths.some((p) => /\.png$/.test(p.trim())), 'مسیر فایل اصلی باید نمایش داده شود');
+assert.match(
+	window.document.getElementById('tco-disk-note').textContent,
+	/نسخهٔ موازی|جایگزینی مستقیم/,
+	'باید صریح بگوید حالت فعلی WebP موازی است یا جایگزینی'
+);
+assert.match(window.document.querySelector('.tco-subsize-box').textContent, /uploads\//, 'مسیر داخل uploads باید ذکر شود');
+
+// دکمهٔ جایگزینی بعد از بستن مودال آزمون می‌شود (پایین).
 assert.equal(window.document.getElementById('tco-modal').hidden, false, 'مودال مقایسه قبل/بعد باید باز شود');
 const slider = window.document.getElementById('tco-cmp-slider');
 slider.value = '28';
 slider.dispatchEvent(new window.Event('input', { bubbles: true }));
 assert.equal(window.document.getElementById('tco-cmp-after').style.clipPath, 'inset(0 0 0 28%)');
 window.document.querySelector('[data-modal-close="1"]').click();
-
+// دکمهٔ «جایگزینی مستقیم با WebP» باید برای تصویر غیر WebP وجود داشته باشد و کار کند.
+const replaceBtn = window.document.getElementById('tco-replace-one');
+assert.ok(replaceBtn, 'برای تصویر PNG باید دکمهٔ جایگزینی مستقیم با WebP باشد');
+replaceBtn.click();
+await new Promise((r) => setTimeout(r, 900));
+const replacedItem = window.__tcoMockItem ? window.__tcoMockItem(5012) : null;
+assert.ok(replacedItem && replacedItem.format === 'WEBP', 'پس از جایگزینی، فرمت تصویر باید WEBP شود');
+assert.equal(window.document.getElementById('tco-modal').hidden, true, 'مودال پس از جایگزینی باید بسته شود');
 // ۴. رفتن به «تصاویر بدون استفاده»، قرنطینهٔ تصویر بی‌استفاده #5011، سپس رفتن به «قرنطینه و تاریخچه» و بازگردانی آن با همان ID!
 window.document.querySelector('[data-go-subtab="unused"]').click();
 await flush();

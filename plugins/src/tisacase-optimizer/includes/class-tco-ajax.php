@@ -480,20 +480,55 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			}
 
 			$uploads = wp_upload_dir();
-			$basedir = trailingslashit( $uploads['basedir'] );
+			$basedir = trailingslashit( wp_normalize_path( $uploads['basedir'] ) );
+			$baseurl = trailingslashit( $uploads['baseurl'] );
 			$meta    = wp_get_attachment_metadata( $aid );
 			$rows    = array();
+			$files   = array();
 			$total   = 0;
 			$main_b  = 0;
 			$dir     = '';
+			$rel_dir = '';
+
+			/**
+			 * ثبت یک فایل واقعی روی دیسک (اگر وجود داشته باشد).
+			 *
+			 * @param string $role نقش فارسی.
+			 * @param string $rel  مسیر نسبی داخل uploads.
+			 * @return int حجم فایل (بایت).
+			 */
+			$add_file = static function ( $role, $rel ) use ( $basedir, $baseurl, &$files, &$total ) {
+				$rel = ltrim( wp_normalize_path( (string) $rel ), '/' );
+				if ( '' === $rel ) {
+					return 0;
+				}
+				$abs   = $basedir . $rel;
+				$bytes = is_file( $abs ) ? max( 0, (int) @filesize( $abs ) ) : 0;
+				if ( $bytes > 0 ) {
+					$total += $bytes;
+				}
+				$files[] = array(
+					'role'  => (string) $role,
+					'rel'   => $rel,
+					'url'   => $baseurl . $rel,
+					'abs'   => $abs,
+					'bytes' => $bytes,
+					'exists' => is_file( $abs ),
+				);
+				return $bytes;
+			};
 
 			if ( is_array( $meta ) && ! empty( $meta['file'] ) ) {
-				$rel_file = wp_normalize_path( (string) $meta['file'] );
+				$rel_file = ltrim( wp_normalize_path( (string) $meta['file'] ), '/' );
 				$rel_dir  = dirname( $rel_file );
 				$dir      = ( '.' === $rel_dir || '' === $rel_dir ) ? '' : $rel_dir;
 
-				$main_abs = $basedir . $rel_file;
-				$main_b   = is_file( $main_abs ) ? max( 0, (int) @filesize( $main_abs ) ) : 0;
+				$main_b = $add_file( __( 'فایل اصلی', 'tisacase-optimizer' ), $rel_file );
+
+				// نسخهٔ خام پنهان پشت `-scaled` (اگر وجود داشته باشد).
+				if ( ! empty( $meta['original_image'] ) ) {
+					$add_file( __( 'نسخهٔ خام اصلی (پشت -scaled)', 'tisacase-optimizer' ), ( '' !== $dir ? $dir . '/' : '' ) . (string) $meta['original_image'] );
+				}
 
 				if ( ! empty( $meta['sizes'] ) && is_array( $meta['sizes'] ) ) {
 					foreach ( $meta['sizes'] as $key => $size ) {
@@ -501,23 +536,35 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						if ( '' === $file ) {
 							continue;
 						}
-						$rel = ( '' !== $dir ? $dir . '/' : '' ) . $file;
-						$abs = $basedir . $rel;
-						$b   = is_file( $abs ) ? max( 0, (int) @filesize( $abs ) ) : 0;
+						$rel   = ( '' !== $dir ? $dir . '/' : '' ) . $file;
+						$bytes = $add_file( sprintf( /* translators: %s: size name. */ __( 'زیرسایز %s', 'tisacase-optimizer' ), (string) $key ), $rel );
 						$rows[] = array(
 							'name'   => (string) $key,
 							'w'      => isset( $size['width'] ) ? (int) $size['width'] : 0,
 							'h'      => isset( $size['height'] ) ? (int) $size['height'] : 0,
-							'bytes'  => $b,
-							'exists' => is_file( $abs ),
+							'bytes'  => $bytes,
+							'exists' => is_file( $basedir . $rel ),
 							'rel'    => $rel,
 						);
-						$total += $b;
 					}
 				}
 			}
 
-			// سنگین‌ترین زیرسایز اول؛ برای نمایش «کدام کپی بیشترین جا را گرفته».
+			// نسخه‌های موازی نسل جدید: همان مسیر + پسوند `.webp` / `.avif`.
+			$sidecars = 0;
+			$sidecar_bytes = 0;
+			foreach ( array_slice( $files, 0, 60 ) as $f ) {
+				foreach ( array( 'webp', 'avif' ) as $ext ) {
+					$sc_rel = $f['rel'] . '.' . $ext;
+					if ( ! is_file( $basedir . $sc_rel ) ) {
+						continue;
+					}
+					$b = $add_file( sprintf( /* translators: 1: format, 2: role. */ __( 'نسخهٔ موازی %1$s از %2$s', 'tisacase-optimizer' ), strtoupper( $ext ), $f['role'] ), $sc_rel );
+					++$sidecars;
+					$sidecar_bytes += $b;
+				}
+			}
+
 			usort(
 				$rows,
 				static function ( $a, $b ) {
@@ -525,16 +572,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				}
 			);
 
-			$registered = array_keys( (array) wp_get_registered_image_subsizes() );
-
 			self::ok(
 				array(
 					'id'             => $aid,
 					'main_bytes'     => $main_b,
-					'subsizes_bytes' => $total,
+					'subsizes_bytes' => $total - $main_b - $sidecar_bytes,
+					'sidecar_bytes'  => $sidecar_bytes,
+					'sidecar_count'  => $sidecars,
+					'total_bytes'    => $total,
 					'count'          => count( $rows ),
+					'dir'            => $dir,
 					'sizes'          => array_slice( $rows, 0, 40 ),
-					'registered'     => count( $registered ),
+					'files'          => array_slice( $files, 0, 60 ),
+					'webp_mode'      => (string) TisaCase_Optimizer_Settings::get( 'webp_mode', 'sidecar' ),
+					'delivery'       => (string) TisaCase_Optimizer_Settings::get( 'delivery_method', 'picture' ),
+					'nextgen'        => (string) TisaCase_Optimizer_Settings::get( 'nextgen_format', 'webp' ),
 				)
 			);
 		}
@@ -700,6 +752,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			$clean_ovr = array();
 			if ( ! empty( $overrides['force_webp'] ) ) {
 				$clean_ovr['nextgen_format'] = 'webp';
+			}
+			// جایگزینی مستقیم برای «همین تصویر»: فایل اصل با نسخهٔ نسل جدید عوض می‌شود
+			// (لینک‌ها بازنویسی می‌شوند) تا حجم دیسک واقعاً کم شود، نه فقط WebP موازی.
+			if ( ! empty( $overrides['replace_mode'] ) ) {
+				$clean_ovr['nextgen_format'] = 'webp';
+				$clean_ovr['webp_mode']      = 'replace';
 			}
 
 			if ( empty( $ids ) ) {

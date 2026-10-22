@@ -826,7 +826,13 @@
 								<span class="tco-subtext">#${faNum(r.id)} · ${esc(r.folder || 'uploads')} · ${faTextDigits(r.date)}</span>
 								${r.is_opaque_png ? '<span class="tco-pill tco-pill--warn">PNG بدون شفافیت واقعی</span> ' : ''}
 								${r.unscaled_bytes > 0 ? `<span class="tco-pill tco-pill--info">خام -scaled: ${formatBytes(r.unscaled_bytes)}</span> ` : ''}
-								${r.has_webp ? '<span class="tco-pill tco-pill--ok">WebP فعال</span>' : ''}
+								${
+								r.format === 'WEBP'
+									? '<span class="tco-pill tco-pill--ok" title="فایل اصلی با پسوند .webp جایگزین شده و در همان مسیر سرو می‌شود">WebP جایگزین‌شده</span>'
+									: r.has_webp
+										? `<span class="tco-pill tco-pill--info" title="کنار فایل اصلی یک نسخهٔ ${esc(r.format === 'AVIF' ? 'AVIF' : 'WebP')}+پسوند ساخته شده؛ اصل و زیرسایزها دست‌نخورده روی دیسک مانده‌اند">WebP موازی</span>`
+										: ''
+							}
 							</div>
 						</div>
 					</td>
@@ -2075,7 +2081,8 @@
 		}
 	}
 
-	async function runBatchOptimize(targetIds) {
+	async function runBatchOptimize(targetIds, opts = {}) {
+		const replaceMode = Boolean(opts.replaceMode);
 		let queue = targetIds && targetIds.length ? [...targetIds] : null;
 		if (!queue) {
 			const init = await api('optimize_batch', { ids: [] });
@@ -2088,7 +2095,9 @@
 		state.batch = {
 			running: true,
 			stopRequested: false,
-			title: 'فشرده‌سازی و تبدیل نسل جدید تصاویر',
+			title: replaceMode
+				? 'جایگزینی مستقیم با WebP و اصلاح لینک‌ها (کاهش حجم دیسک)'
+				: 'فشرده‌سازی و تبدیل نسل جدید تصاویر',
 			done: 0,
 			total: queue.length,
 			savedBytes: 0,
@@ -2106,6 +2115,7 @@
 					log_final: queue.length === 0 ? 1 : 0,
 					summary_count: totalCount,
 					summary_bytes: state.batch.savedBytes,
+					overrides: replaceMode ? { replace_mode: 1 } : {},
 				});
 				state.batch.done += (res.processed || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
@@ -2113,7 +2123,11 @@
 				batchPct(state.batch);
 			}
 			state.selectedIds.clear();
-			toast(`فشرده‌سازی تمام شد — ${formatBytes(state.batch.savedBytes)} صرفه‌جویی شد.`);
+			toast(
+				replaceMode
+					? `جایگزینی تمام شد — فایل اصل با WebP عوض شد و ${formatBytes(state.batch.savedBytes)} از دیسک کم شد. لینک‌ها خودکار اصلاح شدند.`
+					: `فشرده‌سازی تمام شد — ${formatBytes(state.batch.savedBytes)} صرفه‌جویی شد.`
+			);
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {
@@ -2160,14 +2174,22 @@
 			<div class="tco-subsize-box" style="margin-top:12px">
 				<div class="tco-card__head" style="margin:0">
 					<div>
-						<strong>زیرسایز چیست و ${formatBytes(r.subsizes_bytes)} از کجا آمده؟</strong>
-						<p class="tco-muted">وردپرس و قالب برای هر تصویر چند کپی کوچک‌تر می‌سازد (بندانگشتی، متوسط، بزرگ، سایزهای ووکامرس و قالب). هر کپی یک فایل جداگانه در <span class="tco-code">uploads/</span> است، هم حجم دارد هم یک inode — یعنی «کل دیسک» تصویر = اصل + همهٔ کپی‌ها.</p>
+						<strong>فایل‌های واقعی روی دیسک — ${formatBytes(r.total_bytes)} در ${faNum(r.subsizes_count + 1)} فایل</strong>
+						<p class="tco-muted">وردپرس برای هر تصویر چند کپی کوچک‌تر (زیرسایز) می‌سازد و هر کپی یک فایل جدا در <span class="tco-code">uploads/</span> است. نسخهٔ WebP/AVIF هم دقیقاً کنار همان فایل با پسوند اضافه ساخته می‌شود: <span class="tco-code">نام.png.webp</span> — نه در پوشه‌ای دیگر و نه با نام تازه.</p>
 					</div>
 					<span class="tco-pill tco-pill--neutral" id="tco-subsize-count">در حال خواندن…</span>
 				</div>
+				<div id="tco-disk-note" class="tco-muted" style="margin:6px 0 0"></div>
 				<div id="tco-subsize-detail" class="tco-subsize-detail">
-					<div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال تفکیک زیرسایزها…</span></div>
+					<div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال خواندن فایل‌های همین تصویر…</span></div>
 				</div>
+			</div>
+			<div class="tco-row-actions" style="margin-top:12px;justify-content:flex-end">
+				${
+					r.format === 'WEBP' || r.mime === 'image/webp'
+						? '<span class="tco-pill tco-pill--ok">این تصویر از قبل با WebP جایگزین شده است</span>'
+						: `<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-replace-one" data-replace-id="${r.id}" title="فایل اصل و زیرسایزها با WebP جایگزین می‌شوند، لینک‌ها اصلاح می‌شوند و از فایل قبلی در خزانه پشتیبان می‌ماند">جایگزینی مستقیم با WebP (کاهش حجم دیسک)</button>`
+				}
 			</div>
 			<div style="margin-top:12px">${renderUsageCell(r)}</div>
 		`;
@@ -2186,32 +2208,61 @@
 			const res = await api('inspect_sizes', { id });
 			const box = document.getElementById('tco-subsize-detail');
 			const chip = document.getElementById('tco-subsize-count');
+			const note = document.getElementById('tco-disk-note');
 			if (!box) return;
-			const sizes = (res && res.sizes) || [];
+
+			const files = (res && res.files) || [];
+			const mode = (res && res.webp_mode) || 'sidecar';
+			const delivery = (res && res.delivery) || 'picture';
+			const sidecars = Number((res && res.sidecar_count) || 0);
+
 			if (chip) {
-				chip.textContent = `${faNum(res.count || 0)} زیرسایز · ${formatBytes(res.subsizes_bytes || 0)}`;
+				chip.textContent = `${faNum(files.length)} فایل · ${formatBytes((res && res.total_bytes) || 0)}`;
 			}
-			if (!sizes.length) {
-				box.innerHTML = '<div class="tco-empty-state">این تصویر هیچ زیرسایز ثبت‌شده‌ای ندارد؛ فقط فایل اصلی روی دیسک است.</div>';
+
+			if (note) {
+				const parts = [];
+				if (sidecars > 0 && mode === 'sidecar') {
+					parts.push(
+						`<strong>حالت فعلی: نسخهٔ موازی.</strong> ${faNum(sidecars)} فایل WebP/AVIF کنار اصل ساخته شده (${formatBytes(
+							(res && res.sidecar_bytes) || 0
+						)}) و فایل اصلی هم سر جایش است — یعنی حجم دیسک کم نشده، فقط مرورگرِ مدرن نسخهٔ سبک‌تر را می‌گیرد. اگر می‌خواهید حجم دیسک هم کم شود، حالت «جایگزینی مستقیم» را فعال کنید یا زیرسایزهای بی‌استفاده را پاک کنید.`
+					);
+				} else if (sidecars > 0 && mode === 'replace') {
+					parts.push('<strong>حالت فعلی: جایگزینی مستقیم.</strong> فایل اصل با نسخهٔ نسل جدید جایگزین شده و لینک‌ها به همان فایل اشاره می‌کنند.');
+				} else if (sidecars === 0) {
+					parts.push('برای این تصویر هیچ نسخهٔ WebP/AVIF روی دیسک نیست. دکمهٔ «بهینه» را بزنید تا ساخته شود.');
+				}
+				if (sidecars > 0 && delivery === 'none') {
+					parts.push('<span class="tco-pill tco-pill--warn">هشدار: روش تحویل روی «غیرفعال» است؛ فایل WebP ساخته شده ولی به مرورگر پیشنهاد نمی‌شود. در تنظیمات، «تحویل» را روی picture یا htaccess بگذارید.</span>');
+				}
+				note.innerHTML = parts.join(' ');
+			}
+
+			if (!files.length) {
+				box.innerHTML = '<div class="tco-empty-state">هیچ فایلی برای این پیوست روی دیسک پیدا نشد.</div>';
 				return;
 			}
-			const max = sizes.reduce((m, s) => Math.max(m, s.bytes || 0), 0) || 1;
+
+			const max = files.reduce((m, f) => Math.max(m, f.bytes || 0), 0) || 1;
 			box.innerHTML = `<table class="tco-table tco-table--compact">
-				<thead><tr><th>نام سایز</th><th>ابعاد</th><th>حجم</th><th>سهم</th></tr></thead>
-				<tbody>${sizes
-					.map(
-						(sz) => `<tr>
-							<td class="tco-code">${esc(sz.name)}</td>
-							<td>${sz.w && sz.h ? `${faNum(sz.w)}×${faNum(sz.h)}` : '—'}</td>
-							<td><strong>${sz.exists ? formatBytes(sz.bytes) : 'فایل نیست'}</strong></td>
-							<td><span class="tco-mini-bar"><span style="width:${Math.max(2, Math.round(((sz.bytes || 0) / max) * 100))}%"></span></span></td>
-						</tr>`
-					)
+				<thead><tr><th>نقش فایل</th><th>مسیر داخل uploads/</th><th>حجم</th><th>سهم</th></tr></thead>
+				<tbody>${files
+					.map((f) => {
+						const isSide = /موازی/.test(f.role || '');
+						return `<tr class="${isSide ? 'is-sidecar' : ''}">
+							<td>${isSide ? '<span class="tco-pill tco-pill--ok">WebP/AVIF</span>' : ''} ${esc(f.role)}</td>
+							<td class="tco-code tco-path-cell" title="${esc(f.abs)}">${esc(f.rel)}</td>
+							<td><strong>${f.exists ? formatBytes(f.bytes) : 'فایل نیست'}</strong></td>
+							<td><span class="tco-mini-bar"><span style="width:${Math.max(2, Math.round(((f.bytes || 0) / max) * 100))}%"></span></span></td>
+						</tr>`;
+					})
 					.join('')}</tbody>
-			</table>`;
+			</table>
+			<p class="tco-muted" style="margin:8px 2px 0">پوشهٔ این تصویر: <span class="tco-code">wp-content/uploads/${esc((res && res.dir) || '')}/</span></p>`;
 		} catch (e) {
 			const box = document.getElementById('tco-subsize-detail');
-			if (box) box.innerHTML = `<div class="tco-empty-state">تفکیک زیرسایزها خوانده نشد: ${esc(e.message || 'خطای شبکه')}</div>`;
+			if (box) box.innerHTML = `<div class="tco-empty-state">فهرست فایل‌ها خوانده نشد: ${esc(e.message || 'خطای شبکه')}</div>`;
 		}
 	}
 
@@ -2325,6 +2376,17 @@
 			const res = await api('clean_unscaled', { ids: [] });
 			if (res.overview) state.overview = res.overview;
 			toast(`${faNum(res.cleaned)} فایل خام پشت -scaled پاک شد (${formatBytes(res.saved_bytes)} آزاد شد).`);
+			await ensureDataForCurrentView(false);
+			return;
+		}
+
+		if (ev.target.closest('#tco-replace-one')) {
+			const id = Number(ev.target.closest('#tco-replace-one').getAttribute('data-replace-id'));
+			if (!id) return;
+			toast('در حال جایگزینی این تصویر با WebP و اصلاح لینک‌ها…');
+			await runBatchOptimize([id], { replaceMode: true });
+			const modalEl = document.getElementById('tco-modal');
+			if (modalEl) modalEl.hidden = true;
 			await ensureDataForCurrentView(false);
 			return;
 		}
@@ -2700,6 +2762,7 @@
 		'#tco-resume-job',
 		'#tco-discard-job',
 		'#tco-resume-rescan',
+		'#tco-replace-one',
 	].join(',');
 
 	document.addEventListener('click', (ev) => {

@@ -40,6 +40,8 @@
 	}
 
 	// ارقام فارسی برای متن‌های راهنما (هم‌سان با رابط کاربری).
+	// دسترسی تست به یک آیتم (برای سنجش نتیجهٔ جایگزینی در E2E).
+	window.__tcoMockItem = (id) => db.items.find((x) => x.id === Number(id));
 	const faNum = (n) => String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 	const db = {
@@ -863,6 +865,27 @@
 				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
 				overview: computeOverview(),
 			};
+		} else if (op === 'optimize_batch' && req.overrides && req.overrides.replace_mode) {
+			const ids = (req.ids || []).map(Number);
+			const processed = [];
+			let saved = 0;
+			ids.forEach((id) => {
+				const item = db.items.find((x) => x.id === id);
+				if (!item) return;
+				const before = item.main_bytes + item.subsizes_bytes;
+				item.main_bytes = Math.round(item.main_bytes * 0.22);
+				item.subsizes_bytes = Math.round(item.subsizes_bytes * 0.3);
+				item.format = 'WEBP';
+				item.has_webp = true;
+				item.filename = item.filename.replace(/\.(png|jpe?g)$/i, '.webp');
+				item.rel_path = item.rel_path.replace(/\.(png|jpe?g)$/i, '.webp');
+				item.total_bytes = item.main_bytes + item.subsizes_bytes + item.unscaled_bytes;
+				const gained = before - (item.main_bytes + item.subsizes_bytes);
+				saved += Math.max(0, gained);
+				processed.push({ id, ok: true });
+			});
+			db.lifetime.saved_bytes += saved;
+			data = { processed, saved_bytes: saved, overview: computeOverview() };
 		} else if (op === 'inspect_sizes') {
 			const id = Number(req.id);
 			const item = db.items.find((x) => x.id === id);
@@ -880,21 +903,73 @@
 			const chosen = names.slice(0, n);
 			const weights = chosen.map((_, i) => 1 / Math.pow(1.7, i));
 			const sum = weights.reduce((a, b) => a + b, 0);
+			const dir = item.rel_path.replace(/[^/]+$/, '').replace(/\/$/, '');
 			const sizes = chosen.map((c, i) => ({
 				name: c[0],
 				w: c[1],
 				h: c[2],
 				bytes: Math.round((total * weights[i]) / sum),
 				exists: true,
-				rel: `${item.rel_path.replace(/[^/]+$/, '')}${c[0]}.png`,
+				rel: `${dir ? dir + '/' : ''}${c[0]}.png`,
 			}));
+
+			// فهرست فایل‌های واقعی: اصل + هر زیرسایز + نسخهٔ موازی webp.
+			const fmt = (bytes) => {
+				if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' مگابایت';
+				if (bytes >= 1024) return Math.round(bytes / 1024) + ' کیلوبایت';
+				return bytes + ' بایت';
+			};
+			const files = [
+				{
+					role: 'فایل اصلی',
+					rel: item.rel_path,
+					abs: `/home/site/public_html/wp-content/uploads/${item.rel_path}`,
+					bytes: item.main_bytes,
+					exists: true,
+				},
+				...sizes.map((sz) => ({
+					role: `زیرسایز ${sz.name}`,
+					rel: sz.rel,
+					abs: `/home/site/public_html/wp-content/uploads/${sz.rel}`,
+					bytes: sz.bytes,
+					exists: true,
+				})),
+			].map((f) => ({ ...f, _size: fmt(f.bytes) }));
+
+			const sidecars = window.__tcoMockSidecars === false ? [] : [
+				{
+					role: 'نسخهٔ موازی WEBP از فایل اصلی',
+					rel: `${item.rel_path}.webp`,
+					abs: `/home/site/public_html/wp-content/uploads/${item.rel_path}.webp`,
+					bytes: Math.round(item.main_bytes * 0.22),
+					exists: true,
+				},
+				{
+					role: 'نسخهٔ موازی WEBP از زیرسایز thumbnail',
+					rel: `${sizes[0].rel}.webp`,
+					abs: `/home/site/public_html/wp-content/uploads/${sizes[0].rel}.webp`,
+					bytes: Math.round(sizes[0].bytes * 0.24),
+					exists: true,
+				},
+			];
+
+			const all = [...files, ...sidecars];
+			const totalAll = all.reduce((a, f) => a + f.bytes, 0);
+
 			data = {
 				id,
 				main_bytes: item.main_bytes,
 				subsizes_bytes: total,
+				sidecar_bytes: sidecars.reduce((a, f) => a + f.bytes, 0),
+				sidecar_count: sidecars.length,
+				total_bytes: totalAll,
 				count: sizes.length,
+				dir,
 				sizes,
-				registered: 12,
+				files: all,
+				webp_mode: window.__tcoMockWebpMode || 'sidecar',
+				delivery: window.__tcoMockDelivery || 'picture',
+				nextgen: 'webp',
 			};
 		} else if (op === 'clean_unscaled') {
 			let cleaned = 0;
