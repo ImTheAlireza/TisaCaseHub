@@ -1072,38 +1072,6 @@
 					rows = rows.filter((r) => r.usage_status === req.usage);
 				}
 
-				// شبیه‌سازی «بازرسی زندهٔ استفاده»: همان کاری که سرور پیش از نمایش
-				// فهرست «مطلقاً بلااستفاده» می‌کند — هر تصویری که در دیتابیس زنده
-				// مرجع دارد از فهرست بیرون می‌رود و در کاتالوگ «استفاده‌شده» می‌شود.
-				let verifyMeta = null;
-				if (req.usage === 'strict_unused') {
-					const liveIds = new Set((window.__tcoMockLiveUsed || []).map(Number));
-					const reclassified = [];
-					if (liveIds.size) {
-						db.items.forEach((it) => {
-							if (liveIds.has(Number(it.id)) && it.usage_status === 'strict_unused') {
-								it.usage_status = 'used';
-								it.refs_count = 1;
-								it.refs = [{ label: 'تصویر شاخص محصول «قاب آزمون»' }];
-								reclassified.push(it);
-							}
-						});
-						rows = rows.filter((r) => !liveIds.has(Number(r.id)));
-					}
-					const totalChecked = rows.length + reclassified.length;
-					verifyMeta = {
-						checked: totalChecked,
-						total: totalChecked,
-						complete: true,
-						reclassified: reclassified.length,
-						samples: reclassified.slice(0, 5).map((it) => ({
-							id: it.id,
-							filename: it.filename,
-							reasons: ['تصویر شاخص محصول «قاب آزمون»'],
-						})),
-					};
-				}
-
 				if (Number(req.min_bytes) > 0) {
 					rows = rows.filter((r) => r.total_bytes >= Number(req.min_bytes));
 				}
@@ -1119,7 +1087,6 @@
 					per_page: per,
 					pages: Math.max(1, Math.ceil(rows.length / per)),
 					matched_bytes: rows.reduce((s, r) => s + r.total_bytes, 0),
-					verify: verifyMeta,
 				};
 			}
 		} else if (op === 'toggle_pin') {

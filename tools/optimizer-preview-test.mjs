@@ -860,16 +860,15 @@ await flush();
 await new Promise((r) => setTimeout(r, 150));
 assert.ok(window.document.querySelector('#tco-main .tco-pager'), 'فهرست «مطلقاً بلااستفاده» باید نوار صفحه‌بندی داشته باشد');
 
-// ۲۰. فهرست «مطلقاً بلااستفاده» باید قبل از نمایش با دیتابیس زنده مقایسه شود؛
-// هر تصویری که واقعاً استفاده شده باشد نباید در این فهرست دیده شود (گزارش کاربر:
-// «۱۲ حذف شد و ۱۳ مورد چون هنوز استفاده می‌شود حذف نشد»).
+// ۲۰. بررسی «واقعاً بلااستفاده» فقط داخل خودِ اسکن انجام می‌شود و فهرست،
+// بعد از نمایش دوباره چک نمی‌شود (درخواست کاربر). کارت «نتیجهٔ آخرین عملیات»
+// هم باید دلیل دقیق حذف‌نشدن را نشان دهد.
 window.document.querySelector('[data-go-module="images"]').click();
 await flush();
-window.__tcoMockLiveUsed = [];
 window.__tcoMockSeedItems(6, 'strict_unused');
 window.document.querySelector('[data-go-subtab="unused"]').click();
 await flush();
-await new Promise((r) => setTimeout(r, 200));
+await new Promise((r) => setTimeout(r, 250));
 
 const unusedRowIds = () =>
 	[...window.document.querySelectorAll('#tco-main tbody tr[data-row-id]')].map((tr) =>
@@ -877,38 +876,20 @@ const unusedRowIds = () =>
 	);
 const beforeIds = unusedRowIds();
 assert.ok(beforeIds.length >= 3, 'فهرست بلااستفاده باید چند ردیف داشته باشد');
-assert.match(
-	window.document.getElementById('tco-main').textContent,
-	/با دیتابیس زنده مقایسه شدند/,
-	'فهرست بلااستفاده باید شفاف بگوید با دیتابیس زنده بازرسی شده است'
-);
 
-// شبیه‌سازی: دو تصویر از این فهرست، همین حالا در سایت استفاده می‌شوند.
-const nowUsed = beforeIds.slice(0, 2);
-window.__tcoMockLiveUsed = nowUsed;
-// رفتن به دستهٔ دیگر و برگشتن = بارگذاری تازه از سرور (همان کاری که کاربر می‌کند).
-window.document.querySelector('[data-unused-bucket="draft_only"]').click();
-await flush();
-window.document.querySelector('[data-unused-bucket="strict_unused"]').click();
-await flush();
-await new Promise((r) => setTimeout(r, 250));
-
-const afterIds = unusedRowIds();
-assert.equal(
-	afterIds.length,
-	beforeIds.length - 2,
-	'تصاویری که در دیتابیس زنده استفاده می‌شوند باید از فهرست بلااستفاده حذف شوند'
+const unusedText = window.document.getElementById('tco-main').textContent;
+assert.ok(
+	!/بازرسی زنده/.test(unusedText),
+	'فهرست نباید بعد از باز شدن دوباره بازرسی زنده راه بیندازد (درخواست کاربر)'
 );
-nowUsed.forEach((id) => {
-	assert.ok(!afterIds.includes(id), `تصویر #${id} که استفاده می‌شود نباید در فهرست بلااستفاده بماند`);
-});
-const verifyText = window.document.getElementById('tco-main').textContent;
-assert.match(verifyText, /۲ تصویر از این فهرست خارج شد/, 'تعداد موارد خارج‌شده باید صریح گفته شود');
-assert.match(verifyText, /تصویر شاخص محصول/, 'دلیل استفاده‌شدن باید به فارسی نمایش داده شود');
+assert.ok(
+	!/از این فهرست خارج شد/.test(unusedText),
+	'پیام «از این فهرست خارج شد» نباید در فهرست نمایش داده شود'
+);
 
 // کارت «نتیجهٔ آخرین عملیات»: بعد از یک اجرای نیمه‌موفق باید دقیقاً بگوید
 // کدام مورد و چرا حذف نشد (نه جملهٔ مبهم «چون هنوز استفاده می‌شود»).
-const twoIds = unusedRowIds().slice(0, 2);
+const twoIds = beforeIds.slice(0, 2);
 window.__tcoMockBlockedIds = [twoIds[0]];
 window.__tcoMockTickMax = 50;
 window.__tcoMockVerifyMax = 50;
@@ -931,6 +912,5 @@ assert.match(afterRunText, /تصویر شاخص محصول/, 'دلیل دقیق 
 window.__tcoMockBlockedIds = [];
 window.__tcoMockVerifyMax = 0;
 window.__tcoMockTickMax = 6;
-window.__tcoMockLiveUsed = [];
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۰ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» و «دقت فهرست بلااستفاده با بازرسی زنده») با موفقیت اجرا شدند!');
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۰ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» و «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف») با موفقیت اجرا شدند!');

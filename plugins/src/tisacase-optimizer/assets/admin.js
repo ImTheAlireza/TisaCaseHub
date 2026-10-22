@@ -138,8 +138,6 @@
 		},
 		seoFilter: 'missing_alt',
 		seoPage: 1,
-		// نتیجهٔ بازرسی زندهٔ فهرست «بلااستفاده» (سرور آن را برمی‌گرداند).
-		unusedVerify: null,
 		// خلاصهٔ آخرین عملیات حذف/فشرده‌سازی برای نمایش شفاف «چه شد و چرا».
 		lastRun: null,
 		// کار نیمه‌تمامِ ذخیره‌شده در سرور (برای کارت «ادامه»).
@@ -1053,22 +1051,13 @@
 		const selCount = isDiskOrphans ? state.selectedPaths.size : state.selectedIds.size;
 		const sweepArm = state.armedKey === 'sweep-all-unused';
 
-		const v = state.unusedVerify;
-		const verifyBanner = v
-			? `<div class="tco-hint ${v.reclassified > 0 ? 'tco-hint--warn' : ''}">
-					${
-						v.reclassified > 0
-							? `<strong>${faNum(v.reclassified)} تصویر از این فهرست خارج شد.</strong> بازرسی زنده نشان داد همین حالا در سایت استفاده می‌شوند (تصویر شاخص، گالری، متن یا تنظیمات)؛ پس دیگر «بلااستفاده» نیستند و در فهرست نمی‌آیند.`
-							: '✓ همهٔ ردیف‌های این فهرست همین حالا با دیتابیس زنده مقایسه شدند و هیچ‌کدام در سایت استفاده نمی‌شوند.'
-					}
-					${v.complete ? '' : ` <span class="tco-muted">(بازرسی زنده ادامه دارد: ${faNum(v.checked)} از ${faNum(v.total)})</span>`}
-					${
-						(v.samples || []).length
-							? `<ul class="tco-reason-list">${(v.samples || [])
-									.map((x) => `<li><span class="tco-code">${esc(x.filename)}</span> — ${esc((x.reasons || []).join(' · '))}</li>`)
-									.join('')}</ul>`
-							: ''
-					}
+		// یادآوری مهربان: اگر اسکن خیلی قدیمی باشد، نتیجه ممکن است با امروز سایت
+		// فرق کند. بررسی واقعی داخل خودِ اسکن انجام می‌شود («اسکن مجدد» را بزنید).
+		const scanAge = Number((state.overview && state.overview.scan_age_hours) || 0);
+		const scanHint = scanAge >= 72
+			? `<div class="tco-hint">
+					آخرین اسکن ${faNum(Math.round(scanAge / 24))} روز پیش انجام شده است. برای نتیجهٔ قطعی همین حالا،
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-rescan-unused">اسکن مجدد</button>
 				</div>`
 			: '';
 
@@ -1102,7 +1091,7 @@
 					</button>
 				</div>
 
-				${u.usage === 'strict_unused' ? verifyBanner : ''}
+				${u.usage === 'strict_unused' ? scanHint : ''}
 
 				<div class="tco-bulkbar">
 					<div>
@@ -1443,48 +1432,6 @@
 			})
 			.catch((err) => toast(`ذخیرهٔ «تعداد در هر صفحه» انجام نشد: ${err.message || 'خطای نامشخص'}`, 'error'));
 		await ensureDataForCurrentView(false);
-	}
-
-	/**
-	 * ادامهٔ بازرسی زندهٔ فهرست بلااستفاده تا پایان (با سقف امنیت‌بخش).
-	 *
-	 * سرور در هر درخواست بخشی از کاندیدها را با دیتابیس زنده مقایسه می‌کند و
-	 * نتیجه را کش می‌کند؛ این تابع همان مسیر را ادامه می‌دهد و در نهایت یک‌بار
-	 * فهرست اصلاح‌شده را نشان می‌دهد. هیچ درخواستی بی‌پاسخ نمی‌ماند و پیشرفت
-	 * به‌صورت «X از Y» دیده می‌شود.
-	 */
-	async function continueUnusedVerify() {
-		let guard = 0;
-		while (
-			state.subtab === 'unused' &&
-			state.unusedFilter.usage === 'strict_unused' &&
-			state.unusedVerify &&
-			!state.unusedVerify.complete &&
-			guard < 20
-		) {
-			guard += 1;
-			busyProgress(
-				100,
-				`بازرسی زندهٔ استفاده: ${faNum(state.unusedVerify.checked)} از ${faNum(state.unusedVerify.total)} بررسی شد…`
-			);
-			try {
-				const res = await api(
-					'query_media',
-					Object.assign({}, state.unusedFilter, { per_page: state.perPage })
-				);
-				const prevChecked = state.unusedVerify ? state.unusedVerify.checked : 0;
-				state.media = res;
-				state.unusedVerify = res && res.verify ? res.verify : null;
-				state.overview = res && res.overview ? res.overview : state.overview;
-				render();
-				// اگر پیشرفتی حاصل نشد، برای جلوگیری از حلقهٔ بی‌پایان متوقف می‌شویم.
-				if (state.unusedVerify && state.unusedVerify.checked <= prevChecked) break;
-			} catch (err) {
-				toast(`ادامهٔ بازرسی زنده ممکن نشد: ${err.message || 'خطای شبکه'}`, 'error');
-				break;
-			}
-		}
-		busyEnd();
 	}
 
 	/**
@@ -2220,13 +2167,7 @@
 					state.media = await api('query_media', Object.assign({}, state.explorerFilter, { per_page: state.perPage }));
 				} else if (state.subtab === 'unused') {
 					state.media = await api('query_media', Object.assign({}, state.unusedFilter, { per_page: state.perPage }));
-					state.unusedVerify = state.media && state.media.verify ? state.media.verify : null;
-					render();
-					// اگر بازرسی زنده در سقف زمانی این درخواست تمام نشد، بی‌صدا ادامه
-					// می‌دهیم تا بالاخره هیچ تصویر «استفاده‌شده»یی در فهرست نماند.
-					if (state.unusedVerify && !state.unusedVerify.complete) {
-						await continueUnusedVerify();
-					}
+
 				} else if (state.subtab === 'restore') {
 					state.vault = await api('get_vault');
 				} else if (state.subtab === 'duplicates') {
@@ -3287,6 +3228,11 @@
 			return;
 		}
 
+		if (ev.target.closest('#tco-rescan-unused')) {
+			await ensureDataForCurrentView(true);
+			return;
+		}
+
 		if (ev.target.closest('#tco-dismiss-run')) {
 			state.lastRun = null;
 			render();
@@ -3606,6 +3552,7 @@
 		'[data-page-delta]',
 		'[data-page-edge]',
 		'#tco-dismiss-run',
+		'#tco-rescan-unused',
 		'[data-page-go]',
 		'[data-save-seo]',
 		'[data-modal-close]',

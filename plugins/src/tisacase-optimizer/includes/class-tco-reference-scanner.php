@@ -459,6 +459,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					} else {
 						self::run_stage_hash_dups( $state, $basedir, $started_tick, $budget );
 					}
+				} elseif ( 'live_reconcile' === $stage ) {
+					if ( ! empty( $state['fast_finish'] ) ) {
+						// «نمایش فوری» عمداً سبک است و اجازهٔ حذف هم نمی‌دهد؛
+						// پس بازبینی نهایی (که برای حذف ایمن است) اجرا نمی‌شود.
+						$state['stage'] = 'finalize';
+					} else {
+						self::run_stage_live_reconcile( $state, $started_tick, $budget );
+					}
 				} elseif ( 'finalize' === $stage ) {
 					$catalog = self::finalize_catalog( $state, $baseurl );
 					self::write_persisted_catalog( $catalog );
@@ -528,6 +536,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			if ( ! isset( $state['skipped_stages'] ) || ! is_array( $state['skipped_stages'] ) ) {
 				$state['skipped_stages'] = array();
 			}
+			// وضعیت اسکن قدیمی (قبل از افزودن بازبینی نهایی) باید سازگار شود.
+			if ( ! isset( $state['reconcile_queue'] ) || ! is_array( $state['reconcile_queue'] ) ) {
+				$state['reconcile_queue'] = array();
+			}
+			if ( ! isset( $state['reconcile_index'] ) ) {
+				$state['reconcile_index'] = 0;
+			}
+			if ( ! isset( $state['reconcile_done'] ) ) {
+				$state['reconcile_done'] = false;
+			}
 
 			return $state;
 		}
@@ -595,6 +613,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				'inodes'          => 0,
 				'disk_bytes'      => 0,
 				'orphans'         => array(),
+				// بازبینی نهایی «واقعاً بلااستفاده؟» داخل خودِ اسکن (نه بعد از نمایش فهرست).
+				'reconcile_queue' => array(),
+				'reconcile_index' => 0,
+				'reconcile_done'  => false,
 			);
 		}
 
@@ -1426,7 +1448,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				}
 				$state['size_buckets'] = array();
 				$state['hash_groups']  = $candidates;
-				$state['stage']        = ! empty( $candidates ) ? 'hash_dups' : 'finalize';
+				$state['stage']        = ! empty( $candidates ) ? 'hash_dups' : 'live_reconcile';
 			}
 		}
 
@@ -1705,6 +1727,91 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @param float               $budget       سقف زمانی.
 		 * @return void
 		 */
+		/**
+		 * بازبینی نهایی داخل خودِ اسکن: «این تصاویر بدون مرجع، واقعاً بلااستفاده‌اند؟»
+		 *
+		 * چرا؟ گزارش کاربر: «همون اسکن مجدد که می‌زنم خودش باید چک کنه که واقعاً
+		 * بلااستفاده هست یا نه، نه اینکه بعد از باز کردن فهرست تازه دوباره چک شود.»
+		 * پس همهٔ تصاویری که اسکن هیچ مرجعی برایشان پیدا نکرده، پیش از نهایی‌شدن
+		 * کاتالوگ یک‌بار با دیتابیس زنده مقایسه می‌شوند (تصویر شاخص، گالری، متای
+		 * سئو/المنتور، دسته، توضیحات، دیدگاه، تنظیمات و کاربر). هر کدام مرجع
+		 * داشته باشد در همان کاتالوگ «استفاده‌شده» ثبت می‌شود؛ نتیجه: فهرستی که
+		 * می‌بینید همان چیزی است که حذف هم قبول دارد.
+		 *
+		 * هزینه: بسته‌های ۲۵تایی، حداکثر ۱۰۰ شناسه در هر تیک و با احترام به سقف
+		 * زمانی اسکن؛ هیچ درخواست سنگینی به سایت تحمیل نمی‌شود.
+		 *
+		 * @param array<string,mixed> $state        وضعیت اسکن.
+		 * @param float               $started_tick زمان شروع تیک.
+		 * @param float               $budget       سقف زمانی تیک.
+		 * @return void
+		 */
+		private static function run_stage_live_reconcile( array &$state, $started_tick, $budget ) {
+			if ( empty( $state['reconcile_queue'] ) && empty( $state['reconcile_done'] ) ) {
+				$no_refs = array();
+				foreach ( array_keys( (array) $state['raw_atts'] ) as $aid ) {
+					$aid  = (int) $aid;
+					$refs = isset( $state['refs'][ $aid ] ) ? (array) $state['refs'][ $aid ] : array();
+					$has  = ! empty( $refs['active'] ) || ! empty( $refs['draft'] );
+					if ( $has ) {
+						continue;
+					}
+					// فایل‌های ناموجود/شکسته کاری برای حذف ندارند؛ بازبینی لازم نیست.
+					if ( isset( $state['items'][ $aid ]['exists'] ) && empty( $state['items'][ $aid ]['exists'] ) ) {
+						continue;
+					}
+					$no_refs[] = $aid;
+				}
+				$state['reconcile_queue'] = array_values( array_unique( $no_refs ) );
+				$state['reconcile_index'] = 0;
+			}
+
+			$queue = (array) $state['reconcile_queue'];
+			$total = count( $queue );
+
+			while ( ( microtime( true ) - $started_tick ) < $budget ) {
+				$offset = (int) $state['reconcile_index'];
+				if ( $offset >= $total ) {
+					$state['reconcile_done'] = true;
+					$state['stage']          = 'finalize';
+					return;
+				}
+
+				$chunk = array_slice( $queue, $offset, 25 );
+				if ( empty( $chunk ) ) {
+					$state['reconcile_done'] = true;
+					$state['stage']          = 'finalize';
+					return;
+				}
+
+				$live = array();
+				try {
+					$live = TisaCase_Optimizer_Usage::live_verified_refs( $chunk );
+				} catch ( Throwable $e ) {
+					unset( $e );
+					$live = array();
+				}
+
+				foreach ( $chunk as $aid ) {
+					if ( empty( $live[ $aid ] ) ) {
+						continue;
+					}
+					foreach ( array_slice( (array) $live[ $aid ], 0, 3 ) as $reason ) {
+						self::record_ref(
+							$state,
+							(int) $aid,
+							'active',
+							'بازبینی نهایی اسکن — ' . (string) $reason,
+							0
+						);
+					}
+				}
+
+				$state['reconcile_index'] = $offset + count( $chunk );
+				self::mark_dirty( $state, 'refs' );
+			}
+		}
+
 		private static function run_stage_hash_dups( array &$state, $basedir, $started_tick, $budget ) {
 			self::mark_dirty( $state, 'hash' );
 			self::mark_dirty( $state, 'items' );
@@ -1733,7 +1840,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 			if ( $state['cursor_hash_idx'] >= $total_h ) {
 				$state['hash_groups'] = array();
-				$state['stage']       = 'finalize';
+				$state['stage']       = 'live_reconcile';
 			}
 		}
 
@@ -2231,6 +2338,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 						: 'گام ۴ از ۵: محاسبهٔ تک‌گذرهٔ حجم واقعی دیسک و زیرسایزها…',
 					'detail_label' => sprintf( '%d از %d تصویر تطبیق داده شد (%d فایل روی دیسک)', (int) $state['inspected_atts'], (int) $state['total_atts'], (int) $state['inodes'] ),
 					'percent'      => 65 + (int) round( $ratio * 27 ),
+					'can_skip'     => true,
+					'elapsed_sec'  => $elapsed,
+				);
+			}
+
+			if ( 'live_reconcile' === $stage ) {
+				$q_total = max( 1, count( (array) $state['reconcile_queue'] ) );
+				$q_done  = min( $q_total, (int) $state['reconcile_index'] );
+				return array(
+					'done'         => false,
+					'stage'        => $stage,
+					'stage_num'    => 4,
+					'stage_label'  => 'گام ۴ از ۵: بازبینی نهایی «واقعاً بلااستفاده است؟» روی دیتابیس زنده…',
+					'detail_label' => sprintf( '%d از %d تصویر بدون مرجع بازبینی شد', $q_done, $q_total ),
+					'percent'      => 92 + (int) round( ( $q_done / $q_total ) * 3 ),
 					'can_skip'     => true,
 					'elapsed_sec'  => $elapsed,
 				);

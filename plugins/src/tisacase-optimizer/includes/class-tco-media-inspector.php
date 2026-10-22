@@ -29,9 +29,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 		 *
 		 * @return void
 		 */
-		/** کلید کش بازرسی زندهٔ فهرست بلااستفاده. */
-		const LIVE_PROBE_KEY = 'tco_live_usage_probe_v1';
-
 		public static function flush_runtime_cache() {
 			self::$catalog_cache = null;
 		}
@@ -453,6 +450,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$overview = array(
 				'needs_scan'     => false,
 				'scan_built_at'  => isset( $index['built_at'] ) ? $index['built_at'] : '',
+				// سن کاتالوگ (ساعت) — برای یادآوری مهربان «اسکن مجدد» وقتی قدیمی شده.
+				'scan_age_hours' => isset( $index['timestamp'] )
+					? (int) round( max( 0, ( microtime( true ) - (float) $index['timestamp'] ) / HOUR_IN_SECONDS ) )
+					: null,
 				'scan_ms'        => isset( $index['duration_ms'] ) ? (int) $index['duration_ms'] : 0,
 				'total_images'   => count( $items ),
 				'total_inodes'   => max( count( $items ), isset( $index['total_inodes'] ) ? (int) $index['total_inodes'] : 0 ),
@@ -640,190 +641,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 		 * @param array<string,mixed> $args پارامترهای کوئری.
 		 * @return array<string,mixed>
 		 */
-		/**
-		 * بازرسی زندهٔ فهرست «مطلقاً بلااستفاده».
-		 *
-		 * چرا لازم است؟ فهرست از کاتالوگ اسکن ساخته می‌شود، ولی حذف پیش از هر
-		 * کار یک بازرسی زندهٔ دیتابیس انجام می‌دهد. اگر بین این دو اختلاف باشد،
-		 * کاربر تصویری را در «بلااستفاده» می‌بیند که هنگام حذف با پیام «هنوز در
-		 * سایت استفاده می‌شود» رد می‌شود (گزارش دقیق کاربر: ۱۲ حذف شد و ۱۳ مورد
-		 * رد شد). این تابع همان بازرسی زنده را *قبل از نمایش* اجرا می‌کند تا
-		 * فهرست و نتیجهٔ حذف همیشه یکی باشند.
-		 *
-		 * هزینه: چانک‌های کوچک شناسه، سقف زمانی و کش یک‌ساعته؛ هیچ اسکن کامل
-		 * یا پیمایش سنگینی اجرا نمی‌شود.
-		 *
-		 * @param array<int,array<string,mixed>> $items کاندیدهای strict_unused (مرتب‌شده).
-		 * @param int                            $limit حداکثر بررسی تازه در این درخواست.
-		 * @return array<string,mixed> اطلاعات بازرسی + فهرست اصلاح‌شده.
-		 */
-		private static function probe_live_usage( array $items, $limit = 120 ) {
-			$all_ids = array();
-			foreach ( $items as $it ) {
-				$all_ids[] = (int) $it['id'];
-			}
-
-			$cache = get_transient( self::LIVE_PROBE_KEY );
-			if ( ! is_array( $cache ) ) {
-				$cache = array();
-			}
-
-			$ttl    = max( 60, (int) apply_filters( 'tisacase_optimizer_live_probe_ttl', HOUR_IN_SECONDS ) );
-			$now    = time();
-			$limit  = max( 10, min( 500, (int) $limit ) );
-			$budget = (float) apply_filters( 'tisacase_optimizer_live_probe_budget', 1.2 );
-			$start  = microtime( true );
-
-			$pending = array();
-			foreach ( $all_ids as $id ) {
-				if ( isset( $cache[ $id ] ) && ( $now - (int) $cache[ $id ]['t'] ) < $ttl ) {
-					continue;
-				}
-				$pending[] = $id;
-			}
-
-			$checked_now = 0;
-			$complete    = true;
-
-			foreach ( array_chunk( $pending, 25 ) as $chunk ) {
-				if ( $checked_now >= $limit || ( $checked_now > 0 && ( microtime( true ) - $start ) > $budget ) ) {
-					$complete = false;
-					break;
-				}
-				$live = TisaCase_Optimizer_Usage::live_verified_refs( $chunk );
-				foreach ( $chunk as $id ) {
-					$cache[ $id ] = array(
-						't' => $now,
-						'r' => isset( $live[ $id ] ) ? array_slice( (array) $live[ $id ], 0, 3 ) : array(),
-					);
-				}
-				$checked_now += count( $chunk );
-			}
-
-			// پاک‌سازی کش قدیمی و بزرگ‌نشدن بی‌رویهٔ options.
-			if ( count( $cache ) > 5000 || 0 === ( $now % 20 ) ) {
-				foreach ( $cache as $cid => $crow ) {
-					if ( ! is_array( $crow ) || ( $now - (int) ( isset( $crow['t'] ) ? $crow['t'] : 0 ) ) > $ttl ) {
-						unset( $cache[ $cid ] );
-					}
-				}
-			}
-			if ( ! empty( $pending ) ) {
-				set_transient( self::LIVE_PROBE_KEY, $cache, $ttl );
-			}
-
-			$reclassified = array();
-			$checked_ids  = array();
-			foreach ( $all_ids as $id ) {
-				if ( isset( $cache[ $id ] ) && ( $now - (int) $cache[ $id ]['t'] ) < $ttl ) {
-					$checked_ids[ $id ] = true;
-					if ( ! empty( $cache[ $id ]['r'] ) ) {
-						$reclassified[ $id ] = (array) $cache[ $id ]['r'];
-					}
-				}
-			}
-
-			if ( ! empty( $reclassified ) ) {
-				self::apply_usage_corrections( $reclassified );
-			}
-
-			return array(
-				'reclassified' => $reclassified,
-				'checked'      => count( $checked_ids ),
-				'total'        => count( $all_ids ),
-				'complete'     => $complete && count( $checked_ids ) >= count( $all_ids ),
-				'probed_now'   => $checked_now,
-			);
-		}
-
-		/**
-		 * ثبت اصلاح «این تصویر استفاده می‌شود» در کاتالوگ، تا فهرست‌ها، شمارنده‌ها
-		 * و «قدم بعدی» همه با یک حقیقت کار کنند و دیگر در «بلااستفاده» نیاید.
-		 *
-		 * @param array<int,string[]> $reasons_map شناسه => دلایل فارسی.
-		 * @return int تعداد موارد اصلاح‌شده.
-		 */
-		public static function apply_usage_corrections( array $reasons_map ) {
-			if ( empty( $reasons_map ) ) {
-				return 0;
-			}
-			$raw = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
-			if ( ! is_array( $raw ) || empty( $raw['items'] ) ) {
-				return 0;
-			}
-
-			$pinned = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
-			$fixed  = 0;
-			foreach ( $reasons_map as $aid => $reasons ) {
-				$aid = absint( $aid );
-				if ( $aid <= 0 ) {
-					continue;
-				}
-				$key = isset( $raw['items'][ $aid ] ) ? $aid : ( isset( $raw['items'][ (string) $aid ] ) ? (string) $aid : null );
-				if ( null === $key ) {
-					continue;
-				}
-				$item  = (array) $raw['items'][ $key ];
-				$refs  = isset( $item['refs'] ) && is_array( $item['refs'] ) ? $item['refs'] : array();
-				$known = array();
-				foreach ( $refs as $r ) {
-					$known[] = isset( $r['label'] ) ? (string) $r['label'] : '';
-				}
-				foreach ( (array) $reasons as $reason ) {
-					$reason = trim( (string) $reason );
-					if ( '' === $reason || in_array( $reason, $known, true ) ) {
-						continue;
-					}
-					$refs[] = array(
-						'label'   => $reason,
-						'post_id' => 0,
-						'bucket'  => 'active',
-					);
-					$known[] = $reason;
-				}
-				$raw['items'][ $key ]['refs']          = array_slice( $refs, 0, 8 );
-				$raw['items'][ $key ]['refs_count']    = max( 1, count( $refs ) );
-				$raw['items'][ $key ]['usage_status']  = isset( $pinned[ $aid ] ) ? 'pinned' : 'used';
-				$raw['items'][ $key ]['live_probed_at'] = time();
-				++$fixed;
-			}
-
-			if ( $fixed > 0 ) {
-				TisaCase_Optimizer_Reference_Scanner::write_persisted_catalog( $raw );
-				self::flush_runtime_cache();
-			}
-
-			return $fixed;
-		}
-
-		/**
-		 * نمونهٔ خوانا از تصاویری که از «بلااستفاده» بیرون رفتند (برای نمایش به کاربر).
-		 *
-		 * @param array<int,string[]> $reasons_map شناسه => دلایل.
-		 * @return array<int,array<string,mixed>>
-		 */
-		private static function sample_corrections( array $reasons_map ) {
-			if ( empty( $reasons_map ) ) {
-				return array();
-			}
-			$cat   = self::build_catalog( false );
-			$items = isset( $cat['items'] ) ? $cat['items'] : array();
-			$out   = array();
-			foreach ( $reasons_map as $aid => $reasons ) {
-				$aid  = absint( $aid );
-				$item = isset( $items[ $aid ] ) ? $items[ $aid ] : array();
-				$out[] = array(
-					'id'       => $aid,
-					'filename' => isset( $item['filename'] ) ? (string) $item['filename'] : '#' . $aid,
-					'reasons'  => array_slice( array_values( (array) $reasons ), 0, 3 ),
-				);
-				if ( count( $out ) >= 5 ) {
-					break;
-				}
-			}
-			return $out;
-		}
-
 		public static function query_items( array $args ) {
 			$cat      = self::build_catalog( false );
 			$search   = isset( $args['search'] ) ? mb_strtolower( trim( sanitize_text_field( (string) $args['search'] ) ) ) : '';
@@ -928,41 +745,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				}
 			);
 
-			// بازرسی زندهٔ «بلااستفاده»ها: هر تصویری که همین حالا در دیتابیس جایی
-			// استفاده شده باشد از این فهرست بیرون می‌رود و در کاتالوگ «استفاده‌شده»
-			// ثبت می‌شود؛ پس فهرست و نتیجهٔ حذف هرگز دو حرف متفاوت نمی‌زنند.
-			$live_verify = null;
-			if ( 'strict_unused' === $usage && ! empty( $matched ) ) {
-				$probe = self::probe_live_usage( $matched );
-				if ( ! empty( $probe['reclassified'] ) ) {
-					$rec = $probe['reclassified'];
-					$matched = array_values(
-						array_filter(
-							$matched,
-							static function ( $m ) use ( $rec ) {
-								return ! isset( $rec[ (int) $m['id'] ] );
-							}
-						)
-					);
-				}
-				$live_verify = array(
-					'checked'      => (int) $probe['checked'],
-					'total'        => (int) $probe['total'],
-					'complete'     => (bool) $probe['complete'],
-					'reclassified' => count( (array) $probe['reclassified'] ),
-					'samples'      => array_slice(
-						array_map(
-							static function ( $row ) {
-								return $row;
-							},
-							self::sample_corrections( (array) $probe['reclassified'] )
-						),
-						0,
-						5
-					),
-				);
-			}
-
 			$total_bytes = 0;
 			$all_ids     = array();
 			foreach ( $matched as $m ) {
@@ -981,7 +763,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				'pages'         => max( 1, (int) ceil( $total / $per_page ) ),
 				'per_page'      => (int) $per_page,
 				'rows'          => array_slice( $matched, ( $page - 1 ) * $per_page, $per_page ),
-				'verify'        => $live_verify,
 			);
 		}
 	}
