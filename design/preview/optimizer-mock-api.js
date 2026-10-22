@@ -683,6 +683,9 @@
 				remaining_ids: [],
 				remaining_paths: [],
 				saved_bytes: saved,
+				blocked: {},
+				blocked_paths: {},
+				blocked_count: 0,
 				done: true,
 				overview: computeOverview(),
 			};

@@ -479,9 +479,23 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			$done_paths  = array();
 			$saved_bytes = 0;
 
+			// راستی‌آزمایی نهایی «آیا این مورد واقعاً هیچ‌جا استفاده نشده است؟» پیش از هر حذف/قرنطینه.
+			// حتی اگر مرورگر لیست دستکاری‌شده بفرستد، عکسِ در حال استفاده هرگز حذف نمی‌شود.
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$allow_draft   = ! empty( $_POST['allow_draft_only'] );
+			$verify        = TisaCase_Optimizer_Usage::verify_batch( $ids, $rel_paths, $allow_draft );
+			$allow_ids     = array_fill_keys( array_map( 'absint', $verify['allow_ids'] ), true );
+			$allow_paths   = array_fill_keys( $verify['allow_paths'], true );
+			$blocked_ids   = $verify['blocked'];
+			$blocked_paths = $verify['blocked_paths'];
+
 			foreach ( $ids as $aid ) {
 				if ( isset( $pinned_map[ $aid ] ) ) {
 					$done_ids[] = $aid;
+					continue;
+				}
+				if ( ! isset( $allow_ids[ $aid ] ) ) {
+					// به‌دلیل داشتن مرجع واقعی در سایت حذف نمی‌شود.
 					continue;
 				}
 				if ( 'permanent' === $mode ) {
@@ -506,6 +520,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			foreach ( $rel_paths as $rp ) {
 				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
 					break;
+				}
+				if ( ! isset( $allow_paths[ $rp ] ) ) {
+					// مسیر در محتوای سایت ذکر شده است؛ حذف نمی‌شود.
+					continue;
 				}
 				if ( 'permanent' === $mode ) {
 					$uploads = wp_upload_dir();
@@ -539,11 +557,17 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				$total_n = isset( $_POST['summary_count'] ) ? max( $count_done, absint( $_POST['summary_count'] ) ) : $count_done;
 				// phpcs:ignore WordPress.Security.NonceVerification.Missing
 				$total_b = isset( $_POST['summary_bytes'] ) ? max( $saved_bytes, absint( $_POST['summary_bytes'] ) ) : $saved_bytes;
+				$blocked_n = count( $blocked_ids ) + count( $blocked_paths );
+				$log_msg   = 'permanent' === $mode
+					? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
+					: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)', 'tisacase-optimizer' );
+				if ( $blocked_n > 0 ) {
+					/* translators: %d: number of skipped items. */
+					$log_msg .= ' — ' . sprintf( __( '%d مورد به‌دلیل استفادهٔ واقعی در سایت حذف نشد', 'tisacase-optimizer' ), $blocked_n );
+				}
 				TisaCase_Optimizer_Session::log(
 					'permanent' === $mode ? 'delete_permanent' : 'move_quarantine',
-					'permanent' === $mode
-						? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
-						: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)', 'tisacase-optimizer' ),
+					$log_msg,
 					$total_n,
 					$total_b,
 					'',
@@ -554,12 +578,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 
 			self::ok(
 				array(
-					'batch_id'    => $batch_id,
-					'done_ids'    => $done_ids,
-					'done_paths'  => $done_paths,
-					'saved_bytes' => $saved_bytes,
-					'mode'        => $mode,
-					'overview'    => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+					'batch_id'      => $batch_id,
+					'done_ids'      => $done_ids,
+					'done_paths'    => $done_paths,
+					'saved_bytes'   => $saved_bytes,
+					'blocked'       => $blocked_ids,
+					'blocked_paths' => $blocked_paths,
+					'blocked_count' => count( $blocked_ids ) + count( $blocked_paths ),
+					'mode'          => $mode,
+					'overview'      => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
 						? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
 						: null,
 				)

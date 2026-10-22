@@ -62,15 +62,27 @@ if ( ! class_exists( 'TisaCase_Optimizer_CLI' ) ) {
 					if ( ! isset( $assoc_args['yes'] ) ) {
 						\WP_CLI::confirm( sprintf( 'آیا %d تصویر کاملاً بدون استفاده با حالت «%s» پردازش شوند؟', count( $ids ), $mode ) );
 					}
-					$saved = 0;
+					$saved   = 0;
+					$done    = 0;
+					$blocked = 0;
 					foreach ( $ids as $aid ) {
+						// راستی‌آزمایی زندهٔ استفاده پیش از حذف (همان محافظ رابط مدیریتی).
+						$check = TisaCase_Optimizer_Usage::verify_attachment( $aid, false );
+						if ( ! empty( $check['used'] ) ) {
+							++$blocked;
+							\WP_CLI::log( sprintf( 'رد شد #%d — %s', $aid, implode( ' | ', (array) $check['reasons'] ) ) );
+							continue;
+						}
 						$res    = ( 'permanent' === $mode )
 							? TisaCase_Optimizer_Vault::delete_attachment_permanently( $aid )
 							: TisaCase_Optimizer_Vault::quarantine_attachment( $aid, 'unused' );
-						$saved += ! is_wp_error( $res ) ? ( isset( $res['saved_bytes'] ) ? (int) $res['saved_bytes'] : (int) $res['total_bytes'] ) : 0;
+						if ( ! is_wp_error( $res ) ) {
+							++$done;
+							$saved += isset( $res['saved_bytes'] ) ? (int) $res['saved_bytes'] : (int) $res['total_bytes'];
+						}
 					}
 					TisaCase_Optimizer_Reference_Scanner::invalidate_cache();
-					\WP_CLI::success( sprintf( '%d تصویر پردازش شد (%s آزاد شد).', count( $ids ), size_format( $saved ) ) );
+					\WP_CLI::success( sprintf( '%d تصویر پردازش شد (%s آزاد شد). %d مورد به‌دلیل استفادهٔ واقعی رد شد.', $done, size_format( $saved ), $blocked ) );
 					break;
 
 				case 'clean-unscaled':

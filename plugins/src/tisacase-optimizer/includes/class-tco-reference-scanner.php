@@ -22,8 +22,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 	 */
 	final class TisaCase_Optimizer_Reference_Scanner {
 
-		const CATALOG_FILE = 'catalog-v2.json';
-		const STATE_FILE   = 'scan-state-v3.json';
+		const CATALOG_FILE = 'catalog-v3.json';
+		const STATE_FILE   = 'scan-state-v4.json';
 		const INDEX_TTL    = 3600;
 		const STEP_BUDGET  = 4.20;
 
@@ -128,6 +128,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			$files   = array(
 				self::catalog_path(),
 				self::state_path(),
+				$idx_dir . '/catalog-v2.json',
+				$idx_dir . '/scan-state-v3.json',
 				$idx_dir . '/scan-state-v2.ser',
 				$idx_dir . '/reference-index-v1.json',
 			);
@@ -194,6 +196,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 			if ( null === $state ) {
 				$state = self::create_initial_state();
+			} else {
+				$state = self::normalize_state( $state );
 			}
 
 			if ( $fast_finish ) {
@@ -226,6 +230,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 						$state['stage'] = 'dir_sweep';
 					} else {
 						self::run_stage_meta_refs( $state, $started_tick, $budget );
+					}
+				} elseif ( 'id_list_refs' === $stage ) {
+					if ( ! empty( $state['fast_finish'] ) ) {
+						self::prepare_dir_sweep_queue( $state );
+					} else {
+						self::run_stage_id_list_refs( $state, $started_tick, $budget );
 					}
 				} elseif ( 'dir_sweep' === $stage ) {
 					self::run_stage_dir_sweep( $state, $basedir, $baseurl, $started_tick, $budget );
@@ -270,6 +280,35 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		}
 
 		/**
+		 * تکمیل کلیدهای جدید در وضعیتِ ذخیره‌شدهٔ نسخه‌های قبلی (مهاجرت بی‌خطر).
+		 *
+		 * @param array<string,mixed> $state وضعیت خوانده‌شده از دیسک.
+		 * @return array<string,mixed>
+		 */
+		private static function normalize_state( array $state ) {
+			if ( ! isset( $state['ref_url_hash'] ) || ! is_array( $state['ref_url_hash'] ) ) {
+				$state['ref_url_hash'] = array();
+			}
+			if ( ! isset( $state['refs_truncated'] ) ) {
+				$state['refs_truncated'] = 0;
+			}
+			if ( ! isset( $state['orphans_skipped'] ) ) {
+				$state['orphans_skipped'] = 0;
+			}
+			if ( ! array_key_exists( 'id_list_done', $state ) ) {
+				$state['id_list_done'] = false;
+			}
+			if ( ! isset( $state['cursor_id_list'] ) || (int) $state['cursor_id_list'] <= 0 ) {
+				$state['cursor_id_list'] = isset( $state['min_meta_id'] ) ? (int) $state['min_meta_id'] : 0;
+			}
+			if ( ! isset( $state['stem_map'] ) || ! is_array( $state['stem_map'] ) ) {
+				$state['stem_map'] = array();
+			}
+
+			return $state;
+		}
+
+		/**
 		 * ساخت وضعیت اولیهٔ بسیار سبک ماشین اسکن.
 		 *
 		 * @return array<string,mixed>
@@ -311,6 +350,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				'atts_by_dir'     => array(),
 				'stem_map'        => array(),
 				'refs'            => array(),
+				// هش مسیرهای «دیده‌شده» در محتوا/متا؛ برای محافظت از فایل‌های یتیمِ ارجاع‌داده‌شده.
+				'ref_url_hash'    => array(),
+				'id_list_done'    => false,
+				'cursor_id_list'  => $min_meta,
+				'refs_truncated'  => 0,
+				'orphans_skipped' => 0,
 				'items'           => array(),
 				'dir_queue'       => array(),
 				'visited_dirs'    => array(),
@@ -523,8 +568,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					if ( ctype_digit( $val ) ) {
 						self::record_ref( $state, (int) $val, 'active', $lbl, 0 );
 					} else {
-						foreach ( self::extract_ids_from_text_or_data( $val, $state['stem_map'] ) as $eid ) {
+						foreach ( self::extract_ids_from_text_or_data( $val, $state['stem_map'], true, $state['ref_url_hash'] ) as $eid ) {
 							self::record_ref( $state, $eid, 'active', $lbl, 0 );
+						}
+						// لیست شناسه‌ای/سریالایز که رشتهٔ `uploads` ندارد (مثلاً «12,34,56»).
+						if ( ! ctype_digit( $val ) && preg_match( '/^\s*\d+(?:\s*[,|;\s]\s*\d+)*\s*$/', $val ) ) {
+							foreach ( preg_split( '/\s*[,|;\s]\s*/', trim( $val ) ) as $piece ) {
+								self::record_ref( $state, absint( $piece ), 'active', $lbl, 0 );
+							}
 						}
 					}
 				}
@@ -542,6 +593,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				}
 			}
 
+			// سقف سخاوتمندانه: ۳۰۰۰ ردیف تنظیمات/ابزارک (قبلاً ۶۰۰ بود و در فروشگاه‌های بزرگ
+			// به‌صورت تصادفی بخشی از لوگو/سواچ‌های قالب را از دست می‌داد).
+			$opt_limit = 3000;
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$opt_rows = $wpdb->get_results(
 				$wpdb->prepare(
@@ -550,18 +604,22 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					 WHERE option_name NOT LIKE %s
 					   AND option_name NOT LIKE %s
 					   AND ( option_name LIKE %s OR option_name LIKE %s OR option_name LIKE %s OR option_value LIKE %s )
-					 LIMIT 600",
+					 LIMIT %d",
 					'_transient%',
 					'tco_%',
 					'theme_mods_%',
 					'widget_%',
 					'xts-%',
-					'%uploads%'
+					'%uploads%',
+					$opt_limit
 				),
 				ARRAY_A
 			);
+			if ( is_array( $opt_rows ) && count( $opt_rows ) >= $opt_limit ) {
+				++$state['refs_truncated'];
+			}
 			foreach ( (array) $opt_rows as $orow ) {
-				$found = self::extract_ids_from_text_or_data( (string) $orow['option_value'], $state['stem_map'], true );
+				$found = self::extract_ids_from_text_or_data( (string) $orow['option_value'], $state['stem_map'], true, $state['ref_url_hash'] );
 				$lbl   = 'تنظیمات قالب/ابزارک (' . sanitize_key( (string) $orow['option_name'] ) . ')';
 				foreach ( $found as $fid ) {
 					self::record_ref( $state, $fid, 'active', $lbl, 0 );
@@ -571,9 +629,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$um_rows = $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT meta_value FROM {$wpdb->usermeta} WHERE meta_key LIKE %s OR meta_value LIKE %s LIMIT 500",
+					"SELECT meta_value FROM {$wpdb->usermeta} WHERE meta_key LIKE %s OR meta_value LIKE %s LIMIT %d",
 					'%avatar%',
-					'%uploads%'
+					'%uploads%',
+					2000
 				),
 				ARRAY_A
 			);
@@ -582,7 +641,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				if ( ctype_digit( $uv ) ) {
 					self::record_ref( $state, (int) $uv, 'active', 'تصویر پروفایل کاربر', 0 );
 				} else {
-					foreach ( self::extract_ids_from_text_or_data( $uv, $state['stem_map'] ) as $fid ) {
+					foreach ( self::extract_ids_from_text_or_data( $uv, $state['stem_map'], true, $state['ref_url_hash'] ) as $fid ) {
 						self::record_ref( $state, $fid, 'active', 'تصویر پروفایل کاربر', 0 );
 					}
 				}
@@ -621,13 +680,18 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 						 FROM {$wpdb->posts}
 						 WHERE ID > %d AND ID <= %d
 						   AND post_type NOT IN ( 'revision', 'attachment', 'nav_menu_item', 'product_variation', 'shop_order', 'shop_order_placehold' )
-						   AND ( post_content LIKE %s OR post_content LIKE %s OR post_content LIKE %s OR post_excerpt LIKE %s )",
+						   AND ( post_content LIKE %s OR post_content LIKE %s OR post_content LIKE %s OR post_excerpt LIKE %s
+						         OR post_content LIKE %s OR post_content LIKE %s OR post_content LIKE %s )",
 						$low,
 						$high,
 						'%uploads%',
 						'%wp-image-%',
 						'%gallery%',
-						'%uploads%'
+						'%uploads%',
+						// بلوک‌های گوتنبرگ/المنتور که فقط شناسه دارند و آدرس روی CDN است.
+						'%"id":%',
+						'%ids=%',
+						'%attachment_id%'
 					),
 					ARRAY_A
 				);
@@ -636,7 +700,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					$pid    = absint( $pb['ID'] );
 					$bucket = self::is_active_status( (string) $pb['post_status'] ) ? 'active' : 'draft';
 					$blob   = (string) $pb['post_content'] . "\n" . (string) $pb['post_excerpt'];
-					$found  = self::extract_ids_from_text_or_data( $blob, $state['stem_map'] );
+					$found  = self::extract_ids_from_text_or_data( $blob, $state['stem_map'], true, $state['ref_url_hash'] );
 					$title  = ! empty( $pb['post_title'] ) ? (string) $pb['post_title'] : '#' . $pid;
 					foreach ( $found as $fid ) {
 						self::record_ref( $state, $fid, $bucket, 'محتوای نوشته: ' . wp_html_excerpt( $title, 36, '…' ), $pid );
@@ -689,7 +753,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					$pid                     = absint( $er['post_id'] );
 					$bucket                  = self::is_active_status( (string) $er['post_status'] ) ? 'active' : 'draft';
 					$title                   = ! empty( $er['post_title'] ) ? (string) $er['post_title'] : '#' . $pid;
-					foreach ( self::extract_ids_from_text_or_data( (string) $er['meta_value'], $state['stem_map'], true ) as $fid ) {
+					foreach ( self::extract_ids_from_text_or_data( (string) $er['meta_value'], $state['stem_map'], true, $state['ref_url_hash'] ) as $fid ) {
 						self::record_ref( $state, $fid, $bucket, 'صفحه‌ساز المنتور: ' . wp_html_excerpt( $title, 34, '…' ), $pid );
 					}
 				}
@@ -704,7 +768,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				$low  = (int) $state['cursor_meta_id'];
 				$high = $low + 60000;
 				if ( $low >= (int) $state['max_meta_id'] ) {
-					self::prepare_dir_sweep_queue( $state );
+					$state['stage'] = 'id_list_refs';
 					return;
 				}
 
@@ -753,7 +817,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 						}
 						$bucket = self::is_active_status( (string) $pr['post_status'] ) ? 'active' : 'draft';
 						$title  = ! empty( $pr['post_title'] ) ? (string) $pr['post_title'] : '#' . $pid;
-						foreach ( self::extract_ids_from_text_or_data( (string) $mb['meta_value'], $state['stem_map'] ) as $fid ) {
+						foreach ( self::extract_ids_from_text_or_data( (string) $mb['meta_value'], $state['stem_map'], true, $state['ref_url_hash'] ) as $fid ) {
 							self::record_ref( $state, $fid, $bucket, 'متای سفارشی: ' . wp_html_excerpt( $title, 34, '…' ), $pid );
 						}
 					}
@@ -761,6 +825,106 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 				$state['cursor_meta_id'] = $high;
 				if ( $state['cursor_meta_id'] >= (int) $state['max_meta_id'] ) {
+					$state['stage'] = 'id_list_refs';
+					return;
+				}
+			}
+		}
+
+		/**
+		 * مرحلهٔ ۴٫۵: شکار «متاهای فقط-شناسه‌ای».
+		 *
+		 * بسیاری از افزونه‌های گالری/سواچ/قالب، شناسهٔ تصویر را به‌صورت `123` یا `12,34,56`
+		 * ذخیره می‌کنند؛ چنین ردیفی رشتهٔ `uploads` ندارد و در مرحلهٔ قبلی دیده نمی‌شد و
+		 * نتیجه‌اش «بدون استفاده» اعلام شدن عکسِ در حال استفاده بود. این مرحله دقیقاً
+		 * همان ردیف‌های کوتاهِ عددی را (بدون JOIN سنگین، با پنجرهٔ کلید اصلی) می‌خواند.
+		 *
+		 * @param array<string,mixed> $state        وضعیت جاری.
+		 * @param float               $started_tick زمان شروع تیک.
+		 * @param float               $budget       سقف زمانی.
+		 * @return void
+		 */
+		private static function run_stage_id_list_refs( array &$state, $started_tick, $budget ) {
+			global $wpdb;
+
+			$skip_keys = array(
+				'_wp_attached_file',
+				'_wp_attachment_metadata',
+				'_elementor_data',
+				'_edit_lock',
+				'_edit_last',
+				'_wp_old_slug',
+			);
+			$key_ph = implode( ', ', array_fill( 0, count( $skip_keys ), '%s' ) );
+
+			while ( ( microtime( true ) - $started_tick ) < $budget ) {
+				$low  = (int) $state['cursor_id_list'];
+				$high = $low + 30000;
+
+				if ( $low >= (int) $state['max_meta_id'] ) {
+					$state['id_list_done'] = true;
+					self::prepare_dir_sweep_queue( $state );
+					return;
+				}
+
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$rows = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT post_id, meta_key, meta_value
+						 FROM {$wpdb->postmeta}
+						 WHERE meta_id > %d AND meta_id <= %d
+						   AND meta_key NOT IN ( {$key_ph} )
+						   AND CHAR_LENGTH( meta_value ) BETWEEN 1 AND 240
+						   AND meta_value REGEXP '^[0-9]+([,|][0-9]+)*$'
+						 LIMIT 4000",
+						array_merge( array( $low, $high ), $skip_keys )
+					),
+					ARRAY_A
+				);
+
+				if ( ! empty( $rows ) ) {
+					$pids = array();
+					foreach ( $rows as $row ) {
+						$pids[ absint( $row['post_id'] ) ] = true;
+					}
+					$pinfo = array();
+					if ( ! empty( $pids ) ) {
+						$pcsv = implode( ',', array_map( 'absint', array_keys( $pids ) ) );
+						// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+						$prows = $wpdb->get_results(
+							"SELECT ID, post_title, post_status, post_type FROM {$wpdb->posts} WHERE ID IN ( {$pcsv} )",
+							ARRAY_A
+						);
+						foreach ( (array) $prows as $pr ) {
+							$pinfo[ absint( $pr['ID'] ) ] = $pr;
+						}
+					}
+
+					foreach ( $rows as $row ) {
+						$pid = absint( $row['post_id'] );
+						if ( ! isset( $pinfo[ $pid ] ) ) {
+							continue;
+						}
+						$pr = $pinfo[ $pid ];
+						if ( in_array( (string) $pr['post_type'], array( 'attachment', 'revision' ), true ) ) {
+							continue;
+						}
+						$bucket = self::is_active_status( (string) $pr['post_status'] ) ? 'active' : 'draft';
+						$title  = ! empty( $pr['post_title'] ) ? (string) $pr['post_title'] : '#' . $pid;
+						$key    = sanitize_key( (string) $row['meta_key'] );
+						foreach ( preg_split( '/\s*[,|]\s*/', trim( (string) $row['meta_value'] ) ) as $piece ) {
+							$candidate = absint( $piece );
+							if ( $candidate <= 0 ) {
+								continue;
+							}
+							self::record_ref( $state, $candidate, $bucket, 'متای شناسه‌ای ' . $key . ': ' . wp_html_excerpt( $title, 30, '…' ), $pid );
+						}
+					}
+				}
+
+				$state['cursor_id_list'] = $high;
+				if ( $state['cursor_id_list'] >= (int) $state['max_meta_id'] ) {
+					$state['id_list_done'] = true;
 					self::prepare_dir_sweep_queue( $state );
 					return;
 				}
@@ -917,8 +1081,22 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 						if ( ! isset( $image_exts[ $ext ] ) ) {
 							continue;
 						}
-						$orig_entry         = $dir_mtime[ $low_name ];
-						$rel_path           = '' === $rel_dir ? $orig_entry : $rel_dir . '/' . $orig_entry;
+						$orig_entry = $dir_mtime[ $low_name ];
+						$rel_path   = '' === $rel_dir ? $orig_entry : $rel_dir . '/' . $orig_entry;
+
+						// محافظ حیاتی: اگر همین مسیر در محتوا/متای سایت ذکر شده باشد،
+						// فایل «یتیم بدون استفاده» نیست و هرگز نباید حذف شود.
+						$orphan_noext = preg_replace( '/\.[a-z0-9]+$/i', '', strtolower( $rel_path ) );
+						$orphan_key   = (string) $orphan_noext;
+						$orphan_base  = basename( (string) $orphan_noext );
+						if (
+							isset( $state['ref_url_hash'][ crc32( $orphan_key ) ] )
+							|| isset( $state['ref_url_hash'][ crc32( 'b:' . $orphan_base ) ] )
+						) {
+							++$state['orphans_skipped'];
+							continue;
+						}
+
 						$state['orphans'][] = array(
 							'rel_path' => $rel_path,
 							'filename' => $orig_entry,
@@ -941,7 +1119,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				}
 				$state['atts_by_dir']  = array();
 				$state['visited_dirs'] = array();
-				$state['refs']         = array();
 
 				$candidates = array();
 				foreach ( $state['size_buckets'] as $id_list ) {
@@ -1351,7 +1528,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			);
 
 			return array(
-				'version'       => 2,
+				'version'       => 3,
+				'usage_engine'  => 4,
+				'notes'         => array(
+					'refs_truncated'  => (int) $state['refs_truncated'],
+					'orphans_skipped' => (int) $state['orphans_skipped'],
+				),
 				'built_at'      => current_time( 'mysql' ),
 				'timestamp'     => time(),
 				'duration_ms'   => (int) round( ( microtime( true ) - (float) $state['scan_started'] ) * 1000 ),
@@ -1501,12 +1683,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		/**
 		 * استخراج سریع شناسه‌های پیوست از متن، گوتنبرگ، المنتور (`\/`) و آرایه‌های سریال‌شده.
 		 *
-		 * @param string           $raw       متن یا دادهٔ سریال‌شده.
+		 * @param string            $raw       متن یا دادهٔ سریال‌شده.
 		 * @param array<string,int> $stem_map نقشهٔ مسیر پایهٔ بدون پسوند به Attachment ID.
-		 * @param bool             $scan_json آیا الگوهای JSON المنتور هم اسکن شوند؟
+		 * @param bool              $scan_json آیا الگوهای JSON المنتور هم اسکن شوند؟
+		 * @param array<int,int>|null $path_sink مجموعهٔ هش مسیرهای دیده‌شده (محافظ فایل‌های یتیم).
 		 * @return int[]
 		 */
-		private static function extract_ids_from_text_or_data( $raw, array &$stem_map, $scan_json = false ) {
+		private static function extract_ids_from_text_or_data( $raw, array &$stem_map, $scan_json = false, &$path_sink = null ) {
 			if ( '' === $raw ) {
 				return array();
 			}
@@ -1547,11 +1730,20 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					$noext = preg_replace( '/\.[a-z0-9]+$/i', '', (string) $clean );
 					if ( isset( $stem_map[ $noext ] ) ) {
 						$found[ $stem_map[ $noext ] ] = true;
-						continue;
 					}
 					$nostem = preg_replace( '/-(?:scaled|[0-9]+x[0-9]+)$/i', '', (string) $noext );
 					if ( isset( $stem_map[ $nostem ] ) ) {
 						$found[ $stem_map[ $nostem ] ] = true;
+					}
+					// ثبت مسیر دیده‌شده حتی وقتی پیوستی برایش نیست؛ محافظ فایل‌های یتیمِ در حال استفاده.
+					if ( is_array( $path_sink ) ) {
+						foreach ( array_unique( array( (string) $noext, (string) $nostem ) ) as $seen_path ) {
+							if ( '' === $seen_path ) {
+								continue;
+							}
+							$path_sink[ crc32( $seen_path ) ]                    = 1;
+							$path_sink[ crc32( 'b:' . basename( $seen_path ) ) ] = 1;
+						}
 					}
 				}
 			}
@@ -1688,6 +1880,22 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					'stage_num'    => 3,
 					'stage_label'  => 'گام ۳ از ۵: اسکن صفحه‌ساز المنتور و متاهای سفارشی…',
 					'detail_label' => sprintf( '%d٪ جدول متا بررسی شد', (int) round( $ratio * 100 ) ),
+					'percent'      => 48 + (int) round( $ratio * 17 ),
+					'can_skip'     => true,
+					'elapsed_sec'  => $elapsed,
+				);
+			}
+
+			if ( 'id_list_refs' === $stage ) {
+				$span  = max( 1, (int) $state['max_meta_id'] - (int) $state['min_meta_id'] );
+				$done  = max( 0, (int) $state['cursor_id_list'] - (int) $state['min_meta_id'] );
+				$ratio = min( 1.0, $done / $span );
+				return array(
+					'done'         => false,
+					'stage'        => $stage,
+					'stage_num'    => 3,
+					'stage_label'  => 'گام ۳ از ۵: شکار متاهای فقط-شناسه‌ای (گالری‌های افزونه‌های ثالث)…',
+					'detail_label' => sprintf( '%d٪ متاهای شناسه‌ای بررسی شد', (int) round( $ratio * 100 ) ),
 					'percent'      => 48 + (int) round( $ratio * 17 ),
 					'can_skip'     => true,
 					'elapsed_sec'  => $elapsed,

@@ -30,6 +30,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				'quarantine_days'        => 30,
 				'include_draft_in_scan'  => 1,
 				'scan_unregistered_disk' => 1,
+				// راستی‌آزمایی زندهٔ استفاده پیش از هر حذف (ضدحذف اشتباه عکس در حال استفاده).
+				'verify_before_delete'   => 1,
+				'verify_fresh_hours'     => 72,
 				'excluded_dirs'          => "tisacase-private-exports\nbdc-backups\ntisa-opt-vault\nwoocommerce_uploads\nelementor",
 
 				// فشرده‌سازی، تغییر اندازه و نسل جدید تصویر.
@@ -111,6 +114,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			$bool_keys = array(
 				'include_draft_in_scan',
 				'scan_unregistered_disk',
+				'verify_before_delete',
 				'auto_optimize_upload',
 				'convert_opaque_png',
 				'strip_exif',
@@ -125,6 +129,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				if ( array_key_exists( $bk, $raw ) ) {
 					$clean[ $bk ] = ! empty( $raw[ $bk ] ) ? 1 : 0;
 				}
+			}
+
+			if ( isset( $raw['verify_fresh_hours'] ) ) {
+				$clean['verify_fresh_hours'] = max( 1, min( 720, (int) $raw['verify_fresh_hours'] ) );
 			}
 
 			if ( isset( $raw['excluded_dirs'] ) ) {

@@ -1485,6 +1485,7 @@
 			done: 0,
 			total: totalItems,
 			savedBytes: 0,
+			blocked: 0,
 		};
 		render();
 
@@ -1498,12 +1499,14 @@
 					rel_paths: chunkPaths,
 					batch_id: runBatchId,
 					delete_mode: state.deleteMode,
+					allow_draft_only: (state.unusedFilter && state.unusedFilter.usage === 'draft_only') ? 1 : 0,
 					log_final: isLast ? 1 : 0,
 					summary_count: totalItems,
 					summary_bytes: state.batch.savedBytes,
 				});
 				state.batch.done += (res.done_ids || []).length + (res.done_paths || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
+				state.batch.blocked += Number(res.blocked_count || 0);
 				if (res.overview) {
 					state.overview = res.overview;
 				}
@@ -1511,10 +1514,13 @@
 			}
 			state.selectedIds.clear();
 			state.selectedPaths.clear();
+			const keptNote = state.batch.blocked > 0
+				? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود حذف نشد.`
+				: '';
 			toast(
 				state.deleteMode === 'permanent'
-					? `عملیات حذف قطعی انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد.`
-					: `به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» همیشه قابل برگشت است.`
+					? `عملیات حذف قطعی انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد${keptNote}`
+					: `به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» همیشه قابل برگشت است${keptNote}`
 			);
 		} catch (e) {
 			toast(e.message, 'error');
