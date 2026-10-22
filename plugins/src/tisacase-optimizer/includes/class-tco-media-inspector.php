@@ -340,6 +340,23 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 		 * @return array<string,mixed>
 		 */
 		public static function overview_stats( $force_rescan = false ) {
+			// میان‌بُر: اگر خلاصهٔ معتبر روی دیسک باشد، کاتالوگ سنگین اصلاً
+			// رمزگشایی نمی‌شود. اعداد زندهٔ خزانه و آمار عمر افزونه همیشه تازه
+			// اضافه می‌شوند تا هیچ عددی قدیمی نماند.
+			if ( ! $force_rescan ) {
+				$cached_ov = TisaCase_Optimizer_Catalog_Summary::overview();
+				if ( is_array( $cached_ov ) ) {
+					$vault_live = TisaCase_Optimizer_Vault::summary();
+					$cached_ov['vault']            = $vault_live;
+					$cached_ov['lifetime_stats']   = TisaCase_Optimizer_Settings::stats();
+					if ( isset( $cached_ov['layers'] ) && is_array( $cached_ov['layers'] ) ) {
+						$cached_ov['layers']['quarantine_bytes'] = (int) $vault_live['quarantine_bytes'] + (int) $vault_live['originals_bytes'];
+					}
+					$cached_ov['next_actions'] = self::build_next_actions( $cached_ov );
+					return $cached_ov;
+				}
+			}
+
 			$cat   = self::build_catalog( $force_rescan );
 			$items = $cat['items'];
 			$index = $cat['index'];
@@ -430,7 +447,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 
 			$media_total = $sum_main + $sum_unscaled + $sum_subsizes + $sum_sidecar;
 
-			return array(
+			$overview = array(
 				'needs_scan'     => false,
 				'scan_built_at'  => isset( $index['built_at'] ) ? $index['built_at'] : '',
 				'scan_ms'        => isset( $index['duration_ms'] ) ? (int) $index['duration_ms'] : 0,
@@ -477,6 +494,141 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				'vault'          => $vault,
 				'lifetime_stats' => $saved,
 			);
+
+			$overview['next_actions'] = self::build_next_actions( $overview );
+
+			// نوشتن خلاصه برای درخواست‌های بعدی (میان‌بُر امن؛ با هر تغییر کاتالوگ باطل می‌شود).
+			TisaCase_Optimizer_Catalog_Summary::write( $overview, $items );
+			return $overview;
+		}
+
+		/**
+		 * «قدم بعدی چیست؟» — فهرست کوتاه و اولویت‌دار کارهای پیشنهادی.
+		 *
+		 * چرا؟ داشبورد کلی عدد نشان می‌داد ولی کاربر باید خودش حدس می‌زد از کجا
+		 * شروع کند. اینجا فقط کارهایی می‌آید که واقعاً کاری برای انجام دادن هست،
+		 * هر کدام با تعداد، حجم تقریبی و دکمهٔ رفتن به همان جای درست.
+		 *
+		 * @param array<string,mixed> $ov آمار کلی.
+		 * @return array<int,array<string,mixed>>
+		 */
+		public static function build_next_actions( array $ov ) {
+			$actions = array();
+
+			if ( ! empty( $ov['needs_scan'] ) ) {
+				$actions[] = array(
+					'key'   => 'scan',
+					'tone'  => 'warn',
+					'title' => __( 'اول اسکن کامل تصاویر را اجرا کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'بدون اسکن کامل، هیچ حذفی انجام نمی‌شود (برای محافظت از تصاویر در حال استفاده).', 'tisacase-optimizer' ),
+					'count' => 0,
+					'bytes' => 0,
+					'cta'   => 'scan',
+					'label' => __( 'شروع اسکن کامل', 'tisacase-optimizer' ),
+				);
+				return $actions;
+			}
+
+			$qw = isset( $ov['quick_wins'] ) && is_array( $ov['quick_wins'] ) ? $ov['quick_wins'] : array();
+			$vault = isset( $ov['vault'] ) && is_array( $ov['vault'] ) ? $ov['vault'] : array();
+
+			$unused = isset( $qw['unused'] ) ? $qw['unused'] : array();
+			if ( ! empty( $unused['count'] ) ) {
+				$actions[] = array(
+					'key'   => 'unused',
+					'tone'  => 'ok',
+					'title' => __( 'تصاویر مطلقاً بدون استفاده را مرور کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'هیچ‌جای سایت استفاده نمی‌شوند؛ انتقال به قرنطینه ۳۰ روزه با یک کلیک قابل بازگشت است.', 'tisacase-optimizer' ),
+					'count' => (int) $unused['count'],
+					'bytes' => (int) $unused['bytes'],
+					'cta'   => 'unused',
+					'label' => __( 'دیدن فهرست', 'tisacase-optimizer' ),
+				);
+			}
+
+			$compress = isset( $qw['compress'] ) ? $qw['compress'] : array();
+			if ( ! empty( $compress['count'] ) ) {
+				$actions[] = array(
+					'key'   => 'compress',
+					'tone'  => 'ok',
+					'title' => __( 'تصاویر سنگین را فشرده کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'با «فشرده‌سازی و جایگزینی» فایل سبک‌تر می‌شود و حجم دیسک واقعاً کم می‌شود.', 'tisacase-optimizer' ),
+					'count' => (int) $compress['count'],
+					'bytes' => (int) ( isset( $compress['est_bytes'] ) ? $compress['est_bytes'] : 0 ),
+					'cta'   => 'optimize_all',
+					'label' => __( 'فشرده‌سازی همه', 'tisacase-optimizer' ),
+				);
+			}
+
+			$unscaled = isset( $qw['unscaled'] ) ? $qw['unscaled'] : array();
+			if ( ! empty( $unscaled['count'] ) ) {
+				$actions[] = array(
+					'key'   => 'unscaled',
+					'tone'  => 'ok',
+					'title' => __( 'فایل‌های خام «-scaled» را پاک کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'وردپرس نسخهٔ اصلی سنگین را نگه می‌دارد؛ اگر به آن نیاز ندارید، پاک شود.', 'tisacase-optimizer' ),
+					'count' => (int) $unscaled['count'],
+					'bytes' => (int) $unscaled['bytes'],
+					'cta'   => 'clean_unscaled',
+					'label' => __( 'پاک‌سازی فایل‌های خام', 'tisacase-optimizer' ),
+				);
+			}
+
+			$dups = isset( $qw['duplicates'] ) ? $qw['duplicates'] : array();
+			if ( ! empty( $dups['groups'] ) ) {
+				$actions[] = array(
+					'key'   => 'duplicates',
+					'tone'  => 'ok',
+					'title' => __( 'تصاویر تکراری را ادغام کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'فایل‌هایی با هش یکسان؛ ادغام بدون شکستن لینک‌ها انجام می‌شود.', 'tisacase-optimizer' ),
+					'count' => (int) $dups['count'],
+					'bytes' => (int) $dups['bytes'],
+					'cta'   => 'duplicates',
+					'label' => __( 'بررسی تکراری‌ها', 'tisacase-optimizer' ),
+				);
+			}
+
+			$seo = isset( $qw['seo'] ) ? $qw['seo'] : array();
+			if ( ! empty( $seo['missing_alt'] ) ) {
+				$actions[] = array(
+					'key'   => 'seo',
+					'tone'  => 'ok',
+					'title' => __( 'برای تصاویر متن جایگزین (alt) بنویسید', 'tisacase-optimizer' ),
+					'desc'  => __( 'هم سئوی گوگل و هم دسترس‌پذیری بهتر می‌شود؛ پیشنهاد خودکار آماده است.', 'tisacase-optimizer' ),
+					'count' => (int) $seo['missing_alt'],
+					'bytes' => 0,
+					'cta'   => 'seo',
+					'label' => __( 'تکمیل متن‌ها', 'tisacase-optimizer' ),
+				);
+			}
+
+			if ( ! empty( $vault['quarantine_count'] ) ) {
+				$actions[] = array(
+					'key'   => 'quarantine',
+					'tone'  => 'info',
+					'title' => __( 'قرنطینه را بازبینی کنید', 'tisacase-optimizer' ),
+					'desc'  => __( 'موارد قرنطینه‌شده تا ۳۰ روز با همان شناسه و زیرسایزها قابل بازگردانی هستند.', 'tisacase-optimizer' ),
+					'count' => (int) $vault['quarantine_count'],
+					'bytes' => (int) $vault['quarantine_bytes'],
+					'cta'   => 'quarantine',
+					'label' => __( 'باز کردن قرنطینه', 'tisacase-optimizer' ),
+				);
+			}
+
+			if ( empty( $actions ) ) {
+				$actions[] = array(
+					'key'   => 'done',
+					'tone'  => 'ok',
+					'title' => __( 'همه‌چیز مرتب است', 'tisacase-optimizer' ),
+					'desc'  => __( 'در این لحظه کار ضروری باقی نمانده؛ با «اسکن کامل» وضعیت را تازه نگه دارید.', 'tisacase-optimizer' ),
+					'count' => 0,
+					'bytes' => 0,
+					'cta'   => 'scan',
+					'label' => __( 'اسکن تازه', 'tisacase-optimizer' ),
+				);
+			}
+
+			return $actions;
 		}
 
 		/**

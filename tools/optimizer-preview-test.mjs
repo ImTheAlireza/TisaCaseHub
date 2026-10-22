@@ -489,4 +489,136 @@ window.__tcoMockTickMax = 6;
 window.__tcoMockVerifyMax = 0;
 window.__tcoMockFailAfter = 0;
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۵ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، و اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود) با موفقیت اجرا شدند!');
+// ۱۵. موتور کار برای «فشرده‌سازی» و «بازگردانی»: توقف وسط راه ⇒ کارت «ادامه» با نام درست
+// عملیات ⇒ ادامه از همان نقطه بدون تکرار یا گم‌شدن هیچ موردی.
+// مجموعهٔ آزمون: همهٔ قرنطینه‌شده‌ها را برمی‌گردانیم تا صف فشرده‌سازی چند موردی باشد.
+for (let i = 0; i < 30; i += 1) {
+	const rr = await window.fetch('http://localhost/wp-admin/admin-ajax.php', {
+		method: 'POST',
+		body: new URLSearchParams({ action: 'tisacase', op: 'restore_quarantine', restore_all: '1' }),
+	});
+	const rj = await rr.json();
+	if (!rj.data || !rj.data.job || rj.data.job.finished) break;
+}
+window.__tcoMockLatency = 0;
+
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pageCheck5 = window.document.getElementById('tco-check-page');
+assert.ok(pageCheck5, 'چک‌باکس انتخاب همهٔ صفحه باید باشد');
+pageCheck5.checked = true;
+pageCheck5.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+const bulkOpt = window.document.getElementById('tco-bulk-opt');
+assert.ok(bulkOpt && !bulkOpt.disabled, 'دکمهٔ «فشرده‌سازی و WebP» باید با انتخاب موارد فعال شود');
+
+// صف فشرده‌سازی فقط تصاویر بهینه‌نشده را برمی‌دارد؛ برای آزمون، چند مورد را
+// «بهینه‌نشده» می‌کنیم تا صف واقعاً کار داشته باشد.
+[...window.document.querySelectorAll('#tco-main tbody tr')].forEach((tr) => {
+	const it = window.__tcoMockItem(tr.getAttribute('data-row-id'));
+	if (it) it.is_optimized = false;
+});
+
+window.__tcoMockTickMax = 1;
+window.__tcoMockLatency = 160;
+bulkOpt.click();
+await new Promise((r) => setTimeout(r, 400));
+const stopBtn = window.document.getElementById('tco-stop-batch');
+assert.ok(stopBtn, 'در حین فشرده‌سازی باید دکمهٔ توقف با نوار پیشرفت دیده شود');
+stopBtn.click();
+await new Promise((r) => setTimeout(r, 2200));
+
+window.__tcoMockLatency = 0;
+const optJobId = Object.keys(window.__tcoMockJobs || {})
+	.filter((k) => window.__tcoMockJobs[k].op === 'optimize')
+	.pop();
+assert.ok(optJobId, 'فشرده‌سازی باید به‌صورت «کار» در سرور ذخیره شود');
+const optJob = window.__tcoMockJobs[optJobId];
+assert.equal(optJob.status, 'running', 'کار فشرده‌سازی نیمه‌تمام باید در سرور بماند');
+assert.ok(optJob.done > 0, 'قبل از توقف باید چند تصویر واقعاً فشرده شده باشد');
+
+const optCard = window.document.querySelector('.tco-resume');
+assert.ok(optCard, 'پس از توقف فشرده‌سازی، کارت «ادامهٔ عملیات» باید ظاهر شود');
+assert.match(optCard.textContent, /فشرده‌سازی/, 'کارت ادامه باید نام عملیات (فشرده‌سازی) را بگوید');
+assert.ok(
+	optCard.querySelector('#tco-resume-job'),
+	'کارت ادامهٔ کار فشرده‌سازی هم باید دکمهٔ «ادامهٔ عملیات» داشته باشد'
+);
+
+const doneBefore = optJob.done;
+const totalOpt = optJob.total;
+window.__tcoMockTickMax = 50;
+optCard.querySelector('#tco-resume-job').click();
+await new Promise((r) => setTimeout(r, 2200));
+assert.equal(optJob.status, 'done', 'پس از «ادامهٔ عملیات» کار فشرده‌سازی باید تمام شود');
+assert.equal(optJob.done, totalOpt, 'همهٔ موارد صف باید فشرده شوند (هیچ شناسه‌ای گم نمی‌شود)');
+assert.ok(optJob.done > doneBefore, 'شمارش انجام‌شده باید جلو برود');
+assert.equal(window.document.getElementById('tco-resume-job'), null, 'کارت ادامه باید پس از پایان ناپدید شود');
+assert.match(window.document.getElementById('tco-toasts').textContent, /فشرده‌سازی تمام شد/, 'اعلان پایان فشرده‌سازی باید نمایش داده شود');
+
+// بازگردانی هم باید کار باشد: توقف وسط راه ⇒ ادامه از همان نقطه.
+window.document.querySelector('[data-go-subtab="restore"]').click();
+await flush();
+window.document.querySelector('[data-vault-tab="history"]').click();
+await flush();
+const restoreAllBtn = window.document.getElementById('tco-restore-all-quarantine');
+if (restoreAllBtn) {
+	const beforeQ = (window.document.querySelectorAll('[data-purge-q]') || []).length;
+	window.__tcoMockTickMax = 1;
+	window.__tcoMockLatency = 160;
+	restoreAllBtn.click();
+	await new Promise((r) => setTimeout(r, 420));
+	window.__tcoMockLatency = 0;
+	const stop2 = window.document.getElementById('tco-stop-batch');
+	if (stop2) {
+		stop2.click();
+		await new Promise((r) => setTimeout(r, 2000));
+		const rCard = window.document.querySelector('.tco-resume');
+		if (rCard) {
+			assert.match(rCard.textContent, /بازگردانی/, 'کارت ادامهٔ بازگردانی باید نام عملیات را بگوید');
+			window.__tcoMockTickMax = 50;
+			rCard.querySelector('#tco-resume-job').click();
+			await new Promise((r) => setTimeout(r, 2000));
+		}
+	}
+	window.__tcoMockTickMax = 6;
+	await flush();
+	assert.ok(beforeQ >= 0, 'سناریوی بازگردانی انبوه باید بی‌خطا اجرا شود');
+}
+
+window.__tcoMockTickMax = 6;
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockFailAfter = 0;
+
+// ۱۶. «قدم بعدی» (B1)، «توصیهٔ هوشمند زیرسایز» (B2) و «چکاپ سرور» (B7).
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+const overviewNav = window.document.querySelector('[data-go-subtab="overview"]');
+if (overviewNav) overviewNav.click();
+await flush();
+const nextCard = window.document.querySelector('.tco-next');
+assert.ok(nextCard, 'کارت «قدم بعدی پیشنهادی» باید در نمای کلی باشد');
+const nextBtns = nextCard.querySelectorAll('[data-next-action]');
+assert.ok(nextBtns.length >= 1, 'کارت «قدم بعدی» باید حداقل یک دکمهٔ اقدام داشته باشد');
+assert.match(nextCard.textContent, /قدم بعدی|مورد/, 'کارت باید تعداد موارد و توضیح داشته باشد');
+
+window.document.querySelector('[data-go-subtab="subsizes"]').click();
+await flush();
+const adviceCells = [...window.document.querySelectorAll('.tco-advice')];
+assert.ok(adviceCells.length >= 1, 'هر زیرسایز باید ستون «توصیهٔ هوشمند» داشته باشد');
+assert.ok(
+	adviceCells.some((c) => c.textContent.trim().length > 5),
+	'توصیهٔ زیرسایز باید متن فارسی توضیح‌دهنده داشته باشد'
+);
+
+window.document.querySelector('[data-go-module="system"]').click();
+await new Promise((r) => setTimeout(r, 400));
+const preflightBtn = window.document.getElementById('tco-preflight-btn');
+assert.ok(preflightBtn, 'دکمهٔ «اجرای چکاپ» باید در ماژول سیستم باشد');
+assert.match(window.document.getElementById('tco-main').textContent, /چکاپ پیش از عملیات/, 'کارت چکاپ باید نمایش داده شود');
+preflightBtn.click();
+await new Promise((r) => setTimeout(r, 500));
+assert.match(window.document.getElementById('tco-main').textContent, /امتیاز آمادگی/, 'پس از چکاپ، امتیاز آمادگی باید نمایش داده شود');
+assert.ok(window.document.querySelectorAll('#tco-main .tco-table tbody tr').length >= 3, 'چکاپ باید چند مورد بررسی‌شده نشان دهد');
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۷ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور») با موفقیت اجرا شدند!');

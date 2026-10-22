@@ -73,13 +73,16 @@ console.log('── ۳) توکن نگه‌دارنده برای عملیات چ�
 for (const [fn, token] of [
 	['runIncrementalScan', 'scanToken'],
 	['runBatchRemove', 'runToken'],
-	['runBatchRestoreQuarantine', 'restoreToken'],
-	['runBatchOptimize', 'optToken'],
+	['driveJob', 'runToken'],
 ]) {
 	const body = bodyOf(fn);
 	ok(`${fn}: توکن اختصاصی ${token} ساخته می‌شود`, body.includes(`busyStart(`) && body.includes(token));
 	ok(`${fn}: توکن در finally آزاد می‌شود`, new RegExp(`finally\\s*\\{[\\s\\S]{0,120}busyEnd\\(${token}\\)`).test(body));
 }
+ok(
+	'فشرده‌سازی و بازگردانی هم از همان موتور کار مشترک استفاده می‌کنند',
+	/driveJob\(\{/.test(bodyOf('runBatchOptimize')) && /driveJob\(\{/.test(bodyOf('runBatchRestoreQuarantine'))
+);
 ok('درصد پیشرفت در اسکن به‌روزرسانی می‌شود', /busyProgress\(\s*\n?\s*Number\(step\.percent/.test(js));
 ok('درصد پیشرفت دسته‌ها از batchPct به‌روزرسانی می‌شود', /function batchPct\(/.test(js) && /busyProgress\(pct,/.test(js));
 
@@ -101,6 +104,10 @@ ok(
 );
 ok('کلیک‌های غیرعملیاتی (مثل اسلایدر) عمداً بیرون مانده‌اند', !registered.has('#tco-cmp-slider'));
 ok('دکمهٔ توقف دسته از قفل‌شدن مستثنی است', /el\.id === 'tco-stop-batch'/.test(js));
+ok(
+	'دکمهٔ توقف واقعاً کار می‌کند (مستثنی‌شدن به‌معنای بی‌اثر بودن نیست)',
+	/el\.id === 'tco-stop-batch'\)\s*\{\s*handleActionClick\(ev\);/.test(js)
+);
 
 console.log('── ۵) هیچ دکمهٔ disabled بی‌توضیح نیست ──');
 // فقط دکمه‌ها؛ چک‌باکس‌های «سایز ضروری» عمداً قفل‌اند و برچسب متنی کنارشان توضیح می‌دهد.

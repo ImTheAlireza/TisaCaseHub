@@ -169,7 +169,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 			$is_opaque   = ( 'image/png' === $mime ) ? TisaCase_Optimizer_Reference_Scanner::fast_detect_opaque_png( $main_abs ) : false;
 
 			if ( 'replace' === $webp_mode && 'none' !== $nextgen && $mime !== 'image/' . $nextgen ) {
-				$convert_res = self::replace_attachment_format( $attachment_id, $main_abs, $rel_main, $nextgen, $cfg, $max_w, $max_h );
+				// فهرست فایل‌های «قبل از بهینه‌سازی» دوباره پیمایش نمی‌شود.
+				$convert_res = self::replace_attachment_format( $attachment_id, $main_abs, $rel_main, $nextgen, $cfg, $max_w, $max_h, $before_files );
 				if ( is_wp_error( $convert_res ) ) {
 					return $convert_res;
 				}
@@ -310,7 +311,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 		 * @param int                 $max_h         سقف ارتفاع.
 		 * @return true|WP_Error
 		 */
-		private static function replace_attachment_format( $attachment_id, $old_abs, $old_rel, $format, array $cfg, $max_w, $max_h ) {
+		private static function replace_attachment_format( $attachment_id, $old_abs, $old_rel, $format, array $cfg, $max_w, $max_h, $known_files = null ) {
 			global $wpdb;
 
 			$uploads = wp_upload_dir();
@@ -325,7 +326,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 				return new WP_Error( 'encode_failed', __( 'تبدیل تصویر به فرمت جدید روی این سرور ناموفق بود.', 'tisacase-optimizer' ) );
 			}
 
-			$old_files = TisaCase_Optimizer_Vault::collect_attachment_files( $attachment_id );
+			$old_files = is_array( $known_files ) && ! empty( $known_files )
+				? $known_files
+				: TisaCase_Optimizer_Vault::collect_attachment_files( $attachment_id );
 			$old_meta  = wp_get_attachment_metadata( $attachment_id );
 
 			update_attached_file( $attachment_id, $new_rel );

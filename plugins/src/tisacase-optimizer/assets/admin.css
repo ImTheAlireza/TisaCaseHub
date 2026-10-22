@@ -1269,3 +1269,36 @@ body.tco-page #wpfooter {
 	border-radius: 8px;
 	margin-top: 8px;
 }
+
+/* ── توصیهٔ هوشمند زیرسایزها (B2) ───────────────────────────── */
+.tco-advice {
+	min-width: 220px;
+	max-width: 340px;
+}
+.tco-advice__text {
+	display: block;
+	margin-top: 6px;
+	font-size: 12px;
+	line-height: 1.7;
+	color: #4a5560;
+}
+.tco-advice--disable .tco-advice__text,
+.tco-advice--review .tco-advice__text {
+	color: #8a5a00;
+}
+.tco-advice--keep .tco-advice__text {
+	color: #2f6b4f;
+}
+
+/* ── کارت «قدم بعدی» (B1) ──────────────────────────────────── */
+.tco-next .tco-win {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.tco-next .tco-win__desc {
+	flex: 1;
+}
+.tco-next .tisa-btn {
+	align-self: flex-start;
+}

@@ -197,6 +197,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						self::handle_merge_duplicates();
 						break;
 
+					case 'preflight':
+						self::ok( TisaCase_Optimizer_Preflight::run() );
+						break;
+
 					case 'get_subsizes':
 						self::ok( array( 'sizes' => TisaCase_Optimizer_Subsizes::inspect_all_sizes() ) );
 						break;
@@ -296,12 +300,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						break;
 
 					case 'restore_quarantine':
-						$qids         = self::read_string_list( 'item_ids' );
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
-						$batch_filter = isset( $_POST['batch_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['batch_id'] ) ) : '';
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
-						$restore_all  = ! empty( $_POST['restore_all'] );
+					$qids         = self::read_string_list( 'item_ids' );
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing
+					$batch_filter = isset( $_POST['batch_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['batch_id'] ) ) : '';
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing
+					$restore_all  = ! empty( $_POST['restore_all'] );
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing
+					$job_id       = isset( $_POST['job_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['job_id'] ) ) : '';
 
+					$job = TisaCase_Optimizer_Job::get();
+
+					if ( '' !== $job_id ) {
+						if ( ! $job || (string) $job['id'] !== $job_id ) {
+							self::fail( __( 'این کار دیگر فعال نیست یا منقضی شده است.', 'tisacase-optimizer' ), 409 );
+						}
+					} else {
 						if ( empty( $qids ) && ( '' !== $batch_filter || $restore_all ) ) {
 							foreach ( TisaCase_Optimizer_Vault::list_quarantine() as $qi ) {
 								if ( empty( $qi['id'] ) ) {
@@ -312,45 +325,63 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 								}
 							}
 						}
-
-						$restored     = 0;
-						$restored_ids = array();
-						foreach ( $qids as $qid ) {
-							$r = TisaCase_Optimizer_Vault::restore_quarantine_item( $qid );
-							if ( ! is_wp_error( $r ) ) {
-								++$restored;
-								if ( is_int( $r ) && $r > 0 ) {
-									$restored_ids[] = $r;
-								} elseif ( is_array( $r ) && ! empty( $r['attachment_id'] ) ) {
-									$restored_ids[] = absint( $r['attachment_id'] );
-								}
-							}
+						if ( empty( $qids ) ) {
+							self::fail( __( 'هیچ بستهٔ قرنطینه‌ای برای بازگردانی انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
 						}
-						if ( ! empty( $restored_ids ) && TisaCase_Optimizer_Media_Inspector::has_ready_catalog() ) {
-							TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $restored_ids );
-						}
-						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
-						// phpcs:ignore WordPress.Security.NonceVerification.Missing
-						if ( empty( $_POST['silent_log'] ) && $restored > 0 ) {
-							TisaCase_Optimizer_Session::log(
-								'restore_quarantine',
-								__( 'بازگردانی تصاویر از قرنطینه به مسیر و ID اصلی', 'tisacase-optimizer' ),
-								$restored,
-								0
+						if ( $job && 'running' === (string) $job['status'] ) {
+							self::fail(
+								__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
+								409
 							);
 						}
+						$job = TisaCase_Optimizer_Job::start_restore( $qids );
+					}
+
+					$before_done = (int) $job['done'];
+
+					try {
+						$job = TisaCase_Optimizer_Job::advance( $job );
+					} catch ( Throwable $e ) {
+						$job = TisaCase_Optimizer_Job::mark_error( $job, $e->getMessage() );
 						self::ok(
 							array(
-								'restored' => $restored,
+								'job'      => TisaCase_Optimizer_Job::summary( $job ),
+								'restored' => (int) $job['done'],
 								'vault'    => self::vault_payload(),
-								'overview' => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
-									? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
-									: null,
 							)
 						);
-						break;
+					}
 
-					case 'purge_quarantine':
+					$summary  = TisaCase_Optimizer_Job::summary( $job );
+					$finished = ! empty( $summary['finished'] );
+
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing
+					if ( $finished && empty( $_POST['silent_log'] ) && (int) $job['done'] > 0 ) {
+						TisaCase_Optimizer_Session::log(
+							'restore_quarantine',
+							__( 'بازگردانی تصاویر از قرنطینه به مسیر و ID اصلی', 'tisacase-optimizer' ),
+							(int) $job['done'],
+							0
+						);
+					}
+
+					$this_tick = (int) $job['done'] - $before_done;
+
+					self::ok(
+						array(
+							'job'           => $summary,
+							'restored'      => (int) $job['done'],
+							'restored_now'  => max( 0, $this_tick ),
+							'restored_ids'  => array_slice( (array) $job['done_ids'], 0, 50 ),
+							'vault'         => $finished ? self::vault_payload() : null,
+							'overview'      => ( $finished && TisaCase_Optimizer_Media_Inspector::has_ready_catalog() )
+								? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
+								: null,
+						)
+					);
+					break;
+
+				case 'purge_quarantine':
 						$qids  = self::read_string_list( 'item_ids' );
 						$freed = 0;
 						$count = 0;
@@ -745,93 +776,127 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		 * @return void
 		 */
 		private static function handle_optimize_batch() {
-			$started   = microtime( true );
-			$ids       = self::read_int_list( 'ids' );
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$overrides = isset( $_POST['overrides'] ) && is_array( $_POST['overrides'] ) ? wp_unslash( $_POST['overrides'] ) : array();
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$job_id = isset( $_POST['job_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['job_id'] ) ) : '';
+			$ids    = self::read_int_list( 'ids' );
+
 			$clean_ovr = array();
 			if ( ! empty( $overrides['force_webp'] ) ) {
 				$clean_ovr['nextgen_format'] = 'webp';
 			}
-			// جایگزینی مستقیم برای «همین تصویر»: فایل اصل با نسخهٔ نسل جدید عوض می‌شود
-			// (لینک‌ها بازنویسی می‌شوند) تا حجم دیسک واقعاً کم شود، نه فقط WebP موازی.
+			// جایگزینی مستقیم برای همین کار: فایل اصل با نسخهٔ نسل جدید عوض می‌شود
+			// (لینک‌ها بازنویسی می‌شوند) تا حجم دیسک واقعاً کم شود.
 			if ( ! empty( $overrides['replace_mode'] ) ) {
 				$clean_ovr['nextgen_format'] = 'webp';
 				$clean_ovr['webp_mode']      = 'replace';
 			}
 
-			if ( empty( $ids ) ) {
-				// در حالت «جایگزینی» تصاویری هم لازم است که قبلاً فقط نسخهٔ موازی
-				// WebP گرفته‌اند (فایل اصلشان هنوز WebP نیست)؛ وگرنه هرگز جایگزین نمی‌شدند.
+			$job = TisaCase_Optimizer_Job::get();
+
+			if ( '' !== $job_id ) {
+				if ( ! $job || (string) $job['id'] !== $job_id ) {
+					self::fail( __( 'این کار دیگر فعال نیست یا منقضی شده است.', 'tisacase-optimizer' ), 409 );
+				}
+				if ( (string) $job['status'] !== 'running' ) {
+					self::ok(
+						array(
+							'job'        => TisaCase_Optimizer_Job::summary( $job ),
+							'processed'  => array(),
+							'saved_bytes' => 0,
+						)
+					);
+				}
+			} elseif ( empty( $ids ) ) {
+				// فقط «صف پیشنهادی» را برمی‌گردانیم؛ کار با اولین بستهٔ شناسه‌ها ساخته می‌شود.
 				$wants_replace = ! empty( $clean_ovr['webp_mode'] ) && 'replace' === $clean_ovr['webp_mode'];
-				$q             = TisaCase_Optimizer_Media_Inspector::query_items(
-					array(
-						'opt_state' => $wants_replace ? 'not_webp' : 'unoptimized',
-						'sort_by'   => 'total_bytes',
-						'per_page'  => 100,
-					)
-				);
-				$ids = isset( $q['matching_ids'] ) ? array_slice( (array) $q['matching_ids'], 0, 500 ) : array();
+
+				// مسیر سریع: از فهرست سبک کاتالوگ استفاده می‌کنیم تا برای ساختن صف،
+				// کاتالوگ سنگین رمزگشایی نشود. اگر فهرست نبود، همان مسیر قبلی.
+				$light = TisaCase_Optimizer_Catalog_Summary::rows();
+				if ( is_array( $light ) ) {
+					$pick = array();
+					foreach ( $light as $row ) {
+						if ( ! is_array( $row ) || count( $row ) < 7 ) {
+							continue;
+						}
+						$row_exists = ! empty( $row[6] );
+						$row_is_opt = ! empty( $row[3] );
+						$row_format = (string) $row[4];
+						if ( ! $row_exists || 'missing_file' === (string) $row[2] ) {
+							continue;
+						}
+						if ( $wants_replace ? ( 'WEBP' === $row_format ) : $row_is_opt ) {
+							continue;
+						}
+						$pick[] = array( (int) $row[0], (int) $row[1] );
+					}
+					usort(
+						$pick,
+						static function ( $a, $b ) {
+							return $b[1] <=> $a[1];
+						}
+					);
+					$queue = array_map( 'intval', array_column( array_slice( $pick, 0, 5000 ), 0 ) );
+				} else {
+					$q     = TisaCase_Optimizer_Media_Inspector::query_items(
+						array(
+							'opt_state' => $wants_replace ? 'not_webp' : 'unoptimized',
+							'sort_by'   => 'total_bytes',
+							'per_page'  => 100,
+						)
+					);
+					$queue = isset( $q['matching_ids'] ) ? array_slice( (array) $q['matching_ids'], 0, 5000 ) : array();
+				}
 				self::ok(
 					array(
-						'queue_ids' => $ids,
-						'total'     => count( $ids ),
+						'queue_ids'    => $queue,
+						'total'        => count( $queue ),
+						'replace_mode' => $wants_replace,
+					)
+				);
+			} else {
+				if ( $job && 'running' === (string) $job['status'] ) {
+					self::fail(
+						__( 'یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.', 'tisacase-optimizer' ),
+						409
+					);
+				}
+				$job = TisaCase_Optimizer_Job::start_optimize( $ids, $clean_ovr );
+			}
+
+			$before_done = (int) $job['done'];
+
+			try {
+				$job = TisaCase_Optimizer_Job::advance( $job );
+			} catch ( Throwable $e ) {
+				$job = TisaCase_Optimizer_Job::mark_error( $job, $e->getMessage() );
+				self::ok(
+					array(
+						'job'        => TisaCase_Optimizer_Job::summary( $job ),
+						'processed'  => array(),
+						'error'      => $e->getMessage(),
+						'saved_bytes' => max( 0, (int) $job['saved_bytes'] ),
 					)
 				);
 			}
 
-			$processed   = array();
-			$touched_ids = array();
-			$saved_total = 0;
-
-			foreach ( $ids as $aid ) {
-				$res = TisaCase_Optimizer_Image_Processor::optimize_attachment( $aid, $clean_ovr );
-				if ( is_wp_error( $res ) ) {
-					$processed[] = array(
-						'id'    => $aid,
-						'ok'    => false,
-						'error' => $res->get_error_message(),
-					);
-				} else {
-					$saved_total  += (int) $res['saved_bytes'];
-					$touched_ids[] = $aid;
-					$processed[]   = array(
-						'id'           => $aid,
-						'ok'           => true,
-						'before_bytes' => $res['before_bytes'],
-						'after_bytes'  => $res['after_bytes'],
-						'saved_bytes'  => $res['saved_bytes'],
-						'nextgen'      => $res['nextgen'],
-						'mode'         => $res['mode'],
-					);
-				}
-				if ( ( microtime( true ) - $started ) >= self::BUDGET_SEC ) {
-					break;
-				}
-			}
-
-			if ( ! empty( $touched_ids ) ) {
-				TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( $touched_ids );
-			}
-
-			// phpcs:ignore WordPress.Security.NonceVerification.Missing
-			if ( ! empty( $_POST['log_final'] ) ) {
-				// phpcs:ignore WordPress.Security.NonceVerification.Missing
-				$total_n = isset( $_POST['summary_count'] ) ? absint( $_POST['summary_count'] ) : count( $processed );
-				// phpcs:ignore WordPress.Security.NonceVerification.Missing
-				$total_b = isset( $_POST['summary_bytes'] ) ? absint( $_POST['summary_bytes'] ) : $saved_total;
-				TisaCase_Optimizer_Session::log(
-					'optimize_images',
-					__( 'فشرده‌سازی و بهینه‌سازی نسل جدید تصاویر', 'tisacase-optimizer' ),
-					$total_n,
-					$total_b
-				);
+			$summary  = TisaCase_Optimizer_Job::summary( $job );
+			$overview = null;
+			if ( ! empty( $summary['finished'] ) && TisaCase_Optimizer_Media_Inspector::has_ready_catalog() ) {
+				$overview = TisaCase_Optimizer_Media_Inspector::overview_stats( false );
 			}
 
 			self::ok(
 				array(
-					'processed'   => $processed,
-					'saved_bytes' => $saved_total,
+					'job'           => $summary,
+					'processed'     => array_slice( (array) $job['done_ids'], 0, 50 ),
+					'failed'        => array_slice( (array) $job['failed'], 0, 50 ),
+					'saved_bytes'   => max( 0, (int) $job['saved_bytes'] ),
+					'processed_now' => (int) $job['done'] - $before_done,
+					'replace_mode'  => 'replace' === (string) $job['mode'],
+					'overview'      => $overview,
 				)
 			);
 		}

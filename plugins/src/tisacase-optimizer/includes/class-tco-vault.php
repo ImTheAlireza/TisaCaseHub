@@ -25,6 +25,18 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 	 */
 	final class TisaCase_Optimizer_Vault {
 
+		/** شمارندهٔ تغییرات فهرست قرنطینه/پشتیبان (برای باطل‌کردن کش خلاصه). */
+		private static $summary_rev = 0;
+
+		/**
+		 * باطل‌کردن کش «خلاصهٔ خزانه» پس از هر تغییر در فهرست‌ها.
+		 *
+		 * @return void
+		 */
+		private static function invalidate_summary() {
+			++self::$summary_rev;
+		}
+
 		const DIR_NAME           = 'tisa-opt-vault';
 		const SUB_QUARANTINE     = 'quarantine';
 		const SUB_ORIGINALS      = 'originals';
@@ -352,6 +364,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			$index = self::list_quarantine();
 			array_unshift( $index, $summary );
 			update_option( self::OPTION_QUARANTINE, $index, false );
+			self::invalidate_summary();
 
 			TisaCase_Optimizer_Settings::bump_stats(
 				array(
@@ -445,6 +458,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			$index = self::list_quarantine();
 			array_unshift( $index, $summary );
 			update_option( self::OPTION_QUARANTINE, $index, false );
+			self::invalidate_summary();
 
 			TisaCase_Optimizer_Settings::bump_stats(
 				array(
@@ -653,6 +667,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 				'created_at'    => current_time( 'mysql' ),
 			);
 			update_option( self::OPTION_ORIG_INDEX, $orig_index, false );
+			self::invalidate_summary();
 			return true;
 		}
 
@@ -706,6 +721,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			self::remove_dir_recursive( $vault_root . '/' . self::SUB_ORIGINALS . '/' . $attachment_id );
 			unset( $orig_index[ $attachment_id ] );
 			update_option( self::OPTION_ORIG_INDEX, $orig_index, false );
+			self::invalidate_summary();
 
 			return true;
 		}
@@ -726,6 +742,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			wp_mkdir_p( $orig_dir );
 			self::ensure_protected( $vault_root );
 			update_option( self::OPTION_ORIG_INDEX, array(), false );
+			self::invalidate_summary();
 
 			return array(
 				'count' => $count,
@@ -791,6 +808,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 * @return array{quarantine_count:int,quarantine_bytes:int,originals_count:int,originals_bytes:int}
 		 */
 		public static function summary() {
+			// این متد در آمار کلی صفحه، فهرست قرنطینه و کارت «ادامه» صدا زده
+			// می‌شود؛ بدون کش، هر بار دو آپشن کامل پیمایش می‌شد. کش با هر تغییر
+			// در فهرست‌ها باطل می‌شود تا هیچ‌گاه عدد قدیمی نشان داده نشود.
+			static $cache = null;
+			static $cache_rev = -1;
+			if ( is_array( $cache ) && $cache_rev === self::$summary_rev ) {
+				return $cache;
+			}
 			$q_items = self::list_quarantine();
 			$q_bytes = 0;
 			foreach ( $q_items as $q ) {
@@ -801,12 +826,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			foreach ( $o_items as $o ) {
 				$o_bytes += isset( $o['bytes'] ) ? (int) $o['bytes'] : 0;
 			}
-			return array(
+			$cache_rev = self::$summary_rev;
+			$cache     = array(
 				'quarantine_count' => count( $q_items ),
 				'quarantine_bytes' => $q_bytes,
 				'originals_count'  => count( $o_items ),
 				'originals_bytes'  => $o_bytes,
 			);
+			return $cache;
 		}
 
 		/**
@@ -824,6 +851,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 				}
 			}
 			update_option( self::OPTION_QUARANTINE, $kept, false );
+			self::invalidate_summary();
 		}
 
 		/**

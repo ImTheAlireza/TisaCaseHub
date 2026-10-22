@@ -56,11 +56,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 					return $html;
 				}
 				$baseurl = trailingslashit( $uploads['baseurl'] );
-				$basedir = wp_normalize_path( trailingslashit( $uploads['basedir'] ) );
 
 				return (string) preg_replace_callback(
 					'/(?<!<picture>)\s*<img\b[^>]+>/i',
-					static function ( $match ) use ( $baseurl, $basedir ) {
+					static function ( $match ) use ( $baseurl ) {
 						$img = $match[0];
 						if ( false !== strpos( $img, 'data-no-webp' ) ) {
 							return $img;
@@ -75,13 +74,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 						}
 
 						$rel = ltrim( substr( $src_url, strlen( $baseurl ) ), '/' );
-						$abs = $basedir . $rel;
 
 						$sources = '';
-						if ( is_file( $abs . '.avif' ) ) {
+						// فهرست سبک نسخه‌های موازی: یک خواندن فایل به‌جای دو is_file
+						// برای هر تصویر در هر بازدید. اگر فهرست نباشد، همان is_file
+						// (با حافظهٔ موقت) اجرا می‌شود.
+						if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'avif' ) ) {
 							$sources .= '<source type="image/avif" srcset="' . esc_url( $src_url . '.avif' ) . '">';
 						}
-						if ( is_file( $abs . '.webp' ) ) {
+						if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'webp' ) ) {
 							$sources .= '<source type="image/webp" srcset="' . esc_url( $src_url . '.webp' ) . '">';
 						}
 						if ( '' === $sources ) {

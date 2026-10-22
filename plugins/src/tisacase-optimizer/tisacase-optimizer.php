@@ -3,7 +3,7 @@
  * Plugin Name:          مرکز بهینه‌سازی تیساکیس (TisaCase Optimizer)
  * Plugin URI:           https://tisacase.com
  * Description:          مرکز چندبخشی بهینه‌سازی و نگهداری فروشگاه تیساکیس — تحلیل دقیق حجم واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با راستی‌آزمایی زندهٔ پیش از حذف و قرنطینهٔ ۳۰ روزه، فشرده‌سازی بومی WebP/AVIF، ادغام هوشمند تکراری‌ها، مدیریت زیرسایزها و سئوی خودکار.
- * Version:              1.0.11
+ * Version:              1.2.0
  * Requires at least:    5.8
  * Requires PHP:         7.4
  * Author:               علیرضا شعبان زاده
@@ -21,7 +21,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCO_VERSION', '1.0.11' );
+define( 'TCO_VERSION', '1.2.0' );
 define( 'TCO_FILE', __FILE__ );
 define( 'TCO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TCO_URL', plugin_dir_url( __FILE__ ) );
@@ -48,6 +48,10 @@ function tco_autoload( $class ) {
 		'TisaCase_Optimizer_Deduplicator'      => 'class-tco-deduplicator.php',
 		'TisaCase_Optimizer_Subsizes'          => 'class-tco-subsizes.php',
 		'TisaCase_Optimizer_Image_SEO'         => 'class-tco-image-seo.php',
+		'TisaCase_Optimizer_Sidecar_Index'     => 'class-tco-sidecar-index.php',
+		'TisaCase_Optimizer_Catalog_Summary'   => 'class-tco-catalog-summary.php',
+		'TisaCase_Optimizer_Cache_Purger'      => 'class-tco-cache-purger.php',
+		'TisaCase_Optimizer_Preflight'         => 'class-tco-preflight.php',
 		'TisaCase_Optimizer_WebP_Delivery'     => 'class-tco-webp-delivery.php',
 		'TisaCase_Optimizer_Module_Images'     => 'class-tco-module-images.php',
 		'TisaCase_Optimizer_Module_Vault'      => 'class-tco-module-vault.php',

@@ -82,6 +82,64 @@ if ( ! class_exists( 'TisaCase_Optimizer_Subsizes' ) ) {
 			}
 
 			$list = array_values( $stats );
+
+			// «توصیهٔ هوشمند» برای هر سایز: به‌جای اینکه کاربر حدس بزند کدام سایز
+			// بلااستفاده است، خودمان با سه معیار روشن (ضروری بودن، به‌جامانده بودن
+			// از قالب قبلی، و سنگینی هر فایل) پیشنهاد می‌دهیم.
+			$total_bytes = 0;
+			foreach ( $list as $row ) {
+				if ( ! empty( $row['enabled'] ) ) {
+					$total_bytes += (int) $row['bytes'];
+				}
+			}
+
+			foreach ( $list as $i => $row ) {
+				$bytes      = (int) $row['bytes'];
+				$files      = (int) $row['files_count'];
+				$avg        = $files > 0 ? (int) round( $bytes / $files ) : 0;
+				$share      = $total_bytes > 0 ? (int) round( ( $bytes / $total_bytes ) * 100 ) : 0;
+				$is_orphan  = ( $row['source'] === __( 'به‌جامانده از قالب/افزونهٔ قبلی', 'tisacase-optimizer' ) );
+				$oversized  = ( (int) $row['width'] > 1600 || (int) $row['height'] > 1600 );
+
+				$advice      = 'keep';
+				$advice_text = __( 'حجم کمی دارد؛ نگه‌داشتنش بی‌خطر است.', 'tisacase-optimizer' );
+
+				if ( ! empty( $row['essential'] ) ) {
+					$advice_text = __( 'سایز ضروری فروشگاه (کارت محصول/سبد خرید) — هرگز خاموش نکنید.', 'tisacase-optimizer' );
+				} elseif ( $is_orphan && $bytes > 0 ) {
+					$advice      = 'disable';
+					$advice_text = sprintf(
+						/* translators: 1: bytes. */
+						__( 'این سایز در قالب فعلی ثبت نشده و کسی از آن استفاده نمی‌کند؛ با خاموش کردن و پاک‌سازی، %s آزاد می‌شود.', 'tisacase-optimizer' ),
+						size_format( $bytes )
+					);
+				} elseif ( $avg > 200 * 1024 && $bytes > 5 * 1024 * 1024 ) {
+					$advice      = 'review';
+					$advice_text = sprintf(
+						/* translators: 1: average file size, 2: file count. */
+						__( 'میانگین هر فایل %1$s است و %2$d فایل دارد؛ اگر در طراحی استفاده نمی‌شود، خاموش کردنش بیشترین صرفه را دارد.', 'tisacase-optimizer' ),
+						size_format( $avg ),
+						$files
+					);
+				} elseif ( $oversized ) {
+					$advice      = 'oversized';
+					$advice_text = sprintf(
+						/* translators: 1: width, 2: height. */
+						__( 'ابعاد %1$d×%2$d بزرگ‌تر از سقف نمایش معمول است؛ مگر در صفحهٔ محصول بزرگ استفاده شود، کوچک‌کردنش حجم را کم می‌کند.', 'tisacase-optimizer' ),
+						(int) $row['width'],
+						(int) $row['height']
+					);
+				} elseif ( '' === (string) $row['key'] ) {
+					$advice_text = __( 'کلید این سایز نامعتبر است.', 'tisacase-optimizer' );
+				}
+
+				$list[ $i ]['avg_bytes']   = $avg;
+				$list[ $i ]['share_pct']   = $share;
+				$list[ $i ]['advice']      = $advice;
+				$list[ $i ]['advice_text'] = $advice_text;
+				$list[ $i ]['reclaimable'] = in_array( $advice, array( 'disable', 'review' ), true ) ? $bytes : 0;
+			}
+
 			usort(
 				$list,
 				static function ( $a, $b ) {

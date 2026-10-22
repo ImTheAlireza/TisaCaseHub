@@ -438,9 +438,91 @@
 				originals_bytes: db.originals.reduce((s, o) => s + o.bytes, 0),
 			},
 			lifetime_stats: Object.assign({}, db.lifetime),
+			next_actions: buildNextActions(rows, strictUnused, unscaled, unopt, dups),
 			scan_built_at: '2026-10-21 15:40:00',
 			scan_ms: 42,
 		};
+	}
+
+	// همان فهرست «قدم بعدی» که سرور واقعی می‌سازد (برای هم‌رفتاری پیش‌نمایش و افزونه).
+	function buildNextActions(rows, strictUnused, unscaled, unopt, dups) {
+		const fa = faNum;
+		const out = [];
+		if (strictUnused.length) {
+			out.push({
+				key: 'unused',
+				tone: 'ok',
+				title: 'تصاویر مطلقاً بدون استفاده را مرور کنید',
+				desc: 'هیچ‌جای سایت استفاده نمی‌شوند؛ انتقال به قرنطینه ۳۰ روزه با یک کلیک قابل بازگشت است.',
+				count: strictUnused.length,
+				bytes: strictUnused.reduce((s, r) => s + r.total_bytes, 0),
+				cta: 'unused',
+				label: 'دیدن فهرست',
+			});
+		}
+		if (unopt.length) {
+			out.push({
+				key: 'compress',
+				tone: 'ok',
+				title: 'تصاویر سنگین را فشرده کنید',
+				desc: 'با «فشرده‌سازی و جایگزینی» فایل سبک‌تر می‌شود و حجم دیسک واقعاً کم می‌شود.',
+				count: unopt.length,
+				bytes: Math.round(unopt.reduce((s, r) => s + r.main_bytes * (r.is_opaque_png ? 0.72 : 0.45), 0)),
+				cta: 'optimize_all',
+				label: 'فشرده‌سازی همه',
+			});
+		}
+		if (unscaled.length) {
+			out.push({
+				key: 'unscaled',
+				tone: 'ok',
+				title: 'فایل‌های خام «-scaled» را پاک کنید',
+				desc: 'وردپرس نسخهٔ اصلی سنگین را نگه می‌دارد؛ اگر به آن نیاز ندارید، پاک شود.',
+				count: unscaled.length,
+				bytes: unscaled.reduce((s, r) => s + r.unscaled_bytes, 0),
+				cta: 'clean_unscaled',
+				label: 'پاک‌سازی فایل‌های خام',
+			});
+		}
+		if (dups.groups_count) {
+			out.push({
+				key: 'duplicates',
+				tone: 'ok',
+				title: 'تصاویر تکراری را ادغام کنید',
+				desc: 'فایل‌هایی با هش یکسان؛ ادغام بدون شکستن لینک‌ها انجام می‌شود.',
+				count: dups.extra_files,
+				bytes: dups.waste_bytes,
+				cta: 'duplicates',
+				label: 'بررسی تکراری‌ها',
+			});
+		}
+		if (db.quarantine.length) {
+			out.push({
+				key: 'quarantine',
+				tone: 'info',
+				title: 'قرنطینه را بازبینی کنید',
+				desc: 'موارد قرنطینه‌شده تا ۳۰ روز با همان شناسه و زیرسایزها قابل بازگردانی هستند.',
+				count: db.quarantine.length,
+				bytes: db.quarantine.reduce((s, q) => s + q.total_bytes, 0),
+				cta: 'quarantine',
+				label: 'باز کردن قرنطینه',
+			});
+		}
+		if (!out.length) {
+			out.push({
+				key: 'done',
+				tone: 'ok',
+				title: 'همه‌چیز مرتب است',
+				desc: 'در این لحظه کار ضروری باقی نمانده؛ با «اسکن کامل» وضعیت را تازه نگه دارید.',
+				count: 0,
+				bytes: 0,
+				cta: 'scan',
+				label: 'اسکن تازه',
+			});
+		}
+		void fa;
+		void rows;
+		return out;
 	}
 
 	function parseBody(bodyStr) {
@@ -546,12 +628,196 @@
 	};
 
 	const origFetch = window.fetch;
+	/**
+	 * شبیه‌ساز «موتور کار» برای فشرده‌سازی و بازگردانی — دقیقاً مثل سرور واقعی:
+	 *   • بدون job_id ⇒ کار تازه ساخته می‌شود و صف در «سرور» می‌ماند.
+	 *   • با job_id  ⇒ از همان نقطه ادامه می‌دهد (حتی بعد از رفرش صفحه).
+	 *   • هر تیک فقط چند مورد کار می‌کند و همیشه «چند تا انجام شد / چند تا ماند»
+	 *     را برمی‌گرداند، تا هیچ عددی گمانه‌زنی نباشد.
+	 */
+	function mockJobStep(op, req, extra, worker) {
+		window.__tcoMockJobs = window.__tcoMockJobs || {};
+		const opts = extra || {};
+		const perTick = Math.max(1, Number(window.__tcoMockTickMax || 6));
+
+		let job = req.job_id ? window.__tcoMockJobs[req.job_id] : null;
+		if (req.job_id && !job) {
+			throw new Error('این کار دیگر فعال نیست یا منقضی شده است.');
+		}
+		if (!job) {
+			const busy = Object.keys(window.__tcoMockJobs).some((k) => window.__tcoMockJobs[k].status === 'running');
+			if (busy) {
+				throw new Error('یک عملیات نیمه‌تمام در جریان است؛ ابتدا آن را ادامه دهید یا رها کنید.');
+			}
+			job = {
+				id: 'jobmock' + Date.now(),
+				op,
+				mode: opts.mode || '',
+				queue: (opts.queue || []).slice(),
+				total: (opts.queue || []).length,
+				done: 0,
+				failed: 0,
+				saved: 0,
+				status: 'running',
+				last_error: '',
+			};
+			window.__tcoMockJobs[job.id] = job;
+		}
+
+		const chunk = job.queue.splice(0, perTick);
+		let payload = null;
+		let saved = 0;
+		if (chunk.length) {
+			const res = worker(chunk) || {};
+			saved = Number(res.saved || 0);
+			job.done += Number(res.done != null ? res.done : chunk.length);
+			job.failed += Number(res.failed || 0);
+			job.saved += saved;
+			payload = res.payload || null;
+		}
+		if (!job.queue.length) job.status = 'done';
+
+		const finished = job.status === 'done';
+		const summary = {
+			id: job.id,
+			op,
+			op_label: op === 'optimize' ? 'فشرده‌سازی' : 'بازگردانی',
+			mode: job.mode,
+			phase: 'run',
+			status: job.status,
+			batch_id: 'run' + job.id,
+			total: job.total,
+			done: job.done,
+			remaining: job.queue.length,
+			verified: 0,
+			blocked_count: 0,
+			blocked: {},
+			blocked_paths: {},
+			failed_count: job.failed,
+			failed: [],
+			saved_bytes: job.saved,
+			elapsed_sec: 1,
+			eta_sec: 0,
+			coverage: 'full',
+			needs_rescan: false,
+			last_error: job.last_error,
+			hint: '',
+			block_reasons: [],
+			finished,
+		};
+
+		const out = {
+			job: summary,
+			processed: chunk,
+			failed: [],
+			saved_bytes: job.saved,
+			processed_now: chunk.length,
+			overview: finished ? computeOverview() : null,
+		};
+		if (finished && payload) Object.assign(out, payload);
+		return out;
+	}
+
+	// همان «توصیهٔ هوشمند» سرور واقعی برای هر زیرسایز.
+	function withAdvice(sizes) {
+		const total = sizes.filter((z) => z.files_count > 0).reduce((sum, z) => sum + z.bytes, 0);
+		return sizes.map((z) => {
+			const avg = z.files_count > 0 ? Math.round(z.bytes / z.files_count) : 0;
+			const share = total > 0 ? Math.round((z.bytes / total) * 100) : 0;
+			let advice = 'keep';
+			let advice_text = 'حجم کمی دارد؛ نگه‌داشتنش بی‌خطر است.';
+			if (z.essential) {
+				advice_text = 'سایز ضروری فروشگاه (کارت محصول/سبد خرید) — هرگز خاموش نکنید.';
+			} else if (/مانده/.test(z.source) && z.bytes > 0) {
+				advice = 'disable';
+				advice_text = `این سایز در قالب فعلی ثبت نشده؛ با خاموش‌کردن و پاک‌سازی، ${formatBytesM(z.bytes)} آزاد می‌شود.`;
+			} else if (avg > 200 * 1024 && z.bytes > 5 * 1024 * 1024) {
+				advice = 'review';
+				advice_text = `میانگین هر فایل ${formatBytesM(avg)} است و ${faNum(z.files_count)} فایل دارد؛ اگر در طراحی استفاده نمی‌شود، خاموش کردنش بیشترین صرفه را دارد.`;
+			} else if (z.width > 1600 || z.height > 1600) {
+				advice = 'oversized';
+				advice_text = `ابعاد ${faNum(z.width)}×${faNum(z.height)} بزرگ‌تر از سقف نمایش معمول است.`;
+			}
+			return Object.assign({}, z, {
+				avg_bytes: avg,
+				share_pct: share,
+				advice,
+				advice_text,
+				reclaimable: advice === 'disable' || advice === 'review' ? z.bytes : 0,
+			});
+		});
+	}
+
+	function formatBytesM(n) {
+		const b = Number(n) || 0;
+		if (b >= 1024 * 1024 * 1024) return `${(b / 1024 / 1024 / 1024).toFixed(1)} GB`;
+		if (b >= 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MB`;
+		if (b >= 1024) return `${Math.round(b / 1024)} KB`;
+		return `${b} B`;
+	}
+
+	// بسته‌ٔ «گاوصندوق» (قرنطینه + نسخهٔ اصل + تاریخچه) — یک‌جا ساخته می‌شود تا
+	// هم شبیه‌ساز بازگردانی و هم get_vault دقیقاً یک شکل بدهند.
+	function mockVaultPayload() {
+		const enrichedHistory = db.history.map((h) =>
+			Object.assign({}, h, {
+				recoverable_count: h.batch_id ? db.quarantine.filter((q) => q.batch_id === h.batch_id).length : 0,
+			})
+		);
+		return {
+			quarantine: db.quarantine,
+			originals: db.originals,
+			history: enrichedHistory,
+			summary: {
+				quarantine_count: db.quarantine.length,
+				quarantine_bytes: db.quarantine.reduce((s, q) => s + q.total_bytes, 0),
+				originals_count: db.originals.length,
+				originals_bytes: db.originals.reduce((s, o) => s + o.bytes, 0),
+			},
+		};
+	}
+
+	// یک تصویر را «بهینه» می‌کند و حجم صرفه‌جویی‌شده را برمی‌گرداند.
+	function mockOptimizeOne(it, replaceMode) {
+		if (!it) return 0;
+		if (!replaceMode && it.is_optimized) return 0;
+		let saved = 0;
+		if (replaceMode) {
+			// فشرده‌سازی + جایگزینی: فایل اصل و زیرسایزها کوچک و WebP می‌شوند.
+			const before = it.main_bytes + it.subsizes_bytes;
+			it.main_bytes = Math.round(it.main_bytes * (it.is_opaque_png ? 0.22 : 0.3));
+			it.subsizes_bytes = Math.round(it.subsizes_bytes * 0.3);
+			it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
+			it.format = 'WEBP';
+			it.mime = 'image/webp';
+			it.has_webp = true;
+			it.filename = it.filename.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
+			it.rel_path = it.rel_path.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
+			saved = Math.max(0, before - (it.main_bytes + it.subsizes_bytes));
+		} else {
+			saved = Math.round(it.main_bytes * (it.is_opaque_png ? 0.72 : 0.45));
+			it.main_bytes -= saved;
+			it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
+			it.has_webp = true;
+		}
+		it.is_optimized = true;
+		it.saved_bytes += saved;
+		db.lifetime.optimized_count += 1;
+		db.lifetime.saved_bytes += saved;
+		return saved;
+	}
+
 	window.fetch = async function (url, opts) {
 		if (String(url).indexOf('admin-ajax.php') === -1) {
 			return origFetch ? origFetch(url, opts) : Promise.reject(new Error('No fetch'));
 		}
 		const req = parseBody(opts && opts.body);
 		const op = req.op;
+
+		// تأخیر اختیاری برای آزمون «توقف وسط کار» (پیش‌فرض صفر = پاسخ فوری).
+		if (window.__tcoMockLatency && (op === 'optimize_batch' || op === 'restore_quarantine')) {
+			await new Promise((r) => setTimeout(r, Number(window.__tcoMockLatency)));
+		}
 		let data = {};
 
 		if (op === 'overview') {
@@ -850,7 +1116,39 @@
 					},
 				};
 			} else {
-				data = { job: null };
+				// کارهای فشرده‌سازی/بازگردانی هم در «سرور» ذخیره‌اند؛ بعد از رفرش
+				// صفحه باید همان کارت «ادامهٔ عملیات» برگردد.
+				const other = Object.keys(window.__tcoMockJobs || {})
+					.map((k) => window.__tcoMockJobs[k])
+					.find((j) => j.status === 'running');
+				data = other
+					? {
+							job: {
+								id: other.id,
+								op: other.op,
+								mode: other.mode,
+								phase: 'run',
+								status: other.status,
+								total: other.total,
+								done: other.done,
+								remaining: other.queue.length,
+								verified: 0,
+								blocked_count: 0,
+								blocked: {},
+								failed_count: other.failed,
+								failed: [],
+								saved_bytes: other.saved,
+								elapsed_sec: 1,
+								eta_sec: 0,
+								coverage: 'full',
+								needs_rescan: false,
+								last_error: other.last_error || '',
+								hint: '',
+								block_reasons: [],
+								finished: false,
+							},
+					  }
+					: { job: null };
 			}
 		} else if (op === 'job_cancel') {
 			const job = window.__tcoMockJob;
@@ -861,6 +1159,14 @@
 				job.safe_ids = [];
 				job.safe_paths = [];
 			}
+			// کارهای فشرده‌سازی/بازگردانی هم رها می‌شوند.
+			Object.keys(window.__tcoMockJobs || {}).forEach((k) => {
+				const other = window.__tcoMockJobs[k];
+				if (other.status === 'running') {
+					other.status = 'cancelled';
+					other.queue = [];
+				}
+			});
 			data = {
 				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
 				overview: computeOverview(),
@@ -965,47 +1271,29 @@
 		} else if (op === 'optimize_batch') {
 			const replaceMode = Boolean(req.overrides && req.overrides.replace_mode) || db.settings.webp_mode === 'replace';
 			const ids = (req.ids || []).map(Number).filter(Boolean);
-			if (!ids.length) {
+			if (!ids.length && !req.job_id) {
+				// حالت «صف»: فهرست کاری که با یک کلیک پردازش می‌شود.
 				// در حالت جایگزینی، حتی بهینه‌شده‌های «نسخهٔ موازی» هم صف می‌شوند.
-				data = {
-					queue_ids: db.items
-						.filter((i) => (replaceMode ? i.format !== 'WEBP' : !i.is_optimized))
-						.map((i) => i.id),
-					replace_mode: replaceMode,
-				};
+				const queue = db.items
+					.filter((i) => (replaceMode ? i.format !== 'WEBP' : !i.is_optimized))
+					.map((i) => i.id);
+				data = { queue_ids: queue, total: queue.length, replace_mode: replaceMode };
 			} else {
-				let saved = 0;
-				ids.forEach((id) => {
-					const it = db.items.find((x) => x.id === id);
-					if (!it) return;
-					if (!replaceMode && it.is_optimized) return;
-
-					if (replaceMode) {
-						// فشرده‌سازی + جایگزینی: فایل اصل و زیرسایزها کوچک و WebP می‌شوند.
-						const before = it.main_bytes + it.subsizes_bytes;
-						it.main_bytes = Math.round(it.main_bytes * (it.is_opaque_png ? 0.22 : 0.3));
-						it.subsizes_bytes = Math.round(it.subsizes_bytes * 0.3);
-						it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
-						it.format = 'WEBP';
-						it.mime = 'image/webp';
-						it.has_webp = true;
-						it.filename = it.filename.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
-						it.rel_path = it.rel_path.replace(/\.(png|jpe?g|PNG|JPG|JPEG)$/, '.webp');
-						saved += Math.max(0, before - (it.main_bytes + it.subsizes_bytes));
-					} else {
-						const cut = Math.round(it.main_bytes * (it.is_opaque_png ? 0.72 : 0.45));
-						it.main_bytes -= cut;
-						it.total_bytes = it.main_bytes + it.subsizes_bytes + it.unscaled_bytes;
-						saved += cut;
-						it.has_webp = true;
+				data = mockJobStep(
+					'optimize',
+					req,
+					{
+						mode: replaceMode ? 'replace' : 'sidecar',
+						queue: ids.length ? ids : db.items.filter((i) => !i.is_optimized).map((i) => i.id),
+					},
+					(chunk) => {
+						let saved = 0;
+						chunk.forEach((id) => {
+							saved += mockOptimizeOne(db.items.find((x) => x.id === Number(id)), replaceMode);
+						});
+						return { done: chunk.length, saved, payload: { replace_mode: replaceMode } };
 					}
-
-					it.is_optimized = true;
-					it.saved_bytes += saved;
-					db.lifetime.optimized_count += 1;
-				});
-				db.lifetime.saved_bytes += saved;
-				data = { processed: ids, remaining_ids: [], saved_bytes: saved, done: true, replace_mode: replaceMode };
+				);
 			}
 		} else if (op === 'get_duplicates') {
 			data = computeDuplicates();
@@ -1036,10 +1324,10 @@
 			db.lifetime.dedup_merged += merged;
 			data = { merged, rewired: merged, saved_bytes: saved, duplicates: computeDuplicates(), overview: computeOverview() };
 		} else if (op === 'get_subsizes') {
-			data = { sizes: db.subsizes };
+			data = { sizes: withAdvice(db.subsizes) };
 		} else if (op === 'save_subsizes') {
 			db.settings.disabled_sizes = Array.isArray(req.disabled_sizes) ? req.disabled_sizes : [];
-			data = { settings: db.settings, sizes: db.subsizes };
+			data = { settings: db.settings, sizes: withAdvice(db.subsizes) };
 		} else if (op === 'clean_disabled_subsizes') {
 			const dis = new Set(db.settings.disabled_sizes || []);
 			let saved = 0;
@@ -1053,7 +1341,7 @@
 				}
 			});
 			db.lifetime.saved_bytes += saved;
-			data = { result: { deleted_files: files, saved_bytes: saved }, sizes: db.subsizes, overview: computeOverview() };
+			data = { result: { deleted_files: files, saved_bytes: saved }, sizes: withAdvice(db.subsizes), overview: computeOverview() };
 		} else if (op === 'regen_batch') {
 			const ids = (req.ids || []).map(Number).filter(Boolean);
 			data = ids.length ? { done_ids: ids, remaining_ids: [], done: true } : { queue_ids: db.items.map((i) => i.id) };
@@ -1094,52 +1382,58 @@
 				pages: 1,
 			};
 			data = op === 'bulk_generate_seo' ? { updated, audit } : audit;
-		} else if (op === 'get_vault' || op === 'restore_quarantine' || op === 'purge_quarantine' || op === 'restore_original' || op === 'purge_originals' || op === 'clear_history') {
-			let savedBytes = 0;
-			let restoredCount = 0;
-			if (op === 'restore_quarantine') {
-				let targetIds = (req.item_ids || []).filter(Boolean);
+		} else if (op === 'restore_quarantine') {
+			let targetIds = (req.item_ids || []).filter(Boolean);
+			if (!req.job_id) {
 				if (!targetIds.length && req.batch_id) {
 					targetIds = db.quarantine.filter((q) => q.batch_id === req.batch_id).map((q) => q.id);
 				} else if (!targetIds.length && Number(req.restore_all) === 1) {
 					targetIds = db.quarantine.map((q) => q.id);
 				}
-				targetIds.forEach((qid) => {
+			}
+			data = mockJobStep('restore', req, { mode: 'restore', queue: targetIds }, (qids) => {
+				let restored = 0;
+				qids.forEach((qid) => {
 					const idx = db.quarantine.findIndex((q) => q.id === qid);
-					if (idx > -1) {
-						const q = db.quarantine.splice(idx, 1)[0];
-						restoredCount += 1;
-						db.items.unshift(
-							q.snapshot || {
-								id: q.attachment_id || 4901,
-								filename: q.filename,
-								rel_path: q.rel_path,
-								folder: '2026/03',
-								title: q.filename,
-								alt: '',
-								mime_type: 'image/jpeg',
-								format: 'JPEG',
-								date: '2026-03-10',
-								width: 1920,
-								height: 1080,
-								main_bytes: q.total_bytes,
-								subsizes_bytes: 0,
-								unscaled_bytes: 0,
-								subsizes_count: 8,
-								is_opaque_png: false,
-								is_optimized: false,
-								has_webp: false,
-								saved_bytes: 0,
-								is_pinned: false,
-								sha1: 'restored998877',
-								usage_status: 'strict_unused',
-								refs: [],
-								thumb_url: svgCaseThumb('#0E7C6B', '#129786', 'RESTORED', '#0A5F52'),
-							}
-						);
-					}
+					if (idx === -1) return;
+					const q = db.quarantine.splice(idx, 1)[0];
+					restored += 1;
+					db.items.unshift(
+						q.snapshot || {
+							id: q.attachment_id || 4901,
+							filename: q.filename,
+							rel_path: q.rel_path,
+							folder: '2026/03',
+							title: q.filename,
+							alt: '',
+							mime_type: 'image/jpeg',
+							format: 'JPEG',
+							date: '2026-03-10',
+							width: 1920,
+							height: 1080,
+							main_bytes: q.total_bytes,
+							subsizes_bytes: 0,
+							unscaled_bytes: 0,
+							subsizes_count: 8,
+							is_opaque_png: false,
+							is_optimized: false,
+							has_webp: false,
+							saved_bytes: 0,
+							is_pinned: false,
+							sha1: 'restored998877',
+							usage_status: 'strict_unused',
+							refs: [],
+							thumb_url: svgCaseThumb('#0E7C6B', '#129786', 'RESTORED', '#0A5F52'),
+						}
+					);
 				});
-			} else if (op === 'restore_original') {
+				return { done: restored, failed: qids.length - restored, payload: { vault: mockVaultPayload(), restored: restored } };
+			});
+		} else if (op === 'get_vault' || op === 'purge_quarantine' || op === 'restore_original' || op === 'purge_originals' || op === 'clear_history') {
+			let savedBytes = 0;
+			let restoredCount = 0;
+
+			if (op === 'restore_original') {
 				if (Number(req.restore_all) === 1) {
 					restoredCount = db.originals.length;
 					db.originals = [];
@@ -1165,22 +1459,7 @@
 			} else if (op === 'clear_history') {
 				db.history = [];
 			}
-			const enrichedHistory = db.history.map((h) =>
-				Object.assign({}, h, {
-					recoverable_count: h.batch_id ? db.quarantine.filter((q) => q.batch_id === h.batch_id).length : 0,
-				})
-			);
-			const vaultPayload = {
-				quarantine: db.quarantine,
-				originals: db.originals,
-				history: enrichedHistory,
-				summary: {
-					quarantine_count: db.quarantine.length,
-					quarantine_bytes: db.quarantine.reduce((s, q) => s + q.total_bytes, 0),
-					originals_count: db.originals.length,
-					originals_bytes: db.originals.reduce((s, o) => s + o.bytes, 0),
-				},
-			};
+			const vaultPayload = mockVaultPayload();
 			data =
 				op === 'get_vault'
 					? vaultPayload
@@ -1191,6 +1470,21 @@
 							saved_bytes: savedBytes,
 							result: { bytes: savedBytes },
 					  };
+		} else if (op === 'preflight') {
+			const checks = [
+				{ key: 'php', label: 'نسخهٔ PHP', status: 'ok', value: '8.2.18', advice: 'نسخهٔ مناسب است.' },
+				{ key: 'memory', label: 'حافظهٔ PHP', status: 'ok', value: '512 MB', advice: 'مقدار کافی است.' },
+				{ key: 'max_execution', label: 'سقف زمان هر درخواست', status: 'warn', value: '20s', advice: 'هر تیک کوتاه است ولی برای اطمینان، سقف را روی ۳۰ ثانیه بگذارید.' },
+				{ key: 'engine', label: 'موتور پردازش تصویر', status: 'ok', value: 'Imagick · WebP: بله', advice: 'WebP و AVIF پشتیبانی می‌شوند.' },
+				{ key: 'uploads_writable', label: 'اجازهٔ نوشتن در پوشهٔ uploads', status: 'ok', value: 'دارد', advice: 'فایل‌های سبک‌تر و نسخهٔ WebP کنار فایل اصلی ساخته می‌شوند.' },
+				{ key: 'vault_writable', label: 'پوشهٔ امن قرنطینه و پشتیبان', status: 'ok', value: 'آماده', advice: 'بازگردانی و undo همیشه در دسترس است.' },
+				{ key: 'disk_space', label: 'فضای آزاد دیسک', status: 'ok', value: '48.2 GB', advice: 'فضای کافی برای ساخت نسخه‌های جدید وجود دارد.' },
+				{ key: 'catalog', label: 'کاتالوگ اسکن', status: 'ok', value: '۱٬۴۸۰ تصویر · ۲ ساعت پیش', advice: 'کاتالوگ تازه است؛ آمار داشبورد دقیق است.' },
+				{ key: 'quarantine', label: 'حجم قرنطینه و پشتیبان', status: 'ok', value: '۳ مورد · ۱۲ MB', advice: 'قرنطینه فضای زیادی اشغال نکرده است.' },
+				{ key: 'cron', label: 'زمان‌بند وردپرس (WP-Cron)', status: 'ok', value: 'فعال', advice: 'پاک‌سازی خودکار قرنطینهٔ منقضی انجام می‌شود.' },
+			];
+			const score = 92;
+			data = { score, level: 'ok', checked_at: '2026-10-22 10:00:00', checks };
 		} else if (op === 'save_settings') {
 			Object.assign(db.settings, req.settings || {});
 			data = { settings: Object.assign({}, db.settings) };

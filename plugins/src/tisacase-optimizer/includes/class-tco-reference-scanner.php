@@ -54,6 +54,212 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		}
 
 		/**
+		 * بخش‌های بزرگ وضعیت اسکن و کلیدهایی که در هر بخش ذخیره می‌شوند.
+		 *
+		 * چرا تقسیم شد؟ پیش‌تر کل وضعیت (که در فروشگاه‌های بزرگ ده‌ها مگابایت
+		 * می‌شد) در پایان «هر تیک» از نو نوشته و در تیک بعد از نو خوانده
+		 * می‌شد؛ حتی وقتی فقط یک شمارنده تغییر کرده بود. حالا هر بخش که تغییر
+		 * کند جداگانه و فشرده (gzip) نوشته می‌شود و بقیه دست‌نخورده می‌مانند.
+		 *
+		 * @var array<string,string[]>
+		 */
+		const STATE_BLOBS = array(
+			'att'   => array( 'raw_atts', 'atts_by_dir', 'stem_map' ),
+			'refs'  => array( 'refs', 'ref_url_hash' ),
+			'disk'  => array( 'dir_queue', 'visited_dirs', 'orphans', 'size_buckets', 'disk_bytes', 'inodes' ),
+			'items' => array( 'items', 'subsize_stats' ),
+			'hash'  => array( 'hash_groups' ),
+		);
+
+		/**
+		 * علامت‌گذاری یک بخش به‌عنوان «تغییرکرده» تا فقط همان نوشته شود.
+		 *
+		 * @param array<string,mixed> $state وضعیت اسکن (با مرجع).
+		 * @param string              $blob  نام بخش.
+		 * @return void
+		 */
+		private static function mark_dirty( array &$state, $blob ) {
+			if ( ! isset( $state['_dirty'] ) || ! is_array( $state['_dirty'] ) ) {
+				$state['_dirty'] = array();
+			}
+			$state['_dirty'][ $blob ] = true;
+		}
+
+		/**
+		 * مسیر فایل یک بخش از وضعیت اسکن.
+		 *
+		 * @param string $blob نام بخش.
+		 * @return string
+		 */
+		private static function blob_path( $blob ) {
+			$file = self::state_path();
+			if ( '' === $file ) {
+				return '';
+			}
+			return $file . '.' . preg_replace( '/[^a-z0-9_]/', '', (string) $blob ) . '.gz';
+		}
+
+		/**
+		 * فشرده‌سازی داده‌های وضعیت (در صورت پشتیبانی zlib).
+		 *
+		 * @param string $json دادهٔ JSON.
+		 * @return string
+		 */
+		private static function maybe_gzip( $json ) {
+			if ( function_exists( 'gzencode' ) ) {
+				$gz = @gzencode( $json, 6 );
+				if ( is_string( $gz ) && '' !== $gz ) {
+					return $gz;
+				}
+			}
+			return $json;
+		}
+
+		/**
+		 * رمزگشایی داده‌های وضعیت (چه فشرده چه ساده).
+		 *
+		 * @param string $raw محتوای فایل.
+		 * @return string
+		 */
+		private static function maybe_gunzip( $raw ) {
+			if ( is_string( $raw ) && strlen( $raw ) > 2 && "\x1f\x8b" === substr( $raw, 0, 2 ) && function_exists( 'gzdecode' ) ) {
+				$out = @gzdecode( $raw );
+				if ( is_string( $out ) && '' !== $out ) {
+					return $out;
+				}
+			}
+			return (string) $raw;
+		}
+
+		/**
+		 * خواندن وضعیت اسکن از دیسک (هستهٔ کوچک + بخش‌های بزرگ).
+		 *
+		 * @param string $file مسیر فایل هسته.
+		 * @return array<string,mixed>|null
+		 */
+		private static function load_state( $file ) {
+			if ( '' === $file || ! is_file( $file ) ) {
+				return null;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+			$raw = @file_get_contents( $file );
+			if ( ! is_string( $raw ) || '' === $raw ) {
+				return null;
+			}
+			$core = json_decode( self::maybe_gunzip( $raw ), true );
+			if ( ! is_array( $core ) || empty( $core['stage'] ) ) {
+				return null;
+			}
+
+			unset( $core['_dirty'] );
+
+			// وضعیت نسخه‌های قدیمی: همه‌چیز داخل همان یک فایل بود.
+			if ( empty( $core['_split'] ) ) {
+				return $core;
+			}
+
+			foreach ( self::STATE_BLOBS as $blob => $keys ) {
+				$bfile = self::blob_path( $blob );
+				if ( '' === $bfile || ! is_file( $bfile ) ) {
+					continue;
+				}
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+				$braw = @file_get_contents( $bfile );
+				if ( ! is_string( $braw ) || '' === $braw ) {
+					continue;
+				}
+				$part = json_decode( self::maybe_gunzip( $braw ), true );
+				if ( ! is_array( $part ) ) {
+					continue;
+				}
+				foreach ( $keys as $key ) {
+					if ( array_key_exists( $key, $part ) ) {
+						$core[ $key ] = $part[ $key ];
+					}
+				}
+			}
+
+			return $core;
+		}
+
+		/**
+		 * نوشتن وضعیت اسکن: فقط بخش‌های تغییرکرده + هستهٔ کوچک.
+		 *
+		 * @param array<string,mixed> $state وضعیت اسکن.
+		 * @return void
+		 */
+		private static function save_state( array $state ) {
+			$file = self::state_path();
+			if ( '' === $file ) {
+				return;
+			}
+
+			$dirty = isset( $state['_dirty'] ) && is_array( $state['_dirty'] ) ? array_keys( $state['_dirty'] ) : array();
+			// شبکهٔ ایمنی: اگر هیچ بخشی علامت نخورده باشد، همه را می‌نویسیم تا
+			// هیچ‌گاه پیشرفتی گم نشود (بدترین حالت = رفتار نسخهٔ قبل).
+			if ( empty( $dirty ) ) {
+				$dirty = array_keys( self::STATE_BLOBS );
+			}
+
+			$blob_keys = self::STATE_BLOBS;
+			foreach ( $dirty as $blob ) {
+				if ( ! isset( $blob_keys[ $blob ] ) ) {
+					continue;
+				}
+				$bfile = self::blob_path( $blob );
+				if ( '' === $bfile ) {
+					continue;
+				}
+				$part = array();
+				foreach ( $blob_keys[ $blob ] as $key ) {
+					if ( array_key_exists( $key, $state ) ) {
+						$part[ $key ] = $state[ $key ];
+					}
+				}
+				$json = wp_json_encode( $part, JSON_UNESCAPED_UNICODE );
+				if ( false === $json ) {
+					continue;
+				}
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+				@file_put_contents( $bfile, self::maybe_gzip( $json ) );
+			}
+
+			$core = $state;
+			unset( $core['_dirty'] );
+			$core['_split'] = true;
+			foreach ( $blob_keys as $keys ) {
+				foreach ( $keys as $key ) {
+					unset( $core[ $key ] );
+				}
+			}
+
+			$cjson = wp_json_encode( $core, JSON_UNESCAPED_UNICODE );
+			if ( false === $cjson ) {
+				return;
+			}
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
+			@file_put_contents( $file, self::maybe_gzip( $cjson ) );
+		}
+
+		/**
+		 * حذف فایل‌های وضعیت و بخش‌های آن.
+		 *
+		 * @return void
+		 */
+		private static function delete_state_files() {
+			$file = self::state_path();
+			if ( '' !== $file && is_file( $file ) ) {
+				wp_delete_file( $file );
+			}
+			foreach ( array_keys( self::STATE_BLOBS ) as $blob ) {
+				$bfile = self::blob_path( $blob );
+				if ( '' !== $bfile && is_file( $bfile ) ) {
+					wp_delete_file( $bfile );
+				}
+			}
+		}
+
+		/**
 		 * آیا کاتالوگ آماده و معتبر روی دیسک وجود دارد؟
 		 *
 		 * @return bool
@@ -109,13 +315,18 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			if ( false === @file_put_contents( $tmp, $json ) ) {
 				return false;
 			}
+			$ok = true;
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename
 			if ( ! @rename( $tmp, $file ) ) {
 				wp_delete_file( $tmp );
 				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-				return false !== @file_put_contents( $file, $json );
+				$ok = ( false !== @file_put_contents( $file, $json ) );
 			}
-			return true;
+			// هر تغییر کاتالوگ، خلاصهٔ آماری کش‌شده را باطل می‌کند (تا عدد قدیمی
+			// هرگز نمایش داده نشود).
+			TisaCase_Optimizer_Catalog_Summary::invalidate();
+			TisaCase_Optimizer_Sidecar_Index::flush_runtime_cache();
+			return $ok;
 		}
 
 		/**
@@ -132,12 +343,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				$idx_dir . '/scan-state-v3.json',
 				$idx_dir . '/scan-state-v2.ser',
 				$idx_dir . '/reference-index-v1.json',
+				$idx_dir . '/' . TisaCase_Optimizer_Sidecar_Index::FILE,
 			);
 			foreach ( $files as $f ) {
 				if ( '' !== $f && is_file( $f ) ) {
 					wp_delete_file( $f );
 				}
 			}
+			// بخش‌های جداگانهٔ وضعیت اسکن هم پاک می‌شوند.
+			self::delete_state_files();
 		}
 
 		/**
@@ -183,15 +397,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			$state_file   = self::state_path();
 			$state        = null;
 
-			if ( ! $reset && '' !== $state_file && is_file( $state_file ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-				$raw_state = @file_get_contents( $state_file );
-				if ( is_string( $raw_state ) && '' !== $raw_state ) {
-					$parsed = json_decode( $raw_state, true );
-					if ( is_array( $parsed ) && ! empty( $parsed['stage'] ) ) {
-						$state = $parsed;
-					}
-				}
+			if ( $reset ) {
+				// اسکن تازه: باقی‌ماندهٔ اسکن قبلی (از جمله بخش‌های جداگانه) پاک شود،
+				// وگرنه بخش‌های قدیمی با وضعیت تازه قاطی می‌شوند.
+				self::delete_state_files();
+			} else {
+				$state = self::load_state( $state_file );
 			}
 
 			if ( null === $state ) {
@@ -251,8 +462,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				} elseif ( 'finalize' === $stage ) {
 					$catalog = self::finalize_catalog( $state, $baseurl );
 					self::write_persisted_catalog( $catalog );
-					if ( '' !== $state_file && is_file( $state_file ) ) {
-						wp_delete_file( $state_file );
+					// وضعیت میانی و بخش‌های آن دیگر لازم نیست.
+					self::delete_state_files();
+					// فهرست سبک «کدام فایل نسخهٔ موازی WebP/AVIF دارد» یک‌بار ساخته
+					// می‌شود تا فرانت‌اند برای هر تصویر به دیسک دست نزند.
+					try {
+						TisaCase_Optimizer_Sidecar_Index::rebuild();
+					} catch ( Throwable $e ) {
+						unset( $e );
 					}
 					if ( is_object( $wpdb ) && method_exists( $wpdb, 'flush' ) ) {
 						$wpdb->flush();
@@ -274,10 +491,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				$wpdb->flush();
 			}
 
-			if ( '' !== $state_file ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents
-				@file_put_contents( $state_file, wp_json_encode( $state, JSON_UNESCAPED_UNICODE ) );
-			}
+			// فقط بخش‌هایی که در همین تیک تغییر کرده‌اند نوشته می‌شوند.
+			self::save_state( $state );
 
 			return self::build_progress_response( $state );
 		}
@@ -392,6 +607,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_att_load( array &$state, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'att' );
+
 			global $wpdb;
 
 			while ( ( microtime( true ) - $started_tick ) < $budget ) {
@@ -522,6 +739,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_fast_refs( array &$state ) {
+			self::mark_dirty( $state, 'refs' );
+
 			global $wpdb;
 
 			$media_meta_keys = array(
@@ -710,6 +929,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_content_refs( array &$state, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'refs' );
+
 			global $wpdb;
 
 			while ( ( microtime( true ) - $started_tick ) < $budget ) {
@@ -771,6 +992,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_meta_refs( array &$state, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'refs' );
+
 			global $wpdb;
 
 			while ( empty( $state['el_done'] ) && ( microtime( true ) - $started_tick ) < $budget ) {
@@ -892,6 +1115,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_id_list_refs( array &$state, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'refs' );
+
 			global $wpdb;
 
 			$skip_keys = array(
@@ -987,6 +1212,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function prepare_dir_sweep_queue( array &$state ) {
+			self::mark_dirty( $state, 'disk' );
+
 			$state['stem_map'] = array();
 			$queue             = array();
 			$seen              = array();
@@ -1018,6 +1245,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_dir_sweep( array &$state, $basedir, $baseurl, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'att' );
+			self::mark_dirty( $state, 'refs' );
+			self::mark_dirty( $state, 'disk' );
+			self::mark_dirty( $state, 'items' );
+			self::mark_dirty( $state, 'hash' );
+
 			$pinned_map = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
 
 			// اگر پیوست بدون مسیر داریم، یک‌جا نهایی شود.
@@ -1459,6 +1692,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		 * @return void
 		 */
 		private static function run_stage_hash_dups( array &$state, $basedir, $started_tick, $budget ) {
+			self::mark_dirty( $state, 'hash' );
+			self::mark_dirty( $state, 'items' );
+
 			// گروه اول: نمونه‌برداری سریع ۱۶ کیلوبایتی تا فایل‌های هم‌حجمِ متفاوت اصلاً کامل خوانده نشوند!
 			$sample_groups = array();
 			$total_h       = count( $state['hash_groups'] );

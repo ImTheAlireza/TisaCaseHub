@@ -14,6 +14,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 	 */
 	final class TisaCase_Optimizer_Settings {
 
+		/** @var array<string,mixed>|null کش تنظیمات در همین درخواست */
+		private static $cache_settings = null;
+
+		/** @var int[]|null کش فهرست پین‌ها در همین درخواست */
+		private static $cache_pinned = null;
+
 		const OPTION_SETTINGS = 'tisacase_optimizer_settings';
 		const OPTION_STATS    = 'tisacase_optimizer_stats';
 		const OPTION_PINNED   = 'tisacase_optimizer_pinned_ids';
@@ -80,11 +86,27 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		 * @return array<string,mixed>
 		 */
 		public static function get_all() {
+			// کش درون‌درخواستی: این متد در حلقه‌های سنگین (بازرسی ایمنی، ساخت
+			// فهرست صف و رندر جدول) ده‌ها بار صدا زده می‌شود.
+			if ( is_array( self::$cache_settings ) ) {
+				return self::$cache_settings;
+			}
 			$saved = get_option( self::OPTION_SETTINGS, array() );
 			if ( ! is_array( $saved ) ) {
 				$saved = array();
 			}
-			return array_merge( self::defaults(), $saved );
+			self::$cache_settings = array_merge( self::defaults(), $saved );
+			return self::$cache_settings;
+		}
+
+		/**
+		 * پاک‌کردن کش درون‌درخواستی تنظیمات (پس از هر ذخیره).
+		 *
+		 * @return void
+		 */
+		public static function flush_cache() {
+			self::$cache_settings = null;
+			self::$cache_pinned   = null;
 		}
 
 		/**
@@ -250,6 +272,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			// ذخیره بدون بار تحمیلی روی autoload فرانت‌اند در صورت عدم نیاز.
 			$needs_frontend = ! empty( $clean['delivery_method'] ) && 'picture' === $clean['delivery_method'];
 			update_option( self::OPTION_SETTINGS, $clean, $needs_frontend );
+			self::$cache_settings = null;
 
 			// همگام‌سازی قوانین .htaccess در صورت انتخاب سرو از طریق وب‌سرور.
 			if ( class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
@@ -287,11 +310,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		 * @return int[]
 		 */
 		public static function pinned_ids() {
-			$raw = get_option( self::OPTION_PINNED, array() );
-			if ( ! is_array( $raw ) ) {
-				return array();
+			// کش درون‌درخواستی (پیش‌تر در هر تکرار حلقهٔ بازرسی، آپشن دوباره
+			// خوانده و مرتب می‌شد).
+			if ( is_array( self::$cache_pinned ) ) {
+				return self::$cache_pinned;
 			}
-			return array_values( array_unique( array_filter( array_map( 'absint', $raw ) ) ) );
+			$raw                  = get_option( self::OPTION_PINNED, array() );
+			self::$cache_pinned   = is_array( $raw )
+				? array_values( array_unique( array_filter( array_map( 'absint', $raw ) ) ) )
+				: array();
+			return self::$cache_pinned;
 		}
 
 		/**
@@ -316,6 +344,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			}
 			$final = array_values( array_map( 'intval', array_keys( $map ) ) );
 			update_option( self::OPTION_PINNED, $final, false );
+			self::$cache_pinned = null;
 			return $final;
 		}
 

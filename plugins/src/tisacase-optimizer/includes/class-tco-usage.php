@@ -688,8 +688,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				);
 			}
 
-			$reasons = array();
-			if ( in_array( $aid, TisaCase_Optimizer_Settings::pinned_ids(), true ) ) {
+			$reasons    = array();
+			$pinned_map = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
+			if ( isset( $pinned_map[ $aid ] ) ) {
 				$reasons[] = 'در لیست سفید «هرگز حذف نشود» پین شده است';
 			}
 
@@ -806,9 +807,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 
 			// گام ۱: مراجع زندهٔ دیتابیس (سریع، دقیق و همیشه فعال).
 			if ( ! empty( $ids ) ) {
-				$live = self::live_refs( $ids );
+				$live       = self::live_refs( $ids );
+				$pinned_map = array_fill_keys( TisaCase_Optimizer_Settings::pinned_ids(), true );
 				foreach ( $ids as $aid ) {
-					if ( in_array( $aid, TisaCase_Optimizer_Settings::pinned_ids(), true ) ) {
+					if ( isset( $pinned_map[ $aid ] ) ) {
 						$result['blocked'][ $aid ] = array( 'در لیست سفید «هرگز حذف نشود» پین شده است' );
 						unset( $allow[ $aid ] );
 						continue;

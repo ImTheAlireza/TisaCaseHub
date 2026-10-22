@@ -148,6 +148,102 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		}
 
 		/**
+		 * شروع کار «فشرده‌سازی / جایگزینی» با صف در سرور.
+		 *
+		 * چرا؟ پیش از ۱٫۱٫۰ این عملیات با حلقهٔ سمت مرورگر (بستهٔ ۸تایی) اجرا می‌شد:
+		 * هر تصویر با ۱۴ زیرسایز ۲ تا ۵ ثانیه طول می‌کشد، پس یک بستهٔ ۸تایی می‌توانست
+		 * ۱۶ تا ۴۰ ثانیه یک درخواست را بگیرد و با Fatal/504 همه‌چیز نیمه‌کاره بماند،
+		 * بدون این‌که معلوم شود کدام تصویر عوض شده و کدام نه.
+		 *
+		 * @param int[]                $ids       شناسه‌های پیوست.
+		 * @param array<string,mixed>  $overrides بازنویسی تنظیمات (مثلاً replace_mode).
+		 * @return array<string,mixed>
+		 */
+		public static function start_optimize( array $ids, array $overrides = array() ) {
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+
+			$job = self::new_job_array( 'optimize', $ids, array() );
+			$job['phase']     = 'run';
+			$job['overrides'] = is_array( $overrides ) ? $overrides : array();
+			$job['mode']      = ! empty( $overrides['replace_mode'] ) ? 'replace' : 'sidecar';
+
+			self::reap_orphans();
+			self::save( $job );
+			return $job;
+		}
+
+		/**
+		 * شروع کار «بازگردانی انبوه از قرنطینه» با صف در سرور.
+		 *
+		 * @param string[] $item_ids شناسهٔ بسته‌های قرنطینه.
+		 * @return array<string,mixed>
+		 */
+		public static function start_restore( array $item_ids ) {
+			$ids = array();
+			foreach ( $item_ids as $id ) {
+				$id = sanitize_key( (string) $id );
+				if ( '' !== $id ) {
+					$ids[ $id ] = true;
+				}
+			}
+			$ids = array_keys( $ids );
+
+			$job = self::new_job_array( 'restore', array(), array() );
+			$job['phase']     = 'run';
+			$job['queue_qids'] = $ids;
+			$job['total_ids']  = count( $ids );
+			$job['mode']       = 'restore';
+
+			self::reap_orphans();
+			self::save( $job );
+			return $job;
+		}
+
+		/**
+		 * ساخت ساختار پایهٔ یک کار (برای همهٔ عملیات‌ها یکسان).
+		 *
+		 * @param string   $op    remove | optimize | restore.
+		 * @param int[]    $ids   شناسه‌های پیوست.
+		 * @param string[] $paths مسیرهای فایل یتیم.
+		 * @return array<string,mixed>
+		 */
+		private static function new_job_array( $op, array $ids, array $paths ) {
+			return array(
+				'id'            => self::new_id(),
+				'schema'        => self::SCHEMA,
+				'op'            => (string) $op,
+				'mode'          => (string) $op,
+				'phase'         => 'verify',
+				'batch_id'      => 'run' . gmdate( 'YmdHis' ) . strtolower( wp_generate_password( 4, false, false ) ),
+				'queue_ids'     => array_values( $ids ),
+				'queue_paths'   => array_values( $paths ),
+				'queue_qids'    => array(),
+				'safe_ids'      => array(),
+				'safe_paths'    => array(),
+				'total_ids'     => count( $ids ),
+				'total_paths'   => count( $paths ),
+				'verified'      => 0,
+				'done'          => 0,
+				'done_ids'      => array(),
+				'done_paths'    => array(),
+				'saved_bytes'   => 0,
+				'blocked'       => array(),
+				'blocked_paths' => array(),
+				'failed'        => array(),
+				'coverage'      => '',
+				'needs_rescan'  => false,
+				'allow_draft'   => false,
+				'overrides'     => array(),
+				'created'       => time(),
+				'updated'       => time(),
+				'started_at'    => time(),
+				'last_error'    => '',
+				'current'       => 0,
+				'status'        => 'running',
+			);
+		}
+
+		/**
 		 * اگر کار قبلی رهاشده مانده، تغییرات کاتالوگ آن را نهایی کن تا داده‌ها گم نشوند.
 		 *
 		 * @return void
@@ -204,9 +300,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			$budget_s = $budget_ms / 1000;
 			$processed = 0;
 
-			// فاز ۱: راستی‌آزمایی (فقط یک‌بار برای هر شناسه، مقاوم به قطع).
+			// فاز ۱: راستی‌آزمایی ایمنی — فقط برای «حذف» معنا دارد.
+			// (فشرده‌سازی و بازگردانی چیزی را نابود نمی‌کنند، پس بازرسی لازم نیست.)
 			if ( 'verify' === $job['phase'] ) {
-				$job = self::verify_step( $job, $started, $budget_s );
+				if ( 'remove' !== $job['op'] ) {
+					$job['phase'] = 'run';
+				} else {
+					$job = self::verify_step( $job, $started, $budget_s );
+				}
 			}
 
 			// فاز ۲: اجرا.
@@ -228,7 +329,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 					}
 				}
 
-				if ( empty( $job['safe_ids'] ) && empty( $job['safe_paths'] ) ) {
+				// پایان صف بر اساس نوع عملیات:
+				//   • حذف: صف تأییدشده خالی شد.
+				//   • فشرده‌سازی/بازگردانی: صف اصلی خالی شد (یا آیتمی برای پردازش نماند).
+				$queue_left = 'remove' === $job['op']
+					? ( ! empty( $job['safe_ids'] ) || ! empty( $job['safe_paths'] ) )
+					: ( ! empty( $job['queue_ids'] ) || ! empty( $job['queue_qids'] ) );
+
+				if ( ! $queue_left ) {
 					$job['phase'] = 'finish';
 				}
 			}
@@ -315,6 +423,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		 * @return bool آیا آیتمی پردازش شد؟
 		 */
 		private static function run_one( array &$job ) {
+			$op = isset( $job['op'] ) ? (string) $job['op'] : 'remove';
+
+			if ( 'optimize' === $op ) {
+				return self::run_one_optimize( $job );
+			}
+			if ( 'restore' === $op ) {
+				return self::run_one_restore( $job );
+			}
+
 			$mode = (string) $job['mode'];
 
 			if ( ! empty( $job['safe_ids'] ) ) {
@@ -387,6 +504,87 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		}
 
 		/**
+		 * یک آیتم «فشرده‌سازی / جایگزینی».
+		 *
+		 * @param array<string,mixed> $job کار (با ارجاع).
+		 * @return bool
+		 */
+		private static function run_one_optimize( array &$job ) {
+			if ( empty( $job['queue_ids'] ) ) {
+				return false;
+			}
+
+			$aid            = absint( array_shift( $job['queue_ids'] ) );
+			$job['current'] = $aid;
+
+			if ( $aid <= 0 ) {
+				return true;
+			}
+
+			$overrides = isset( $job['overrides'] ) && is_array( $job['overrides'] ) ? $job['overrides'] : array();
+			$res       = TisaCase_Optimizer_Image_Processor::optimize_attachment( $aid, $overrides );
+
+			if ( is_wp_error( $res ) ) {
+				$job['failed'][] = array(
+					'id'     => $aid,
+					'reason' => $res->get_error_message(),
+				);
+			} else {
+				$job['done_ids'][]  = $aid;
+				$job['saved_bytes'] += isset( $res['saved_bytes'] ) ? max( 0, (int) $res['saved_bytes'] ) : 0;
+				$job['done']        += 1;
+				$job['optimized'][] = array(
+					'id'    => $aid,
+					'mode'  => isset( $res['mode'] ) ? (string) $res['mode'] : '',
+					'mime'  => isset( $res['nextgen'] ) ? (string) $res['nextgen'] : '',
+					'saved' => isset( $res['saved_bytes'] ) ? (int) $res['saved_bytes'] : 0,
+				);
+			}
+
+			$job['current'] = 0;
+			return true;
+		}
+
+		/**
+		 * یک آیتم «بازگردانی از قرنطینه».
+		 *
+		 * @param array<string,mixed> $job کار (با ارجاع).
+		 * @return bool
+		 */
+		private static function run_one_restore( array &$job ) {
+			if ( empty( $job['queue_qids'] ) ) {
+				return false;
+			}
+
+			$qid            = (string) array_shift( $job['queue_qids'] );
+			$job['current'] = 0;
+
+			$res = TisaCase_Optimizer_Vault::restore_quarantine_item( $qid );
+
+			if ( is_wp_error( $res ) ) {
+				$job['failed'][] = array(
+					'id'     => 0,
+					'path'   => $qid,
+					'reason' => $res->get_error_message(),
+				);
+				return true;
+			}
+
+			$aid = 0;
+			if ( is_int( $res ) ) {
+				$aid = $res;
+			} elseif ( is_array( $res ) && ! empty( $res['attachment_id'] ) ) {
+				$aid = absint( $res['attachment_id'] );
+			}
+			if ( $aid > 0 ) {
+				$job['done_ids'][] = $aid;
+			}
+
+			++$job['done'];
+			return true;
+		}
+
+		/**
 		 * نهایی‌سازی: نوشتن یک‌بارهٔ کاتالوگ، ثبت تاریخچه و آماده‌سازی گزارش.
 		 *
 		 * @param array<string,mixed> $job کار.
@@ -397,10 +595,39 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				return $job;
 			}
 
-			// یک‌بار نوشتن کاتالوگ به‌جای یک‌بار در هر ۲۵ تصویر (صرفه‌جویی بزرگ I/O).
-			if ( ! empty( $job['done_ids'] ) || ! empty( $job['done_paths'] ) ) {
-				TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $job['done_ids'], $job['done_paths'], true );
-				TisaCase_Optimizer_Media_Inspector::flush_pending_removals();
+			$op = isset( $job['op'] ) ? (string) $job['op'] : 'remove';
+
+			// به‌روزرسانی کاتالوگ — یک‌بار در پایان کار (نه در هر بسته).
+			if ( 'remove' === $op ) {
+				if ( ! empty( $job['done_ids'] ) || ! empty( $job['done_paths'] ) ) {
+					TisaCase_Optimizer_Media_Inspector::remove_from_cached_catalog( $job['done_ids'], $job['done_paths'], true );
+					TisaCase_Optimizer_Media_Inspector::flush_pending_removals();
+				}
+			} elseif ( ! empty( $job['done_ids'] ) && TisaCase_Optimizer_Media_Inspector::has_ready_catalog() ) {
+				// پس از فشرده‌سازی یا بازگردانی، ردیف‌های همان تصاویر تازه‌سازی می‌شوند.
+				TisaCase_Optimizer_Media_Inspector::refresh_items_in_cached_catalog( array_map( 'absint', (array) $job['done_ids'] ) );
+			}
+
+			// پاک‌سازی کش/CDN فقط زمانی که فایل‌ها واقعاً تغییر کرده‌اند (فشرده‌سازی و
+			// بازگردانی) تا نسخهٔ قدیمی در کش به کاربر نشان داده نشود.
+			if ( 'remove' !== $op && (int) $job['done'] > 0 ) {
+				try {
+					$purged = TisaCase_Optimizer_Cache_Purger::purge( array_map( 'absint', (array) $job['done_ids'] ) );
+					if ( ! empty( $purged ) ) {
+						$job['cache_purged'] = $purged;
+					}
+				} catch ( Throwable $e ) {
+					unset( $e );
+				}
+			}
+
+			// فهرست سبک نسخه‌های موازی فقط برای همان تصاویر اصلاح می‌شود (نه بازسازی کل).
+			if ( ! empty( $job['done_ids'] ) ) {
+				try {
+					TisaCase_Optimizer_Sidecar_Index::refresh_for_ids( array_map( 'absint', (array) $job['done_ids'] ) );
+				} catch ( Throwable $e ) {
+					unset( $e );
+				}
 			}
 
 			$count_done = (int) $job['done'];
@@ -408,10 +635,18 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			$failed_n   = count( (array) $job['failed'] );
 
 			if ( $count_done > 0 ) {
-				$mode    = (string) $job['mode'];
-				$message = 'permanent' === $mode
-					? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
-					: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)', 'tisacase-optimizer' );
+				$mode = (string) $job['mode'];
+				if ( 'optimize' === $op ) {
+					$message = 'replace' === $mode
+						? __( 'فشرده‌سازی و جایگزینی فایل اصل با نسخهٔ WebP (با پشتیبان در خزانه)', 'tisacase-optimizer' )
+						: __( 'فشرده‌سازی تصاویر و ساخت نسخهٔ موازی WebP', 'tisacase-optimizer' );
+				} elseif ( 'restore' === $op ) {
+					$message = __( 'بازگردانی تصاویر از قرنطینه به مسیر و ID اصلی', 'tisacase-optimizer' );
+				} else {
+					$message = 'permanent' === $mode
+						? __( 'حذف قطعی تصاویر انتخاب‌شده از هاست و دیتابیس', 'tisacase-optimizer' )
+						: __( 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)', 'tisacase-optimizer' );
+				}
 
 				$notes = array();
 				if ( $blocked_n > 0 ) {
@@ -426,8 +661,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 					$message .= ' — ' . implode( '، ', $notes );
 				}
 
+				$log_type = 'remove' === $op
+					? ( 'permanent' === $mode ? 'delete_permanent' : 'move_quarantine' )
+					: ( 'optimize' === $op ? ( 'replace' === $mode ? 'optimize_replace' : 'optimize' ) : 'restore_quarantine' );
+
 				TisaCase_Optimizer_Session::log(
-					'permanent' === $mode ? 'delete_permanent' : 'move_quarantine',
+					$log_type,
 					$message,
 					$count_done,
 					(int) $job['saved_bytes'],
@@ -484,6 +723,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			$job['queue_paths'] = array();
 			$job['safe_ids']    = array();
 			$job['safe_paths']  = array();
+			$job['queue_qids']  = array();
 			$job['status']      = 'cancelled';
 			$job['phase']       = 'finish';
 			$job['cancelled_at'] = time();
@@ -500,9 +740,17 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		 * @return array<string,mixed>
 		 */
 		public static function summary( array $job ) {
-			$total     = (int) $job['total_ids'] + (int) $job['total_paths'];
-			$remaining = count( (array) $job['queue_ids'] ) + count( (array) $job['queue_paths'] )
-				+ count( (array) $job['safe_ids'] ) + count( (array) $job['safe_paths'] );
+			$op    = isset( $job['op'] ) ? (string) $job['op'] : 'remove';
+			$total = (int) $job['total_ids'] + (int) $job['total_paths'];
+
+			if ( 'remove' === $op ) {
+				$remaining = count( (array) $job['queue_ids'] ) + count( (array) $job['queue_paths'] )
+					+ count( (array) $job['safe_ids'] ) + count( (array) $job['safe_paths'] );
+			} elseif ( 'restore' === $op ) {
+				$remaining = count( (array) $job['queue_qids'] );
+			} else {
+				$remaining = count( (array) $job['queue_ids'] );
+			}
 
 			$failed = array();
 			foreach ( array_slice( (array) $job['failed'], 0, 20 ) as $row ) {
@@ -524,6 +772,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			}
 
 			$blocked_n = count( (array) $job['blocked'] ) + count( (array) $job['blocked_paths'] );
+			$failed_n  = count( (array) $job['failed'] );
 
 			// تجمیع دلایل مسدودشدن (برای نمایش مستقیم در کارت «ادامه»).
 			$reason_counts = array();
@@ -553,6 +802,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 
 			// راهنمای عملی: دقیقاً بگوییم چرا کاری انجام نشد و حالا چه باید کرد.
 			$hint = '';
+			$op_label = 'optimize' === $op
+				? __( 'فشرده‌سازی', 'tisacase-optimizer' )
+				: ( 'restore' === $op ? __( 'بازگردانی', 'tisacase-optimizer' ) : __( 'حذف', 'tisacase-optimizer' ) );
+
 			if ( 'verify' === (string) $job['phase'] ) {
 				$hint = sprintf(
 					/* translators: 1: verified, 2: total. */
@@ -560,6 +813,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 					(int) $job['verified'],
 					$total
 				);
+			} elseif ( 'done' === (string) $job['status'] && 0 === (int) $job['done'] && $failed_n > 0 && 'remove' !== $op ) {
+				/* translators: %s: operation label. */
+				$hint = sprintf( __( 'هیچ موردی با موفقیت %s نشد؛ متن خطای اولین مورد را در گزارش ببینید.', 'tisacase-optimizer' ), $op_label );
 			} elseif ( 'done' === (string) $job['status'] && 0 === (int) $job['done'] && $blocked_n > 0 ) {
 				$hint = ! empty( $job['needs_rescan'] ) || 'full' !== (string) $job['coverage']
 					? __( 'برای حذف ایمن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ بازرسی ایمنی بدون کاتالوگ کامل اجازهٔ حذف نمی‌دهد.', 'tisacase-optimizer' )
@@ -568,7 +824,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 
 			return array(
 				'id'            => (string) $job['id'],
-				'op'            => (string) $job['op'],
+				'op'            => $op,
+				'op_label'      => $op_label,
 				'mode'          => (string) $job['mode'],
 				'phase'         => (string) $job['phase'],
 				'status'        => (string) $job['status'],
