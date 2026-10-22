@@ -221,18 +221,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					self::run_stage_fast_refs( $state );
 				} elseif ( 'content_refs' === $stage ) {
 					if ( ! empty( $state['fast_finish'] ) ) {
-						$state['stage'] = 'dir_sweep';
+						$state['skipped_stages'][] = 'content_refs';
+						$state['stage']            = 'dir_sweep';
 					} else {
 						self::run_stage_content_refs( $state, $started_tick, $budget );
 					}
 				} elseif ( 'meta_refs' === $stage ) {
 					if ( ! empty( $state['fast_finish'] ) ) {
-						$state['stage'] = 'dir_sweep';
+						$state['skipped_stages'][] = 'meta_refs';
+						$state['stage']            = 'dir_sweep';
 					} else {
 						self::run_stage_meta_refs( $state, $started_tick, $budget );
 					}
 				} elseif ( 'id_list_refs' === $stage ) {
 					if ( ! empty( $state['fast_finish'] ) ) {
+						$state['skipped_stages'][] = 'id_list_refs';
 						self::prepare_dir_sweep_queue( $state );
 					} else {
 						self::run_stage_id_list_refs( $state, $started_tick, $budget );
@@ -304,6 +307,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 			if ( ! isset( $state['stem_map'] ) || ! is_array( $state['stem_map'] ) ) {
 				$state['stem_map'] = array();
 			}
+			if ( ! isset( $state['refs_complete'] ) ) {
+				$state['refs_complete'] = false;
+			}
+			if ( ! isset( $state['skipped_stages'] ) || ! is_array( $state['skipped_stages'] ) ) {
+				$state['skipped_stages'] = array();
+			}
 
 			return $state;
 		}
@@ -353,6 +362,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				// هش مسیرهای «دیده‌شده» در محتوا/متا؛ برای محافظت از فایل‌های یتیمِ ارجاع‌داده‌شده.
 				'ref_url_hash'    => array(),
 				'id_list_done'    => false,
+				// آیا همهٔ لایه‌های مرجع‌یاب (محتوا، متا، متای شناسه‌ای) کامل اجرا شده‌اند؟
+				// اگر کاربر «نمایش فوری نتایج» را بزند، این مقدار false می‌ماند و حذف مسدود می‌شود.
+				'refs_complete'   => false,
+				'skipped_stages'  => array(),
 				'cursor_id_list'  => $min_meta,
 				'refs_truncated'  => 0,
 				'orphans_skipped' => 0,
@@ -578,6 +591,40 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 							}
 						}
 					}
+				}
+			}
+
+			// توضیحات دسته‌بندی/برند: بنرهایی که با <img> داخل توضیح ترم گذاشته می‌شوند.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$term_desc_rows = $wpdb->get_results(
+				"SELECT tt.term_id, tt.description, t.name
+				 FROM {$wpdb->term_taxonomy} tt
+				 LEFT JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+				 WHERE ( tt.description LIKE '%uploads%' OR tt.description LIKE '%wp-image-%' )
+				 LIMIT 2000",
+				ARRAY_A
+			);
+			foreach ( (array) $term_desc_rows as $tdr ) {
+				$tname = ! empty( $tdr['name'] ) ? (string) $tdr['name'] : '#' . absint( $tdr['term_id'] );
+				$lbl   = 'توضیحات دسته/برند: ' . wp_html_excerpt( $tname, 32, '…' );
+				foreach ( self::extract_ids_from_text_or_data( (string) $tdr['description'], $state['stem_map'], true, $state['ref_url_hash'] ) as $tid ) {
+					self::record_ref( $state, $tid, 'active', $lbl, 0 );
+				}
+			}
+
+			// متن دیدگاه‌ها/نظرات محصول: عکس‌هایی که مشتری یا مدیر داخل نظر گذاشته است.
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$comment_rows = $wpdb->get_results(
+				"SELECT comment_ID, comment_post_ID, comment_content
+				 FROM {$wpdb->comments}
+				 WHERE ( comment_content LIKE '%uploads%' OR comment_content LIKE '%wp-image-%' )
+				 LIMIT 2000",
+				ARRAY_A
+			);
+			foreach ( (array) $comment_rows as $cr ) {
+				$lbl = 'متن دیدگاه #' . absint( $cr['comment_ID'] ) . ' (نوشته #' . absint( $cr['comment_post_ID'] ) . ')';
+				foreach ( self::extract_ids_from_text_or_data( (string) $cr['comment_content'], $state['stem_map'], true, $state['ref_url_hash'] ) as $cid ) {
+					self::record_ref( $state, $cid, 'active', $lbl, 0 );
 				}
 			}
 
@@ -863,6 +910,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 				if ( $low >= (int) $state['max_meta_id'] ) {
 					$state['id_list_done'] = true;
+					$state['refs_complete'] = true;
 					self::prepare_dir_sweep_queue( $state );
 					return;
 				}
@@ -924,7 +972,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 				$state['cursor_id_list'] = $high;
 				if ( $state['cursor_id_list'] >= (int) $state['max_meta_id'] ) {
-					$state['id_list_done'] = true;
+					$state['id_list_done']   = true;
+					$state['refs_complete']  = true;
 					self::prepare_dir_sweep_queue( $state );
 					return;
 				}
@@ -1529,7 +1578,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 			return array(
 				'version'       => 3,
-				'usage_engine'  => 4,
+				'usage_engine'  => 5,
+				'ref_coverage'  => ! empty( $state['refs_complete'] ) ? 'full' : 'partial',
+				'skipped_stages' => array_values( array_unique( array_map( 'strval', (array) $state['skipped_stages'] ) ) ),
 				'notes'         => array(
 					'refs_truncated'  => (int) $state['refs_truncated'],
 					'orphans_skipped' => (int) $state['orphans_skipped'],

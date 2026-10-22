@@ -33,6 +33,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				// راستی‌آزمایی زندهٔ استفاده پیش از هر حذف (ضدحذف اشتباه عکس در حال استفاده).
 				'verify_before_delete'   => 1,
 				'verify_fresh_hours'     => 72,
+				// کاتالوگ کهنه‌تر از این مقدار (ساعت) هرگز مبنای حذف نمی‌شود.
+				'verify_max_age_hours'   => 168,
 				'excluded_dirs'          => "tisacase-private-exports\nbdc-backups\ntisa-opt-vault\nwoocommerce_uploads\nelementor",
 
 				// فشرده‌سازی، تغییر اندازه و نسل جدید تصویر.
@@ -133,6 +135,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 
 			if ( isset( $raw['verify_fresh_hours'] ) ) {
 				$clean['verify_fresh_hours'] = max( 1, min( 720, (int) $raw['verify_fresh_hours'] ) );
+			}
+
+			if ( isset( $raw['verify_max_age_hours'] ) ) {
+				$clean['verify_max_age_hours'] = max( 24, min( 2160, (int) $raw['verify_max_age_hours'] ) );
 			}
 
 			if ( isset( $raw['excluded_dirs'] ) ) {

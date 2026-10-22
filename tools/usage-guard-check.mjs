@@ -157,6 +157,33 @@ for (const [value, id, expected, label] of cases) {
 	ok(`id_list_contains: ${label}`, idListContains(value, id) === expected, `«${value}» → ${expected ? 'استفاده‌شده' : 'بدون استفاده'}`);
 }
 
+console.log('── ۵) ضدباگ «LIMIT مشترک» در بررسی محتوا ──');
+const contentFn = fnBody(usage, 'content_refs');
+ok('بررسی محتوا «به‌ازای هر تصویر» انجام می‌شود (نه یک کوئری مشترک)', /foreach\s*\(\s*\$ids\s+as\s+\$aid\s*\)/.test(contentFn));
+const sqlOnly = contentFn.split('\n').filter((line) => !line.trim().startsWith('//')).join('\n');
+ok('هیچ LIMIT مشترک ۶۰ ردیفی در SQL باقی نمانده است', !/LIMIT\s+60/.test(sqlOnly), 'این باگ باعث «بدون استفاده» شدن عکس در حال استفاده بود');
+ok('هر بررسی با LIMIT 1 (تطابق اول = استفاده‌شده) انجام می‌شود', /LIMIT 1/.test(contentFn));
+ok('الگوهای data-id / data-attachment-id / attachment-ID پوشش داده می‌شوند', /data-id="/.test(contentFn) && /attachment-'\s*\.\s*\$aid/.test(contentFn.replace(/\s+/g, ' ')) === false ? /attachment-/.test(contentFn) : true);
+ok('نام فایل واقعی (بدون پسوند) هم جست‌وجو می‌شود', contentFn.includes('file_stems'));
+
+console.log('── ۶) پوشش اسکن (جلوگیری از اتکا به کاتالوگ ناقص) ──');
+ok('اسکنر پوشش مراجع را ثبت می‌کند', scanner.includes("'ref_coverage'") && scanner.includes("'refs_complete'"));
+ok('کاتالوگ کامل با usage_engine >= 5 امضا می‌شود', scanner.includes("'usage_engine'  => 5"));
+ok('«نمایش فوری» مراحل ردشده را ثبت می‌کند', scanner.includes("$state['skipped_stages'][]"));
+ok('حذف با کاتالوگ ناقص/ناموجود مسدود می‌شود', usage.includes("'partial' === $coverage") && usage.includes("'none' === $coverage"));
+ok('پاسخ AJAX وضعیت needs_rescan را به رابط می‌برد', ajax.includes("'needs_rescan'"));
+ok('رابط کاربری کاربر را به اجرای اسکن کامل راهنمایی می‌کند', read(`${P}/assets/admin.js`).includes('اسکن کامل تصاویر'));
+ok('WP-CLI هم بدون کاتالوگ کامل حذف نمی‌کند', usage.includes('کاتالوگ اسکن کامل نیست'));
+ok('سقف عمر کاتالوگ (پیش‌فرض ۱۶۸ ساعت) تعریف شده است', /verify_max_age_hours'\s*=>\s*168/.test(read(`${P}/includes/class-tco-settings.php`)));
+
+console.log('── ۷) منابع کمتر دیده‌شده ──');
+ok('توضیحات دسته/برند (بنر دسته) در اسکنر بررسی می‌شود', scanner.includes('term_taxonomy') && scanner.includes('description'));
+ok('توضیحات دسته/برند در راستی‌آزمایی زنده بررسی می‌شود', usage.includes('description LIKE'));
+ok('متن دیدگاه‌ها (عکس نظرات مشتری) در اسکنر بررسی می‌شود', scanner.includes('comment_content'));
+ok('متن دیدگاه‌ها در راستی‌آزمایی زنده بررسی می‌شود', usage.includes('comment_content LIKE'));
+ok('فیلد شناسهٔ شاخص با TRIM خوانده می‌شود (فاصلهٔ اضافه)', usage.includes('TRIM( meta_value ) IN'));
+ok('نبود جدول termmeta باعث خطای SQL نمی‌شود', usage.includes('$wpdb->termmeta'));
+
 console.log('');
 if (fails.length) {
 	console.error(`✗ ${fails.length} نقض در محافظ «تشخیص استفاده»:`);

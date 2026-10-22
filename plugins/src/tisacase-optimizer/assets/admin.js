@@ -1486,6 +1486,7 @@
 			total: totalItems,
 			savedBytes: 0,
 			blocked: 0,
+			needsRescan: false,
 		};
 		render();
 
@@ -1507,6 +1508,9 @@
 				state.batch.done += (res.done_ids || []).length + (res.done_paths || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
 				state.batch.blocked += Number(res.blocked_count || 0);
+				if (res.needs_rescan) {
+					state.batch.needsRescan = true;
+				}
 				if (res.overview) {
 					state.overview = res.overview;
 				}
@@ -1515,13 +1519,16 @@
 			state.selectedIds.clear();
 			state.selectedPaths.clear();
 			const keptNote = state.batch.blocked > 0
-				? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود حذف نشد.`
+				? ` · ${faNum(state.batch.blocked)} مورد چون هنوز در سایت استفاده می‌شود (یا اسکن کامل نیست) حذف نشد.`
 				: '';
 			toast(
 				state.deleteMode === 'permanent'
 					? `عملیات حذف قطعی انجام شد — ${formatBytes(state.batch.savedBytes)} آزاد شد${keptNote}`
 					: `به قرنطینه منتقل شد (${formatBytes(state.batch.savedBytes)}) — از تب «پشتیبان و بازگردانی» همیشه قابل برگشت است${keptNote}`
 			);
+			if (state.batch.needsRescan) {
+				toast('برای حذف مطمئن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ نتایج «نمایش فوری» فقط برای مرور است.', 'error');
+			}
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {

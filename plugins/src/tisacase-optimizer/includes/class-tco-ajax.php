@@ -585,6 +585,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					'blocked'       => $blocked_ids,
 					'blocked_paths' => $blocked_paths,
 					'blocked_count' => count( $blocked_ids ) + count( $blocked_paths ),
+					'needs_rescan'  => ! empty( $verify['needs_rescan'] ),
+					'coverage'      => isset( $verify['coverage'] ) ? (string) $verify['coverage'] : 'none',
 					'mode'          => $mode,
 					'overview'      => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
 						? TisaCase_Optimizer_Media_Inspector::overview_stats( false )

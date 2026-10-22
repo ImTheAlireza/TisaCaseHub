@@ -32,7 +32,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 	final class TisaCase_Optimizer_Usage {
 
 		/** حداکثر تعداد شناسه‌ای که در یک درخواست «بازرسی محتوا» می‌شود (نگه‌دارندهٔ سرعت). */
-		const MAX_CONTENT_PROBES = 24;
+		const MAX_CONTENT_PROBES = 25;
 
 		/** حداکثر تعداد الگوی LIKE در هر کوئری (جلوگیری از کوئری غول‌آسا). */
 		const MAX_PATTERNS_PER_QUERY = 40;
@@ -240,7 +240,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			$thumb_rows = $wpdb->get_results(
 				$wpdb->prepare(
 					"SELECT post_id, meta_value FROM {$wpdb->postmeta}
-					 WHERE meta_key = '_thumbnail_id' AND meta_value IN ( {$s_ph} )",
+					 WHERE meta_key = '_thumbnail_id' AND TRIM( meta_value ) IN ( {$s_ph} )",
 					$strs
 				),
 				ARRAY_A
@@ -253,6 +253,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			// ۲) گالری‌ها و متاهای شناسه‌ای (لیست، سریالایز یا JSON).
 			$keys       = self::gallery_meta_keys();
 			$keys       = array_values( array_diff( $keys, array( '_thumbnail_id' ) ) );
+			if ( empty( $keys ) ) {
+				$keys = array( '_product_image_gallery' );
+			}
 			$key_ph     = implode( ', ', array_fill( 0, count( $keys ), '%s' ) );
 			$like_parts = array();
 			$like_args  = array();
@@ -280,6 +283,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 
 			// ۳) متای دسته/برند/سواچ.
 			$term_like = implode( ' OR ', array_fill( 0, count( $ids ), 'meta_value LIKE %s' ) );
+			if ( empty( $wpdb->termmeta ) ) {
+				$wpdb->termmeta = $wpdb->prefix . 'termmeta';
+			}
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 			$term_rows = $wpdb->get_results(
 				$wpdb->prepare(
@@ -292,6 +298,43 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				foreach ( self::numeric_ids_in( $row['meta_value'] ) as $tid ) {
 					if ( in_array( $tid, $ids, true ) ) {
 						$out[ $tid ][] = 'تصویر دسته/برند/سواچ ترم #' . absint( $row['term_id'] );
+					}
+				}
+			}
+
+			// ۳٫۵) توضیحات دسته/برند و متن دیدگاه‌ها (بنر دسته و عکس نظرات مشتریان).
+			$desc_like = implode( ' OR ', array_fill( 0, count( $ids ), 'description LIKE %s' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$desc_rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT term_id, description FROM {$wpdb->term_taxonomy} WHERE " . $desc_like,
+					$like_args
+				),
+				ARRAY_A
+			);
+			foreach ( (array) $desc_rows as $drow ) {
+				foreach ( $ids as $id ) {
+					if ( self::id_list_contains( $drow['description'], $id ) ) {
+						$out[ $id ][] = 'توضیحات دسته/برند #' . absint( $drow['term_id'] );
+					}
+				}
+			}
+
+			$comment_like = implode( ' OR ', array_fill( 0, count( $ids ), 'comment_content LIKE %s' ) );
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$comment_rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT comment_ID, comment_content FROM {$wpdb->comments}
+					 WHERE comment_approved <> 'spam' AND ( " . $comment_like . ' )
+					 LIMIT 200',
+					$like_args
+				),
+				ARRAY_A
+			);
+			foreach ( (array) $comment_rows as $crow ) {
+				foreach ( $ids as $id ) {
+					if ( self::id_list_contains( $crow['comment_content'], $id ) ) {
+						$out[ $id ][] = 'متن دیدگاه #' . absint( $crow['comment_ID'] );
 					}
 				}
 			}
@@ -377,64 +420,90 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				return array();
 			}
 
-			$pattern_owner = array();
-			$needles       = array();
+			// حیاتی: این بررسی «به‌ازای هر تصویر» و با LIMIT 1 انجام می‌شود.
+			// قبلاً یک کوئری مشترک با LIMIT 60 اجرا می‌شد؛ در فروشگاهی با صدها نوشتهٔ
+			// هم‌الگو، ردیفِ واقعیِ همان عکس می‌توانست بیرون از آن ۶۰ ردیف بیفتد و
+			// نتیجه‌اش «بدون استفاده» اعلام شدن عکسِ در حال استفاده بود.
+			$out = array();
+
 			foreach ( $ids as $aid ) {
-				$candidates = array(
+				$needles = array(
 					'wp-image-' . $aid,
 					'"id":' . $aid,
 					'"id":"' . $aid . '"',
 					'"attachment_id":' . $aid,
+					'"image_id":' . $aid,
+					'"thumb_id":' . $aid,
+					// الگوهای رایج قالب‌ها/افزونه‌ها که فقط با شناسه کار می‌کنند.
+					'data-id="' . $aid . '"',
+					"data-id='" . $aid . "'",
+					'data-attachment-id="' . $aid . '"',
+					'data-image-id="' . $aid . '"',
+					'attachment-' . $aid,
+					'"ids":"' . $aid . '"',
+					'"ids":' . $aid,
+					'"gallery_id":' . $aid,
 				);
 				foreach ( self::file_stems( $aid ) as $stem ) {
-					$candidates[] = '/' . $stem . '.';
-					$candidates[] = '/' . $stem . '-';
+					$needles[] = '/' . $stem . '.';
+					$needles[] = '/' . $stem . '-';
+					$needles[] = '"' . $stem . '.';
 				}
-				foreach ( $candidates as $needle ) {
-					$pattern                    = '%' . $wpdb->esc_like( $needle ) . '%';
-					$pattern_owner[ $pattern ]  = $aid;
-					$needles[ $pattern ]        = $needle;
-				}
-			}
 
-			$patterns = array_keys( $pattern_owner );
-			$out      = array();
-
-			foreach ( array_chunk( $patterns, self::MAX_PATTERNS_PER_QUERY ) as $chunk ) {
 				$parts = array();
 				$args  = array();
-				foreach ( $chunk as $pattern ) {
+				foreach ( array_values( array_unique( $needles ) ) as $needle ) {
+					if ( '' === $needle ) {
+						continue;
+					}
 					$parts[] = '( post_content LIKE %s OR post_excerpt LIKE %s )';
-					$args[]  = $pattern;
-					$args[]  = $pattern;
+					$args[]  = '%' . $wpdb->esc_like( $needle ) . '%';
+					$args[]  = '%' . $wpdb->esc_like( $needle ) . '%';
+				}
+
+				if ( empty( $parts ) ) {
+					continue;
 				}
 
 				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-				$rows = $wpdb->get_results(
+				$row = $wpdb->get_row(
 					$wpdb->prepare(
-						"SELECT ID, post_title, post_content, post_excerpt FROM {$wpdb->posts}
+						"SELECT ID, post_title, post_status FROM {$wpdb->posts}
 						 WHERE post_type NOT IN ( 'attachment', 'revision' )
-						   AND post_status NOT IN ( 'auto-draft' )
 						   AND ( " . implode( ' OR ', $parts ) . ' )
-						 LIMIT 60',
+						 LIMIT 1',
 						$args
 					),
 					ARRAY_A
 				);
 
-				foreach ( (array) $rows as $row ) {
-					$blob  = (string) $row['post_content'] . "\n" . (string) $row['post_excerpt'];
-					$title = ! empty( $row['post_title'] ) ? (string) $row['post_title'] : '#' . absint( $row['ID'] );
-					foreach ( $chunk as $pattern ) {
-						$aid = isset( $pattern_owner[ $pattern ] ) ? (int) $pattern_owner[ $pattern ] : 0;
-						if ( $aid <= 0 ) {
-							continue;
-						}
-						$needle = isset( $needles[ $pattern ] ) ? (string) $needles[ $pattern ] : '';
-						if ( '' !== $needle && false !== strpos( $blob, $needle ) ) {
-							$out[ $aid ][] = 'محتوای نوشته «' . wp_html_excerpt( $title, 32, '…' ) . '»';
-						}
-					}
+				if ( empty( $row ) ) {
+					continue;
+				}
+
+				$title = ! empty( $row['post_title'] ) ? (string) $row['post_title'] : '#' . absint( $row['ID'] );
+				$label = 'محتوای نوشته «' . wp_html_excerpt( $title, 32, '…' ) . '»';
+
+				if ( 'publish' !== (string) $row['post_status'] ) {
+					$label .= ' (' . self::status_label( (string) $row['post_status'] ) . ')';
+				}
+
+				$out[ $aid ][] = $label;
+
+				// چند مرجع نمایش داده شود (فقط برای شفافیت؛ تصمیم با اولین مرجع گرفته شده است).
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$more = $wpdb->get_col(
+					$wpdb->prepare(
+						"SELECT post_title FROM {$wpdb->posts}
+						 WHERE post_type NOT IN ( 'attachment', 'revision' )
+						   AND ID <> %d
+						   AND ( " . implode( ' OR ', $parts ) . ' )
+						 LIMIT 2',
+						array_merge( array( absint( $row['ID'] ) ), $args )
+					)
+				);
+				foreach ( (array) $more as $more_title ) {
+					$out[ $aid ][] = 'محتوای نوشته «' . wp_html_excerpt( (string) $more_title, 32, '…' ) . '»';
 				}
 			}
 
@@ -443,6 +512,26 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			}
 
 			return $out;
+		}
+
+		/**
+		 * عنوان فارسی وضعیت نوشته برای نمایش دلیل.
+		 *
+		 * @param string $status وضعیت نوشته.
+		 * @return string
+		 */
+		private static function status_label( $status ) {
+			$map = array(
+				'publish' => 'منتشرشده',
+				'draft'   => 'پیش‌نویس',
+				'pending' => 'در انتظار بررسی',
+				'private' => 'خصوصی',
+				'future'  => 'زمان‌بندی‌شده',
+				'trash'   => 'زباله‌دان',
+				'inherit' => 'ارثی',
+			);
+
+			return isset( $map[ $status ] ) ? $map[ $status ] : $status;
 		}
 
 		/**
@@ -522,6 +611,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			$reasons = array();
 			if ( in_array( $aid, TisaCase_Optimizer_Settings::pinned_ids(), true ) ) {
 				$reasons[] = 'در لیست سفید «هرگز حذف نشود» پین شده است';
+			}
+
+			// همان قاعدهٔ سخت‌گیرانهٔ مسیر مدیریتی: بدون کاتالوگ کامل، هیچ حذفی مجاز نیست.
+			$persisted = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
+			$coverage  = ( is_array( $persisted ) && isset( $persisted['ref_coverage'] ) && 'full' === $persisted['ref_coverage'] && isset( $persisted['usage_engine'] ) && (int) $persisted['usage_engine'] >= 5 )
+				? 'full'
+				: 'partial';
+			if ( 'full' !== $coverage ) {
+				$reasons[] = 'کاتالوگ اسکن کامل نیست (اسکن فوری یا قدیمی)؛ ابتدا اسکن کامل را اجرا کنید';
 			}
 
 			$live = self::live_refs( array( $aid ) );
@@ -639,16 +737,52 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				}
 			}
 
-			// گام ۲: مراجع ثبت‌شده در کاتالوگ (نتیجهٔ اسکن کامل ۱۲لایه‌ای).
+			// گام ۲: مراجع ثبت‌شده در کاتالوگ (نتیجهٔ اسکن کامل لایه‌ای).
 			// فقط کاتالوگ آمادهٔ روی دیسک خوانده می‌شود؛ هرگز اسکن سنگین از مسیر حذف اجرا نمی‌شود.
-			$persisted    = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
+			$persisted     = TisaCase_Optimizer_Reference_Scanner::read_persisted_catalog();
 			$catalog_items = ( is_array( $persisted ) && ! empty( $persisted['items'] ) && is_array( $persisted['items'] ) )
 				? $persisted['items']
 				: array();
 			$catalog_ok    = ! empty( $catalog_items );
-			$age_hours  = $result['catalog_age'];
-			$fresh_h    = max( 1, (int) TisaCase_Optimizer_Settings::get( 'verify_fresh_hours', 72 ) );
-			$is_fresh   = ( null !== $age_hours && $age_hours <= $fresh_h );
+			$age_hours     = $result['catalog_age'];
+			$fresh_h       = max( 1, (int) TisaCase_Optimizer_Settings::get( 'verify_fresh_hours', 72 ) );
+			$is_fresh      = ( null !== $age_hours && $age_hours <= $fresh_h );
+
+			// آیا کاتالوگ همهٔ لایه‌های مرجع‌یاب را دیده است؟
+			// کاتالوگی که با دکمهٔ «نمایش فوری نتایج» (fast_finish) ساخته شود، لایهٔ محتوا/متا را
+			// ندیده و «صفر مرجع» آن معنا ندارد. کاتالوگ نسخه‌های قدیمی هم همین حکم را دارد.
+			$coverage = 'none';
+			if ( $catalog_ok ) {
+				$engine   = isset( $persisted['usage_engine'] ) ? (int) $persisted['usage_engine'] : 0;
+				$coverage = ( isset( $persisted['ref_coverage'] ) && 'full' === $persisted['ref_coverage'] && $engine >= 5 )
+					? 'full'
+					: 'partial';
+			}
+			$result['coverage'] = $coverage;
+			$result['fresh']    = $is_fresh;
+
+			// سقف عمر قابل‌اتکا: کاتالوگ خیلی کهنه حتی با پوشش کامل هم حذف را مجاز نمی‌کند.
+			$hard_stale_h = max( 24, (int) TisaCase_Optimizer_Settings::get( 'verify_max_age_hours', 168 ) );
+
+			$coverage_block = '';
+			if ( 'none' === $coverage ) {
+				$coverage_block = 'هنوز اسکن کاملی انجام نشده است؛ برای حذف ایمن ابتدا «اسکن کامل تصاویر» را اجرا کنید';
+				$result['needs_rescan'] = true;
+			} elseif ( 'partial' === $coverage ) {
+				$coverage_block = 'کاتالوگ فعلی با «نمایش فوری نتایج» ساخته شده و لایه‌های محتوا/متا بررسی نشده‌اند؛ ابتدا «اسکن کامل» را اجرا کنید';
+				$result['needs_rescan'] = true;
+			} elseif ( null !== $age_hours && $age_hours > $hard_stale_h ) {
+				$coverage_block = sprintf( 'کاتالوگ اسکن از %d ساعت پیش به‌روزرسانی نشده است؛ یک‌بار اسکن کامل را تازه کنید', (int) round( $age_hours ) );
+				$result['needs_rescan'] = true;
+			}
+
+			if ( '' !== $coverage_block ) {
+				foreach ( array_keys( $allow ) as $aid ) {
+					unset( $allow[ $aid ] );
+					$result['blocked'][ $aid ] = array( $coverage_block );
+				}
+			}
+
 
 			$need_probe = array();
 
@@ -672,9 +806,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 						unset( $allow[ $aid ] );
 						continue;
 					}
-					if ( ! $is_fresh ) {
-						$need_probe[] = $aid;
-					}
+					// همیشه بازبینی محتوای زنده انجام می‌شود؛ حتی با کاتالوگ تازه.
+					// دلیل: برخی قالب‌ها/افزونه‌ها تصویر را فقط با `data-id` یا
+					// `attachment-ID` در محتوا می‌نویسند و اسکن متا آن را نمی‌بیند.
+					$need_probe[] = $aid;
 					continue;
 				}
 
@@ -703,7 +838,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 					}
 				}
 
-				if ( ! $catalog_ok ) {
+				if ( 'full' !== $coverage ) {
 					$result['needs_rescan'] = true;
 				}
 			}
