@@ -144,6 +144,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						self::ok( $step );
 						break;
 
+					case 'inspect_sizes':
+						self::handle_inspect_sizes();
+						break;
+
 					case 'query_media':
 						// phpcs:ignore WordPress.Security.NonceVerification.Missing
 						$raw  = wp_unslash( $_POST );
@@ -458,6 +462,81 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			} catch ( Throwable $e ) {
 				self::fail( $e->getMessage(), 500 );
 			}
+		}
+
+		/**
+		 * تفکیک زیرسایزهای یک تصویر (برای پاسخ روشن به «زیرسایز چیست و ۱۱٫۵ مگابایت از کجا آمد؟»).
+		 *
+		 * فقط یک پیوست را می‌خواند (متای آن در کش وردپرس است) و اندازهٔ هر فایل را
+		 * جداگانه می‌سنجد؛ هیچ اسکن سنگینی اجرا نمی‌شود.
+		 *
+		 * @return void
+		 */
+		private static function handle_inspect_sizes() {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$aid = isset( $_POST['id'] ) ? absint( $_POST['id'] ) : 0;
+			if ( $aid <= 0 ) {
+				self::fail( __( 'شناسهٔ تصویر نامعتبر است.', 'tisacase-optimizer' ), 400 );
+			}
+
+			$uploads = wp_upload_dir();
+			$basedir = trailingslashit( $uploads['basedir'] );
+			$meta    = wp_get_attachment_metadata( $aid );
+			$rows    = array();
+			$total   = 0;
+			$main_b  = 0;
+			$dir     = '';
+
+			if ( is_array( $meta ) && ! empty( $meta['file'] ) ) {
+				$rel_file = wp_normalize_path( (string) $meta['file'] );
+				$rel_dir  = dirname( $rel_file );
+				$dir      = ( '.' === $rel_dir || '' === $rel_dir ) ? '' : $rel_dir;
+
+				$main_abs = $basedir . $rel_file;
+				$main_b   = is_file( $main_abs ) ? max( 0, (int) @filesize( $main_abs ) ) : 0;
+
+				if ( ! empty( $meta['sizes'] ) && is_array( $meta['sizes'] ) ) {
+					foreach ( $meta['sizes'] as $key => $size ) {
+						$file = isset( $size['file'] ) ? (string) $size['file'] : '';
+						if ( '' === $file ) {
+							continue;
+						}
+						$rel = ( '' !== $dir ? $dir . '/' : '' ) . $file;
+						$abs = $basedir . $rel;
+						$b   = is_file( $abs ) ? max( 0, (int) @filesize( $abs ) ) : 0;
+						$rows[] = array(
+							'name'   => (string) $key,
+							'w'      => isset( $size['width'] ) ? (int) $size['width'] : 0,
+							'h'      => isset( $size['height'] ) ? (int) $size['height'] : 0,
+							'bytes'  => $b,
+							'exists' => is_file( $abs ),
+							'rel'    => $rel,
+						);
+						$total += $b;
+					}
+				}
+			}
+
+			// سنگین‌ترین زیرسایز اول؛ برای نمایش «کدام کپی بیشترین جا را گرفته».
+			usort(
+				$rows,
+				static function ( $a, $b ) {
+					return $b['bytes'] <=> $a['bytes'];
+				}
+			);
+
+			$registered = array_keys( (array) wp_get_registered_image_subsizes() );
+
+			self::ok(
+				array(
+					'id'             => $aid,
+					'main_bytes'     => $main_b,
+					'subsizes_bytes' => $total,
+					'count'          => count( $rows ),
+					'sizes'          => array_slice( $rows, 0, 40 ),
+					'registered'     => count( $registered ),
+				)
+			);
 		}
 
 		/**

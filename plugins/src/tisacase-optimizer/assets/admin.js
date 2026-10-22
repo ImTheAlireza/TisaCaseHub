@@ -178,6 +178,7 @@
 		remove_items: 'حذف ایمن تصاویر…',
 		job_status: 'خواندن وضعیت عملیات نیمه‌تمام…',
 		job_cancel: 'رهاکردن عملیات نیمه‌تمام…',
+		inspect_sizes: 'تفکیک زیرسایزهای تصویر…',
 		optimize_batch: 'فشرده‌سازی تصاویر…',
 		clean_unscaled: 'پاک‌سازی فایل‌های خام -scaled…',
 		merge_duplicates: 'ادغام تصاویر تکراری…',
@@ -2151,11 +2152,67 @@
 			<input type="range" min="0" max="100" value="50" class="tco-slider-range" id="tco-cmp-slider" aria-label="اسلایدر مقایسه قبل و بعد">
 			<div class="tco-wins-grid" style="margin-top:12px">
 				<div class="tco-win"><strong>مسیر نسبی و اثر انگشت SHA-1</strong><span class="tco-code">${esc(r.rel_path)}<br>${esc(r.sha1 || '—')}</span></div>
-				<div class="tco-win"><strong>تفکیک دقیق دیسک</strong><span>کل: <strong>${formatBytes(r.total_bytes)}</strong> · اصلی: ${formatBytes(r.main_bytes)} · زیرسایزها: ${formatBytes(r.subsizes_bytes)}</span></div>
+				<div class="tco-win">
+					<strong>تفکیک دقیق دیسک</strong>
+					<span>کل: <strong>${formatBytes(r.total_bytes)}</strong> · اصلی: ${formatBytes(r.main_bytes)} · زیرسایزها: <strong>${formatBytes(r.subsizes_bytes)}</strong> (${faNum(r.subsizes_count || 0)} فایل)</span>
+				</div>
+			</div>
+			<div class="tco-subsize-box" style="margin-top:12px">
+				<div class="tco-card__head" style="margin:0">
+					<div>
+						<strong>زیرسایز چیست و ${formatBytes(r.subsizes_bytes)} از کجا آمده؟</strong>
+						<p class="tco-muted">وردپرس و قالب برای هر تصویر چند کپی کوچک‌تر می‌سازد (بندانگشتی، متوسط، بزرگ، سایزهای ووکامرس و قالب). هر کپی یک فایل جداگانه در <span class="tco-code">uploads/</span> است، هم حجم دارد هم یک inode — یعنی «کل دیسک» تصویر = اصل + همهٔ کپی‌ها.</p>
+					</div>
+					<span class="tco-pill tco-pill--neutral" id="tco-subsize-count">در حال خواندن…</span>
+				</div>
+				<div id="tco-subsize-detail" class="tco-subsize-detail">
+					<div class="tco-loading-state"><span class="tco-spinner"></span><span>در حال تفکیک زیرسایزها…</span></div>
+				</div>
 			</div>
 			<div style="margin-top:12px">${renderUsageCell(r)}</div>
 		`;
 		modal.hidden = false;
+		loadSubsizeDetail(Number(r.id));
+	}
+
+	/**
+	 * خواندن تفکیک زیرسایزهای همان تصویر از سرور و نمایش فهرست آن.
+	 * (یک پیوست، نه اسکن سنگین.)
+	 *
+	 * @param {number} id شناسهٔ پیوست.
+	 */
+	async function loadSubsizeDetail(id) {
+		try {
+			const res = await api('inspect_sizes', { id });
+			const box = document.getElementById('tco-subsize-detail');
+			const chip = document.getElementById('tco-subsize-count');
+			if (!box) return;
+			const sizes = (res && res.sizes) || [];
+			if (chip) {
+				chip.textContent = `${faNum(res.count || 0)} زیرسایز · ${formatBytes(res.subsizes_bytes || 0)}`;
+			}
+			if (!sizes.length) {
+				box.innerHTML = '<div class="tco-empty-state">این تصویر هیچ زیرسایز ثبت‌شده‌ای ندارد؛ فقط فایل اصلی روی دیسک است.</div>';
+				return;
+			}
+			const max = sizes.reduce((m, s) => Math.max(m, s.bytes || 0), 0) || 1;
+			box.innerHTML = `<table class="tco-table tco-table--compact">
+				<thead><tr><th>نام سایز</th><th>ابعاد</th><th>حجم</th><th>سهم</th></tr></thead>
+				<tbody>${sizes
+					.map(
+						(sz) => `<tr>
+							<td class="tco-code">${esc(sz.name)}</td>
+							<td>${sz.w && sz.h ? `${faNum(sz.w)}×${faNum(sz.h)}` : '—'}</td>
+							<td><strong>${sz.exists ? formatBytes(sz.bytes) : 'فایل نیست'}</strong></td>
+							<td><span class="tco-mini-bar"><span style="width:${Math.max(2, Math.round(((sz.bytes || 0) / max) * 100))}%"></span></span></td>
+						</tr>`
+					)
+					.join('')}</tbody>
+			</table>`;
+		} catch (e) {
+			const box = document.getElementById('tco-subsize-detail');
+			if (box) box.innerHTML = `<div class="tco-empty-state">تفکیک زیرسایزها خوانده نشد: ${esc(e.message || 'خطای شبکه')}</div>`;
+		}
 	}
 
 	// رویدادهای کلیک و تعامل در سطح سند.

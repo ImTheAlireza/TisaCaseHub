@@ -141,6 +141,11 @@ ok(
 	!processor.includes('Media_Inspector::detect_opaque_png')
 );
 
+ok(
+	'تفکیک زیرسایز یک تصویر، اندپوینت سبک و تک‌پیوست دارد',
+	ajax.includes("'inspect_sizes'") && ajax.includes('wp_get_attachment_metadata') && !/function\s+handle_inspect_sizes[\s\S]{0,1200}?build_catalog/.test(ajax)
+);
+
 console.log('── ۴) رفتار واقعی id_list_contains() ──');
 
 const body = fnBody(usage, 'id_list_contains');

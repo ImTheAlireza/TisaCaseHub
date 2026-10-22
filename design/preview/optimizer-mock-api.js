@@ -863,6 +863,39 @@
 				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,
 				overview: computeOverview(),
 			};
+		} else if (op === 'inspect_sizes') {
+			const id = Number(req.id);
+			const item = db.items.find((x) => x.id === id);
+			if (!item) throw new Error('تصویر پیدا نشد.');
+			const total = item.subsizes_bytes || 0;
+			const names = [
+				['thumbnail', 150, 150],
+				['woocommerce_thumbnail', 300, 300],
+				['medium', 300, 200],
+				['woocommerce_single', 600, 600],
+				['large', 1024, 683],
+				['woodmart_shop_catalog', 400, 400],
+			];
+			const n = Math.max(1, Math.min(names.length, item.subsizes_count || 3));
+			const chosen = names.slice(0, n);
+			const weights = chosen.map((_, i) => 1 / Math.pow(1.7, i));
+			const sum = weights.reduce((a, b) => a + b, 0);
+			const sizes = chosen.map((c, i) => ({
+				name: c[0],
+				w: c[1],
+				h: c[2],
+				bytes: Math.round((total * weights[i]) / sum),
+				exists: true,
+				rel: `${item.rel_path.replace(/[^/]+$/, '')}${c[0]}.png`,
+			}));
+			data = {
+				id,
+				main_bytes: item.main_bytes,
+				subsizes_bytes: total,
+				count: sizes.length,
+				sizes,
+				registered: 12,
+			};
 		} else if (op === 'clean_unscaled') {
 			let cleaned = 0;
 			let saved = 0;

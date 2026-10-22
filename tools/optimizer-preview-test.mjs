@@ -53,6 +53,14 @@ assert.equal(expRows[0].getAttribute('data-row-id'), '5011', 'سنگین‌تر�
 // باز کردن مودال مقایسهٔ زندهٔ قبل و بعد + تغییر اسلایدر
 window.document.querySelector('[data-inspect="5012"]').click();
 await flush();
+// تفکیک زیرسایزها باید خوانده و فهرست شود («زیرسایز چیست؟»)
+await new Promise((r) => setTimeout(r, 350));
+const subBox = window.document.querySelector('.tco-subsize-box');
+assert.ok(subBox, 'مودال باید بخش «زیرسایز چیست» را داشته باشد');
+assert.match(subBox.textContent, /زیرسایز/, 'توضیح فارسی زیرسایز باید نمایش داده شود');
+const subRows = window.document.querySelectorAll('#tco-subsize-detail tbody tr');
+assert.ok(subRows.length >= 1, 'فهرست تفکیک زیرسایزها باید پر شود');
+assert.match(subRows[0].textContent, /B|KB|MB|بایت/, 'حجم هر زیرسایز باید نمایش داده شود');
 assert.equal(window.document.getElementById('tco-modal').hidden, false, 'مودال مقایسه قبل/بعد باید باز شود');
 const slider = window.document.getElementById('tco-cmp-slider');
 slider.value = '28';

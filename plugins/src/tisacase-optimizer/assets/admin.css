@@ -1206,3 +1206,66 @@ body.tco-page #wpfooter {
 		padding: var(--tisa-sp-4, 16px);
 	}
 }
+
+/* ── تفکیک زیرسایزهای یک تصویر (مودال مقایسه) ── */
+.tco-subsize-box {
+	background: #fff;
+	border: 1px solid #e3e8ee;
+	border-radius: 12px;
+	padding: 14px 16px;
+}
+
+.tco-subsize-box .tco-card__head {
+	align-items: flex-start;
+	gap: 12px;
+	margin: 0 0 10px;
+	padding: 0;
+	border: 0;
+}
+
+.tco-subsize-detail {
+	max-height: 260px;
+	overflow: auto;
+	border-radius: 10px;
+}
+
+.tco-table--compact th,
+.tco-table--compact td {
+	padding: 6px 8px;
+	font-size: 12.5px;
+}
+
+.tco-mini-bar {
+	display: block;
+	height: 7px;
+	width: 90px;
+	background: #eef2f6;
+	border-radius: 99px;
+	overflow: hidden;
+}
+
+.tco-mini-bar > span {
+	display: block;
+	height: 100%;
+	background: linear-gradient(90deg, #0e9f6e, #34d399);
+	border-radius: 99px;
+}
+
+.tco-reason-list {
+	margin: 8px 0 0;
+	padding-inline-start: 18px;
+	font-size: 12.5px;
+	color: #4a5568;
+}
+
+.tco-reason-list li {
+	margin-bottom: 3px;
+}
+
+.tco-hint {
+	background: #f0f7ff;
+	border-inline-start: 3px solid #2f80ed;
+	padding: 8px 10px;
+	border-radius: 8px;
+	margin-top: 8px;
+}
