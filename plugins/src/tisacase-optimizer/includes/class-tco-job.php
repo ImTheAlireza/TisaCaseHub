@@ -170,6 +170,29 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		public static function advance( array $job, $budget_ms = 0, $max_items = 0 ) {
 			$started = microtime( true );
 
+			// کارهای ساخته‌شده با نسخه‌های قبلی ممکن است کلیدهای تازه را نداشته
+			// باشند؛ پیش‌فرض‌ها این‌جا پر می‌شوند تا ارتقاء، کار نیمه‌تمام را نکشد.
+			$job += array(
+				'queue_ids'     => array(),
+				'queue_paths'   => array(),
+				'safe_ids'      => array(),
+				'safe_paths'    => array(),
+				'done_ids'      => array(),
+				'done_paths'    => array(),
+				'blocked'       => array(),
+				'blocked_paths' => array(),
+				'failed'        => array(),
+				'done'          => 0,
+				'verified'      => 0,
+				'saved_bytes'   => 0,
+				'last_error'    => '',
+				'coverage'      => '',
+				'needs_rescan'  => false,
+				'status'        => 'running',
+				'phase'         => 'verify',
+				'started_at'    => time(),
+			);
+
 			if ( $budget_ms <= 0 ) {
 				$budget_ms = max( 1500, min( 15000, (int) TisaCase_Optimizer_Settings::get( 'delete_tick_ms', 4000 ) ) );
 			}
@@ -228,50 +251,59 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		 * @return array<string,mixed>
 		 */
 		private static function verify_step( array $job, $started, $budget_s ) {
-			$pending = array_values( (array) $job['queue_ids'] );
-			if ( empty( $pending ) || ( microtime( true ) - $started ) >= $budget_s ) {
-				if ( empty( $pending ) && empty( $job['queue_paths'] ) ) {
+			// اندازهٔ هر گام بازرسی: کوچک بماند تا هیچ کوئری‌ای غول‌آسا نشود و
+			// پیشرفت بعد از هر گام در سرور ذخیره شود (کاربر عدد را زنده می‌بیند).
+			$chunk_size = max( 10, min( 200, (int) TisaCase_Optimizer_Settings::get( 'verify_chunk', 100 ) ) );
+
+			while ( ( microtime( true ) - $started ) < $budget_s ) {
+				$ids_left   = array_values( (array) $job['queue_ids'] );
+				$paths_left = array_values( (array) $job['queue_paths'] );
+
+				if ( empty( $ids_left ) && empty( $paths_left ) ) {
 					$job['phase'] = 'run';
+					self::save( $job );
+					return $job;
 				}
-				return $job;
-			}
 
-			$verify = TisaCase_Optimizer_Usage::verify_batch( $pending, (array) $job['queue_paths'], ! empty( $job['allow_draft'] ), true );
+				// فقط یک بستهٔ کوچک از صف را برمی‌داریم؛ باقی برای تیک‌های بعد.
+				$chunk   = array_splice( $job['queue_ids'], 0, $chunk_size );
+				$pchunk  = empty( $chunk ) ? array_splice( $job['queue_paths'], 0, $chunk_size ) : array();
 
-			$job['coverage']     = isset( $verify['coverage'] ) ? (string) $verify['coverage'] : '';
-			$job['needs_rescan'] = ! empty( $verify['needs_rescan'] );
+				$verify = TisaCase_Optimizer_Usage::verify_batch( $chunk, $pchunk, ! empty( $job['allow_draft'] ), true );
 
-			$allow_ids = array();
-			foreach ( (array) $verify['allow_ids'] as $aid ) {
-				$allow_ids[ absint( $aid ) ] = true;
-			}
-			$allow_paths = array_fill_keys( array_map( 'strval', (array) $verify['allow_paths'] ), true );
+				$job['coverage']     = isset( $verify['coverage'] ) ? (string) $verify['coverage'] : $job['coverage'];
+				$job['needs_rescan'] = ! empty( $verify['needs_rescan'] );
 
-			foreach ( (array) $job['blocked'] as $key => $reasons ) {
-				$allow_ids[ (int) $key ] = false; // مسدودهای قبلی نباید آزاد شوند.
-			}
-
-			foreach ( $pending as $aid ) {
-				$aid = absint( $aid );
-				if ( isset( $verify['blocked'][ $aid ] ) ) {
-					$job['blocked'][ $aid ] = (array) $verify['blocked'][ $aid ];
-					continue;
+				foreach ( $chunk as $aid ) {
+					$aid = absint( $aid );
+					if ( isset( $verify['blocked'][ $aid ] ) ) {
+						$job['blocked'][ $aid ] = (array) $verify['blocked'][ $aid ];
+						continue;
+					}
+					$job['safe_ids'][] = $aid;
 				}
-				$job['safe_ids'][] = $aid;
-			}
 
-			foreach ( (array) $job['queue_paths'] as $path ) {
-				if ( isset( $verify['blocked_paths'][ $path ] ) ) {
-					$job['blocked_paths'][ $path ] = (array) $verify['blocked_paths'][ $path ];
-					continue;
+				foreach ( $pchunk as $path ) {
+					if ( isset( $verify['blocked_paths'][ $path ] ) ) {
+						$job['blocked_paths'][ $path ] = (array) $verify['blocked_paths'][ $path ];
+						continue;
+					}
+					$job['safe_paths'][] = (string) $path;
 				}
-				$job['safe_paths'][] = (string) $path;
+
+				$job['verified'] += count( $chunk ) + count( $pchunk );
+
+				// ذخیرهٔ فوری: اگر همین‌جا تایم‌اوت شود، پیشرفت از دست نمی‌رود.
+				self::save( $job );
+
+				if ( empty( $chunk ) && empty( $pchunk ) ) {
+					break;
+				}
 			}
 
-			$job['verified']    += count( $pending );
-			$job['queue_ids']    = array();
-			$job['queue_paths']  = array();
-			$job['phase']        = 'run';
+			if ( empty( $job['queue_ids'] ) && empty( $job['queue_paths'] ) ) {
+				$job['phase'] = 'run';
+			}
 
 			return $job;
 		}
@@ -405,6 +437,34 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				);
 			}
 
+			// اگر هیچ موردی حذف نشد، دلیل واقعی باید روی کار ثبت شود؛ وگرنه
+			// کاربر «۰ از ۱۴۸۰» می‌بیند بدون آن‌که بداند چرا (باگ گزارش‌شده).
+			if ( 0 === (int) $job['done'] && empty( $job['last_error'] ) ) {
+				if ( $blocked_n > 0 ) {
+					$top = '';
+					foreach ( (array) $job['blocked'] as $reasons ) {
+						if ( ! empty( $reasons ) ) {
+							$top = (string) $reasons[0];
+							break;
+						}
+					}
+					$job['last_error'] = sprintf(
+						/* translators: 1: blocked count, 2: first reason. */
+						__( 'هیچ تصویری حذف نشد: هر %1$d مورد در بازرسی ایمنی رد شد (نمونه دلیل: %2$s)', 'tisacase-optimizer' ),
+						$blocked_n,
+						'' !== $top ? $top : __( 'هنوز در سایت استفاده می‌شود', 'tisacase-optimizer' )
+					);
+				} elseif ( $failed_n > 0 ) {
+					$first = (array) reset( $job['failed'] );
+					$job['last_error'] = sprintf(
+						/* translators: 1: failed count, 2: first error. */
+						__( 'هیچ تصویری حذف نشد: هر %1$d مورد با خطای فایل مواجه شد (نمونه: %2$s)', 'tisacase-optimizer' ),
+						$failed_n,
+						isset( $first['reason'] ) ? (string) $first['reason'] : __( 'خطای نامشخص فایل', 'tisacase-optimizer' )
+					);
+				}
+			}
+
 			$job['status']       = 'done';
 			$job['phase']        = 'finish';
 			$job['finished_at']  = time();
@@ -463,6 +523,49 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				++$i;
 			}
 
+			$blocked_n = count( (array) $job['blocked'] ) + count( (array) $job['blocked_paths'] );
+
+			// تجمیع دلایل مسدودشدن (برای نمایش مستقیم در کارت «ادامه»).
+			$reason_counts = array();
+			foreach ( (array) $job['blocked'] as $reasons ) {
+				$first = is_array( $reasons ) && ! empty( $reasons ) ? (string) reset( $reasons ) : '';
+				if ( '' === $first ) {
+					$first = __( 'دلیل نامشخص', 'tisacase-optimizer' );
+				}
+				if ( ! isset( $reason_counts[ $first ] ) ) {
+					$reason_counts[ $first ] = 0;
+				}
+				++$reason_counts[ $first ];
+			}
+			arsort( $reason_counts );
+			$block_reasons = array();
+			$rc_i          = 0;
+			foreach ( $reason_counts as $reason => $count ) {
+				if ( $rc_i >= 4 ) {
+					break;
+				}
+				$block_reasons[] = array(
+					'reason' => (string) $reason,
+					'count'  => (int) $count,
+				);
+				++$rc_i;
+			}
+
+			// راهنمای عملی: دقیقاً بگوییم چرا کاری انجام نشد و حالا چه باید کرد.
+			$hint = '';
+			if ( 'verify' === (string) $job['phase'] ) {
+				$hint = sprintf(
+					/* translators: 1: verified, 2: total. */
+					__( 'در حال بازرسی ایمنی پیش از حذف: %1$d از %2$d مورد بررسی شد.', 'tisacase-optimizer' ),
+					(int) $job['verified'],
+					$total
+				);
+			} elseif ( 'done' === (string) $job['status'] && 0 === (int) $job['done'] && $blocked_n > 0 ) {
+				$hint = ! empty( $job['needs_rescan'] ) || 'full' !== (string) $job['coverage']
+					? __( 'برای حذف ایمن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ بازرسی ایمنی بدون کاتالوگ کامل اجازهٔ حذف نمی‌دهد.', 'tisacase-optimizer' )
+					: __( 'این موردها هنوز در سایت استفاده می‌شوند (مثلاً تصویر شاخص، گالری یا متن محصول)؛ عمداً حذف نشدند.', 'tisacase-optimizer' );
+			}
+
 			return array(
 				'id'            => (string) $job['id'],
 				'op'            => (string) $job['op'],
@@ -485,6 +588,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				'coverage'      => (string) $job['coverage'],
 				'needs_rescan'  => ! empty( $job['needs_rescan'] ),
 				'last_error'    => (string) $job['last_error'],
+				'hint'          => $hint,
+				'block_reasons' => $block_reasons,
 				'finished'      => in_array( (string) $job['status'], array( 'done', 'cancelled' ), true ),
 			);
 		}

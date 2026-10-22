@@ -33,6 +33,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				'delete_tick_ms'         => 4000,
 				'delete_tick_max'        => 40,
 				'delete_throttle_ms'     => 15,
+				// اندازهٔ هر گام «بازرسی ایمنی پیش از حذف». کوچک بماند تا هیچ تیک
+				// با کوئری‌های چندصدشرطی تایم‌اوت نشود (باگ «۰ از ۱۴۸۰»).
+				'verify_chunk'           => 100,
 				'include_draft_in_scan'  => 1,
 				'scan_unregistered_disk' => 1,
 				// راستی‌آزمایی زندهٔ استفاده پیش از هر حذف (ضدحذف اشتباه عکس در حال استفاده).
@@ -122,6 +125,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			}
 			if ( isset( $raw['delete_throttle_ms'] ) ) {
 				$clean['delete_throttle_ms'] = max( 0, min( 250, (int) $raw['delete_throttle_ms'] ) );
+			}
+			if ( isset( $raw['verify_chunk'] ) ) {
+				$clean['verify_chunk'] = max( 10, min( 200, (int) $raw['verify_chunk'] ) );
 			}
 
 			if ( isset( $raw['quarantine_days'] ) ) {

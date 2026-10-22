@@ -318,8 +318,9 @@ await flush();
 assert.ok(window.document.getElementById('tco-bulk-remove'), 'دکمهٔ حذف/قرنطینهٔ دسته‌ای باید با انتخاب موارد فعال شود');
 
 // تیک کوچک (۱ مورد) + قطع اجباری در تیک دوم => کار نیمه‌تمام در سرور می‌ماند.
+window.__tcoMockVerifyMax = 25;
 window.__tcoMockTickMax = 1;
-window.__tcoMockFailAfter = 2;
+window.__tcoMockFailAfter = 3;
 window.document.getElementById('tco-bulk-remove').click();
 await new Promise((r) => setTimeout(r, 2500));
 
@@ -330,11 +331,15 @@ assert.match(window.document.querySelector('.tco-resume').textContent, /انجا
 const jobSnapshot = window.__tcoMockJob;
 assert.equal(jobSnapshot.status, 'running', 'کار باید در سرور «در جریان» باقی بماند و گم نشود');
 assert.ok(jobSnapshot.done > 0, 'قبل از قطع باید چند مورد واقعاً انجام شده باشد');
-assert.ok(jobSnapshot.queue_ids.length + jobSnapshot.queue_paths.length > 0, 'باید موارد باقی‌مانده در صف سرور وجود داشته باشد');
+assert.ok(
+	jobSnapshot.queue_ids.length + jobSnapshot.queue_paths.length + jobSnapshot.safe_ids.length > 0,
+	'باید موارد باقی‌مانده در صف سرور (تأییدشده یا تأییدنشده) وجود داشته باشد'
+);
 const doneBeforeResume = jobSnapshot.done;
 const totalJob = jobSnapshot.total;
 
 // ادامه: تیک بزرگ‌تر تا پایان کار.
+window.__tcoMockVerifyMax = 25;
 window.__tcoMockTickMax = 25;
 resumeBtn.click();
 await new Promise((r) => setTimeout(r, 3200));
@@ -342,7 +347,7 @@ await new Promise((r) => setTimeout(r, 3200));
 const jobAfter = window.__tcoMockJob;
 assert.equal(jobAfter.status, 'done', 'پس از ادامه، کار باید کامل تمام شود');
 assert.equal(
-	jobAfter.done + jobAfter.blocked_count,
+	jobAfter.done + Object.keys(jobAfter.blocked).length,
 	totalJob,
 	'حساب‌ها باید ببندد: انجام‌شده + محافظت‌شده = کل (هیچ شناسه‌ای گم نمی‌شود)'
 );
@@ -359,8 +364,9 @@ if (pageCheck2) {
 	await flush();
 	const bulk2 = window.document.getElementById('tco-bulk-remove');
 	if (bulk2 && !bulk2.disabled) {
+		window.__tcoMockVerifyMax = 25;
 		window.__tcoMockTickMax = 1;
-		window.__tcoMockFailAfter = 1;
+		window.__tcoMockFailAfter = 2;
 		bulk2.click();
 		await new Promise((r) => setTimeout(r, 1500));
 		const discardBtn = window.document.getElementById('tco-discard-job');
@@ -373,6 +379,64 @@ if (pageCheck2) {
 }
 
 window.__tcoMockTickMax = 6;
+window.__tcoMockVerifyMax = 0;
 window.__tcoMockFailAfter = 0;
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۳ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام» و ادامهٔ کار حذف انبوه پس از قطع ناگهانی) با موفقیت اجرا شدند!');
+// ۱۳. وقتی هیچ تصویری حذف نمی‌شود: نه سکوت، نه «انجام شد» دروغین؛ دلیل واقعی.
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pageCheck3 = window.document.getElementById('tco-check-page');
+let blockedToastChecked = false;
+if (pageCheck3) {
+	pageCheck3.checked = true;
+	pageCheck3.dispatchEvent(new window.Event('change', { bubbles: true }));
+	await flush();
+	const bulk3 = window.document.getElementById('tco-bulk-remove');
+	if (bulk3 && !bulk3.disabled) {
+		// سرور همهٔ موارد را در بازرسی ایمنی رد می‌کند.
+		window.__tcoMockBlockedIds = [...window.document.querySelectorAll('#tco-main tbody tr')].map((tr) => Number(tr.getAttribute('data-row-id')));
+		window.__tcoMockVerifyMax = 50;
+		bulk3.click();
+		await new Promise((r) => setTimeout(r, 2500));
+		const toasts = window.document.getElementById('tco-toasts').textContent;
+		assert.match(toasts, /هیچ تصویری حذف نشد/, 'وقتی صفر مورد حذف می‌شود باید صریحاً و با دلیل اعلام شود');
+		assert.match(toasts, /رد شد|استفاده می‌شود/, 'دلیل رد شدن باید در پیام باشد');
+		blockedToastChecked = true;
+	}
+}
+assert.ok(blockedToastChecked, 'سناریوی «همه رد شدند» باید اجرا شود');
+window.__tcoMockBlockedIds = [];
+
+// ۱۴. کارت «ادامه» باید دلیل‌ها و دکمهٔ اسکن کامل را نشان دهد.
+window.__tcoMockNeedsRescan = true;
+window.__tcoMockVerifyMax = 1;
+window.__tcoMockTickMax = 1;
+window.__tcoMockFailAfter = 0;
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const pageCheck4 = window.document.getElementById('tco-check-page');
+if (pageCheck4) {
+	pageCheck4.checked = true;
+	pageCheck4.dispatchEvent(new window.Event('change', { bubbles: true }));
+	await flush();
+	const bulk4 = window.document.getElementById('tco-bulk-remove');
+	if (bulk4 && !bulk4.disabled) {
+		window.__tcoMockFailAfter = 1;
+		bulk4.click();
+		await new Promise((r) => setTimeout(r, 2000));
+		const card = window.document.querySelector('.tco-resume');
+		assert.ok(card, 'پس از قطع در فاز بازرسی، کارت ادامه باید ظاهر شود');
+		assert.match(card.textContent, /بازرسی ایمنی|انجام شده/, 'کارت ادامه باید وضعیت بازرسی را نشان دهد');
+		assert.ok(
+			card.querySelector('#tco-resume-rescan'),
+			'وقتی اسکن کامل لازم است، دکمهٔ «اجرای اسکن کامل و تلاش مجدد» باید وجود داشته باشد'
+		);
+	}
+}
+window.__tcoMockNeedsRescan = false;
+
+window.__tcoMockTickMax = 6;
+window.__tcoMockVerifyMax = 0;
+window.__tcoMockFailAfter = 0;
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۵ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، و اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود) با موفقیت اجرا شدند!');

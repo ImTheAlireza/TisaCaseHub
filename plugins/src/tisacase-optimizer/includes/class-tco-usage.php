@@ -40,6 +40,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		/** حداکثر تعداد دلیل نمایش‌داده‌شده برای هر آیتم. */
 		const MAX_REASONS = 4;
 
+		/**
+		 * حداکثر تعداد شناسه در هر فراخوانی «مراجع زنده».
+		 *
+		 * بدون این کران، یک تیک با ۱۴۸۰ شناسه کوئری‌های `LIKE` غول‌آسا و حلقهٔ
+		 * چندمیلیون‌تایی می‌ساخت و پیش از ذخیرهٔ پیشرفت تایم‌اوت می‌شد.
+		 */
+		const MAX_LIVE_IDS = 100;
+
 		/** @var array<int,array<int,string>>|null کش در-درخواستی مراجع زنده. */
 		private static $live_cache = null;
 
@@ -223,7 +231,52 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 		 * @param int[] $ids شناسه‌های پیوست.
 		 * @return array<int,string[]> شناسه => فهرست دلایل.
 		 */
+		/**
+		 * مراجع زندهٔ شناسه‌ها در دیتابیس — با کران سخت روی تعداد شناسه.
+		 *
+		 * چرا کران؟ نسخهٔ ۱٫۰٫۷ در یک تیک، هر ۱۴۸۰ شناسه را با هم به این تابع
+		 * می‌داد: ۵ کوئری با ۱۴۸۰ شرط `LIKE` (کوئری غول‌آسا، بدون ایندکس) و بعد
+		 * حلقهٔ PHP روی «تعداد ردیف × ۱۴۸۰ شناسه» (میلیون‌ها پرس‌وجوی regex).
+		 * نتیجه: هر تیک پیش از ذخیرهٔ وضعیت تایم‌اوت می‌شد و کاربر فقط
+		 * «۰ از ۱۴۸۰» می‌دید — یعنی هیچ‌وقت پیشرفتی ثبت نمی‌شد.
+		 *
+		 * حالا: حداکثر `MAX_LIVE_IDS` شناسه در هر فراخوانی و همان‌ها هم به
+		 * بسته‌های `MAX_PATTERNS_PER_QUERY` شکسته می‌شوند تا اندازهٔ هر کوئری
+		 * کوچک و قابل پیش‌بینی بماند. تطبیق هر ردیف هم با استخراج عدد و سپس
+		 * بازبینی مرزی انجام می‌شود ⇒ O(ردیف‌ها) به‌جای O(ردیف‌ها × شناسه‌ها).
+		 *
+		 * @param int[] $ids شناسه‌های پیوست.
+		 * @return array<int,string[]> شناسه => دلایل.
+		 */
 		private static function live_refs( array $ids ) {
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
+			if ( empty( $ids ) ) {
+				return array();
+			}
+
+			// کران سخت: هیچ فراخوانی‌ای نباید کوئری چندصدشرطی بسازد.
+			if ( count( $ids ) > self::MAX_LIVE_IDS ) {
+				$ids = array_slice( $ids, 0, self::MAX_LIVE_IDS );
+			}
+
+			$out = array();
+			foreach ( array_chunk( $ids, self::MAX_PATTERNS_PER_QUERY ) as $chunk ) {
+				foreach ( self::live_refs_chunk( $chunk ) as $aid => $reasons ) {
+					$prev         = isset( $out[ $aid ] ) ? $out[ $aid ] : array();
+					$out[ $aid ]  = array_values( array_unique( array_merge( $prev, $reasons ) ) );
+				}
+			}
+
+			return $out;
+		}
+
+		/**
+		 * بدنهٔ واقعی جست‌وجوی مراجع زنده برای یک بستهٔ کوچک شناسه.
+		 *
+		 * @param int[] $ids حداکثر `MAX_PATTERNS_PER_QUERY` شناسه.
+		 * @return array<int,string[]>
+		 */
+		private static function live_refs_chunk( array $ids ) {
 			global $wpdb;
 
 			$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
@@ -231,7 +284,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				return array();
 			}
 
-			$out   = array();
+			$out     = array();
+			$id_set  = array();
+			foreach ( $ids as $aid ) {
+				$id_set[ (int) $aid ] = true;
+			}
+
 			$strs = array_map( 'strval', $ids );
 			$s_ph = implode( ', ', array_fill( 0, count( $strs ), '%s' ) );
 
@@ -251,8 +309,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			}
 
 			// ۲) گالری‌ها و متاهای شناسه‌ای (لیست، سریالایز یا JSON).
-			$keys       = self::gallery_meta_keys();
-			$keys       = array_values( array_diff( $keys, array( '_thumbnail_id' ) ) );
+			$keys = self::gallery_meta_keys();
+			$keys = array_values( array_diff( $keys, array( '_thumbnail_id' ) ) );
 			if ( empty( $keys ) ) {
 				$keys = array( '_product_image_gallery' );
 			}
@@ -274,10 +332,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				ARRAY_A
 			);
 			foreach ( (array) $gal_rows as $row ) {
-				foreach ( $ids as $id ) {
-					if ( self::id_list_contains( $row['meta_value'], $id ) ) {
-						$out[ $id ][] = self::meta_role_label( (string) $row['meta_key'] ) . ' #' . absint( $row['post_id'] );
-					}
+				foreach ( self::matched_ids_in_text( $row['meta_value'], $id_set ) as $id ) {
+					$out[ $id ][] = self::meta_role_label( (string) $row['meta_key'] ) . ' #' . absint( $row['post_id'] );
 				}
 			}
 
@@ -295,10 +351,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				ARRAY_A
 			);
 			foreach ( (array) $term_rows as $row ) {
-				foreach ( self::numeric_ids_in( $row['meta_value'] ) as $tid ) {
-					if ( in_array( $tid, $ids, true ) ) {
-						$out[ $tid ][] = 'تصویر دسته/برند/سواچ ترم #' . absint( $row['term_id'] );
-					}
+				foreach ( self::matched_ids_in_text( $row['meta_value'], $id_set ) as $tid ) {
+					$out[ $tid ][] = 'تصویر دسته/برند/سواچ ترم #' . absint( $row['term_id'] );
 				}
 			}
 
@@ -313,10 +367,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				ARRAY_A
 			);
 			foreach ( (array) $desc_rows as $drow ) {
-				foreach ( $ids as $id ) {
-					if ( self::id_list_contains( $drow['description'], $id ) ) {
-						$out[ $id ][] = 'توضیحات دسته/برند #' . absint( $drow['term_id'] );
-					}
+				foreach ( self::matched_ids_in_text( $drow['description'], $id_set ) as $id ) {
+					$out[ $id ][] = 'توضیحات دسته/برند #' . absint( $drow['term_id'] );
 				}
 			}
 
@@ -332,28 +384,30 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				ARRAY_A
 			);
 			foreach ( (array) $comment_rows as $crow ) {
-				foreach ( $ids as $id ) {
-					if ( self::id_list_contains( $crow['comment_content'], $id ) ) {
-						$out[ $id ][] = 'متن دیدگاه #' . absint( $crow['comment_ID'] );
-					}
+				foreach ( self::matched_ids_in_text( $crow['comment_content'], $id_set ) as $id ) {
+					$out[ $id ][] = 'متن دیدگاه #' . absint( $crow['comment_ID'] );
 				}
 			}
 
 			// ۴) تنظیمات سایت: فاوآیکون/لوگو/پلیس‌هولدر + theme_mods و ابزارک‌ها.
-			$direct = self::direct_option_labels();
-			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-			$opt_rows = $wpdb->get_results(
-				$wpdb->prepare(
-					"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN ( {$s_ph} )",
-					array_keys( $direct )
-				),
-				ARRAY_A
-			);
-			foreach ( (array) $opt_rows as $row ) {
-				$oid = (int) $row['option_value'];
-				if ( in_array( $oid, $ids, true ) ) {
-					$name          = (string) $row['option_name'];
-					$out[ $oid ][] = isset( $direct[ $name ] ) ? $direct[ $name ] : ( 'تنظیمات: ' . $name );
+			$direct  = self::direct_option_labels();
+			$opt_names = array_keys( $direct );
+			if ( ! empty( $opt_names ) ) {
+				$opt_ph = implode( ', ', array_fill( 0, count( $opt_names ), '%s' ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$opt_rows = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name IN ( {$opt_ph} )",
+						$opt_names
+					),
+					ARRAY_A
+				);
+				foreach ( (array) $opt_rows as $row ) {
+					$oid = (int) $row['option_value'];
+					if ( isset( $id_set[ $oid ] ) ) {
+						$name          = (string) $row['option_name'];
+						$out[ $oid ][] = isset( $direct[ $name ] ) ? $direct[ $name ] : ( 'تنظیمات: ' . $name );
+					}
 				}
 			}
 
@@ -371,10 +425,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 				ARRAY_A
 			);
 			foreach ( (array) $mod_rows as $row ) {
-				foreach ( $ids as $id ) {
-					if ( self::id_list_contains( $row['option_value'], $id ) ) {
-						$out[ $id ][] = 'تنظیمات قالب/ابزارک (' . sanitize_key( (string) $row['option_name'] ) . ')';
-					}
+				foreach ( self::matched_ids_in_text( $row['option_value'], $id_set ) as $id ) {
+					$out[ $id ][] = 'تنظیمات قالب/ابزارک (' . sanitize_key( (string) $row['option_name'] ) . ')';
 				}
 			}
 
@@ -383,6 +435,34 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			}
 
 			return $out;
+		}
+
+		/**
+		 * استخراج شناسه‌های «واقعاً موجود» در یک متن، از میان مجموعهٔ هدف.
+		 *
+		 * اول اعداد متن استخراج می‌شوند (سریع) و سپس فقط همان‌ها با مرز دقیق
+		 * (`id_list_contains`) بازبینی می‌شوند؛ نتیجه همان دقت قبلی است اما
+		 * هزینه از O(ردیف × تعداد شناسه) به O(اعداد ردیف) می‌رسد.
+		 *
+		 * @param string              $value  متن (متا/آپشن/کامنت).
+		 * @param array<int,bool>     $id_set مجموعهٔ شناسه‌های هدف.
+		 * @return int[]
+		 */
+		private static function matched_ids_in_text( $value, array $id_set ) {
+			$value = (string) $value;
+			if ( '' === $value || empty( $id_set ) ) {
+				return array();
+			}
+
+			$hits = array();
+			foreach ( self::numeric_ids_in( $value ) as $num ) {
+				$num = (int) $num;
+				if ( isset( $id_set[ $num ] ) && ! isset( $hits[ $num ] ) && self::id_list_contains( $value, $num ) ) {
+					$hits[ $num ] = true;
+				}
+			}
+
+			return array_map( 'intval', array_keys( $hits ) );
 		}
 
 		/**

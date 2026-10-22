@@ -39,6 +39,9 @@
 		return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 	}
 
+	// ارقام فارسی برای متن‌های راهنما (هم‌سان با رابط کاربری).
+	const faNum = (n) => String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
+
 	const db = {
 		settings: {
 			delete_mode: 'quarantine',
@@ -610,27 +613,86 @@
 			});
 			data = { pinned_ids: db.items.filter((i) => i.is_pinned).map((i) => i.id) };
 		} else if (op === 'remove_items') {
-			// شبیه‌ساز موتور کار «قابل ادامه»: صف در سرور می‌ماند و هر تیک فقط
-			// بخشی را انجام می‌دهد؛ هیچ شناسه‌ای گم نمی‌شود.
+			// شبیه‌ساز موتور کار «قابل ادامه» با فاز راستی‌آزمایی (verify) و اجرا (run).
 			const tickMax = Number(window.__tcoMockTickMax || 6);
 			const failAfter = Number(window.__tcoMockFailAfter || 0);
+			const verifyMax = Number(window.__tcoMockVerifyMax || tickMax);
+			const blockedIds = (window.__tcoMockBlockedIds || []).map(Number);
+			const needsRescan = Boolean(window.__tcoMockNeedsRescan);
 
 			const makeJob = (ids, paths, mode) => ({
 				id: 'jobmock' + Date.now(),
 				mode,
 				batch_id: 'run' + Date.now(),
+				phase: 'verify',
 				total: ids.length + paths.length,
+				verified: 0,
 				done: 0,
 				saved_bytes: 0,
 				queue_ids: [...ids],
 				queue_paths: [...paths],
+				safe_ids: [],
+				safe_paths: [],
 				done_ids: [],
 				done_paths: [],
-				blocked_count: 0,
+				blocked: {},
+				blocked_paths: {},
 				failed_count: 0,
+				needs_rescan: needsRescan,
 				last_error: '',
 				status: 'running',
 			});
+
+			const summarize = (job, finished) => {
+				const remaining = job.phase === 'verify'
+					? job.queue_ids.length + job.queue_paths.length
+					: job.queue_ids.length + job.queue_paths.length + job.safe_ids.length + job.safe_paths.length;
+				const counts = {};
+				Object.values(job.blocked).forEach((r) => {
+					const key = Array.isArray(r) ? r[0] : String(r);
+					counts[key] = (counts[key] || 0) + 1;
+				});
+				const blockReasons = Object.keys(counts)
+					.sort((a, b) => counts[b] - counts[a])
+					.slice(0, 4)
+					.map((reason) => ({ reason, count: counts[reason] }));
+
+				let hint = '';
+				if (job.phase === 'verify') {
+					hint = `در حال بازرسی ایمنی پیش از حذف: ${faNum(job.verified)} از ${faNum(job.total)} مورد بررسی شد.`;
+				} else if (finished && job.done === 0 && Object.keys(job.blocked).length > 0) {
+					hint = job.needs_rescan
+						? 'برای حذف ایمن، ابتدا «اسکن کامل تصاویر» را اجرا کنید؛ بازرسی ایمنی بدون کاتالوگ کامل اجازهٔ حذف نمی‌دهد.'
+						: 'این موردها هنوز در سایت استفاده می‌شوند (مثلاً تصویر شاخص، گالری یا متن محصول)؛ عمداً حذف نشدند.';
+				}
+
+				return {
+					id: job.id,
+					op: 'remove',
+					mode: job.mode,
+					phase: job.phase,
+					status: job.status,
+					batch_id: job.batch_id,
+					total: job.total,
+					done: job.done,
+					remaining,
+					verified: job.verified,
+					blocked_count: Object.keys(job.blocked).length,
+					blocked: job.blocked,
+					blocked_paths: job.blocked_paths,
+					failed_count: job.failed_count,
+					failed: [],
+					saved_bytes: job.saved_bytes,
+					elapsed_sec: 1,
+					eta_sec: 0,
+					coverage: job.needs_rescan ? 'partial' : 'full',
+					needs_rescan: job.needs_rescan,
+					last_error: job.last_error || '',
+					hint,
+					block_reasons: blockReasons,
+					finished: Boolean(finished),
+				};
+			};
 
 			if (req.job_id) {
 				if (!window.__tcoMockJob || window.__tcoMockJob.id !== req.job_id) {
@@ -650,145 +712,138 @@
 
 			const job = window.__tcoMockJob;
 			let saved = 0;
+			const newlyDone = [];
 
-			for (let n = 0; n < tickMax && job.queue_ids.length; n += 1) {
-				const id = job.queue_ids.shift();
-				const idx = db.items.findIndex((x) => x.id === id && !x.is_pinned);
-				if (idx === -1) {
-					// مورد محافظت‌شده/حذف‌شده: شمرده می‌شود تا حساب‌ها همیشه ببندد.
-					job.blocked_count += 1;
-					continue;
+			// فاز ۱: بازرسی ایمنی (بسته‌بندی‌شده؛ پیشرفت ذخیره می‌شود).
+			if (job.phase === 'verify') {
+				for (let n = 0; n < verifyMax && job.queue_ids.length; n += 1) {
+					const id = job.queue_ids.shift();
+					if (blockedIds.includes(Number(id)) || needsRescan) {
+						job.blocked[id] = [needsRescan ? 'کاتالوگ اسکن کامل نیست' : 'هنوز در سایت استفاده می‌شود: تصویر شاخص محصول #۱۲۳'];
+					} else {
+						job.safe_ids.push(id);
+					}
+					job.verified += 1;
 				}
-				const item = db.items.splice(idx, 1)[0];
-				const bytes = item.main_bytes + item.subsizes_bytes + item.unscaled_bytes;
-				saved += bytes;
-				job.done += 1;
-				job.done_ids.push(id);
-				if (job.mode !== 'permanent') {
-					db.quarantine.unshift({
-						id: 'q_' + Date.now() + '_' + id,
-						batch_id: job.batch_id,
-						attachment_id: item.id,
-						filename: item.filename,
-						rel_path: item.rel_path,
-						reason: 'unused',
-						files_count: 1 + item.subsizes_count,
-						total_bytes: bytes,
-						created_at: '2026-10-21 15:45:00',
-						snapshot: item,
-					});
-					db.lifetime.quarantined_count += 1;
-				} else {
-					db.lifetime.deleted_count += 1;
-				}
+				if (!job.queue_ids.length && !job.queue_paths.length) job.phase = 'run';
+				window.__tcoMockTicks = (window.__tcoMockTicks || 0) + 1;
 			}
 
-			// فایل‌های یتیم (در صورت وجود)
-			while (job.queue_paths.length && job.done_ids.length % 3 === 0) {
-				const p = job.queue_paths.shift();
-				const idx = db.diskOrphans.findIndex((o) => o.rel_path === p);
-				if (idx === -1) continue;
-				const o = db.diskOrphans.splice(idx, 1)[0];
-				saved += o.bytes;
-				job.done += 1;
-				job.done_paths.push(p);
+			// فاز ۲: اجرا.
+			if (job.phase === 'run') {
+				for (let n = 0; n < tickMax && job.safe_ids.length; n += 1) {
+					const id = job.safe_ids.shift();
+					const idx = db.items.findIndex((x) => x.id === id && !x.is_pinned);
+					if (idx === -1) {
+						job.blocked[id] = ['مورد محافظت‌شده یا حذف‌شده'];
+						continue;
+					}
+					const item = db.items.splice(idx, 1)[0];
+					const bytes = item.main_bytes + item.subsizes_bytes + item.unscaled_bytes;
+					saved += bytes;
+					job.done += 1;
+					job.done_ids.push(id);
+					newlyDone.push(id);
+					if (job.mode !== 'permanent') {
+						db.quarantine.unshift({
+							id: 'q_' + Date.now() + '_' + id,
+							batch_id: job.batch_id,
+							attachment_id: item.id,
+							filename: item.filename,
+							rel_path: item.rel_path,
+							reason: 'unused',
+							files_count: 1 + item.subsizes_count,
+							total_bytes: bytes,
+							created_at: '2026-10-21 15:45:00',
+							snapshot: item,
+						});
+						db.lifetime.quarantined_count += 1;
+					} else {
+						db.lifetime.deleted_count += 1;
+					}
+				}
+				window.__tcoMockTicks = (window.__tcoMockTicks || 0) + 1;
 			}
 
 			job.saved_bytes += saved;
 			db.lifetime.saved_bytes += saved;
-			window.__tcoMockTicks = (window.__tcoMockTicks || 0) + 1;
 
 			// شبیه‌سازی قطع ناگهانی (برای تست «ادامه از همان نقطه»).
 			if (failAfter > 0 && window.__tcoMockTicks >= failAfter) {
 				job.last_error = 'تایم‌اوت موقت سرور (شبیه‌سازی برای آزمون بازیابی)';
 				window.__tcoMockTicks = 0;
-				failAfter = 0;
 				window.__tcoMockFailAfter = 0;
+				window.__tcoMockVerifyMax = 0;
 				throw new Error(job.last_error);
 			}
 
-			const finished = job.queue_ids.length === 0 && job.queue_paths.length === 0;
+			const finished = job.phase === 'run' && job.safe_ids.length === 0 && job.safe_paths.length === 0;
 
 			if (finished) {
 				job.status = 'done';
-				db.history.unshift({
-					batch_id: job.batch_id,
-					type: job.mode === 'permanent' ? 'delete' : 'quarantine',
-					label: job.mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن تصاویر به قرنطینهٔ ۳۰ روزه (قابل بازگردانی)',
-					items_count: job.done,
-					saved_bytes: job.saved_bytes,
-					user: 'مدیر فروشگاه',
-					created_at: '2026-10-21 15:45:12',
-					note: '',
-				});
+				if (job.done > 0) {
+					db.history.unshift({
+						batch_id: job.batch_id,
+						type: job.mode === 'permanent' ? 'delete' : 'quarantine',
+						label: job.mode === 'permanent' ? 'حذف قطعی تصاویر انتخابی' : 'انتقال ایمن به قرنطینهٔ ۳۰ روزه',
+						items_count: job.done,
+						saved_bytes: job.saved_bytes,
+						user: 'مدیر فروشگاه',
+						created_at: '2026-10-21 15:45:12',
+						note: '',
+					});
+				} else if (!job.last_error) {
+					job.last_error = `هیچ تصویری حذف نشد: هر ${job.verified} مورد در بازرسی ایمنی رد شد`;
+				}
 			}
 
-			const summary = {
-				id: job.id,
-				op: 'remove',
-				mode: job.mode,
-				phase: finished ? 'finish' : 'run',
-				status: job.status,
-				batch_id: job.batch_id,
-				total: job.total,
-				done: job.done,
-				remaining: job.queue_ids.length + job.queue_paths.length,
-				verified: job.total,
-				blocked_count: job.blocked_count,
-				blocked: {},
-				blocked_paths: {},
-				failed_count: job.failed_count,
-				failed: [],
-				saved_bytes: job.saved_bytes,
-				elapsed_sec: 1,
-				eta_sec: 0,
-				coverage: 'full',
-				needs_rescan: false,
-				last_error: job.last_error || '',
-				finished,
-			};
-
 			data = {
-				job: summary,
-				done_ids: job.done_ids,
-				done_paths: job.done_paths,
+				job: summarize(job, finished),
+				done_ids: newlyDone,
+				done_paths: [],
 				saved_bytes: job.saved_bytes,
 				batch_id: job.batch_id,
 				mode: job.mode,
-				blocked: {},
+				blocked: job.blocked,
 				blocked_paths: {},
-				blocked_count: job.blocked_count,
-				needs_rescan: false,
-				coverage: 'full',
-				processed_now: tickMax,
+				blocked_count: Object.keys(job.blocked).length,
+				needs_rescan: job.needs_rescan,
+				coverage: job.needs_rescan ? 'partial' : 'full',
 				overview: computeOverview(),
 			};
 		} else if (op === 'job_status') {
 			if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
-				const job = window.__tcoMockJob;
+				const j = window.__tcoMockJob;
+				const counts = {};
+				Object.values(j.blocked).forEach((r) => {
+					const key = Array.isArray(r) ? r[0] : String(r);
+					counts[key] = (counts[key] || 0) + 1;
+				});
 				data = {
 					job: {
-						id: job.id,
+						id: j.id,
 						op: 'remove',
-						mode: job.mode,
-						phase: 'run',
-						status: job.status,
-						batch_id: job.batch_id,
-						total: job.total,
-						done: job.done,
-						remaining: job.queue_ids.length + job.queue_paths.length,
-						verified: job.total,
-						blocked_count: job.blocked_count,
-						blocked: {},
+						mode: j.mode,
+						phase: j.phase,
+						status: j.status,
+						batch_id: j.batch_id,
+						total: j.total,
+						done: j.done,
+						remaining: j.phase === 'verify' ? j.queue_ids.length + j.queue_paths.length : j.safe_ids.length,
+						verified: j.verified,
+						blocked_count: Object.keys(j.blocked).length,
+						blocked: j.blocked,
 						blocked_paths: {},
-						failed_count: job.failed_count,
+						failed_count: j.failed_count,
 						failed: [],
-						saved_bytes: job.saved_bytes,
+						saved_bytes: j.saved_bytes,
 						elapsed_sec: 1,
 						eta_sec: 0,
-						coverage: 'full',
-						needs_rescan: false,
-						last_error: job.last_error || '',
+						coverage: j.needs_rescan ? 'partial' : 'full',
+						needs_rescan: j.needs_rescan,
+						last_error: j.last_error || '',
+						hint: j.phase === 'verify' ? `در حال بازرسی ایمنی پیش از حذف: ${faNum(j.verified)} از ${faNum(j.total)} مورد بررسی شد.` : '',
+						block_reasons: Object.keys(counts).map((reason) => ({ reason, count: counts[reason] })),
 						finished: false,
 					},
 				};
@@ -801,6 +856,8 @@
 				job.status = 'cancelled';
 				job.queue_ids = [];
 				job.queue_paths = [];
+				job.safe_ids = [];
+				job.safe_paths = [];
 			}
 			data = {
 				job: job ? { id: job.id, done: job.done, total: job.total, status: job.status, finished: true } : null,

@@ -528,23 +528,42 @@
 		const total = Number(job.total || 0);
 		const remaining = Number(job.remaining != null ? job.remaining : Math.max(0, total - done));
 		const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-		const reason = job.lastError ? esc(job.lastError) : 'عملیات پیش از پایان متوقف شد';
 		const blocked = Number(job.blocked || 0);
 		const failed = Number(job.failed || 0);
-		const extra = `${blocked > 0 ? ` · ${faNum(blocked)} مورد محافظت‌شده (حذف نشد)` : ''}${failed > 0 ? ` · ${faNum(failed)} خطای فایل` : ''}`;
+		const verifying = job.phase === 'verify';
+		const reason = job.lastError ? esc(job.lastError) : (verifying ? 'بازرسی ایمنی پیش از حذف در جریان است…' : 'عملیات پیش از پایان متوقف شد');
+
+		const chips = `${
+			blocked > 0 ? `<span class="tco-pill tco-pill--warn">${faNum(blocked)} مورد محافظت‌شده</span>` : ''
+		}${failed > 0 ? `<span class="tco-pill tco-pill--warn">${faNum(failed)} خطای فایل</span>` : ''}`;
+
+		const reasonList = (job.blockReasons || []).length
+			? `<ul class="tco-reason-list">${job.blockReasons
+					.map((r) => `<li><strong>${faNum(r.count)} مورد</strong> — ${esc(r.reason)}</li>`)
+					.join('')}</ul>`
+			: '';
+
+		const hint = job.hint ? `<p class="tco-muted tco-hint">${esc(job.hint)}</p>` : '';
+		const rescanBtn = job.needsRescan
+			? '<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-resume-rescan">اجرای اسکن کامل و تلاش مجدد</button>'
+			: '';
 
 		return `<div class="tco-card tco-resume" role="status">
 			<div class="tco-card__head">
 				<div>
 					<h2 class="tco-card__title">عملیات نیمه‌تمام: ${faNum(done)} از ${faNum(total)} انجام شده</h2>
-					<p class="tco-muted">${reason} — پیشرفت در سرور ذخیره شده است؛ با «ادامه» از همان نقطه تکمیل می‌شود. ${faNum(remaining)} مورد باقی مانده${extra}.</p>
+					<p class="tco-muted">${reason} — پیشرفت در سرور ذخیره شده است؛ با «ادامه» از همان نقطه تکمیل می‌شود. ${faNum(remaining)} مورد در صف باقی مانده.</p>
+					${hint}
+					${reasonList}
+					<div class="tco-row-actions" style="margin-top:8px">${chips}</div>
 				</div>
-				<span class="tco-pill tco-pill--warn">${faNum(pct)}٪</span>
+				<span class="tco-pill ${done > 0 ? 'tco-pill--ok' : 'tco-pill--warn'}">${faNum(pct)}٪</span>
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
 			<div class="tco-win__foot">
-				<span>تا این لحظه: <strong>${faNum(done)}</strong> مورد پردازش شد</span>
+				<span>تا این لحظه: <strong>${faNum(done)}</strong> مورد پردازش شد${job.verified ? ` · بازرسی‌شده: ${faNum(job.verified)}` : ''}</span>
 				<div class="tco-row-actions">
+					${rescanBtn}
 					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-resume-job">ادامهٔ عملیات</button>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-discard-job">رها کردن (ثبت همان مقدار انجام‌شده)</button>
 				</div>
@@ -562,6 +581,7 @@
 		return `<div class="tco-progress-box">
 			<div class="tco-win__foot">
 				<strong>${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)${eta}${failed}</strong>
+				${b.phase === 'verify' ? `<span class="tco-pill tco-pill--neutral">در حال بازرسی ایمنی — ${faNum(b.verified)} از ${faNum(b.total)} بررسی شد</span>` : ''}
 				<div class="tco-row-actions">
 					<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
@@ -1358,6 +1378,11 @@
 						<span class="tco-muted">پیش‌فرض ۴۰. هر تیک پس از این تعداد یا پس از رسیدن به سقف زمان، تمام می‌شود و کار در سرور ذخیره می‌ماند.</span>
 					</div>
 					<div class="tco-field">
+						<label for="tco-cfg-verifychunk">تعداد تصویر در هر گام بازرسی ایمنی</label>
+						<input type="number" class="tco-input" id="tco-cfg-verifychunk" value="${Number(s.verify_chunk || 100)}" min="10" max="200">
+						<span class="tco-muted">پیش‌فرض ۱۰۰. اگر حذف انبوه در مراحل اول «۰ از N» می‌ماند، این عدد را کمتر کنید تا هر گام سریع‌تر تمام شود.</span>
+					</div>
+					<div class="tco-field">
 						<label for="tco-cfg-throttle">مکث بین تصاویر (میلی‌ثانیه)</label>
 						<input type="number" class="tco-input" id="tco-cfg-throttle" value="${Number(s.delete_throttle_ms || 15)}" min="0" max="250" step="5">
 						<span class="tco-muted">پیش‌فرض ۱۵. جلوگیری از اشباع دیسک (IOPS) در حذف‌های چندصدتایی.</span>
@@ -1799,6 +1824,10 @@
 			blocked: 0,
 			needsRescan: false,
 			jobId: resumeJobId || '',
+			verified: 0,
+			phase: '',
+			hint: '',
+			blockReasons: [],
 			etaSec: 0,
 			remaining: totalItems,
 			failed: 0,
@@ -1814,6 +1843,10 @@
 			let jobId = resumeJobId || '';
 			let finished = false;
 			let guard = 0;
+			// ضدبی‌حرکت: اگر چند تیک پشت‌سرهم هیچ پیشرفتی ثبت نشود، به‌جای
+			// چرخیدن بی‌پایان، صادقانه می‌ایستیم و دلیل را نشان می‌دهیم.
+			let stallTicks = 0;
+			let lastSignature = '';
 
 			while (!finished && guard < 4000) {
 				guard += 1;
@@ -1845,17 +1878,37 @@
 				state.batch.failed = job.failed_count || 0;
 				state.batch.etaSec = job.eta_sec || 0;
 				state.batch.lastError = job.last_error || '';
+				state.batch.verified = job.verified || 0;
+				state.batch.phase = job.phase || '';
+				state.batch.hint = job.hint || '';
+				state.batch.blockReasons = job.block_reasons || [];
 				if (job.needs_rescan) state.batch.needsRescan = true;
 				if (res.overview) state.overview = res.overview;
 
 				finished = Boolean(job.finished);
 
+				const signature = `${state.batch.done}|${state.batch.verified}|${state.batch.remaining}`;
+				if (signature === lastSignature && !finished) {
+					stallTicks += 1;
+				} else {
+					stallTicks = 0;
+					lastSignature = signature;
+				}
+
 				render();
-				batchPct(state.batch, state.batch.etaSec > 0 ? `حدود ${faNum(state.batch.etaSec)} ثانیه باقی‌مانده` : 'در حال پردازش…');
+				const phaseLabel = state.batch.phase === 'verify'
+					? `بازرسی ایمنی: ${faNum(state.batch.verified)} بررسی شد`
+					: (state.batch.etaSec > 0 ? `حدود ${faNum(state.batch.etaSec)} ثانیه باقی‌مانده` : 'در حال پردازش…');
+				batchPct(state.batch, phaseLabel);
 
 				// اگر سرور خطا داده باشد، همان‌جا متوقف می‌شویم؛ کار ذخیره است.
 				if (res.error) {
 					state.batch.error = res.error;
+					break;
+				}
+
+				if (stallTicks >= 3) {
+					state.batch.error = state.batch.hint || 'سرور در سه درخواست پیاپی هیچ پیشرفتی ثبت نکرد؛ اگر ادامه دادید و باز هم متوقف شد، «اسکن کامل» را اجرا کنید.';
 					break;
 				}
 
@@ -1865,7 +1918,21 @@
 				}
 			}
 
-			if (finished) {
+			if (finished && state.batch.done === 0 && (state.batch.blocked > 0 || state.batch.failed > 0)) {
+				// هیچ چیزی حذف نشد: هرگز «انجام شد» نگوییم؛ دلیل واقعی را بگوییم.
+				state.selectedIds.clear();
+				state.selectedPaths.clear();
+				const top = (state.batch.blockReasons || []).slice(0, 2)
+					.map((r) => `${faNum(r.count)} مورد: ${r.reason}`)
+					.join(' · ');
+				toast(
+					`هیچ تصویری حذف نشد — ${faNum(state.batch.blocked)} مورد در بازرسی ایمنی رد شد` +
+						(top ? ` (${top})` : '') +
+						(state.batch.hint ? ` — ${state.batch.hint}` : ''),
+					'error'
+				);
+				state.activeJob = null;
+			} else if (finished) {
 				state.selectedIds.clear();
 				state.selectedPaths.clear();
 				const keptNote = state.batch.blocked > 0
@@ -1892,6 +1959,11 @@
 					remaining: state.batch.remaining,
 					blocked: state.batch.blocked,
 					failed: state.batch.failed,
+					verified: state.batch.verified,
+					phase: state.batch.phase,
+					hint: state.batch.hint,
+					needsRescan: state.batch.needsRescan,
+					blockReasons: state.batch.blockReasons,
 					lastError: stoppedByUser ? 'توسط شما متوقف شد' : (state.batch.error || state.batch.lastError || 'ارتباط با سرور قطع شد'),
 				};
 				toast(
@@ -1909,6 +1981,11 @@
 				remaining: state.batch.remaining,
 				blocked: state.batch.blocked,
 				failed: state.batch.failed,
+				verified: state.batch.verified,
+				phase: state.batch.phase,
+				hint: state.batch.hint,
+				needsRescan: state.batch.needsRescan,
+				blockReasons: state.batch.blockReasons,
 				lastError: e.message || 'خطای نامشخص',
 			};
 			// عددهای نمایش‌داده‌شده را با حقیقتِ سرور هم‌تراز می‌کنیم تا هیچ‌گاه
@@ -1946,6 +2023,11 @@
 				remaining: job.remaining,
 				blocked: job.blocked_count || 0,
 				failed: job.failed_count || 0,
+				verified: job.verified || 0,
+				phase: job.phase || '',
+				hint: job.hint || '',
+				needsRescan: Boolean(job.needs_rescan),
+				blockReasons: job.block_reasons || [],
 				lastError: job.last_error || '',
 			};
 		} catch (e) {
@@ -2150,6 +2232,17 @@
 			const job = state.activeJob;
 			if (job && job.id) {
 				state.activeJob = null;
+				await runBatchRemove([], [], job.id);
+			}
+			return;
+		}
+
+		if (ev.target.closest('#tco-resume-rescan')) {
+			const job = state.activeJob;
+			state.activeJob = null;
+			toast('در حال اجرای اسکن کامل تصاویر؛ پس از پایان، حذف را ادامه دهید.');
+			await runIncrementalScan(true);
+			if (job && job.id) {
 				await runBatchRemove([], [], job.id);
 			}
 			return;
@@ -2389,9 +2482,11 @@
 			const tickMs = document.getElementById('tco-cfg-tickms');
 			const tickMax = document.getElementById('tco-cfg-tickmax');
 			const throttle = document.getElementById('tco-cfg-throttle');
+			const verifyChunk = document.getElementById('tco-cfg-verifychunk');
 			if (tickMs) payload.delete_tick_ms = tickMs.value;
 			if (tickMax) payload.delete_tick_max = tickMax.value;
 			if (throttle) payload.delete_throttle_ms = throttle.value;
+			if (verifyChunk) payload.verify_chunk = verifyChunk.value;
 			const saved = await api('save_settings', { settings: payload });
 			state.settings = saved.settings;
 			state.deleteMode = saved.settings.delete_mode;
@@ -2547,6 +2642,7 @@
 		'#tco-stop-batch',
 		'#tco-resume-job',
 		'#tco-discard-job',
+		'#tco-resume-rescan',
 	].join(',');
 
 	document.addEventListener('click', (ev) => {

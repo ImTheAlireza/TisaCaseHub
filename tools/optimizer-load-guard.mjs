@@ -92,10 +92,28 @@ ok(
 ok('flush در فاز پایان انجام می‌شود', /function\s+finish\s*\([\s\S]*?flush_pending_removals\(/.test(job));
 ok('مسیر حذف هرگز اسکن سنگین نمی‌سازد', !fnBody(usage, 'verify_batch').includes('build_catalog') && !fnBody(job, 'finish').includes('build_catalog'));
 
-console.log('── ۴) راستی‌آزمایی ارزان در حالت دسته‌ای ──');
+console.log('── ۴) راستی‌آزمایی ارزان و «بسته‌بندی‌شده» (رفع «۰ از ۱٬۴۸۰») ──');
+ok('فاز بازرسی، صف را بسته‌بسته برمی‌دارد (نه یک‌جا)', /array_splice\(\s*\$job\['queue_ids'\],\s*0,\s*\$chunk_size\s*\)/.test(job));
+ok('اندازهٔ بستهٔ بازرسی کران‌دار و قابل تنظیم است', /verify_chunk/.test(job) && /max\(\s*10,\s*min\(\s*200/.test(job));
+ok('پس از هر بستهٔ بازرسی، وضعیت ذخیره می‌شود (پیشرفت گم نمی‌شود)', /verify_batch\([\s\S]{0,900}?self::save\(\s*\$job\s*\);/.test(job));
+ok('حلقهٔ بازرسی هم با بودجهٔ زمانی بسته می‌شود', /while \( \( microtime\( true \) - \$started \) < \$budget_s \) \{[\s\S]{0,120}?queue_ids/.test(job));
+ok('تنظیم اندازهٔ بستهٔ بازرسی اعتبارسنجی می‌شود', /verify_chunk'\]\s*=\s*max\(\s*10,\s*min\(\s*200/.test(settings));
+
+console.log('── ۴-۲) کران سخت روی کوئری‌های «مراجع زنده» ──');
+ok('سقف شناسه در هر فراخوانی مراجع زنده وجود دارد', /const MAX_LIVE_IDS\s*=\s*\d+/.test(usage));
+ok('مراجع زنده به بسته‌های کوچک شکسته می‌شود', /array_chunk\(\s*\$ids,\s*self::MAX_PATTERNS_PER_QUERY\s*\)/.test(usage) && /live_refs_chunk/.test(usage));
+ok('هیچ شرط LIKE به‌ازای هر شناسهٔ نامحدود ساخته نمی‌شود', /count\( \$ids \) > self::MAX_LIVE_IDS[\s\S]{0,120}?array_slice/.test(usage));
+ok('تطبیق ردیف‌ها با استخراج عدد است، نه حلقهٔ ردیف×شناسه', /matched_ids_in_text/.test(usage) && !/foreach \( \(array\) \$gal_rows as \$row \) \{\s*foreach \( \$ids as \$id \)/.test(usage));
+ok(
+	'کوئری آپشن‌ها تعداد placeholder و آرگومان هم‌سان دارد',
+	/\$opt_ph\s*=\s*implode\(\s*', ',\s*array_fill\(\s*0,\s*count\(\s*\$opt_names\s*\),\s*'%s'\s*\)\s*\)/.test(usage) &&
+		/WHERE option_name IN \( \{\$opt_ph\} \)[\s\S]{0,80}?\$opt_names/.test(usage)
+);
+
+console.log('── ۴-۳) راستی‌آزمایی ارزان در حالت دسته‌ای ──');
 ok('verify_batch حالت انبوه را می‌شناسد', /function\s+verify_batch\s*\([\s\S]{0,200}?\$bulk/.test(usage));
 ok('در کاتالوگ تازه و کامل، بازرسی محتوای هر تصویر حذف می‌شود', /\$bulk\s*&&\s*\$is_fresh/.test(usage) && usage.includes("'full' === $coverage"));
-ok('موتور کار راستی‌آزمایی را دسته‌ای صدا می‌زند', /verify_batch\(\s*\$pending,[\s\S]{0,220}?,\s*true\s*\)/.test(job));
+ok('موتور کار راستی‌آزمایی را دسته‌ای صدا می‌زند', /verify_batch\(\s*\$chunk,\s*\$pchunk,[\s\S]{0,120}?,\s*true\s*\)/.test(job));
 ok('سقف بازرسی محتوا هنوز کران‌دار است', /MAX_CONTENT_PROBES\s*=\s*\d+/.test(usage));
 
 console.log('── ۵) جابه‌جایی فایل بدون دوبرابر IO و با امکان بازیابی ──');
@@ -118,6 +136,14 @@ ok('دکمهٔ رهاکردن کار به سرور اعلام می‌شود', ad
 ok('وضعیت کار در بارگذاری اولیه خوانده می‌شود', admin.includes('refreshJobStatus()'));
 ok('پس از قطع، عددها با سرور هم‌تراز می‌شوند', /await refreshJobStatus\(\)/.test(admin));
 ok('دلیل توقف به کاربر نشان داده می‌شود', /lastError/.test(admin) && admin.includes('عملیات نیمه‌تمام'));
+ok('کارت ادامه در فاز بازرسی، وضعیت را صادقانه می‌گوید', admin.includes("job.phase === 'verify'") && admin.includes('بازرسی ایمنی'));
+ok('دلایل مسدودشدن (به‌تفکیک تعداد) در کارت ادامه دیده می‌شود', admin.includes('blockReasons') && admin.includes('tco-reason-list'));
+ok('راهنمای عملی سرور در کارت نمایش داده می‌شود', admin.includes('job.hint') && job.includes("'hint'"));
+ok('وقتی اسکن کامل لازم است، دکمهٔ اجرای اسکن در کارت هست', admin.includes('tco-resume-rescan'));
+ok('حذف صفر موردی هرگز «انجام شد» اعلام نمی‌شود', admin.includes('هیچ تصویری حذف نشد'));
+ok('سرور برای «همه رد شدند» دلیل واقعی را ذخیره می‌کند', /هیچ تصویری حذف نشد: هر %1\$d مورد/.test(job));
+ok('خلاصهٔ کار دلایل مسدودشدن را تجمیع می‌کند', /block_reasons/.test(job) && /arsort\(\s*\$reason_counts/.test(job));
+ok('کلاینت در برابر بی‌حرکتی سرور می‌ایستد (نه چرخیدن بی‌پایان)', /stallTicks\s*>=\s*\d+/.test(admin));
 ok('کارت ادامه در همهٔ نماها بالای صفحه است', (admin.match(/renderResumeCard\(\)\s*\+/g) || []).length >= 3);
 
 console.log('── ۷) اندپوینت‌ها و امنیت ──');
