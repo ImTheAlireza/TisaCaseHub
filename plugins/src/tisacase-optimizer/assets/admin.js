@@ -161,6 +161,204 @@
 		return false;
 	}
 
+	/* ── کنترلر سراسری «در حال انجام» ───────────────────────────────
+	   هدف: هیچ کلیکی بی‌پاسخ نماند. هر درخواست شبکه یک شمارنده بالا می‌برد و
+	   نوار باریک بالای صفحه + چیپ شناور با برچسب فارسی و زمان سپری‌شده نشان
+	   داده می‌شود. عملیاتِ اندازه‌پذیر (دسته‌ای) درصد هم می‌گیرد. */
+	const OP_LABELS = {
+		overview: 'خواندن آمار رسانه…',
+		query_media: 'آماده‌سازی فهرست تصاویر…',
+		get_vault: 'بارگذاری خزانهٔ پشتیبان…',
+		get_duplicates: 'تشخیص تصاویر تکراری…',
+		get_seo: 'ممیزی متن جایگزین تصاویر…',
+		get_subsizes: 'خواندن آمار زیرسایزها…',
+		scan_step: 'اسکن لایه‌های استفاده…',
+		remove_items: 'حذف ایمن تصاویر…',
+		optimize_batch: 'فشرده‌سازی تصاویر…',
+		clean_unscaled: 'پاک‌سازی فایل‌های خام -scaled…',
+		merge_duplicates: 'ادغام تصاویر تکراری…',
+		regen_batch: 'بازسازی بندانگشتی‌ها…',
+		save_subsizes: 'ذخیرهٔ تنظیمات زیرسایز…',
+		clean_disabled_subsizes: 'پاک‌سازی زیرسایزهای غیرفعال…',
+		save_settings: 'ذخیرهٔ تنظیمات…',
+		toggle_pin: 'به‌روزرسانی لیست سفید…',
+		save_single_seo: 'ذخیرهٔ متن جایگزین…',
+		bulk_generate_seo: 'تولید گروهی Alt و Title…',
+		restore_quarantine: 'بازگردانی از قرنطینه…',
+		restore_original: 'بازگردانی فایل اولیه…',
+		purge_quarantine: 'تخلیهٔ دائمی قرنطینه…',
+		purge_originals: 'پاک‌سازی پشتیبان‌های اولیه…',
+		clear_history: 'پاک‌سازی تاریخچه…',
+	};
+
+	const busy = {
+		count: 0,
+		label: '',
+		startedAt: 0,
+		pct: null,
+		timer: null,
+		els: null,
+		queue: [],
+	};
+
+	function busyEnsureEls() {
+		if (busy.els && document.body.contains(busy.els.bar)) return busy.els;
+
+		const bar = document.createElement('div');
+		bar.className = 'tco-busybar';
+		bar.setAttribute('role', 'progressbar');
+		bar.setAttribute('aria-hidden', 'true');
+		bar.innerHTML = '<span></span>';
+
+		const chip = document.createElement('div');
+		chip.className = 'tco-busy-chip';
+		chip.setAttribute('role', 'status');
+		chip.setAttribute('aria-live', 'polite');
+		chip.innerHTML =
+			'<span class="tco-spinner tco-spinner--sm" aria-hidden="true"></span>' +
+			'<span class="tco-busy-chip__label"></span>' +
+			'<span class="tco-busy-chip__pct"></span>' +
+			'<span class="tco-busy-chip__time"></span>';
+
+		document.body.appendChild(bar);
+		document.body.appendChild(chip);
+
+		busy.els = { bar, chip, fill: bar.firstChild, label: chip.querySelector('.tco-busy-chip__label'), pct: chip.querySelector('.tco-busy-chip__pct'), time: chip.querySelector('.tco-busy-chip__time') };
+		return busy.els;
+	}
+
+	function busyTick() {
+		const els = busy.els;
+		if (!els) return;
+		const secs = Math.max(0, Math.round((Date.now() - busy.startedAt) / 1000));
+		els.time.textContent = secs >= 1 ? faNum(secs) + ' ثانیه' : '';
+	}
+
+	/**
+	 * شروع یک عملیات طولانی. مقدار برگشتی را به busyEnd بدهید.
+	 * @param {string} label برچسب فارسی عملیات.
+	 * @param {object} opts  {pct:number|null, silentDelay:boolean}
+	 * @returns {object} توکن پایان عملیات.
+	 */
+	function busyStart(label, opts = {}) {
+		const token = { label: label || 'در حال انجام…', done: false, pct: null };
+		busy.count += 1;
+		busy.queue.push(token);
+
+		if (busy.count === 1) {
+			busy.startedAt = Date.now();
+			busy.pct = typeof opts.pct === 'number' ? opts.pct : null;
+			const els = busyEnsureEls();
+			els.label.textContent = token.label;
+			els.bar.setAttribute('aria-hidden', 'false');
+			els.bar.setAttribute('aria-valuetext', token.label);
+			busyApplyPct();
+
+			// ضدپرش: اگر عملیات زیر ۲۲۰ میلی‌ثانیه تمام شود، چیزی نشان نده.
+			busy.showTimer = setTimeout(() => {
+				if (busy.count === 0) return;
+				els.bar.classList.add('is-on');
+				els.chip.classList.add('is-on');
+				busy.timer = setInterval(busyTick, 500);
+				busyTick();
+			}, 220);
+		} else {
+			const els = busyEnsureEls();
+			els.label.textContent = token.label;
+		}
+		return token;
+	}
+
+	function busyApplyPct() {
+		const els = busy.els;
+		if (!els) return;
+		if (typeof busy.pct === 'number') {
+			const pct = Math.max(0, Math.min(100, Math.round(busy.pct)));
+			els.bar.classList.add('is-determinate');
+			els.fill.style.width = pct + '%';
+			els.bar.setAttribute('aria-valuenow', String(pct));
+			els.pct.textContent = faNum(pct) + '٪';
+		} else {
+			els.bar.classList.remove('is-determinate');
+			els.fill.style.width = '';
+			els.bar.removeAttribute('aria-valuenow');
+			els.pct.textContent = '';
+		}
+	}
+
+	/**
+	 * به‌روزرسانی درصد عملیات جاری (برای دسته‌های اندازه‌پذیر).
+	 * @param {number|null} pct درصد ۰ تا ۱۰۰.
+	 * @param {string}      label برچسب تازه (اختیاری).
+	 */
+	function busyProgress(pct, label) {
+		if (busy.count === 0) return;
+		busy.pct = typeof pct === 'number' ? pct : null;
+		const els = busyEnsureEls();
+		if (label) els.label.textContent = label;
+		busyApplyPct();
+	}
+
+	function busyEnd(token) {
+		if (!token || token.done) return;
+		token.done = true;
+		busy.count = Math.max(0, busy.count - 1);
+		busy.queue = busy.queue.filter((t) => !t.done);
+
+		const els = busy.els;
+		if (busy.count > 0) {
+			const next = busy.queue[busy.queue.length - 1];
+			if (next && els) els.label.textContent = next.label;
+			return;
+		}
+
+		clearTimeout(busy.showTimer);
+		clearInterval(busy.timer);
+		busy.timer = null;
+		busy.pct = null;
+		if (els) {
+			els.bar.classList.remove('is-on', 'is-determinate');
+			els.chip.classList.remove('is-on');
+			els.bar.setAttribute('aria-hidden', 'true');
+			els.time.textContent = '';
+			els.pct.textContent = '';
+			els.fill.style.width = '';
+		}
+	}
+
+	/**
+	 * اجرای یک عملیات با بازخورد کامل: قفل دکمه + نوار + چیپ + مدیریت خطا.
+	 * @param {Element|null} el    دکمه/کنترل کلیک‌شده.
+	 * @param {string}       label برچسب فارسی.
+	 * @param {Function}     fn    تابع async عملیات.
+	 * @returns {Promise<*>}
+	 */
+	async function withBusy(el, label, fn) {
+		const token = busyStart(label);
+		let marked = null;
+		const markTimer = el
+			? setTimeout(() => {
+					el.classList.add('tco-is-busy');
+					el.setAttribute('aria-busy', 'true');
+					marked = el;
+			  }, 220)
+			: null;
+
+		try {
+			return await fn();
+		} catch (err) {
+			toast((err && err.message) || 'عملیات انجام نشد.', 'error');
+			return undefined;
+		} finally {
+			clearTimeout(markTimer);
+			if (marked) {
+				marked.classList.remove('tco-is-busy');
+				marked.removeAttribute('aria-busy');
+			}
+			busyEnd(token);
+		}
+	}
+
 	async function api(op, payload = {}) {
 		const body = new URLSearchParams();
 		body.set('action', boot.action || 'tisacase_optimizer');
@@ -193,6 +391,11 @@
 		const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
 		const timer = ctrl ? setTimeout(() => ctrl.abort(), 28000) : null;
 
+		// هر درخواست، حتی آن‌هایی که دکمه‌ای ندارند (بارگذاری خودکار، اسکن مرحله‌ای،
+		// به‌روزرسانی خزانه) بازخورد بصری می‌گیرد؛ عملیات دسته‌ای درصد را خودش
+		// با busyProgress به‌روز می‌کند.
+		const token = busyStart(OP_LABELS[op] || 'در حال ارتباط با سرور…');
+
 		let res;
 		try {
 			res = await window.fetch(boot.ajaxUrl || 'admin-ajax.php', {
@@ -204,6 +407,7 @@
 			});
 		} catch (netErr) {
 			if (timer) clearTimeout(timer);
+			busyEnd(token);
 			const timedOut = netErr && netErr.name === 'AbortError';
 			throw new Error(
 				timedOut
@@ -213,7 +417,12 @@
 		}
 		if (timer) clearTimeout(timer);
 
-		const rawText = await res.text();
+		let rawText = '';
+		try {
+			rawText = await res.text();
+		} finally {
+			busyEnd(token);
+		}
 		let json = null;
 		try {
 			json = JSON.parse(rawText);
@@ -456,7 +665,7 @@
 							<p class="tco-win__desc">${faNum(qw.unscaled.count)} فایل دوربین/تلگرام غول‌پیکر که وردپرس نسخهٔ باکیفیت -scaled برایشان ساخته و فایل خام اولیه را بدون نمایش در سایت روی هاست نگه داشته است.</p>
 						</div>
 						<div class="tco-win__foot">
-							<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-quick-clean-unscaled" ${qw.unscaled.count === 0 ? 'disabled' : ''}>آزادسازی فوری با صفر افت کیفیت</button>
+							<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-quick-clean-unscaled" ${qw.unscaled.count === 0 ? 'disabled title="همهٔ فایل‌های خام پشت -scaled قبلاً پاک شده‌اند؛ کاری برای انجام نیست"' : 'title="فایل‌های خام اولیه را بدون افت کیفیت نمایش سایت پاک می‌کند"'}>آزادسازی فوری با صفر افت کیفیت</button>
 						</div>
 					</div>
 
@@ -641,8 +850,8 @@
 					${selCount > 0 ? ' <button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-sel">لغو انتخاب</button>' : ''}
 				</div>
 				<div class="tco-bulkbar__actions">
-					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-bulk-opt" ${selCount === 0 ? 'disabled' : ''}>فشرده‌سازی و WebP (${faNum(selCount)})</button>
-					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : ''} ${bulkArm ? 'is-armed' : ''}" id="tco-bulk-remove" ${selCount === 0 ? 'disabled' : ''}>
+					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-bulk-opt" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را از ستون انتخاب تیک بزنید"' : 'title="فشرده‌سازی و تبدیل تصاویر انتخاب‌شده"'}>فشرده‌سازی و WebP (${faNum(selCount)})</button>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : ''} ${bulkArm ? 'is-armed' : ''}" id="tco-bulk-remove" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک تصویر را انتخاب کنید"' : ''}>
 						${state.deleteMode === 'permanent' ? (bulkArm ? 'کلیک مجدد برای حذف قطعی!' : `حذف قطعی انتخابی (${faNum(selCount)})`) : `انتقال به قرنطینه (${faNum(selCount)})`}
 					</button>
 				</div>
@@ -667,8 +876,8 @@
 			<div class="tco-pager">
 				<span>صفحهٔ ${faNum(data ? data.page : 1)} از ${faNum(data ? data.pages : 1)}</span>
 				<div class="tco-row-actions">
-					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="-1" ${!data || data.page <= 1 ? 'disabled' : ''}>قبلی</button>
-					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="1" ${!data || data.page >= data.pages ? 'disabled' : ''}>بعدی</button>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="-1" ${!data || data.page <= 1 ? 'disabled title="در صفحهٔ اول هستید"' : 'title="صفحهٔ قبل"'}>قبلی</button>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-page-delta="1" ${!data || data.page >= data.pages ? 'disabled title="در آخرین صفحه هستید"' : 'title="صفحهٔ بعد"'}>بعدی</button>
 				</div>
 			</div>
 		</div>`;
@@ -724,7 +933,7 @@
 								? `<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-bulk-remove">پردازش انتخاب‌شده‌ها (${faNum(selCount)})</button>`
 								: ''
 						}
-						<button type="button" class="tisa-btn ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : 'tisa-btn--primary'} tisa-btn--sm ${sweepArm ? 'is-armed' : ''}" id="tco-sweep-all" ${!data || data.total === 0 ? 'disabled' : ''}>
+						<button type="button" class="tisa-btn ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : 'tisa-btn--primary'} tisa-btn--sm ${sweepArm ? 'is-armed' : ''}" id="tco-sweep-all" ${!data || data.total === 0 ? 'disabled title="موردی در این دسته برای پاک‌سازی نیست"' : ''}>
 							${sweepArm ? 'تأیید نهایی روی همهٔ موارد؟' : `${state.deleteMode === 'permanent' ? 'حذف قطعی یک‌جای همهٔ' : 'انتقال یک‌جای همهٔ'} ${data ? faNum(data.total) : '۰'} مورد به قرنطینه`}
 						</button>
 					</div>
@@ -899,7 +1108,7 @@
 				</div>
 				<div class="tco-row-actions">
 					${renderDeleteModeSwitch()}
-					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-merge-all-dups" ${dup.groups_count === 0 ? 'disabled' : ''}>
+					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-merge-all-dups" ${dup.groups_count === 0 ? 'disabled title="هیچ گروه تکراری‌ای پیدا نشد"' : 'title="ادغام همهٔ گروه‌های تکراری"'}>
 						ادغام هوشمند همهٔ ${faNum(dup.groups_count)} گروه (${formatBytes(dup.waste_bytes)})
 					</button>
 				</div>
@@ -961,7 +1170,7 @@
 					<p class="tco-card__desc">سایزهای بلااستفادهٔ قالب/افزونه‌ها را خاموش کنید تا هم Inode هاست پر نشود و هم فضای فعلی آن‌ها آزاد گردد.</p>
 				</div>
 				<div class="tco-row-actions">
-					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-clean-disabled-sizes" ${disabledSet.size === 0 ? 'disabled' : ''}>حذف فایل‌های سایزهای غیرفعال از دیسک</button>
+					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-clean-disabled-sizes" ${disabledSet.size === 0 ? 'disabled title="هیچ زیرسایزی غیرفعال نشده است"' : 'title="فایل‌های زیرسایز غیرفعال را از دیسک پاک می‌کند"'}>حذف فایل‌های سایزهای غیرفعال از دیسک</button>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-regen-all-btn">بازسازی دسته‌ای بندانگشتی‌ها</button>
 					<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-save-sizes-btn">ذخیرهٔ وضعیت سایزها</button>
 				</div>
@@ -1162,8 +1371,8 @@
 										? `<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-selected-q">بازگردانی انتخاب‌شده‌ها (${faNum(qSelCount)})</button>`
 										: ''
 								}
-								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-quarantine" ${v.quarantine.length === 0 ? 'disabled' : ''}>بازگردانی همهٔ موارد (${faNum(v.quarantine.length)})</button>
-								<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger" id="tco-purge-all-quarantine" ${v.quarantine.length === 0 ? 'disabled' : ''}>تخلیهٔ دائمی قرنطینه</button>
+								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-quarantine" ${v.quarantine.length === 0 ? 'disabled title="خزانهٔ قرنطینه خالی است"' : 'title="بازگردانی همهٔ موارد قرنطینه به جای اول"'}>بازگردانی همهٔ موارد (${faNum(v.quarantine.length)})</button>
+								<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger" id="tco-purge-all-quarantine" ${v.quarantine.length === 0 ? 'disabled title="چیزی برای پاک‌سازی نیست"' : 'title="پاک‌سازی دائمی همهٔ موارد قرنطینه (غیرقابل بازگشت)"}'}>تخلیهٔ دائمی قرنطینه</button>
 							</div>
 						</div>
 						<div class="tco-bulkbar">
@@ -1206,8 +1415,8 @@
 								<p class="tco-card__desc">در صورت نیاز می‌توانید یک تصویر یا همهٔ تصاویر فشرده‌شده را با ۱ کلیک به فایل خام اولیه برگردانید.</p>
 							</div>
 							<div class="tco-row-actions">
-								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-orig" ${v.originals.length === 0 ? 'disabled' : ''}>بازگردانی همه به فایل اولیه (${faNum(v.originals.length)})</button>
-								<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-purge-all-orig" ${v.originals.length === 0 ? 'disabled' : ''}>آزادسازی فضای پشتیبان‌ها (${formatBytes(v.summary.originals_bytes)})</button>
+								<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-restore-all-orig" ${v.originals.length === 0 ? 'disabled title="هیچ نسخهٔ پشتیبان اولیه‌ای وجود ندارد"' : 'title="بازگردانی همهٔ تصاویر به فایل خام اولیه"'}>بازگردانی همه به فایل اولیه (${faNum(v.originals.length)})</button>
+								<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-purge-all-orig" ${v.originals.length === 0 ? 'disabled title="نسخهٔ پشتیبان اولیه‌ای برای آزادسازی نیست"' : 'title="آزادسازی فضای پشتیبان‌های اولیه"'}>آزادسازی فضای پشتیبان‌ها (${formatBytes(v.summary.originals_bytes)})</button>
 							</div>
 						</div>
 						<div class="tco-table-wrap">
@@ -1237,7 +1446,7 @@
 								<h2 class="tco-card__title">گزارش نوبت‌های اجرا و بازگردانی یک‌جای هر نوبت</h2>
 								<p class="tco-card__desc">هر نوبت پاک‌سازی در حالت قرنطینه دارای دکمهٔ «بازگردانی کامل این نوبت» است تا دقیقاً مثل سایر افزونه‌های تیساکیس با یک کلیک کل عملیات برگردد.</p>
 							</div>
-							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-history-btn" ${v.history.length === 0 ? 'disabled' : ''}>پاک کردن گزارش</button>
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-history-btn" ${v.history.length === 0 ? 'disabled title="گزارشی برای پاک کردن نیست"' : 'title="پاک کردن گزارش اجراها"'}>پاک کردن گزارش</button>
 						</div>
 						<div class="tco-table-wrap">
 							<table class="tco-table">
@@ -1374,8 +1583,14 @@
 		};
 		render();
 
+		// یک توکن برای کل اسکن (چند تیک پشت‌سرهم): نوار بین درخواست‌ها خاموش نمی‌شود.
+		const scanToken = busyStart('اسکن رسانه — شروع…', { pct: 5 });
+		busyProgress(5, 'شروع اسکن: خواندن فهرست تصاویر کتابخانهٔ رسانه…');
+
 		let firstTick = Boolean(resetFromZero);
 		let retries = 0;
+
+		try {
 
 		while (true) {
 			try {
@@ -1392,6 +1607,11 @@
 				state.scan.percent = Number(step.percent || state.scan.percent);
 				state.scan.canSkip = Boolean(step.can_skip);
 				state.scan.elapsedSec = Number(step.elapsed_sec || 0);
+
+				busyProgress(
+					Number(step.percent || 0),
+					(state.scan.stageLabel || 'اسکن رسانه') + (state.scan.detailLabel ? ' · ' + state.scan.detailLabel : '')
+				);
 
 				if (step.done) {
 					state.scan.running = false;
@@ -1418,6 +1638,10 @@
 				render();
 				throw err;
 			}
+		}
+
+		} finally {
+			busyEnd(scanToken);
 		}
 	}
 
@@ -1473,6 +1697,18 @@
 		}
 	}
 
+	/**
+	 * درصد پیشرفت دستهٔ جاری برای نوار بالای صفحه.
+	 * @param {object} batch state.batch
+	 * @param {string} [suffix] برچسب تکمیلی
+	 */
+	function batchPct(batch, suffix) {
+		if (!batch || !batch.total) return null;
+		const pct = Math.min(100, Math.round((batch.done / batch.total) * 100));
+		busyProgress(pct, `${batch.title} — ${faNum(batch.done)} از ${faNum(batch.total)}${suffix ? ' · ' + suffix : ''}`);
+		return pct;
+	}
+
 	async function runBatchRemove(ids, relPaths) {
 		const queueIds = [...ids];
 		const queuePaths = [...relPaths];
@@ -1489,6 +1725,8 @@
 			needsRescan: false,
 		};
 		render();
+		const runToken = busyStart(state.batch.title, { pct: 0 });
+		batchPct(state.batch, 'شروع…');
 
 		try {
 			while ((queueIds.length > 0 || queuePaths.length > 0) && !state.batch.stopRequested) {
@@ -1515,6 +1753,7 @@
 					state.overview = res.overview;
 				}
 				render();
+				batchPct(state.batch);
 			}
 			state.selectedIds.clear();
 			state.selectedPaths.clear();
@@ -1532,6 +1771,7 @@
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {
+			busyEnd(runToken);
 			state.batch.running = false;
 			const ov = await api('overview');
 			if (ov && !ov.needs_scan) state.overview = ov;
@@ -1551,6 +1791,8 @@
 			savedBytes: 0,
 		};
 		render();
+		const restoreToken = busyStart(state.batch.title, { pct: 0 });
+		batchPct(state.batch, 'شروع…');
 		try {
 			while (queue.length > 0 && !state.batch.stopRequested) {
 				const chunk = queue.splice(0, 25);
@@ -1563,12 +1805,14 @@
 				state.vault = r.vault;
 				if (r.overview) state.overview = r.overview;
 				render();
+				batchPct(state.batch);
 			}
 			state.selectedQuarantineIds.clear();
 			toast(`${faNum(state.batch.done)} تصویر با همان ID و تمام زیرسایزها به جای اول بازگردانده شد!`);
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {
+			busyEnd(restoreToken);
 			state.batch.running = false;
 			render();
 		}
@@ -1594,6 +1838,8 @@
 		};
 		const totalCount = queue.length;
 		render();
+		const optToken = busyStart(state.batch.title, { pct: 0 });
+		batchPct(state.batch, 'شروع…');
 
 		try {
 			while (queue.length > 0 && !state.batch.stopRequested) {
@@ -1607,12 +1853,14 @@
 				state.batch.done += (res.processed || []).length;
 				state.batch.savedBytes += Number(res.saved_bytes || 0);
 				render();
+				batchPct(state.batch);
 			}
 			state.selectedIds.clear();
 			toast(`فشرده‌سازی تمام شد — ${formatBytes(state.batch.savedBytes)} صرفه‌جویی شد.`);
 		} catch (e) {
 			toast(e.message, 'error');
 		} finally {
+			busyEnd(optToken);
 			state.batch.running = false;
 			state.overview = await api('overview');
 			await ensureDataForCurrentView(false);
@@ -1655,7 +1903,7 @@
 	}
 
 	// رویدادهای کلیک و تعامل در سطح سند.
-	document.addEventListener('click', async (ev) => {
+	async function handleActionClick(ev) {
 		const modBtn = ev.target.closest('[data-go-module]');
 		if (modBtn) {
 			state.module = modBtn.getAttribute('data-go-module');
@@ -1879,12 +2127,14 @@
 			const q = init.queue_ids || [];
 			state.batch = { running: true, stopRequested: false, title: 'بازسازی زیرسایزهای بندانگشتی', done: 0, total: q.length, savedBytes: 0 };
 			render();
+			batchPct(state.batch, 'شروع…');
 			const totalN = q.length;
 			while (q.length > 0 && !state.batch.stopRequested) {
 				const chunk = q.splice(0, 12);
 				const r = await api('regen_batch', { ids: chunk, log_final: q.length === 0 ? 1 : 0, summary_count: totalN });
 				state.batch.done += (r.done_ids || []).length;
 				render();
+				batchPct(state.batch);
 			}
 			state.batch.running = false;
 			toast('بازسازی بندانگشتی‌ها با موفقیت تکمیل شد.');
@@ -2048,6 +2298,67 @@
 			const modal = document.getElementById('tco-modal');
 			if (modal) modal.hidden = true;
 		}
+	}
+
+	// پوشش سراسری: هر کنترل کلیک‌پذیر، تا پایان کارش «در حال انجام» نشان داده می‌شود
+	// و خطاهای شبکه/سرور به‌جای سکوت، به‌صورت اعلان فارسی دیده می‌شوند.
+	const ACTION_SELECTOR = [
+		'[data-go-module]',
+		'[data-go-subtab]',
+		'[data-unused-bucket]',
+		'[data-vault-tab]',
+		'[data-set-delmode]',
+		'[data-opt-one]',
+		'[data-pin-one]',
+		'[data-remove-one]',
+		'[data-remove-path]',
+		'[data-inspect]',
+		'[data-restore-q]',
+		'[data-restore-batch]',
+		'[data-purge-q]',
+		'[data-restore-orig]',
+		'[data-merge-hash]',
+		'[data-pick-master]',
+		'[data-page-delta]',
+		'[data-save-seo]',
+		'[data-modal-close]',
+		'#tco-fast-finish-btn',
+		'#tco-resume-scan-btn',
+		'#tco-rescan-btn',
+		'#tco-quick-clean-unscaled',
+		'#tco-bulk-opt',
+		'#tco-bulk-remove',
+		'#tco-sweep-all',
+		'#tco-select-all-matching',
+		'#tco-clear-sel',
+		'#tco-merge-all-dups',
+		'#tco-save-sizes-btn',
+		'#tco-clean-disabled-sizes',
+		'#tco-regen-all-btn',
+		'#tco-bulk-seo-btn',
+		'#tco-save-compress-cfg',
+		'#tco-start-bulk-compress',
+		'#tco-save-general-cfg',
+		'#tco-restore-selected-q',
+		'#tco-restore-all-quarantine',
+		'#tco-purge-all-quarantine',
+		'#tco-restore-all-orig',
+		'#tco-purge-all-orig',
+		'#tco-clear-history-btn',
+		'#tco-stop-batch',
+	].join(',');
+
+	document.addEventListener('click', (ev) => {
+		const el = ev.target.closest(ACTION_SELECTOR);
+		if (!el) return;
+
+		// دکمهٔ «توقف محترمانه» باید در تمام مدت دسته در دسترس بماند.
+		if (el.id === 'tco-stop-batch') return;
+
+		const explicit = el.getAttribute('data-busy-label');
+		const text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+		const label = explicit || (text ? text.slice(0, 44) : 'در حال انجام…');
+		withBusy(el, label, () => handleActionClick(ev));
 	});
 
 	document.addEventListener('change', async (ev) => {

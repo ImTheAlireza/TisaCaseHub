@@ -1044,6 +1044,150 @@ body.tco-page #wpfooter {
 	}
 }
 
+/* ── نشانگرهای سراسری «در حال انجام» ─────────────────────────────
+   هر عملیاتی که به سرور می‌رود (حذف، فشرده‌سازی، بازگردانی، ادغام،
+   ذخیره، اسکن…) بازخورد فوری می‌گیرد: دکمهٔ فشرده‌شده + نوار بالای صفحه
+   + چیپ شناور با برچسب فارسی و زمان سپری‌شده. */
+.tco-busybar {
+	position: fixed;
+	top: 0;
+	inset-inline: 0;
+	z-index: 100150;
+	height: 3px;
+	overflow: hidden;
+	background: var(--tisa-primary-soft, #E7F4F1);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity .18s ease;
+}
+
+.admin-bar .tco-busybar {
+	top: 32px;
+}
+
+@media (max-width: 782px) {
+	.admin-bar .tco-busybar {
+		top: 46px;
+	}
+}
+
+.tco-busybar.is-on {
+	opacity: 1;
+}
+
+.tco-busybar > span {
+	display: block;
+	height: 100%;
+	width: 40%;
+	background: var(--tisa-primary, #0E7C6B);
+	transform: translateX(-100%);
+	animation: tco-busy-slide 1.15s ease-in-out infinite;
+}
+
+.tco-busybar.is-determinate > span {
+	width: 0;
+	transform: none;
+	animation: none;
+	transition: width .25s ease;
+}
+
+@keyframes tco-busy-slide {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(250%);
+	}
+}
+
+.tco-busy-chip {
+	position: fixed;
+	bottom: var(--tisa-sp-4, 16px);
+	inset-inline-start: var(--tisa-sp-4, 16px);
+	z-index: 100250;
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	max-width: min(420px, calc(100vw - 32px));
+	padding: var(--tisa-sp-2, 8px) var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface, #FFFFFF);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: var(--tisa-font);
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+	box-shadow: var(--tisa-shadow, 0 10px 30px rgba(31, 42, 46, .16));
+	opacity: 0;
+	transform: translateY(6px);
+	transition: opacity .16s ease, transform .16s ease;
+	pointer-events: none;
+}
+
+.tco-busy-chip.is-on {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.tco-busy-chip__label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tco-busy-chip__time {
+	color: var(--tisa-muted, #77828A);
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+.tco-busy-chip__pct {
+	color: var(--tisa-primary-ink, #0A5F52);
+	font-variant-numeric: tabular-nums;
+}
+
+.tco-spinner--sm {
+	width: 14px;
+	height: 14px;
+	border-width: 2px;
+	flex: 0 0 auto;
+}
+
+/* دکمه‌ای که درخواستش در جریان است */
+.tco-is-busy,
+.tisa-btn.tco-is-busy {
+	position: relative;
+	pointer-events: none;
+	opacity: .72;
+}
+
+.tco-is-busy::after {
+	content: "";
+	position: absolute;
+	inset-inline-end: var(--tisa-sp-2, 8px);
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	margin-top: -6px;
+	border: 2px solid var(--tisa-border-strong, #C9DCD7);
+	border-top-color: var(--tisa-primary, #0E7C6B);
+	border-radius: var(--tisa-r-pill, 999px);
+	animation: tco-spin .7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tco-busybar > span {
+		animation: none;
+		width: 100%;
+		transform: none;
+	}
+	.tco-is-busy::after,
+	.tco-spinner,
+	.tco-spinner--sm {
+		animation-duration: 2.4s;
+	}
+}
+
 @media (max-width: 960px) {
 	.tco-kpi-grid {
 		grid-template-columns: repeat(2, minmax(0, 1fr));

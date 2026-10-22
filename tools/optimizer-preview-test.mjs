@@ -173,6 +173,108 @@ window.document.getElementById('tco-resume-scan-btn').click();
 await flush();
 assert.match(window.document.getElementById('tco-main').textContent, /کالبدشکافی مصرف فضای دیسک/);
 
+// ۱۲. تست بازخورد جهانی «در حال انجام» — هیچ کلیکی بی‌پاسخ نمی‌ماند
+// (کاربر گزارش داده بود دکمه می‌زند و تا پایان کار هیچ نشانه‌ای نمی‌بیند.)
+{
+	const doc = window.document;
+
+	// در حالت بی‌کاری، نشانگرها نباید روشن یا چسبیده باشند.
+	const barBefore = doc.querySelector('.tco-busybar');
+	if (barBefore) {
+		assert.equal(barBefore.classList.contains('is-on'), false, 'نشانگر در حالت بی‌کاری نباید روشن باشد');
+		assert.equal(barBefore.getAttribute('aria-hidden'), 'true');
+	}
+	assert.equal(doc.querySelector('.tco-is-busy'), null, 'هیچ دکمه‌ای در حالت بی‌کاری نباید قفل بماند');
+
+	// تأخیر مصنوعی روی شبکه تا پنجرهٔ نمایش نشانگر حتماً باز شود.
+	const slowFetch = async function (url, opts) {
+		await new Promise((r) => setTimeout(r, 700));
+		return baseFetch(url, opts);
+	};
+
+	// ── الف) عملیات درصدی: اسکن کامل باید نوار «تعیین‌شده» با درصد نشان دهد.
+	window.fetch = slowFetch;
+	doc.querySelector('[data-go-subtab="explorer"]').click();
+	await flush();
+	doc.querySelector('[data-go-subtab="overview"]').click();
+	await flush();
+
+	doc.getElementById('tco-rescan-btn').click();
+	await new Promise((r) => setTimeout(r, 300));
+
+	const bar = doc.querySelector('.tco-busybar');
+	const chip = doc.querySelector('.tco-busy-chip');
+	assert.ok(bar && chip, 'نوار و چیپ نشانگر باید ساخته شوند');
+	assert.ok(bar.classList.contains('is-on'), 'نوار باید در حین کار روشن باشد');
+	assert.equal(bar.getAttribute('aria-hidden'), 'false', 'نوار باید برای صفحه‌خوان فعال اعلام شود');
+	assert.match(chip.textContent, /اسکن|گام|در حال/, 'چیپ باید برچسب فارسی عملیات را نشان دهد');
+	assert.ok(bar.classList.contains('is-determinate'), 'اسکن باید نوار درصدی (determinate) نشان دهد');
+	const valuenow = Number(bar.getAttribute('aria-valuenow'));
+	assert.ok(valuenow >= 0 && valuenow <= 100, 'درصد نوار باید عددی بین ۰ و ۱۰۰ باشد');
+	assert.match(chip.textContent, /٪/, 'چیپ باید درصد را نمایش دهد');
+
+	// پایان اسکن: نشانگر باید کامل خاموش و پاک شود.
+	for (let i = 0; i < 40 && bar.classList.contains('is-on'); i += 1) {
+		await new Promise((r) => setTimeout(r, 120));
+	}
+	assert.equal(bar.classList.contains('is-on'), false, 'پس از پایان اسکن نوار باید خاموش شود');
+	assert.equal(bar.getAttribute('aria-hidden'), 'true');
+
+	// ── ب) عملیات تکی: دکمه باید قفل و اسپینر بگیرد و کلیک دوم نادیده بماند.
+	doc.querySelector('[data-go-subtab="explorer"]').click();
+	await flush();
+	const single = doc.querySelector('[data-opt-one]');
+	assert.ok(single, 'دکمهٔ بهینه‌سازی تک‌تصویر باید موجود باشد');
+
+	let calls = 0;
+	window.fetch = async function (url, opts) {
+		calls += 1;
+		await new Promise((r) => setTimeout(r, 300));
+		return baseFetch(url, opts);
+	};
+
+	const callsBefore = calls;
+	single.click();
+	await new Promise((r) => setTimeout(r, 300));
+	assert.ok(single.classList.contains('tco-is-busy'), 'دکمهٔ کلیک‌شده باید حالت «در حال انجام» بگیرد');
+	assert.equal(single.getAttribute('aria-busy'), 'true');
+	assert.ok(doc.querySelector('.tco-busy-chip').classList.contains('is-on'), 'چیپ باید در حین درخواست روشن باشد');
+
+	const callsDuring = calls;
+	single.click(); // کلیک دوم روی دکمهٔ قفل‌شده باید بی‌اثر باشد
+	await new Promise((r) => setTimeout(r, 120));
+	assert.equal(calls, callsDuring, 'کلیک دوم روی دکمهٔ در حال اجرا نباید درخواست تکراری بسازد');
+	assert.ok(calls > callsBefore, 'درخواست واقعی باید ارسال شود');
+
+	// پایان: همه‌چیز آزاد شود (هم قفل دکمه، هم نوار — چون پس از عملیات،
+	// بازخوانی آمار هم یک درخواست دیگر است).
+	for (let i = 0; i < 60; i += 1) {
+		const stillBusy = doc.querySelector('.tco-is-busy') || doc.querySelector('.tco-busybar').classList.contains('is-on');
+		if (!stillBusy) break;
+		await new Promise((r) => setTimeout(r, 150));
+	}
+	assert.equal(doc.querySelector('.tco-is-busy'), null, 'پس از پایان، هیچ دکمه‌ای نباید در حالت قفل بماند');
+	assert.equal(doc.querySelector('.tco-busybar').classList.contains('is-on'), false);
+	assert.equal(doc.querySelector('.tco-busy-chip').classList.contains('is-on'), false);
+
+	// ── ج) خطای شبکه باید اعلان فارسی بدهد، نه سکوت.
+	window.fetch = async function () {
+		throw new Error('شبیه‌سازی قطع شبکه');
+	};
+	doc.querySelector('[data-go-subtab="overview"]').click();
+	await flush();
+	const cleanBtn = doc.getElementById('tco-quick-clean-unscaled');
+	if (cleanBtn && !cleanBtn.disabled) {
+		cleanBtn.click();
+		await new Promise((r) => setTimeout(r, 500));
+		assert.match(doc.getElementById('tco-toasts').textContent, /خطا|قط|شبکه|سرور/, 'خطای شبکه باید به‌صورت اعلان دیده شود');
+	}
+	assert.equal(doc.querySelector('.tco-is-busy'), null, 'پس از خطا هم دکمه نباید در حالت قفل بماند');
+
+	window.fetch = baseFetch;
+	await flush();
+}
+
 // ۱۱. تست مرکز کامل «پشتیبان و بازگردانی» (زیرتب مستقیم در بخش تصاویر + بازگردانی یک‌کلیکی کل نوبت اجرا!)
 window.document.querySelector('[data-go-module="images"]').click();
 await flush();
@@ -195,4 +297,4 @@ assert.ok(undoRunBtn, 'دکمهٔ بازگردانی کامل نوبت اجرا 
 undoRunBtn.click();
 await flush();
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۱ بخش شامل موتور اسکن نسل ۳ و بازگردانی کامل نوبت‌ها) با موفقیت اجرا شدند!');
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۱۲ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها و بازخورد جهانی «در حال انجام») با موفقیت اجرا شدند!');
