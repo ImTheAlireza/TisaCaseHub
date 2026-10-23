@@ -110,6 +110,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Deduplicator' ) ) {
 				return new WP_Error( 'invalid_master', __( 'تصویر مرجع معتبر نیست.', 'tisacase-optimizer' ) );
 			}
 
+			// هیچ فایلی داخل «پوشهٔ محافظت‌شده» نباید در ادغام حذف شود.
+			$master_rel = (string) get_post_meta( $master_id, '_wp_attached_file', true );
+			if ( TisaCase_Optimizer_Settings::is_whitelisted_path( $master_rel ) ) {
+				return new WP_Error(
+					'whitelisted_folder',
+					__( 'تصویر مرجع داخل یک پوشهٔ محافظت‌شده است؛ ادغام انجام نشد.', 'tisacase-optimizer' )
+				);
+			}
+
 			$master_url = (string) wp_get_attachment_url( $master_id );
 			$relinked   = 0;
 			$saved      = 0;
@@ -123,6 +132,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Deduplicator' ) ) {
 				}
 				$dup_post = get_post( $dup_id );
 				if ( ! $dup_post || 'attachment' !== $dup_post->post_type ) {
+					continue;
+				}
+				if ( TisaCase_Optimizer_Settings::is_whitelisted_path( (string) get_post_meta( $dup_id, '_wp_attached_file', true ) ) ) {
+					// داخل پوشهٔ محافظت‌شده: مرجع‌ها منتقل می‌شوند ولی خودِ فایل نه.
 					continue;
 				}
 

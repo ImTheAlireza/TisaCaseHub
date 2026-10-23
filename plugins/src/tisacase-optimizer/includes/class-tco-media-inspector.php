@@ -68,9 +68,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					$aid               = isset( $it['id'] ) ? (int) $it['id'] : (int) $k;
 					$is_pinned         = isset( $pinned_map[ $aid ] );
 					$it['is_pinned']   = $is_pinned;
+					// «پوشهٔ محافظت‌شده» (مستندات مالی، رسیدها و …): حتی اگر هیچ
+					// مرجعی نداشته باشد، «بدون استفاده» حساب نمی‌شود و در فهرست
+					// پاک‌سازی نمی‌آید. با تغییر مسیرها، بدون اسکن دوباره اثر می‌کند.
+					$wl_folder              = isset( $it['rel_path'] ) ? TisaCase_Optimizer_Settings::matched_whitelist_folder( (string) $it['rel_path'] ) : '';
+					$it['whitelist_folder'] = $wl_folder;
 					if ( $is_pinned && ! empty( $it['exists'] ) ) {
 						$it['usage_status'] = 'pinned';
-					} elseif ( 'pinned' === $it['usage_status'] && ! $is_pinned ) {
+					} elseif ( '' !== $wl_folder ) {
+						$it['usage_status'] = 'folder_whitelisted';
+					} elseif ( 'pinned' === $it['usage_status'] || 'folder_whitelisted' === $it['usage_status'] ) {
 						$it['usage_status'] = ! empty( $it['refs_count'] ) ? 'used' : 'strict_unused';
 					}
 					$items[ $aid ] = $it;
@@ -358,6 +365,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 						'count'   => count( TisaCase_Optimizer_Settings::pinned_ids() ),
 						'bytes'   => isset( $cached_ov['whitelist']['bytes'] ) ? (int) $cached_ov['whitelist']['bytes'] : 0,
 						'missing' => isset( $cached_ov['whitelist']['missing'] ) ? (int) $cached_ov['whitelist']['missing'] : 0,
+						'folders'       => TisaCase_Optimizer_Settings::whitelisted_folders(),
+						'folder_stats'  => isset( $cached_ov['whitelist']['folder_stats'] ) ? (array) $cached_ov['whitelist']['folder_stats'] : array(),
+						'folder_items'  => isset( $cached_ov['whitelist']['folder_items'] ) ? (int) $cached_ov['whitelist']['folder_items'] : 0,
+						'folder_bytes'  => isset( $cached_ov['whitelist']['folder_bytes'] ) ? (int) $cached_ov['whitelist']['folder_bytes'] : 0,
 					);
 					$cached_ov['next_actions'] = self::build_next_actions( $cached_ov );
 					return $cached_ov;
@@ -387,6 +398,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$pinned_count   = 0;
 			$pinned_bytes   = 0;
 			$pinned_missing = 0;
+			$folder_wl_count = 0;
+			$folder_wl_bytes = 0;
 			$formats        = array(
 				'JPEG'  => array( 'count' => 0, 'bytes' => 0 ),
 				'PNG'   => array( 'count' => 0, 'bytes' => 0 ),
@@ -414,6 +427,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					$draft_bytes += $it['total_bytes'];
 				} elseif ( 'missing_file' === $it['usage_status'] ) {
 					++$missing_count;
+				} elseif ( 'folder_whitelisted' === $it['usage_status'] ) {
+					++$folder_wl_count;
+					$folder_wl_bytes += $it['total_bytes'];
 				}
 
 				// «لیست سفید» بر اساس خودِ علامتِ پین شمرده می‌شود، نه وضعیتِ مصرف؛
@@ -519,6 +535,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					'count'   => $pinned_count,
 					'bytes'   => $pinned_bytes,
 					'missing' => $pinned_missing,
+					// پوشه‌های محافظت‌شده: مسیرهای ذخیره‌شده + آماری که اسکن از
+					// فایل‌های کنارگذاشته‌شده نگه داشته است.
+					'folders'       => TisaCase_Optimizer_Settings::whitelisted_folders(),
+					'folder_stats'  => isset( $index['whitelist_stats'] ) && is_array( $index['whitelist_stats'] ) ? array_values( $index['whitelist_stats'] ) : array(),
+					'folder_items'  => $folder_wl_count,
+					'folder_bytes'  => $folder_wl_bytes,
 				),
 				'vault'          => $vault,
 				'lifetime_stats' => $saved,
@@ -529,6 +551,142 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			// نوشتن خلاصه برای درخواست‌های بعدی (میان‌بُر امن؛ با هر تغییر کاتالوگ باطل می‌شود).
 			TisaCase_Optimizer_Catalog_Summary::write( $overview, $items );
 			return $overview;
+		}
+
+		/**
+		 * شمارش زندهٔ فایل‌های داخل «پوشه‌های محافظت‌شده».
+		 *
+		 * چرا؟ عددهای اسکن تا اسکن بعدی قدیمی می‌مانند؛ کاربری که همین حالا
+		 * پوشه‌ای را وایت‌لیست می‌کند باید ببیند چند فایل از فهرست‌ها کنار
+		 * رفت. این شمارش فقط همان چند پوشه را می‌خواند (نه کل uploads) و با
+		 * سقف فایل و سقف زمانی اجرا می‌شود تا هیچ درخواستی سنگین نشود.
+		 *
+		 * @param float $budget سقف زمان (ثانیه).
+		 * @return array<int,array<string,mixed>>
+		 */
+		public static function whitelist_folder_stats( $budget = 1.5 ) {
+			$folders = TisaCase_Optimizer_Settings::whitelisted_folders();
+			if ( empty( $folders ) ) {
+				return array();
+			}
+			$uploads = wp_upload_dir();
+			$basedir = isset( $uploads['basedir'] ) ? (string) $uploads['basedir'] : '';
+			if ( '' === $basedir ) {
+				return array();
+			}
+			$started  = microtime( true );
+			$cap      = 5000;
+			$out      = array();
+			$image_exts = array( 'jpg' => 1, 'jpeg' => 1, 'png' => 1, 'gif' => 1, 'webp' => 1, 'avif' => 1, 'bmp' => 1, 'svg' => 1 );
+
+			foreach ( $folders as $folder ) {
+				$files = 0;
+				$bytes = 0;
+				$cut   = false;
+				// اگر مسیر دقیق است همان پوشه؛ اگر فقط نام پوشه است، همهٔ
+				// پوشه‌های همنام در عمق‌های مختلف uploads پیدا می‌شوند.
+				$abs = wp_normalize_path( trailingslashit( $basedir ) . $folder );
+				$dirs = array();
+				if ( is_dir( $abs ) ) {
+					$dirs[] = $abs;
+				} else {
+					$dirs = self::find_dirs_by_name( $basedir, basename( $folder ), 3 );
+				}
+
+				foreach ( $dirs as $dir ) {
+					$stack = array( $dir );
+					while ( $stack ) {
+						if ( microtime( true ) - $started > $budget || $files >= $cap ) {
+							$cut = true;
+							break 2;
+						}
+						$current = array_pop( $stack );
+						$entries = @scandir( $current ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+						if ( ! is_array( $entries ) ) {
+							continue;
+						}
+						foreach ( $entries as $entry ) {
+							if ( '.' === $entry || '..' === $entry ) {
+								continue;
+							}
+							$path = $current . '/' . $entry;
+							if ( is_dir( $path ) ) {
+								$stack[] = $path;
+								continue;
+							}
+							$ext = strtolower( (string) pathinfo( $entry, PATHINFO_EXTENSION ) );
+							if ( ! isset( $image_exts[ $ext ] ) ) {
+								continue;
+							}
+							++$files;
+							$bytes += max( 0, (int) @filesize( $path ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+							if ( $files >= $cap ) {
+								$cut = true;
+								break 2;
+							}
+						}
+					}
+				}
+
+				$out[] = array(
+					'folder'    => $folder,
+					'files'     => $files,
+					'bytes'     => $bytes,
+					'truncated' => $cut,
+					'found'     => ! empty( $dirs ),
+				);
+			}
+			return $out;
+		}
+
+		/**
+		 * یافتن پوشه‌هایی با یک نام مشخص در درخت `uploads/` (تا عمق محدود).
+		 *
+		 * @param string $base پوشهٔ پایه.
+		 * @param string $name نام پوشه.
+		 * @param int    $depth حداکثر عمق.
+		 * @return string[]
+		 */
+		private static function find_dirs_by_name( $base, $name, $depth ) {
+			$found   = array();
+			$needle  = strtolower( (string) $name );
+			$stack   = array( array( $base, 0 ) );
+			$visited = 0;
+			while ( $stack && $visited < 400 ) {
+				list( $dir, $level ) = array_pop( $stack );
+				++$visited;
+				$entries = @scandir( $dir ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				if ( ! is_array( $entries ) ) {
+					continue;
+				}
+				foreach ( $entries as $entry ) {
+					if ( '.' === $entry || '..' === $entry || self::is_vault_dirname( $entry ) ) {
+						continue;
+					}
+					$path = $dir . '/' . $entry;
+					if ( ! is_dir( $path ) ) {
+						continue;
+					}
+					if ( strtolower( $entry ) === $needle ) {
+						$found[] = wp_normalize_path( $path );
+						continue;
+					}
+					if ( $level + 1 < $depth ) {
+						$stack[] = array( $path, $level + 1 );
+					}
+				}
+			}
+			return $found;
+		}
+
+		/**
+		 * آیا این نام پوشه مربوط به خزانهٔ خود افزونه است؟
+		 *
+		 * @param string $name نام پوشه.
+		 * @return bool
+		 */
+		private static function is_vault_dirname( $name ) {
+			return 0 === strpos( (string) $name, 'tisa-opt-vault' );
 		}
 
 		/**
@@ -705,6 +863,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 
 			if ( 'unregistered_disk' === $usage ) {
 				$orphans = isset( $cat['index']['orphans'] ) ? (array) $cat['index']['orphans'] : array();
+				// محافظ دوم (برای کاتالوگ‌های قدیمی که پیش از تعریف پوشه ساخته
+				// شده‌اند): فایل داخل پوشهٔ محافظت‌شده هرگز در این فهرست نمی‌آید.
+				$orphans = array_values(
+					array_filter(
+						$orphans,
+						static function ( $o ) {
+							return ! TisaCase_Optimizer_Settings::is_whitelisted_path( isset( $o['rel_path'] ) ? (string) $o['rel_path'] : '' );
+						}
+					)
+				);
 				if ( '' !== $search ) {
 					$orphans = array_values(
 						array_filter(
@@ -742,7 +910,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				} elseif ( ! in_array( $format, array( 'ALL', '', 'OPAQUE_PNG' ), true ) && $it['format'] !== $format ) {
 					continue;
 				}
-				if ( 'pinned' === $usage ) {
+				if ( 'folder_whitelisted' === $usage ) {
+					if ( 'folder_whitelisted' !== $it['usage_status'] ) {
+						continue;
+					}
+				} elseif ( 'pinned' === $usage ) {
 					// «لیست سفید» = هر رکوردی که علامت ★ دارد؛ حتی اگر فایلش روی
 					// دیسک نباشد (آن‌ها هم باید در همین فهرست دیده شوند).
 					if ( empty( $it['is_pinned'] ) ) {

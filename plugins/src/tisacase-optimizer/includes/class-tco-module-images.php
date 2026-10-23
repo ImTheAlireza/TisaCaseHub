@@ -36,7 +36,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Module_Images' ) ) {
 					'overview'   => __( 'نمای کلی دیسک', 'tisacase-optimizer' ),
 					'explorer'   => __( 'سنگین‌ترین تصاویر', 'tisacase-optimizer' ),
 					'unused'     => __( 'تصاویر بدون استفاده', 'tisacase-optimizer' ),
-					'whitelist'  => __( 'لیست سفید (پین‌شده‌ها)', 'tisacase-optimizer' ),
+					'whitelist'  => __( 'لیست سفید (پین‌شده‌ها و پوشه‌ها)', 'tisacase-optimizer' ),
 					'restore'    => __( 'پشتیبان و بازگردانی', 'tisacase-optimizer' ),
 					'compress'   => __( 'فشرده‌سازی و WebP', 'tisacase-optimizer' ),
 					'duplicates' => __( 'تصاویر تکراری', 'tisacase-optimizer' ),

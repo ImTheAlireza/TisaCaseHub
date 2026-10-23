@@ -983,6 +983,24 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 
 			foreach ( array_keys( $allow ) as $aid ) {
 				$item = isset( $catalog_items[ $aid ] ) ? $catalog_items[ $aid ] : null;
+
+				// محافظ آخرِ خط: اگر فایل داخل یک «پوشهٔ محافظت‌شده» باشد، حتی
+				// اگر از یک مسیر دیگر (API/CLI) درخواست حذف برسد، حذف نمی‌شود.
+				if ( is_array( $item ) ) {
+					$wl_folder = TisaCase_Optimizer_Settings::matched_whitelist_folder( isset( $item['rel_path'] ) ? (string) $item['rel_path'] : '' );
+					if ( '' !== $wl_folder ) {
+						$result['blocked'][ $aid ] = array(
+							sprintf(
+								/* translators: %s: protected folder path */
+								__( 'داخل پوشهٔ محافظت‌شدهٔ «%s» است و هرگز حذف نمی‌شود', 'tisacase-optimizer' ),
+								$wl_folder
+							),
+						);
+						unset( $allow[ $aid ] );
+						continue;
+					}
+				}
+
 				if ( is_array( $item ) ) {
 					$refs   = isset( $item['refs_count'] ) ? (int) $item['refs_count'] : 0;
 					$status = isset( $item['usage_status'] ) ? (string) $item['usage_status'] : '';
@@ -1065,6 +1083,17 @@ if ( ! class_exists( 'TisaCase_Optimizer_Usage' ) ) {
 			// گام ۴: محافظ فایل‌های یتیم؛ اگر مسیر در محتوا ذکر شده باشد حذف نمی‌شود.
 			$allow_paths = array();
 			foreach ( $paths as $path ) {
+				$wl_folder = TisaCase_Optimizer_Settings::matched_whitelist_folder( $path );
+				if ( '' !== $wl_folder ) {
+					$result['blocked_paths'][ $path ] = array(
+						sprintf(
+							/* translators: %s: protected folder path */
+							__( 'داخل پوشهٔ محافظت‌شدهٔ «%s» است و هرگز حذف نمی‌شود', 'tisacase-optimizer' ),
+							$wl_folder
+						),
+					);
+					continue;
+				}
 				$refs = self::file_refs( $path );
 				if ( ! empty( $refs ) ) {
 					$result['blocked_paths'][ $path ] = $refs;

@@ -166,6 +166,8 @@
 	const faNum = (n) => String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 	const db = {
+		// پوشه‌های محافظت‌شده (وایت‌لیست پوشه) — همان چیزی که سرور در آپشن ذخیره می‌کند.
+		whitelistFolders: [],
 		settings: {
 			delete_mode: 'quarantine',
 			quarantine_days: 30,
@@ -447,6 +449,22 @@
 		diskOrphans: [
 			{
 				id: 0,
+				rel_path: 'receipt_upload/factor-1404-001.jpg',
+				filename: 'factor-1404-001.jpg',
+				ext: 'JPG',
+				bytes: 262144,
+				modified: '2026-07-02 09:10',
+			},
+			{
+				id: 0,
+				rel_path: 'receipt_upload/receipt-1404-bank.jpg',
+				filename: 'receipt-1404-bank.jpg',
+				ext: 'JPG',
+				bytes: 188416,
+				modified: '2026-07-02 09:12',
+			},
+			{
+				id: 0,
 				rel_path: '2026/06/unregistered-raw-shoot-01.png',
 				filename: 'unregistered-raw-shoot-01.png',
 				ext: 'PNG',
@@ -616,6 +634,10 @@
 				count: pinnedRows.length,
 				bytes: pinnedRows.reduce((s, r) => s + r.total_bytes, 0),
 				missing: pinnedRows.filter((r) => r.exists === false).length,
+				folders: db.whitelistFolders.slice(),
+				folder_stats: mockFolderStats(),
+				folder_items: rows.filter((r) => mockIsWhitelistedPath(r.rel_path)).length,
+				folder_bytes: 0,
 			},
 			vault: {
 				quarantine_count: db.quarantine.length,
@@ -769,7 +791,7 @@
 					overview: 'نمای کلی دیسک',
 					explorer: 'سنگین‌ترین تصاویر',
 					unused: 'تصاویر بدون استفاده',
-					whitelist: 'لیست سفید (پین‌شده‌ها)',
+					whitelist: 'لیست سفید (پین‌شده‌ها و پوشه‌ها)',
 					restore: 'پشتیبان و بازگردانی',
 					compress: 'فشرده‌سازی و WebP',
 					duplicates: 'تصاویر تکراری',
@@ -1101,6 +1123,39 @@
 		});
 	}
 
+	/**
+	 * نرمال‌سازی مسیر پوشه دقیقاً مثل سرور حقیقی.
+	 *
+	 * @param {string} raw ورودی.
+	 * @return {string}
+	 */
+	function mockNormalizeFolder(raw) {
+		let p = String(raw || '').trim();
+		if (!p) return '';
+		p = p.replace(/^[a-z]+:\/\/[^/]+/i, '').replace(/\\/g, '/').replace(/\/+/g, '/');
+		p = decodeURIComponent(p);
+		const idx = p.indexOf('wp-content/uploads/');
+		if (idx !== -1) p = p.slice(idx + 'wp-content/uploads/'.length);
+		else p = p.replace(/^\/?uploads\//, '');
+		p = p.replace(/\.\./g, '').replace(/^\/+|\/+$/g, '');
+		return p ? p.split('/').filter(Boolean).map((seg) => seg.replace(/^\.+|\.+$/g, '')).join('/') : '';
+	}
+
+	function mockIsWhitelistedPath(rel) {
+		const r = String(rel || '').replace(/^\/+/, '').toLowerCase();
+		if (!r) return '';
+		for (const folder of db.whitelistFolders) {
+			const n = String(folder).toLowerCase();
+			if (!n) continue;
+			if (r === n || r.indexOf(n + '/') === 0 || r.indexOf('/' + n + '/') !== -1) return folder;
+		}
+		return '';
+	}
+
+	function mockFolderStats() {
+		return db.whitelistFolders.map((folder) => ({ folder, files: 0, bytes: 0, truncated: false, found: true }));
+	}
+
 	function mockVaultPayload() {
 		const enrichedHistory = db.history.map((h) =>
 			Object.assign({}, h, {
@@ -1204,7 +1259,7 @@
 			const mockPage = Math.max(1, Number(req.page) || 1);
 
 			if (req.usage === 'unregistered_disk') {
-				const rows = [...db.diskOrphans];
+				const rows = db.diskOrphans.filter((o) => !mockIsWhitelistedPath(o.rel_path));
 				const per = mockPer > 0 ? mockPer : Math.max(1, rows.length);
 				data = {
 					mode: 'disk_orphans',
@@ -1224,7 +1279,9 @@
 				if (req.format && req.format !== 'ALL') {
 					rows = rows.filter((r) => (req.format === 'OPAQUE_PNG' ? r.is_opaque_png : r.format === req.format));
 				}
-				if (req.usage === 'pinned') {
+				if (req.usage === 'folder_whitelisted') {
+					rows = rows.filter((r) => mockIsWhitelistedPath(r.rel_path));
+				} else if (req.usage === 'pinned') {
 					rows = rows.filter((r) => r.is_pinned);
 				} else if (req.usage && req.usage !== 'all') {
 					rows = rows.filter((r) => r.usage_status === req.usage);
@@ -1247,6 +1304,26 @@
 					matched_bytes: rows.reduce((s, r) => s + r.total_bytes, 0),
 				};
 			}
+		} else if (op === 'save_whitelist_folders') {
+			const before = db.whitelistFolders.slice();
+			const next = [];
+			const rejected = [];
+			(req.folders || []).forEach((raw) => {
+				const norm = mockNormalizeFolder(raw);
+				if (!norm) rejected.push(String(raw));
+				else if (!next.includes(norm)) next.push(norm);
+			});
+			db.whitelistFolders = next;
+			data = {
+				folders: next,
+				rejected,
+				added: next.filter((f) => !before.includes(f)),
+				removed: before.filter((f) => !next.includes(f)),
+				stats: mockFolderStats(),
+				overview: computeOverview(),
+			};
+		} else if (op === 'whitelist_folder_stats') {
+			data = { folders: db.whitelistFolders.slice(), stats: mockFolderStats() };
 		} else if (op === 'toggle_pin') {
 			const ids = (req.ids || []).map(Number);
 			db.items.forEach((it) => {

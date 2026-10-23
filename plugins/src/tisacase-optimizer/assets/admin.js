@@ -148,6 +148,9 @@
 		seoPage: 1,
 		// خلاصهٔ آخرین عملیات حذف/فشرده‌سازی برای نمایش شفاف «چه شد و چرا».
 		lastRun: null,
+		// پوشه‌های محافظت‌شده («وایت‌لیست پوشه») و آمار زندهٔ آن‌ها.
+		whitelistFolders: null,
+		whitelistFolderStats: null,
 		// فیلتر «علت حذف» و صفحهٔ فهرست قرنطینه (بخش پشتیبان و بازگردانی).
 		vaultReason: 'all',
 		vaultPage: 1,
@@ -209,6 +212,8 @@
 		clean_disabled_subsizes: 'پاک‌سازی زیرسایزهای غیرفعال…',
 		save_settings: 'ذخیرهٔ تنظیمات…',
 		toggle_pin: 'به‌روزرسانی لیست سفید…',
+		save_whitelist_folders: 'ذخیرهٔ پوشه‌های محافظت‌شده…',
+		whitelist_folder_stats: 'شمارش فایل‌های پوشه‌های محافظت‌شده…',
 		save_single_seo: 'ذخیرهٔ متن جایگزین…',
 		bulk_generate_seo: 'تولید گروهی Alt و Title…',
 		restore_quarantine: 'بازگردانی از قرنطینه…',
@@ -883,6 +888,9 @@
 	}
 
 	function renderUsageCell(row) {
+		if (row.usage_status === 'folder_whitelisted') {
+			return `<span class="tco-pill tco-pill--info" title="این فایل داخل پوشهٔ محافظت‌شده است؛ حتی اگر هیچ‌جا استفاده نشود، در فهرست‌های پاک‌سازی نمی‌آید و حذف نمی‌شود.">محافظت‌شده با پوشه: <span class="tco-code" dir="ltr">${esc(row.whitelist_folder || '')}</span></span>`;
+		}
 		if (row.usage_status === 'pinned' || row.is_pinned) {
 			// پین‌شده = محافظت دائمی؛ اگر فایلش هم روی دیسک نباشد، همان‌جا گفته
 			// می‌شود تا در «لیست سفید» هم تصویر شکسته پنهان نماند.
@@ -1100,6 +1108,7 @@
 					<option value="strict_unused" ${f.usage === 'strict_unused' ? 'selected' : ''}>مطلقاً بدون استفاده (۰ مرجع)</option>
 					<option value="draft_only" ${f.usage === 'draft_only' ? 'selected' : ''}>فقط در پیش‌نویس / زباله‌دان</option>
 					<option value="pinned" ${f.usage === 'pinned' ? 'selected' : ''}>پین‌شده در لیست سفید</option>
+					<option value="folder_whitelisted" ${f.usage === 'folder_whitelisted' ? 'selected' : ''}>داخل پوشهٔ محافظت‌شده (وایت‌لیست پوشه)</option>
 				</select>
 			</div>
 
@@ -1295,6 +1304,95 @@
 	}
 
 	/**
+	 * کارت «وایت‌لیست پوشه» — مسیرهایی مثل `/uploads/receipt_upload`.
+	 *
+	 * چرا؟ کاربر گفت: «امکان وایت‌لیست کردن یک پوشه رو هم بده؛ یک مسیر مثل
+	 * /uploads/receipt_upload. این‌ها مستندات مالی‌اند و جایی استفاده نمی‌شوند،
+	 * از لیست‌ها حذف شوند.» پس: هر فایل داخل این پوشه‌ها از فهرست «بدون
+	 * استفاده» و «فایل رهاشده روی دیسک» بیرون می‌ماند و در حذف هم مسدود است.
+	 *
+	 * @return {string}
+	 */
+	function renderFolderWhitelistCard() {
+		const wl = (state.overview && state.overview.whitelist) || {};
+		const folders = (state.whitelistFolders || wl.folders || []).slice();
+		const stats = state.whitelistFolderStats || [];
+		const statOf = (folder) => stats.find((x) => String(x.folder) === String(folder)) || null;
+		const totalFiles = stats.reduce((sum, x) => sum + Number(x.files || 0), 0);
+		const totalBytes = stats.reduce((sum, x) => sum + Number(x.bytes || 0), 0);
+
+		return `<div class="tco-card">
+			<div class="tco-card__head">
+				<div>
+					<h2 class="tco-card__title">وایت‌لیست پوشه — پوشه‌هایی که هیچ‌وقت در فهرست پاک‌سازی نمی‌آیند</h2>
+					<p class="tco-card__desc">
+						مسیر یک پوشه را داخل <span class="tco-code">uploads/</span> بنویسید (مثل
+						<span class="tco-code">/uploads/receipt_upload</span>). همهٔ فایل‌های داخل آن — با هر تعداد —
+						از «تصاویر بدون استفاده» و «فایل‌های رهاشدهٔ روی دیسک» بیرون می‌مانند، در شمارش‌ها حساب نمی‌شوند
+						و حتی با درخواست مستقیم هم حذف/قرنطینه نمی‌شوند.
+					</p>
+				</div>
+				${folders.length ? `<span class="tco-pill tco-pill--ok">${faNum(folders.length)} پوشه · ${faNum(totalFiles)} فایل</span>` : ''}
+			</div>
+
+			<div class="tco-toolbar">
+				<input type="text" class="tco-input tco-input--grow" id="tco-wl-folder-input" placeholder="/uploads/receipt_upload">
+				<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-wl-folder-add">افزودن پوشه به لیست سفید</button>
+				${folders.length ? `<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-wl-folder-count">شمارش دوبارهٔ فایل‌ها</button>` : ''}
+			</div>
+
+			${
+				folders.length
+					? `<div class="tco-table-wrap">
+						<table class="tco-table">
+							<thead><tr><th>مسیر پوشه داخل uploads/</th><th>فایل‌های کنارگذاشته‌شده</th><th>حجم</th><th>عملیات</th></tr></thead>
+							<tbody>
+								${folders
+									.map((folder) => {
+										const st = statOf(folder);
+										return `<tr class="tco-wl-folder">
+											<td><strong class="tco-code" dir="ltr">uploads/${esc(folder)}</strong>${st && !st.found ? '<span class="tco-subtext tco-hint--warn">این پوشه روی هاست پیدا نشد — مسیر را بررسی کنید.</span>' : ''}</td>
+											<td>${st ? `${faNum(st.files)}${st.truncated ? '+' : ''} فایل` : '<span class="tco-subtext">—</span>'}</td>
+											<td>${st ? `${formatBytes(st.bytes)}${st.truncated ? '+' : ''}` : '<span class="tco-subtext">—</span>'}</td>
+											<td>
+												<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-wl-folder-remove="${esc(folder)}">حذف از لیست سفید</button>
+											</td>
+										</tr>`;
+									})
+									.join('')}
+							</tbody>
+						</table>
+					</div>
+					<p class="tco-guide__note">
+						جمع کل: ${faNum(totalFiles)} فایل (${formatBytes(totalBytes)}) از فهرست‌های پاک‌سازی کنار گذاشته شده‌اند.
+						اگر فقط نام پوشه را بنویسید (مثل <span class="tco-code">receipt_upload</span>)، هر پوشه‌ای با همین نام
+						در هر عمقی محافظت می‌شود. حذف از لیست سفید هیچ فایلی را پاک نمی‌کند؛ فقط دوباره در فهرست‌ها دیده می‌شود.
+					</p>`
+					: `<div class="tco-empty-state">
+						هنوز پوشه‌ای در لیست سفید نیست. اگر پوشه‌ای دارید که «استفاده نمی‌شود ولی باید بماند» (رسیدها، فاکتورها، آرشیو مالی)، مسیرش را بالا بنویسید.
+					</div>`
+			}
+		</div>`;
+	}
+
+	/**
+	 * ذخیرهٔ فهرست پوشه‌های محافظت‌شده در سرور و تازه‌سازی شمارنده‌ها.
+	 *
+	 * @param {string[]} folders فهرست نهایی مسیرها.
+	 * @return {Promise<void>}
+	 */
+	async function saveWhitelistFolders(folders) {
+		const res = await api('save_whitelist_folders', { folders });
+		state.whitelistFolders = (res && res.folders) || [];
+		state.whitelistFolderStats = (res && res.stats) || [];
+		if (res && res.overview) state.overview = res.overview;
+		if (res && Array.isArray(res.rejected) && res.rejected.length) {
+			toast(`این مسیر معتبر نبود و اضافه نشد: ${res.rejected.join(' · ')}`, 'error');
+		}
+		return res;
+	}
+
+	/**
 	 * «لیست سفید» — جایی که کاربر باید بتواند فایل‌های محافظت‌شده را ببیند.
 	 *
 	 * چرا اضافه شد؟ کاربر پرسید «فایل‌هایی که در لیست محافظت دائمی گذاشتم چه
@@ -1318,6 +1416,8 @@
 		const unpinArm = state.armedKey === 'bulk-unpin';
 
 		return `<div class="tco-stack">
+			${renderFolderWhitelistCard()}
+
 			<div class="tco-guide">
 				<h3 class="tco-guide__title">لیست سفید (محافظت دائمی) — این فایل‌ها هرگز پاک نمی‌شوند</h3>
 				<p class="tco-guide__text">
@@ -2674,6 +2774,14 @@
 					state.media = await api('query_media', Object.assign({}, state.unusedFilter, { per_page: state.perPage }));
 				} else if (state.subtab === 'whitelist') {
 					state.media = await api('query_media', Object.assign({}, state.whitelistFilter, { per_page: state.perPage }));
+					// شمارش زندهٔ پوشه‌های محافظت‌شده (فقط همان پوشه‌ها خوانده می‌شود).
+					try {
+						const st = await api('whitelist_folder_stats', {});
+						state.whitelistFolders = (st && st.folders) || [];
+						state.whitelistFolderStats = (st && st.stats) || [];
+					} catch (err) {
+						state.whitelistFolderStats = state.whitelistFolderStats || [];
+					}
 
 				} else if (state.subtab === 'restore') {
 					state.vault = await api('get_vault');
@@ -3730,6 +3838,49 @@
 			return;
 		}
 
+		if (ev.target.closest('#tco-wl-folder-add')) {
+			const input = document.getElementById('tco-wl-folder-input');
+			const raw = input ? String(input.value || '').trim() : '';
+			if (!raw) {
+				toast('اول مسیر پوشه را بنویسید؛ مثلاً /uploads/receipt_upload', 'error');
+				if (input) input.focus();
+				return;
+			}
+			const current = (state.whitelistFolders || (state.overview && state.overview.whitelist && state.overview.whitelist.folders) || []).slice();
+			if (current.some((f) => f.toLowerCase() === raw.replace(/^\/+/, '').replace(/\/+$/, '').toLowerCase())) {
+				toast('این پوشه از قبل در لیست سفید است.', 'error');
+				return;
+			}
+			const res = await saveWhitelistFolders(current.concat([raw]));
+			const added = (res && res.added) || [];
+			if (added.length) {
+				toast(`پوشهٔ «${added[0]}» به لیست سفید اضافه شد — فایل‌هایش از فهرست‌های پاک‌سازی کنار رفتند.`);
+			}
+			render();
+			return;
+		}
+
+		const wlRemove = ev.target.closest('[data-wl-folder-remove]');
+		if (wlRemove) {
+			const folder = wlRemove.getAttribute('data-wl-folder-remove');
+			const current = (state.whitelistFolders || (state.overview && state.overview.whitelist && state.overview.whitelist.folders) || []).filter(
+				(f) => String(f) !== String(folder)
+			);
+			await saveWhitelistFolders(current);
+			toast(`پوشهٔ «${folder}» از لیست سفید خارج شد — هیچ فایلی پاک نشد؛ دوباره در فهرست‌ها دیده می‌شود.`);
+			render();
+			return;
+		}
+
+		if (ev.target.closest('#tco-wl-folder-count')) {
+			const res = await api('whitelist_folder_stats', {});
+			state.whitelistFolders = (res && res.folders) || state.whitelistFolders;
+			state.whitelistFolderStats = (res && res.stats) || [];
+			toast('شمارش فایل‌های پوشه‌های محافظت‌شده تازه شد.');
+			render();
+			return;
+		}
+
 		if (ev.target.closest('#tco-bulk-unpin')) {
 			// خروج گروهی از لیست سفید: فقط محافظت برداشته می‌شود، هیچ فایلی
 			// پاک نمی‌شود؛ با این حال دو کلیک می‌خواهد (عملیات گروهی است).
@@ -4185,6 +4336,9 @@
 		'[data-pick-master]',
 		'[data-page-delta]',
 		'[data-page-edge]',
+		'#tco-wl-folder-add',
+		'#tco-wl-folder-count',
+		'[data-wl-folder-remove]',
 		'#tco-bulk-unpin',
 		'#tco-dismiss-run',
 		'#tco-rescan-unused',

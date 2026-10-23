@@ -1143,4 +1143,80 @@ const allChip2 = window.document.querySelector('[data-vault-reason="all"]');
 if (allChip2) allChip2.click();
 await flush();
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۴ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید» و «بازگردانی دسته‌ای بر اساس علت + بندانگشتی و پیش‌نمایش») با موفقیت اجرا شدند!');
+// ۲۵. «وایت‌لیست کردن یک پوشه»: مسیری مثل /uploads/receipt_upload که مستندات
+// مالی است و در سایت استفاده نمی‌شود؛ فایل‌هایش باید از فهرست‌های پاک‌سازی
+// بیرون بروند (و هیچ فایلی هم پاک نشود).
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+window.document.querySelector('[data-unused-bucket="unregistered_disk"]').click();
+await new Promise((r) => setTimeout(r, 150));
+await flush();
+const orphanCountBefore = window.document.querySelectorAll('#tco-main tbody tr').length;
+assert.ok(orphanCountBefore >= 4, 'پیش از وایت‌لیست باید فایل‌های رهاشده دیده شوند');
+
+window.document.querySelector('[data-go-subtab="whitelist"]').click();
+await new Promise((r) => setTimeout(r, 200));
+await flush();
+const wlInput = window.document.getElementById('tco-wl-folder-input');
+assert.ok(wlInput, 'در تب لیست سفید باید ورودی «مسیر پوشه» باشد');
+assert.match(window.document.getElementById('tco-main').textContent, /وایت‌لیست پوشه/, 'کارت وایت‌لیست پوشه باید دیده شود');
+
+wlInput.value = '/uploads/receipt_upload';
+window.document.getElementById('tco-wl-folder-add').click();
+await new Promise((r) => setTimeout(r, 250));
+await flush();
+assert.match(
+	window.document.getElementById('tco-toasts').textContent,
+	/به لیست سفید اضافه شد/,
+	'افزودن پوشه باید پیام تأیید بدهد'
+);
+const folderCell = [...window.document.querySelectorAll('#tco-main .tco-code')].map((el) => el.textContent.trim());
+assert.ok(
+	folderCell.some((t) => t === 'uploads/receipt_upload'),
+	'مسیر پوشه باید نرمال‌شده (بدون /uploads/ تکراری) در فهرست نشان داده شود'
+);
+
+// فایل‌های همان پوشه باید از فهرست «فایل‌های رهاشده» بیرون رفته باشند.
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+window.document.querySelector('[data-unused-bucket="unregistered_disk"]').click();
+await new Promise((r) => setTimeout(r, 150));
+await flush();
+const orphanRows = [...window.document.querySelectorAll('#tco-main tbody tr')];
+assert.equal(orphanRows.length, orphanCountBefore - 2, 'دو فایل پوشهٔ وایت‌لیست‌شده باید از فهرست حذف شوند');
+assert.ok(
+	!orphanRows.some((tr) => /receipt_upload/.test(tr.textContent)),
+	'هیچ فایل داخل پوشهٔ محافظت‌شده نباید در فهرست رهاشده‌ها بماند'
+);
+
+// فیلتر کاوشگر باید گزینهٔ پوشهٔ محافظت‌شده داشته باشد.
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const usageSel = window.document.getElementById('tco-exp-usage');
+assert.ok(
+	[...usageSel.options].some((o) => o.value === 'folder_whitelisted'),
+	'کاوشگر باید فیلتر «داخل پوشهٔ محافظت‌شده» داشته باشد'
+);
+
+// حذف از لیست سفید: هیچ فایلی پاک نمی‌شود، فقط دوباره در فهرست‌ها می‌آید.
+window.document.querySelector('[data-go-subtab="whitelist"]').click();
+await new Promise((r) => setTimeout(r, 200));
+await flush();
+const removeFolder = window.document.querySelector('[data-wl-folder-remove]');
+assert.ok(removeFolder, 'هر پوشه باید دکمهٔ «حذف از لیست سفید» داشته باشد');
+removeFolder.click();
+await new Promise((r) => setTimeout(r, 250));
+await flush();
+assert.match(window.document.getElementById('tco-toasts').textContent, /از لیست سفید خارج شد/, 'حذف پوشه باید پیام بدهد');
+window.document.querySelector('[data-go-subtab="unused"]').click();
+await flush();
+window.document.querySelector('[data-unused-bucket="unregistered_disk"]').click();
+await new Promise((r) => setTimeout(r, 150));
+await flush();
+assert.equal(
+	window.document.querySelectorAll('#tco-main tbody tr').length,
+	orphanCountBefore,
+	'پس از حذف پوشه از لیست سفید، همهٔ فایل‌ها دوباره باید دیده شوند (هیچ فایلی پاک نشده)'
+);
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۵ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید» و «بازگردانی دسته‌ای بر اساس علت + بندانگشتی و پیش‌نمایش» و «وایت‌لیست کردن یک پوشه (مستندات مالی)») با موفقیت اجرا شدند!');

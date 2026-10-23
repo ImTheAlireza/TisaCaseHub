@@ -347,6 +347,50 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						self::ok( self::vault_payload() );
 						break;
 
+					case 'save_whitelist_folders':
+						// «وایت‌لیست کردن یک پوشه»: مسیرهایی مثل
+						// `/uploads/receipt_upload` که مستندات مالی‌اند و در سایت
+						// استفاده نمی‌شوند؛ نباید در هیچ فهرست پاک‌سازی بیایند.
+						$raw_folders = self::read_string_list( 'folders' );
+						$before      = TisaCase_Optimizer_Settings::whitelisted_folders();
+						$folders     = TisaCase_Optimizer_Settings::set_whitelisted_folders( $raw_folders );
+
+						// نتیجه فوراً در آمار دیده شود (بدون نیاز به اسکن دوباره).
+						TisaCase_Optimizer_Media_Inspector::flush_runtime_cache();
+						$overview = TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+							? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
+							: null;
+
+						$rejected = array();
+						foreach ( $raw_folders as $rf ) {
+							if ( '' === TisaCase_Optimizer_Settings::normalize_folder_path( $rf ) ) {
+								$rejected[] = (string) $rf;
+							}
+						}
+
+						self::ok(
+							array(
+								'folders'  => $folders,
+								'rejected' => $rejected,
+								'added'    => array_values( array_diff( $folders, $before ) ),
+								'removed'  => array_values( array_diff( $before, $folders ) ),
+								'stats'    => TisaCase_Optimizer_Media_Inspector::whitelist_folder_stats( 1.2 ),
+								'overview' => $overview,
+							)
+						);
+						break;
+
+					case 'whitelist_folder_stats':
+						// شمارش زندهٔ فایل‌های داخل پوشه‌های محافظت‌شده (فقط همان
+						// پوشه‌ها خوانده می‌شود، نه کل uploads).
+						self::ok(
+							array(
+								'folders' => TisaCase_Optimizer_Settings::whitelisted_folders(),
+								'stats'   => TisaCase_Optimizer_Media_Inspector::whitelist_folder_stats( 2.0 ),
+							)
+						);
+						break;
+
 					case 'restore_quarantine':
 					$qids         = self::read_string_list( 'item_ids' );
 					// phpcs:ignore WordPress.Security.NonceVerification.Missing

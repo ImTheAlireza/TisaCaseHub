@@ -66,7 +66,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 		const STATE_BLOBS = array(
 			'att'   => array( 'raw_atts', 'atts_by_dir', 'stem_map' ),
 			'refs'  => array( 'refs', 'ref_url_hash' ),
-			'disk'  => array( 'dir_queue', 'visited_dirs', 'orphans', 'size_buckets', 'disk_bytes', 'inodes' ),
+			'disk'  => array( 'dir_queue', 'visited_dirs', 'orphans', 'size_buckets', 'disk_bytes', 'inodes', 'whitelist_stats' ),
 			'items' => array( 'items', 'subsize_stats' ),
 			'hash'  => array( 'hash_groups' ),
 		);
@@ -602,6 +602,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 				'cursor_id_list'  => $min_meta,
 				'refs_truncated'  => 0,
 				'orphans_skipped' => 0,
+				// فایل‌هایی که داخل «پوشهٔ محافظت‌شده» بودند و عمداً نادیده
+				// گرفته شدند (مستندات مالی، رسیدها و …). آمارشان برای نمایش
+				// در پنل ذخیره می‌شود تا کاربر ببیند چه چیزی کنار گذاشته شده.
+				'whitelist_stats' => array(),
 				'items'           => array(),
 				'dir_queue'       => array(),
 				'visited_dirs'    => array(),
@@ -1404,6 +1408,24 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 
 						// محافظ حیاتی: اگر همین مسیر در محتوا/متای سایت ذکر شده باشد،
 						// فایل «یتیم بدون استفاده» نیست و هرگز نباید حذف شود.
+						// پوشهٔ محافظت‌شده (مثل مستندات مالی): نه در فهرست «یتیم»
+						// می‌آید، نه سهمیهٔ ۱۰۰۰تایی فهرست را اشغال می‌کند؛ فقط
+						// شمرده می‌شود تا در پنل گزارش شود.
+						$wl_folder = TisaCase_Optimizer_Settings::matched_whitelist_folder( $rel_path );
+						if ( '' !== $wl_folder ) {
+							if ( ! isset( $state['whitelist_stats'][ $wl_folder ] ) ) {
+								$state['whitelist_stats'][ $wl_folder ] = array(
+									'folder' => $wl_folder,
+									'files'  => 0,
+									'bytes'  => 0,
+								);
+							}
+							++$state['whitelist_stats'][ $wl_folder ]['files'];
+							$state['whitelist_stats'][ $wl_folder ]['bytes'] += (int) $fsize;
+							++$state['orphans_skipped'];
+							continue;
+						}
+
 						$orphan_noext = preg_replace( '/\.[a-z0-9]+$/i', '', strtolower( $rel_path ) );
 						$orphan_key   = (string) $orphan_noext;
 						$orphan_base  = basename( (string) $orphan_noext );
@@ -1942,6 +1964,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Reference_Scanner' ) ) {
 					'refs_truncated'  => (int) $state['refs_truncated'],
 					'orphans_skipped' => (int) $state['orphans_skipped'],
 				),
+				'whitelist_stats' => array_values( array_map( 'array_values', array_values( $state['whitelist_stats'] ) ) ),
 				'built_at'      => current_time( 'mysql' ),
 				'timestamp'     => time(),
 				'duration_ms'   => (int) round( ( microtime( true ) - (float) $state['scan_started'] ) * 1000 ),

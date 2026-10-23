@@ -20,9 +20,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		/** @var int[]|null کش فهرست پین‌ها در همین درخواست */
 		private static $cache_pinned = null;
 
+		/** @var string[]|null کش پوشه‌های محافظت‌شده در همین درخواست */
+		private static $cache_folders = null;
+
 		const OPTION_SETTINGS = 'tisacase_optimizer_settings';
 		const OPTION_STATS    = 'tisacase_optimizer_stats';
 		const OPTION_PINNED   = 'tisacase_optimizer_pinned_ids';
+		const OPTION_FOLDERS  = 'tisacase_optimizer_whitelist_folders';
+
+		/** سقف تعداد پوشه‌های محافظت‌شده (بیش از این عدد فقط مقایسه را کند می‌کند). */
+		const MAX_WHITELIST_FOLDERS = 100;
 
 		/**
 		 * مقادیر پیش‌فرض تنظیمات.
@@ -110,6 +117,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		public static function flush_cache() {
 			self::$cache_settings = null;
 			self::$cache_pinned   = null;
+			self::$cache_folders  = null;
 		}
 
 		/**
@@ -368,6 +376,152 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			update_option( self::OPTION_PINNED, $final, false );
 			self::$cache_pinned = null;
 			return $final;
+		}
+
+		/**
+		 * نرمال‌سازی یک مسیر پوشه برای «لیست سفید پوشه‌ها».
+		 *
+		 * کاربر ممکن است هر یک از این شکل‌ها را بنویسد و همه باید یکی شوند:
+		 * `/uploads/receipt_upload`، `uploads/receipt_upload/`،
+		 * `https://site.com/wp-content/uploads/receipt_upload`، `receipt_upload`.
+		 * خروجی همیشه «مسیر نسبی داخل uploads، بدون اسلش ابتدا/انتها» است.
+		 *
+		 * @param string $raw ورودی کاربر.
+		 * @return string مسیر نرمال یا رشتهٔ خالی.
+		 */
+		public static function normalize_folder_path( $raw ) {
+			$path = trim( (string) $raw );
+			if ( '' === $path ) {
+				return '';
+			}
+
+			// اگر آدرس کامل چسبانده شده بود، بخش uploads را جدا می‌کنیم.
+			$path = preg_replace( '#^[a-z]+://[^/]+#i', '', $path );
+			$path = str_replace( '\\', '/', $path );
+			$path = preg_replace( '#/+#', '/', (string) $path );
+			$path = rawurldecode( $path );
+
+			$pos = strpos( $path, 'wp-content/uploads/' );
+			if ( false !== $pos ) {
+				$path = substr( $path, $pos + strlen( 'wp-content/uploads/' ) );
+			} else {
+				$path = preg_replace( '#^/?uploads/#', '', $path );
+			}
+
+			// پیمایش به بالا و کاراکترهای کنترلی جایی ندارند.
+			$path = str_replace( array( '..', "\0" ), '', (string) $path );
+			$path = wp_normalize_path( $path );
+			$path = trim( $path, '/' );
+
+			if ( '' === $path || '.' === $path ) {
+				return '';
+			}
+
+			// هر بخش با فیلتر وردپرس پاک می‌شود؛ نام پوشه فارسی هم مجاز است.
+			$segments = array();
+			foreach ( explode( '/', $path ) as $seg ) {
+				$seg = trim( sanitize_text_field( $seg ) );
+				$seg = trim( $seg, '.' );
+				if ( '' !== $seg ) {
+					$segments[] = $seg;
+				}
+			}
+			$normalized = implode( '/', $segments );
+
+			// پوشهٔ خودِ خزانهٔ افزونه محافظت‌پذیر نیست؛ در غیر این صورت
+			// فایل‌های قرنطینه از فهرست‌ها ناپدید می‌شدند و مدیریتشان گم می‌شد.
+			if ( false !== stripos( $normalized, 'tisa-opt-vault' ) ) {
+				return '';
+			}
+			return $normalized;
+		}
+
+		/**
+		 * فهرست پوشه‌های محافظت‌شده («هرگز در فهرست‌های پاک‌سازی نیایند»).
+		 *
+		 * @return string[]
+		 */
+		public static function whitelisted_folders() {
+			if ( is_array( self::$cache_folders ) ) {
+				return self::$cache_folders;
+			}
+			$raw = get_option( self::OPTION_FOLDERS, array() );
+			$out = array();
+			if ( is_array( $raw ) ) {
+				foreach ( $raw as $item ) {
+					$norm = self::normalize_folder_path( (string) $item );
+					if ( '' !== $norm && ! in_array( $norm, $out, true ) ) {
+						$out[] = $norm;
+					}
+				}
+			}
+			self::$cache_folders = $out;
+			return $out;
+		}
+
+		/**
+		 * ذخیرهٔ فهرست پوشه‌های محافظت‌شده.
+		 *
+		 * @param array $folders مسیرها (خام یا نرمال).
+		 * @return string[] فهرست نرمال‌شدهٔ نهایی.
+		 */
+		public static function set_whitelisted_folders( array $folders ) {
+			$clean = array();
+			foreach ( $folders as $f ) {
+				$norm = self::normalize_folder_path( $f );
+				if ( '' !== $norm && ! in_array( $norm, $clean, true ) ) {
+					$clean[] = $norm;
+				}
+			}
+			// سقف منطقی: از ۱۰۰ پوشه بیشتر لازم نمی‌شود و ردیف‌های بیش از آن
+			// فقط مقایسهٔ هر فایل را کند می‌کند.
+			$clean = array_slice( $clean, 0, self::MAX_WHITELIST_FOLDERS );
+			update_option( self::OPTION_FOLDERS, $clean, false );
+			self::$cache_folders = null;
+			return $clean;
+		}
+
+		/**
+		 * پوشه‌ای که این مسیر نسبی داخل آن است (یا رشتهٔ خالی).
+		 *
+		 * منطق تطبیق: مسیر با هر پوشه‌ای که «خودِ مسیر»، «شروع مسیر» یا
+		 * «یک بخش میانی مسیر» باشد منطبق می‌شود؛ پس هم
+		 * `receipt_upload` (پوشه‌ای با این نام در هر عمقی) و هم
+		 * `2026/05/receipts` (مسیر دقیق) کار می‌کند. مقایسه بی‌توجه به
+		 * بزرگ/کوچک‌بودن حروف است تا روی هاست‌های حساس به حروف هم امن بماند.
+		 *
+		 * @param string $rel_path مسیر نسبی داخل `uploads/`.
+		 * @return string نام پوشهٔ منطبق یا رشتهٔ خالی.
+		 */
+		public static function matched_whitelist_folder( $rel_path ) {
+			$folders = self::whitelisted_folders();
+			if ( empty( $folders ) ) {
+				return '';
+			}
+			$rel = strtolower( ltrim( wp_normalize_path( (string) $rel_path ), '/' ) );
+			if ( '' === $rel ) {
+				return '';
+			}
+			foreach ( $folders as $folder ) {
+				$needle = strtolower( $folder );
+				if ( '' === $needle ) {
+					continue;
+				}
+				if ( $rel === $needle || 0 === strpos( $rel, $needle . '/' ) || false !== strpos( $rel, '/' . $needle . '/' ) ) {
+					return $folder;
+				}
+			}
+			return '';
+		}
+
+		/**
+		 * آیا این مسیر داخل یکی از پوشه‌های محافظت‌شده است؟
+		 *
+		 * @param string $rel_path مسیر نسبی.
+		 * @return bool
+		 */
+		public static function is_whitelisted_path( $rel_path ) {
+			return '' !== self::matched_whitelist_folder( $rel_path );
 		}
 
 		/**

@@ -36,6 +36,8 @@ const vault = read(`${P}/includes/class-tco-vault.php`);
 const settings = read(`${P}/includes/class-tco-settings.php`);
 const admin = read(`${P}/assets/admin.js`);
 const preview = read(`${P}/includes/class-tco-preview.php`);
+const scanner = read(`${P}/includes/class-tco-reference-scanner.php`);
+const dedupe = read(`${P}/includes/class-tco-deduplicator.php`);
 
 let pass = 0;
 const fails = [];
@@ -202,6 +204,25 @@ ok('چیپ‌های علت در رابط ساخته می‌شوند', /data-vaul
 ok('بازگردانی یک علت دو کلیک تأیید دارد', /armConfirm\('restore-reason'\)/.test(admin));
 ok('علت حذف هنگام قرنطینه ثبت می‌شود', /'reason'\s*=>\s*sanitize_key\( \(string\) \$reason \)/.test(job) && /self::remove_reason\( \$job \)/.test(job));
 ok('نام فارسی علت‌ها یک‌جا تعریف شده است (بدون تکرار در JS)', /function reason_labels/.test(vault) && /function reason_label\( \$key \)/.test(vault));
+
+console.log('── ۱۰) «وایت‌لیست پوشه»: پوشه‌ای که هیچ‌وقت پاک نمی‌شود ──');
+ok('پوشه‌های محافظت‌شده در یک آپشن جدا ذخیره می‌شوند', /OPTION_FOLDERS\s*=\s*'tisacase_optimizer_whitelist_folders'/.test(settings));
+ok('مسیر ورودی نرمال‌سازی می‌شود (دامنه، wp-content/uploads، اسلش اضافه)', /function normalize_folder_path/.test(settings) && settings.includes('wp-content/uploads/'));
+ok('مسیرهای خطرناک («..» و پوشهٔ خزانه) رد می‌شوند', /'\.\.'/.test(settings) && /tisa-opt-vault/.test(settings));
+ok('تعداد پوشه‌های محافظت‌شده سقف دارد', /MAX_WHITELIST_FOLDERS\s*=\s*\d+/.test(settings));
+ok('مسیر داخل پوشه با تطبیق «شامل/شروع با» تشخیص داده می‌شود', /function matched_whitelist_folder/.test(settings) && /false !== strpos\( \$rel, '\/' \. \$needle \. '\/' \)/.test(settings));
+ok('اسکنر فایل‌های داخل پوشه را از فهرست «رهاشده» بیرون می‌گذارد', /matched_whitelist_folder/.test(scanner) && /whitelist_stats/.test(scanner));
+ok('کنارگذاشتن پوشه در سقف ۱۰۰۰ مورد فهرست یتیم‌ها حساب می‌شود (فهرست کوتاه نمی‌شود)', /orphans_skipped/.test(scanner));
+ok('فایل‌های پوشه، وضعیت صریح «داخل پوشهٔ محافظت‌شده» می‌گیرند', /folder_whitelisted/.test(inspector) && /whitelist_folder/.test(inspector));
+ok('فهرست «بدون استفاده» دوباره فیلتر می‌شود (ضد نشت پوشه به فهرست)', /is_whitelisted_path/.test(inspector));
+ok('کاوشگر فیلتر اختصاصی این وضعیت را دارد', /'folder_whitelisted'/.test(ajax) || /folder_whitelisted/.test(inspector));
+ok('حذف تکی/دسته‌ای شناسهٔ داخل پوشه را مسدود می‌کند', /matched_whitelist_folder/.test(usage) && usage.includes('هرگز حذف نمی‌شود'));
+ok('ادغام تکراری‌ها فایل داخل پوشه را پاک نمی‌کند', /whitelisted_folder/.test(dedupe));
+ok('ذخیرهٔ فهرست پوشه‌ها اندپوینت جدا با nonce و مجوز دارد', ajax.includes("'save_whitelist_folders'") && /check_ajax_referer/.test(ajax));
+ok('شمارش فایل‌های پوشه با بودجهٔ زمانی و سقف فایل انجام می‌شود (نه اسکن کل uploads)', /function whitelist_folder_stats/.test(inspector) && /budget/.test(inspector) && /\$cap\s*=\s*\d+/.test(inspector));
+ok('رابط کاربری ورودی مسیر پوشه و دکمهٔ افزودن دارد', admin.includes('tco-wl-folder-add') && admin.includes('tco-wl-folder-input'));
+ok('هر پوشه دکمهٔ «حذف از لیست سفید» دارد (مسیر بن‌بست نیست)', /data-wl-folder-remove/.test(admin));
+ok('حذف از لیست سفید صریحاً می‌گوید هیچ فایلی پاک نشد', admin.includes('هیچ فایلی پاک نشد'));
 
 console.log('');
 if (fails.length) {

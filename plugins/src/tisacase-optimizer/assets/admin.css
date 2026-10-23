@@ -1557,3 +1557,32 @@ body.tco-page #wpfooter {
 		grid-template-columns: 1fr;
 	}
 }
+
+/* ── وایت‌لیست پوشه: ردیف‌های پوشه‌های محافظت‌شده ───────────────────────── */
+.tco-wl-folder .tco-code {
+	display: block;
+	direction: ltr;
+	text-align: left;
+	word-break: break-all;
+}
+
+.tco-wl-folder .tco-subtext {
+	display: block;
+	margin-top: 4px;
+	color: #8a6d3b;
+	font-size: 12px;
+}
+
+#tco-wl-folder-input {
+	direction: ltr;
+	text-align: left;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	min-width: 320px;
+}
+
+@media (max-width: 782px) {
+	#tco-wl-folder-input {
+		min-width: 0;
+		width: 100%;
+	}
+}
