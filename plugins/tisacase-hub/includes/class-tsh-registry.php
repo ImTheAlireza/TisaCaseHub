@@ -40,9 +40,10 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 		 */
 		public static function groups() {
 			return array(
-				'products' => __( 'محصول و محتوا', 'tisacase-hub' ),
-				'pricing'  => __( 'قیمت‌گذاری', 'tisacase-hub' ),
-				'orders'   => __( 'سفارش و ارسال', 'tisacase-hub' ),
+				'products'    => __( 'محصول و محتوا', 'tisacase-hub' ),
+				'pricing'     => __( 'قیمت‌گذاری', 'tisacase-hub' ),
+				'orders'      => __( 'سفارش و ارسال', 'tisacase-hub' ),
+				'maintenance' => __( 'بهینه‌سازی و نگهداری', 'tisacase-hub' ),
 			);
 		}
 
@@ -347,6 +348,39 @@ if ( ! class_exists( 'TSH_Registry' ) ) {
 						'screen' => 'woocommerce_page_tisacase-exporter',
 						'parent' => 'woocommerce',
 						'slug'   => 'tisacase-exporter',
+					),
+				),
+			);
+
+			$items['optimizer'] = array(
+				'title' => __( 'مرکز بهینه‌سازی تیساکیس', 'tisacase-hub' ),
+				'desc'  => __( 'تحلیل حجم واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با قرنطینهٔ ۳۰ روزه، فشرده‌سازی و WebP، ادغام هوشمند تکراری‌ها و سئوی خودکار.', 'tisacase-hub' ),
+				'group' => 'maintenance',
+				'icon'  => 'bolt',
+				'dir'   => 'tisacase-optimizer',
+				'cap'   => 'manage_woocommerce',
+				'pages' => array(
+					array(
+						'label'  => __( 'استودیوی تصاویر', 'tisacase-hub' ),
+						'path'   => 'admin.php?page=tisacase-optimizer',
+						'screen' => 'woocommerce_page_tisacase-optimizer',
+						'parent' => 'woocommerce',
+						'slug'   => 'tisacase-optimizer',
+					),
+					array(
+						'label'  => __( 'سنگین‌ترین تصاویر', 'tisacase-hub' ),
+						'path'   => 'admin.php?page=tisacase-optimizer&tab=explorer',
+						'screen' => 'woocommerce_page_tisacase-optimizer',
+					),
+					array(
+						'label'  => __( 'بدون استفاده (۱۲لایه)', 'tisacase-hub' ),
+						'path'   => 'admin.php?page=tisacase-optimizer&tab=unused',
+						'screen' => 'woocommerce_page_tisacase-optimizer',
+					),
+					array(
+						'label'  => __( 'قرنطینه و بازیابی', 'tisacase-hub' ),
+						'path'   => 'admin.php?page=tisacase-optimizer&module=vault',
+						'screen' => 'woocommerce_page_tisacase-optimizer',
 					),
 				),
 			);

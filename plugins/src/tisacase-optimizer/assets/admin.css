@@ -1,0 +1,1617 @@
+/**
+ * TisaCase Optimizer — استایل مدیریت یکپارچه با زبان طراحی TisaCase Hub
+ * ----------------------------------------------------------------------
+ * ۱۰۰٪ مبتنی بر توکن‌های `--tisa-*` با مقادیر پیش‌فرض (fallback) تا هم با هاب فعال
+ * و هم به‌صورت مستقل (بدون هاب) کاملاً یکدست، تراز و خوانا نمایش داده شود.
+ *
+ * قرارداد اعداد: شمارنده‌ها و حجم‌ها با قلم رابط و `tabular-nums`؛ قلم مونو فقط برای
+ * نام فایل، مسیر، هش و دستورات CLI (`.tco-code`).
+ *
+ * @package TisaCase_Optimizer
+ */
+
+/* قفل مرکزچینی و عرض استاندارد صفحه با اختصاصی‌بودن بالاتر از لایه‌های بیرونی */
+.tco-wrap,
+#wpbody-content .tco-wrap,
+#wpbody-content .tco-wrap.wrap {
+	max-width: var(--tisa-max-w, 1180px);
+	margin-inline: auto;
+	margin-block-start: var(--tisa-sp-6, 32px);
+}
+
+.tco-wrap.wrap {
+	box-sizing: border-box;
+	padding: 0 var(--tisa-sp-5, 24px) var(--tisa-sp-7, 48px);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: var(--tisa-font, "Vazirmatn", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Tahoma, sans-serif);
+	font-size: var(--tisa-fs-body, 14px);
+	line-height: var(--tisa-lh, 1.75);
+	font-variant-numeric: tabular-nums;
+	-webkit-font-smoothing: antialiased;
+}
+
+.tco-wrap *,
+.tco-wrap *::before,
+.tco-wrap *::after {
+	box-sizing: border-box;
+}
+
+.tco-wrap [hidden] {
+	display: none !important;
+}
+
+body.tco-page #wpfooter {
+	display: none;
+}
+
+@media screen and (min-width: 783px) {
+	body.tco-page #adminmenuwrap {
+		position: fixed;
+		top: var(--wp-admin--admin-bar--height, 32px);
+		bottom: 0;
+		inset-inline-start: 0;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		scrollbar-width: thin;
+	}
+}
+
+.tco-wrap .tco-card,
+.tco-wrap .tco-hero,
+.tco-wrap .tco-nav,
+#wpbody-content .tco-wrap > .tco-card,
+#wpbody-content .tco-wrap > .tco-hero,
+#wpbody-content .tco-wrap > .tco-nav {
+	width: 100%;
+	max-width: min(100%, var(--tisa-max-w, 1180px));
+	margin-inline: auto;
+}
+
+/* پشتیبانی حالت بدون هاب (is-standalone) */
+.tco-wrap.is-standalone .tisa-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--tisa-sp-2, 8px);
+	min-height: var(--tisa-ctl-h, 36px);
+	padding: 0 var(--tisa-sp-4, 16px);
+	border: 1px solid transparent;
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface-3, #F6F5F1);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: inherit;
+	font-size: var(--tisa-fs-control, 13px);
+	font-weight: 700;
+	line-height: 1.2;
+	white-space: nowrap;
+	text-decoration: none;
+	cursor: pointer;
+	transition: background var(--tisa-t, 150ms ease), border-color var(--tisa-t, 150ms ease), color var(--tisa-t, 150ms ease), transform var(--tisa-t, 150ms ease);
+}
+
+.tco-wrap.is-standalone .tisa-btn--sm {
+	min-height: var(--tisa-ctl-h-sm, 30px);
+	padding: 0 var(--tisa-sp-3, 12px);
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-wrap.is-standalone .tisa-btn:disabled {
+	opacity: .5;
+	cursor: not-allowed;
+}
+
+.tco-wrap.is-standalone .tisa-btn--primary {
+	background: var(--tisa-primary, #0E7C6B);
+	border-color: var(--tisa-primary-ink, #0A5F52);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+.tco-wrap.is-standalone .tisa-btn--primary:hover {
+	background: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-wrap.is-standalone .tisa-btn--secondary {
+	background: var(--tisa-surface, #FFFFFF);
+	border-color: var(--tisa-border-strong, #C9DCD7);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-wrap.is-standalone .tisa-btn--secondary:hover {
+	background: var(--tisa-primary-tint, #F2FBF8);
+	border-color: var(--tisa-primary, #0E7C6B);
+}
+
+.tco-wrap.is-standalone .tisa-btn--ghost {
+	background: transparent;
+	border-color: var(--tisa-border, #E3E1DA);
+	color: var(--tisa-text, #2A3439);
+}
+
+.tco-wrap.is-standalone .tisa-btn--ghost:hover {
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tco-btn-danger,
+.tco-wrap .tco-btn-danger {
+	background: var(--tisa-danger-soft, #FBECEA);
+	border: 1px solid var(--tisa-danger, #B5453A);
+	color: var(--tisa-danger, #B5453A);
+}
+
+.tco-btn-danger:hover,
+.tco-btn-danger.is-armed,
+.tco-wrap .tco-btn-danger.is-armed {
+	background: var(--tisa-danger, #B5453A);
+	border-color: var(--tisa-danger, #B5453A);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+/* سرصفحهٔ گرادیانی برند */
+.tco-hero {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-4, 16px);
+	flex-wrap: wrap;
+	padding: var(--tisa-sp-5, 24px) var(--tisa-sp-6, 32px);
+	border-radius: var(--tisa-r-xl, 20px);
+	background: linear-gradient(135deg, var(--tisa-brand-1, #064E46) 0%, var(--tisa-primary, #0E7C6B) 62%, var(--tisa-brand-3, #129786) 100%);
+	color: var(--tisa-on-primary, #FFFFFF);
+	box-shadow: var(--tisa-shadow, 0 10px 30px rgba(31, 42, 46, .08));
+}
+
+.tco-hero__mark {
+	display: grid;
+	place-items: center;
+	flex: 0 0 50px;
+	width: 50px;
+	height: 50px;
+	border-radius: var(--tisa-r, 14px);
+	background: rgba(255, 255, 255, .14);
+	border: 1px solid rgba(255, 255, 255, .24);
+}
+
+.tco-hero__mark svg {
+	width: 25px;
+	height: 25px;
+}
+
+.tco-hero__text {
+	flex: 1 1 320px;
+	min-width: 0;
+}
+
+.tco-hero__eyebrow {
+	display: block;
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+	opacity: .86;
+	margin-bottom: 2px;
+}
+
+.tco-hero__title {
+	margin: 0;
+	color: var(--tisa-on-primary, #FFFFFF);
+	font-size: var(--tisa-fs-h1, 20px);
+	font-weight: 800;
+	line-height: var(--tisa-lh-tight, 1.35);
+}
+
+.tco-hero__sub {
+	margin: var(--tisa-sp-1, 4px) 0 0;
+	color: var(--tisa-on-primary, #FFFFFF);
+	font-size: var(--tisa-fs-control, 13px);
+	opacity: .92;
+}
+
+.tco-hero__pills {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	margin-inline-start: auto;
+}
+
+.tco-hero__pill {
+	padding: var(--tisa-sp-1, 4px) var(--tisa-sp-3, 12px);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: rgba(255, 255, 255, .16);
+	border: 1px solid rgba(255, 255, 255, .24);
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+}
+
+/* نوار ناوبری بخش‌های ۵گانه */
+.tco-nav {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	flex-wrap: wrap;
+	margin-top: var(--tisa-sp-4, 16px);
+	padding: var(--tisa-sp-2, 8px);
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-lg, 16px);
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+}
+
+.tco-nav__btn {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	min-height: 38px;
+	padding: 0 var(--tisa-sp-4, 16px);
+	border: 1px solid transparent;
+	border-radius: var(--tisa-r-sm, 10px);
+	background: transparent;
+	color: var(--tisa-text, #2A3439);
+	font-family: inherit;
+	font-size: var(--tisa-fs-control, 13px);
+	font-weight: 700;
+	cursor: pointer;
+	transition: background var(--tisa-t, 150ms ease), color var(--tisa-t, 150ms ease);
+}
+
+.tco-nav__btn svg {
+	width: 17px;
+	height: 17px;
+	flex: 0 0 17px;
+}
+
+.tco-nav__btn:hover {
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-nav__btn.is-active {
+	background: var(--tisa-primary-soft, #E8F0EE);
+	border-color: var(--tisa-border-strong, #C9DCD7);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-nav__tag {
+	padding: 2px var(--tisa-sp-2, 8px);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-muted, #77828A);
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+}
+
+.tco-nav__btn.is-active .tco-nav__tag {
+	background: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+/* نوار زیرتب‌های ۸گانهٔ بخش تصاویر */
+.tco-subnav {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	flex-wrap: wrap;
+	margin: var(--tisa-sp-4, 16px) 0;
+}
+
+.tco-subnav__btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	min-height: 34px;
+	padding: 0 var(--tisa-sp-3, 12px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface, #FFFFFF);
+	color: var(--tisa-text, #2A3439);
+	font-family: inherit;
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+	cursor: pointer;
+	transition: all var(--tisa-t, 150ms ease);
+}
+
+.tco-subnav__btn:hover {
+	border-color: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-subnav__btn.is-active {
+	background: var(--tisa-primary, #0E7C6B);
+	border-color: var(--tisa-primary-ink, #0A5F52);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+.tco-subnav__badge {
+	padding: 1px 7px;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-primary-ink, #0A5F52);
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+}
+
+.tco-subnav__btn.is-active .tco-subnav__badge {
+	background: rgba(255, 255, 255, .22);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+/* بدنه و کارت‌ها */
+.tco-main {
+	margin-top: var(--tisa-sp-4, 16px);
+}
+
+.tco-stack {
+	display: flex;
+	flex-direction: column;
+	gap: var(--tisa-sp-4, 16px);
+}
+
+.tco-card {
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-lg, 16px);
+	padding: var(--tisa-sp-5, 24px);
+	box-shadow: var(--tisa-shadow-sm, 0 1px 2px rgba(31, 42, 46, .05));
+}
+
+.tco-card__head {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: var(--tisa-sp-3, 12px);
+	flex-wrap: wrap;
+	margin-bottom: var(--tisa-sp-4, 16px);
+}
+
+.tco-card__title {
+	margin: 0;
+	font-size: var(--tisa-fs-h2, 16px);
+	font-weight: 800;
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+.tco-card__desc {
+	margin: var(--tisa-sp-1, 4px) 0 0;
+	font-size: var(--tisa-fs-meta, 12px);
+	color: var(--tisa-muted, #77828A);
+}
+
+/* گرید KPI و کارت‌های فرصت آزادسازی سریع */
+.tco-kpi-grid {
+	display: grid;
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+	gap: var(--tisa-sp-3, 12px);
+}
+
+.tco-kpi {
+	padding: var(--tisa-sp-4, 16px);
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r, 14px);
+}
+
+.tco-kpi--accent {
+	background: var(--tisa-primary-soft, #E8F0EE);
+	border-color: var(--tisa-border-strong, #C9DCD7);
+}
+
+.tco-kpi__label {
+	display: block;
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tco-kpi__val {
+	display: block;
+	margin-top: var(--tisa-sp-1, 4px);
+	font-size: var(--tisa-fs-h1, 20px);
+	font-weight: 800;
+	color: var(--tisa-ink, #1F2A2E);
+	font-variant-numeric: tabular-nums;
+}
+
+.tco-kpi--accent .tco-kpi__val {
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-kpi__meta {
+	display: block;
+	margin-top: var(--tisa-sp-1, 4px);
+	font-size: var(--tisa-fs-tiny, 11px);
+	color: var(--tisa-muted, #77828A);
+}
+
+/* نمودار تفکیک لایهٔ دیسک */
+.tco-meter {
+	display: flex;
+	height: 14px;
+	width: 100%;
+	overflow: hidden;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+}
+
+.tco-meter__seg {
+	height: 100%;
+	transition: width var(--tisa-t, 150ms ease);
+}
+
+.tco-meter__seg--main {
+	background: var(--tisa-primary, #0E7C6B);
+}
+
+.tco-meter__seg--sub {
+	background: var(--tisa-info, #135E96);
+}
+
+.tco-meter__seg--unscaled {
+	background: var(--tisa-warning, #8A6116);
+}
+
+.tco-meter__seg--vault {
+	background: var(--tisa-danger, #B5453A);
+}
+
+.tco-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--tisa-sp-4, 16px);
+	margin-top: var(--tisa-sp-3, 12px);
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-legend__item {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+}
+
+.tco-dot {
+	width: 10px;
+	height: 10px;
+	border-radius: var(--tisa-r-pill, 999px);
+	display: inline-block;
+}
+
+.tco-dot--main {
+	background: var(--tisa-primary, #0E7C6B);
+}
+
+.tco-dot--sub {
+	background: var(--tisa-info, #135E96);
+}
+
+.tco-dot--unscaled {
+	background: var(--tisa-warning, #8A6116);
+}
+
+.tco-dot--vault {
+	background: var(--tisa-danger, #B5453A);
+}
+
+/* کارت‌های ۴گانهٔ Quick Wins */
+.tco-wins-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--tisa-sp-3, 12px);
+}
+
+.tco-win {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: var(--tisa-sp-3, 12px);
+	padding: var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tco-win__top {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--tisa-sp-2, 8px);
+}
+
+.tco-win__title {
+	margin: 0;
+	font-size: var(--tisa-fs-body, 14px);
+	font-weight: 800;
+}
+
+.tco-win__desc {
+	margin: var(--tisa-sp-1, 4px) 0 0;
+	font-size: var(--tisa-fs-meta, 12px);
+	color: var(--tisa-muted, #77828A);
+}
+
+.tco-win__foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--tisa-sp-2, 8px);
+	flex-wrap: wrap;
+}
+
+/* نوار فیلترها، سوییچ حالت حذف و نوار عملیات گروهی */
+.tco-toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	flex-wrap: wrap;
+	margin-bottom: var(--tisa-sp-3, 12px);
+}
+
+.tco-input,
+.tco-select,
+.tco-textarea {
+	min-height: var(--tisa-ctl-h, 36px);
+	padding: 0 var(--tisa-sp-3, 12px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface, #FFFFFF);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: inherit;
+	font-size: var(--tisa-fs-control, 13px);
+}
+
+.tco-textarea {
+	padding: var(--tisa-sp-2, 8px) var(--tisa-sp-3, 12px);
+	width: 100%;
+	min-height: 92px;
+	line-height: 1.7;
+}
+
+.tco-input:focus,
+.tco-select:focus,
+.tco-textarea:focus {
+	outline: none;
+	border-color: var(--tisa-primary, #0E7C6B);
+	box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22));
+}
+
+.tco-input--grow {
+	flex: 1 1 220px;
+}
+
+.tco-bulkbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--tisa-sp-3, 12px);
+	flex-wrap: wrap;
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	margin-bottom: var(--tisa-sp-3, 12px);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-primary-soft, #E8F0EE);
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+}
+
+.tco-bulkbar__actions {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	flex-wrap: wrap;
+}
+
+.tco-seg {
+	display: inline-flex;
+	padding: 3px;
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+}
+
+.tco-seg__btn {
+	min-height: 28px;
+	padding: 0 var(--tisa-sp-3, 12px);
+	border: 0;
+	border-radius: var(--tisa-r-xs, 6px);
+	background: transparent;
+	color: var(--tisa-muted, #77828A);
+	font-family: inherit;
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.tco-seg__btn.is-active {
+	background: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+.tco-seg__btn.is-danger.is-active {
+	background: var(--tisa-danger, #B5453A);
+	color: var(--tisa-on-primary, #FFFFFF);
+}
+
+/* جدول رسانه و بج‌ها */
+.tco-table-wrap {
+	width: 100%;
+	overflow-x: auto;
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r, 14px);
+}
+
+.tco-table {
+	width: 100%;
+	border-collapse: collapse;
+	background: var(--tisa-surface, #FFFFFF);
+	font-size: var(--tisa-fs-control, 13px);
+}
+
+.tco-table th {
+	padding: var(--tisa-sp-3, 12px);
+	text-align: start;
+	background: var(--tisa-surface-2, #FAFAF8);
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	color: var(--tisa-muted, #77828A);
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.tco-table td {
+	padding: var(--tisa-sp-3, 12px);
+	border-bottom: 1px solid var(--tisa-border, #E3E1DA);
+	vertical-align: middle;
+}
+
+.tco-table tbody tr:last-child td {
+	border-bottom: 0;
+}
+
+.tco-table tbody tr:hover {
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tco-table tbody tr.is-selected {
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tco-media-cell {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-3, 12px);
+	min-width: 220px;
+}
+
+.tco-thumb {
+	flex: 0 0 52px;
+	width: 52px;
+	height: 52px;
+	border-radius: var(--tisa-r-sm, 10px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	background: var(--tisa-surface-2, #FAFAF8);
+	object-fit: cover;
+	cursor: pointer;
+}
+
+.tco-thumb--placeholder {
+	display: grid;
+	place-items: center;
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tco-code {
+	font-family: var(--tisa-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+	font-size: var(--tisa-fs-meta, 12px);
+	direction: ltr;
+	unicode-bidi: isolate;
+}
+
+.tco-subtext {
+	display: block;
+	font-size: var(--tisa-fs-tiny, 11px);
+	color: var(--tisa-muted, #77828A);
+	margin-top: 2px;
+}
+
+.tco-size-bar {
+	width: 96px;
+	height: 5px;
+	margin-top: 5px;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	overflow: hidden;
+}
+
+.tco-size-bar > span {
+	display: block;
+	height: 100%;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-primary, #0E7C6B);
+}
+
+/* بج‌های معنایی */
+.tco-pill {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px 9px;
+	border-radius: var(--tisa-r-pill, 999px);
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+	white-space: nowrap;
+}
+
+.tco-pill--ok {
+	background: var(--tisa-success-soft, #E5F4E7);
+	color: var(--tisa-success, #1A7F37);
+}
+
+.tco-pill--warn {
+	background: var(--tisa-warning-soft, #FCF3D7);
+	color: var(--tisa-warning, #8A6116);
+}
+
+.tco-pill--danger {
+	background: var(--tisa-danger-soft, #FBECEA);
+	color: var(--tisa-danger, #B5453A);
+}
+
+.tco-pill--info {
+	background: var(--tisa-info-soft, #F0F6FC);
+	color: var(--tisa-info, #135E96);
+}
+
+.tco-pill--neutral {
+	background: var(--tisa-surface-2, #FAFAF8);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	color: var(--tisa-text, #2A3439);
+}
+
+.tco-refs-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 4px;
+}
+
+.tco-ref-chip {
+	display: inline-block;
+	padding: 1px 7px;
+	border-radius: var(--tisa-r-xs, 6px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	color: var(--tisa-text, #2A3439);
+	font-size: var(--tisa-fs-tiny, 11px);
+	text-decoration: none;
+}
+
+.tco-ref-chip:hover {
+	border-color: var(--tisa-primary, #0E7C6B);
+	color: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-row-actions {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: nowrap;
+}
+
+.tco-pin-btn.is-pinned {
+	background: var(--tisa-warning-soft, #FCF3D7);
+	border-color: var(--tisa-warning, #8A6116);
+	color: var(--tisa-warning, #8A6116);
+}
+
+/* نوار پیشرفت اجرای دسته‌ای */
+.tco-progress-box {
+	padding: var(--tisa-sp-4, 16px);
+	margin-bottom: var(--tisa-sp-4, 16px);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-primary-soft, #E8F0EE);
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+}
+
+.tco-progress-bar {
+	height: 10px;
+	margin-top: var(--tisa-sp-2, 8px);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface, #FFFFFF);
+	overflow: hidden;
+}
+
+.tco-progress-bar > span {
+	display: block;
+	height: 100%;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: linear-gradient(90deg, var(--tisa-primary-ink, #0A5F52), var(--tisa-brand-3, #129786));
+	transition: width var(--tisa-t, 150ms ease);
+}
+
+/* فرم‌ها، سوییچ‌ها و کارت‌های گروه‌های تکراری */
+.tco-form-grid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--tisa-sp-4, 16px);
+}
+
+.tco-field {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.tco-field label {
+	font-size: var(--tisa-fs-control, 13px);
+	font-weight: 700;
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+.tco-check-row {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--tisa-sp-2, 8px);
+	padding: var(--tisa-sp-3, 12px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	cursor: pointer;
+}
+
+.tco-dup-group {
+	padding: var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-surface-2, #FAFAF8);
+}
+
+.tco-dup-members {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+	gap: var(--tisa-sp-2, 8px);
+	margin-top: var(--tisa-sp-3, 12px);
+}
+
+.tco-dup-item {
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	padding: var(--tisa-sp-2, 8px) var(--tisa-sp-3, 12px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-sm, 10px);
+	background: var(--tisa-surface, #FFFFFF);
+	cursor: pointer;
+}
+
+.tco-dup-item.is-master {
+	border-color: var(--tisa-primary, #0E7C6B);
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+/* صفحه‌بندی */
+.tco-pager {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: var(--tisa-sp-2, 8px);
+	margin-top: var(--tisa-sp-3, 12px);
+	padding-top: var(--tisa-sp-2, 8px);
+	border-top: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-pager__info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 132px;
+}
+
+.tco-pager__actions {
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--tisa-sp-1, 4px);
+}
+
+.tco-pager__jump {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+.tco-pager__jump .tco-input {
+	width: 68px;
+	text-align: center;
+}
+
+.tco-perpage {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	white-space: nowrap;
+	padding-inline-start: var(--tisa-sp-2, 8px);
+	border-inline-start: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+}
+
+.tco-input--sm,
+.tco-select--sm {
+	padding: 2px 6px;
+	font-size: var(--tisa-fs-meta, 12px);
+	height: 30px;
+	min-height: 30px;
+}
+
+@media (max-width: 782px) {
+	.tco-pager {
+		align-items: stretch;
+	}
+
+	.tco-pager__actions {
+		width: 100%;
+		justify-content: flex-start;
+	}
+
+	.tco-perpage {
+		border-inline-start: 0;
+		padding-inline-start: 0;
+	}
+}
+
+/* مودال و اسلایدر مقایسهٔ زندهٔ قبل / بعد */
+.tco-modal {
+	position: fixed;
+	inset: 0;
+	z-index: 100100;
+	display: grid;
+	place-items: center;
+	padding: var(--tisa-sp-4, 16px);
+}
+
+.tco-modal__backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(31, 42, 46, .55);
+}
+
+.tco-modal__dialog {
+	position: relative;
+	z-index: 2;
+	width: 100%;
+	max-width: 720px;
+	max-height: 90vh;
+	overflow-y: auto;
+	background: var(--tisa-surface, #FFFFFF);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-lg, 16px);
+	padding: var(--tisa-sp-5, 24px);
+	box-shadow: var(--tisa-shadow, 0 10px 30px rgba(31, 42, 46, .16));
+}
+
+.tco-modal__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--tisa-sp-3, 12px);
+	margin-bottom: var(--tisa-sp-4, 16px);
+}
+
+.tco-modal__head h2 {
+	margin: 0;
+	font-size: var(--tisa-fs-h2, 16px);
+	font-weight: 800;
+}
+
+.tco-compare {
+	position: relative;
+	overflow: hidden;
+	border-radius: var(--tisa-r, 14px);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	background: var(--tisa-surface-2, #FAFAF8);
+	height: 300px;
+}
+
+.tco-compare__layer {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+}
+
+.tco-compare__layer img {
+	max-width: 100%;
+	max-height: 290px;
+	object-fit: contain;
+}
+
+.tco-compare__after {
+	background: var(--tisa-primary-soft, #E8F0EE);
+}
+
+.tco-compare__tag {
+	position: absolute;
+	top: var(--tisa-sp-2, 8px);
+	padding: 3px 10px;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-ink, #1F2A2E);
+	color: var(--tisa-on-primary, #FFFFFF);
+	font-size: var(--tisa-fs-tiny, 11px);
+	font-weight: 700;
+}
+
+.tco-compare__tag--before {
+	inset-inline-start: var(--tisa-sp-2, 8px);
+}
+
+.tco-compare__tag--after {
+	inset-inline-end: var(--tisa-sp-2, 8px);
+}
+
+.tco-slider-range {
+	width: 100%;
+	margin-top: var(--tisa-sp-3, 12px);
+}
+
+/* اعلان شناور (Toast) و حالت بارگذاری */
+.tco-toast-stack {
+	position: fixed;
+	bottom: var(--tisa-sp-4, 16px);
+	inset-inline-end: var(--tisa-sp-4, 16px);
+	z-index: 100200;
+	display: flex;
+	flex-direction: column;
+	gap: var(--tisa-sp-2, 8px);
+}
+
+.tco-toast {
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	border-radius: var(--tisa-r, 14px);
+	background: var(--tisa-ink, #1F2A2E);
+	color: var(--tisa-on-primary, #FFFFFF);
+	font-size: var(--tisa-fs-control, 13px);
+	font-weight: 700;
+	box-shadow: var(--tisa-shadow, 0 10px 30px rgba(31, 42, 46, .16));
+}
+
+.tco-toast--success {
+	background: var(--tisa-primary-ink, #0A5F52);
+}
+
+.tco-toast--error {
+	background: var(--tisa-danger, #B5453A);
+}
+
+.tco-loading-state,
+.tco-empty-state {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--tisa-sp-3, 12px);
+	padding: var(--tisa-sp-6, 32px);
+	color: var(--tisa-muted, #77828A);
+	font-size: var(--tisa-fs-body, 14px);
+	text-align: center;
+}
+
+.tco-spinner {
+	width: 20px;
+	height: 20px;
+	border: 2px solid var(--tisa-border-strong, #C9DCD7);
+	border-top-color: var(--tisa-primary, #0E7C6B);
+	border-radius: var(--tisa-r-pill, 999px);
+	animation: tco-spin .75s linear infinite;
+}
+
+@keyframes tco-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* ── نشانگرهای سراسری «در حال انجام» ─────────────────────────────
+   هر عملیاتی که به سرور می‌رود (حذف، فشرده‌سازی، بازگردانی، ادغام،
+   ذخیره، اسکن…) بازخورد فوری می‌گیرد: دکمهٔ فشرده‌شده + نوار بالای صفحه
+   + چیپ شناور با برچسب فارسی و زمان سپری‌شده. */
+.tco-busybar {
+	position: fixed;
+	top: 0;
+	inset-inline: 0;
+	z-index: 100150;
+	height: 3px;
+	overflow: hidden;
+	background: var(--tisa-primary-soft, #E7F4F1);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity .18s ease;
+}
+
+.admin-bar .tco-busybar {
+	top: 32px;
+}
+
+@media (max-width: 782px) {
+	.admin-bar .tco-busybar {
+		top: 46px;
+	}
+}
+
+.tco-busybar.is-on {
+	opacity: 1;
+}
+
+.tco-busybar > span {
+	display: block;
+	height: 100%;
+	width: 40%;
+	background: var(--tisa-primary, #0E7C6B);
+	transform: translateX(-100%);
+	animation: tco-busy-slide 1.15s ease-in-out infinite;
+}
+
+.tco-busybar.is-determinate > span {
+	width: 0;
+	transform: none;
+	animation: none;
+	transition: width .25s ease;
+}
+
+@keyframes tco-busy-slide {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(250%);
+	}
+}
+
+.tco-busy-chip {
+	position: fixed;
+	bottom: var(--tisa-sp-4, 16px);
+	inset-inline-start: var(--tisa-sp-4, 16px);
+	z-index: 100250;
+	display: flex;
+	align-items: center;
+	gap: var(--tisa-sp-2, 8px);
+	max-width: min(420px, calc(100vw - 32px));
+	padding: var(--tisa-sp-2, 8px) var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface, #FFFFFF);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: var(--tisa-font);
+	font-size: var(--tisa-fs-meta, 12px);
+	font-weight: 700;
+	box-shadow: var(--tisa-shadow, 0 10px 30px rgba(31, 42, 46, .16));
+	opacity: 0;
+	transform: translateY(6px);
+	transition: opacity .16s ease, transform .16s ease;
+	pointer-events: none;
+}
+
+.tco-busy-chip.is-on {
+	opacity: 1;
+	transform: translateY(0);
+}
+
+.tco-busy-chip__label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.tco-busy-chip__time {
+	color: var(--tisa-muted, #77828A);
+	font-variant-numeric: tabular-nums;
+	font-weight: 600;
+}
+
+.tco-busy-chip__pct {
+	color: var(--tisa-primary-ink, #0A5F52);
+	font-variant-numeric: tabular-nums;
+}
+
+.tco-spinner--sm {
+	width: 14px;
+	height: 14px;
+	border-width: 2px;
+	flex: 0 0 auto;
+}
+
+/* دکمه‌ای که درخواستش در جریان است */
+.tco-is-busy,
+.tisa-btn.tco-is-busy {
+	position: relative;
+	pointer-events: none;
+	opacity: .72;
+}
+
+.tco-is-busy::after {
+	content: "";
+	position: absolute;
+	inset-inline-end: var(--tisa-sp-2, 8px);
+	top: 50%;
+	width: 12px;
+	height: 12px;
+	margin-top: -6px;
+	border: 2px solid var(--tisa-border-strong, #C9DCD7);
+	border-top-color: var(--tisa-primary, #0E7C6B);
+	border-radius: var(--tisa-r-pill, 999px);
+	animation: tco-spin .7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.tco-busybar > span {
+		animation: none;
+		width: 100%;
+		transform: none;
+	}
+	.tco-is-busy::after,
+	.tco-spinner,
+	.tco-spinner--sm {
+		animation-duration: 2.4s;
+	}
+}
+
+@media (max-width: 960px) {
+	.tco-kpi-grid {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+	.tco-wins-grid,
+	.tco-form-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+@media (max-width: 782px) {
+	.tco-kpi-grid {
+		grid-template-columns: 1fr;
+	}
+	.tco-hero {
+		padding: var(--tisa-sp-4, 16px);
+	}
+}
+
+/* ── تفکیک زیرسایزهای یک تصویر (مودال مقایسه) ── */
+.tco-subsize-box {
+	background: #fff;
+	border: 1px solid #e3e8ee;
+	border-radius: 12px;
+	padding: 14px 16px;
+}
+
+.tco-subsize-box .tco-card__head {
+	align-items: flex-start;
+	gap: 12px;
+	margin: 0 0 10px;
+	padding: 0;
+	border: 0;
+}
+
+.tco-subsize-detail {
+	max-height: 260px;
+	overflow: auto;
+	border-radius: 10px;
+}
+
+.tco-table--compact th,
+.tco-table--compact td {
+	padding: 6px 8px;
+	font-size: 12.5px;
+}
+
+.tco-mini-bar {
+	display: block;
+	height: 7px;
+	width: 90px;
+	background: #eef2f6;
+	border-radius: 99px;
+	overflow: hidden;
+}
+
+.tco-mini-bar > span {
+	display: block;
+	height: 100%;
+	background: linear-gradient(90deg, #0e9f6e, #34d399);
+	border-radius: 99px;
+}
+
+.tco-reason-list {
+	margin: 8px 0 0;
+	padding-inline-start: 18px;
+	font-size: 12.5px;
+	color: #4a5568;
+}
+
+.tco-reason-list li {
+	margin-bottom: 3px;
+}
+
+.tco-hint {
+	background: #f0f7ff;
+	border-inline-start: 3px solid #2f80ed;
+	padding: 8px 10px;
+	border-radius: 8px;
+	margin-top: 8px;
+}
+
+/* ── توصیهٔ هوشمند زیرسایزها (B2) ───────────────────────────── */
+.tco-advice {
+	min-width: 220px;
+	max-width: 340px;
+}
+.tco-advice__text {
+	display: block;
+	margin-top: 6px;
+	font-size: 12px;
+	line-height: 1.7;
+	color: #4a5560;
+}
+.tco-advice--disable .tco-advice__text,
+.tco-advice--review .tco-advice__text {
+	color: #8a5a00;
+}
+.tco-advice--keep .tco-advice__text {
+	color: #2f6b4f;
+}
+
+/* ── کارت «قدم بعدی» (B1) ──────────────────────────────────── */
+.tco-next .tco-win {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+.tco-next .tco-win__desc {
+	flex: 1;
+}
+.tco-next .tisa-btn {
+	align-self: flex-start;
+}
+
+/* ── هشدار کار رهاشده در کارت «ادامهٔ عملیات» ──────────────── */
+.tco-hint--warn {
+	color: #8a5a00;
+	font-weight: 600;
+}
+
+/* کارت «نتیجهٔ آخرین عملیات» و فهرست دلایل — شفافیت کامل حذف‌های انجام‌نشده */
+.tco-result-card {
+	border-inline-start: 4px solid var(--tisa-warn, #dba617);
+}
+
+.tco-reason-list {
+	margin: 8px 0 0;
+	padding-inline-start: 20px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 1.9;
+	color: var(--tisa-text, #1e1e1e);
+}
+
+.tco-reason-list li {
+	margin-bottom: 2px;
+}
+
+.tco-details {
+	margin-top: 10px;
+}
+
+.tco-details summary {
+	cursor: pointer;
+	font-weight: 600;
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+/* راهنمای فارسی بخش «رکورد بدون فایل» — بدون اصطلاح فنی و با مثال مسیر */
+.tco-guide {
+	margin: 0 0 var(--tisa-sp-3, 12px);
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+	border-inline-start: 4px solid var(--tisa-info, #2271b1);
+	border-radius: var(--tisa-radius, 8px);
+	background: var(--tisa-surface-2, #f6f7f7);
+}
+
+.tco-guide__title {
+	margin: 0 0 6px;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.tco-guide__text {
+	margin: 0 0 10px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 2;
+}
+
+.tco-guide__cols {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--tisa-sp-3, 12px);
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-guide__note {
+	margin: 10px 0 0;
+	padding-top: 8px;
+	border-top: 1px dashed var(--tisa-border, rgba(0, 0, 0, 0.12));
+	font-size: var(--tisa-fs-meta, 12px);
+	color: var(--tisa-muted, #50575e);
+}
+
+.tco-expected-path {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 1.8;
+}
+
+.tco-expected-path .tco-code {
+	direction: ltr;
+	unicode-bidi: embed;
+	word-break: break-all;
+}
+
+@media (max-width: 960px) {
+	.tco-guide__cols {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ── «بازگردانی دسته‌ای بر اساس علت حذف» + پیش‌نمایش فایل‌های خزانه ── */
+.tco-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	border-bottom: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+	background: var(--tisa-surface-2, #fafaf8);
+}
+
+.tco-chip {
+	border: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.12));
+	background: #fff;
+	color: inherit;
+	border-radius: 999px;
+	padding: 6px 12px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 1.8;
+	cursor: pointer;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.tco-chip:hover {
+	border-color: var(--tisa-primary, #0e7c6b);
+}
+
+.tco-chip.is-active {
+	background: var(--tisa-primary-soft, #e8f0ee);
+	border-color: var(--tisa-primary, #0e7c6b);
+	font-weight: 700;
+}
+
+/* بندانگشتی خزانه: چون فایل از مسیر امن سرو می‌شود، اگر نسخهٔ کوچک ساخته
+   نشد، جای خالی به‌جای آیکون شکستهٔ مرورگر نمایش داده می‌شود. */
+.tco-thumb.is-broken {
+	visibility: hidden;
+}
+
+.tco-preview {
+	display: grid;
+	grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+	gap: var(--tisa-sp-4, 16px);
+	align-items: start;
+}
+
+.tco-preview__frame {
+	display: grid;
+	place-items: center;
+	min-height: 180px;
+	max-height: 62vh;
+	padding: 10px;
+	border: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.1));
+	border-radius: var(--tisa-radius, 8px);
+	background: repeating-conic-gradient(#f3f3f0 0% 25%, #fff 0% 50%) 50% / 18px 18px;
+	overflow: auto;
+}
+
+.tco-preview__img {
+	max-width: 100%;
+	max-height: 58vh;
+	object-fit: contain;
+	border-radius: 4px;
+	background: #fff;
+}
+
+.tco-preview__na {
+	padding: 24px;
+	color: var(--tisa-muted, #50575e);
+	font-size: var(--tisa-fs-meta, 12px);
+	text-align: center;
+}
+
+.tco-preview__meta {
+	display: grid;
+	gap: 8px;
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-preview__meta > div {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: baseline;
+}
+
+.tco-preview__meta > div > span {
+	color: var(--tisa-muted, #50575e);
+	min-width: 118px;
+}
+
+.tco-preview__meta .tco-code {
+	direction: ltr;
+	unicode-bidi: embed;
+	word-break: break-all;
+}
+
+@media (max-width: 960px) {
+	.tco-preview {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ── وایت‌لیست پوشه: ردیف‌های پوشه‌های محافظت‌شده ───────────────────────── */
+.tco-wl-folder .tco-code {
+	display: block;
+	direction: ltr;
+	text-align: left;
+	word-break: break-all;
+}
+
+.tco-wl-folder .tco-subtext {
+	display: block;
+	margin-top: 4px;
+	color: #8a6d3b;
+	font-size: 12px;
+}
+
+#tco-wl-folder-input {
+	direction: ltr;
+	text-align: left;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	min-width: 320px;
+}
+
+@media (max-width: 782px) {
+	#tco-wl-folder-input {
+		min-width: 0;
+		width: 100%;
+	}
+}
+
+/* ── «اجرا روی خود هاست»: کارت کلید + وضعیت کرون ───────────────────────── */
+.tco-runner .tco-card__head {
+	align-items: flex-start;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.tco-runner--on {
+	border-inline-start: 3px solid var(--tisa-ok, #1f9d55);
+}
+
+.tco-runner__result {
+	margin-top: 10px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: rgba(31, 157, 85, 0.08);
+	border: 1px solid rgba(31, 157, 85, 0.25);
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	font-size: 13px;
+}
+
+#tco-runner-toggle,
+#tco-runner-now {
+	white-space: nowrap;
+}

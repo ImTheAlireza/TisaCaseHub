@@ -31,6 +31,7 @@ const SHARED = [
 ];
 const PAGES_CSS = [
 	'plugins/src/tisacase-bulk-stock-manager/assets/admin.css',
+	'plugins/src/tisacase-optimizer/assets/admin.css',
 	'plugins/tisacase-hub/assets/hub.css',
 ];
 const ALL = [...SHARED, ...PAGES_CSS];
@@ -89,54 +90,71 @@ for (const file of SHARED) {
 	}
 }
 
-/* C) صفحهٔ خودمان: وسط‌چینی با اختصاصی‌بودن کافی */
-{
-	const file = 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css';
-	const rs = rules(file);
+/* C, C۲, C۳) صفحه‌های افزونه‌های اختصاصی: وسط‌چینی، قفل عرض کارت‌ها، مخفی‌سازی فوتر و منوی خکوب */
+const PLUGIN_TARGETS = [
+	{
+		name: 'tisacase-bulk-stock-manager',
+		css: 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css',
+		js: 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js',
+		php: 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php',
+		bodyClass: 'tbsm-page',
+		wrapClass: 'tbsm-wrap',
+		cardClass: 'tbsm-card',
+	},
+	{
+		name: 'tisacase-optimizer',
+		css: 'plugins/src/tisacase-optimizer/assets/admin.css',
+		js: 'plugins/src/tisacase-optimizer/assets/admin.js',
+		php: 'plugins/src/tisacase-optimizer/includes/class-tco-admin-page.php',
+		bodyClass: 'tco-page',
+		wrapClass: 'tco-wrap',
+		cardClass: 'tco-card',
+	},
+];
+
+for (const t of PLUGIN_TARGETS) {
+	const rs = rules(t.css);
 	const centered = rs.filter((r) => /#|\.\w+\.[\w-]+/.test(r.selector) && /margin-inline\s*:\s*auto/.test(r.body));
 	if (!centered.length) {
-		problems.push(`${file} — قاعدهٔ وسط‌چینی با اختصاصی‌بودن کافی (شناسه یا دو کلاس) پیدا نشد؛ ممکن است لایهٔ مشترک آن را بازنویسی کند.`);
+		problems.push(`${t.css} — قاعدهٔ وسط‌چینی با اختصاصی‌بودن کافی (شناسه یا دو کلاس) پیدا نشد.`);
 	} else {
-		notes.push(`${file}:${centered[0].line} — «${centered[0].selector}» وسط‌چین است ✓`);
+		notes.push(`${t.css}:${centered[0].line} — «${centered[0].selector}» وسط‌چین است ✓`);
 	}
-}
 
-/* C۲) صفحهٔ ما باید فوتر پیشخوان را پنهان کند و عرض کارت‌ها را قفل کند */
-{
-	const file = 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css';
-	const css = fs.readFileSync(path.join(ROOT, file), 'utf8');
-	if (!/body\.tbsm-page\s+#wpfooter\s*\{[^}]*display\s*:\s*none/.test(css)) {
-		problems.push(`${file} — قاعدهٔ پنهان‌کردن فوتر پیشخوان (body.tbsm-page #wpfooter) نیست؛ «نگارش وردپرس» وسط صفحه می‌افتد.`);
-	}
-	if (!/\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*max-width\s*:\s*min\(\s*100%\s*,\s*var\(--tisa-max-w/.test(css) ||
-		!/\.tbsm-wrap\s+\.tbsm-card[^{]*\{[^}]*margin-inline\s*:\s*auto/.test(css)) {
-		problems.push(`${file} — قفل اندازهٔ کارت‌ها در سطح خودِ کارت نیست (max-width: min(100%, var(--tisa-max-w)) + margin-inline: auto)؛ اگر قاعدهٔ بیرونی عرض پدر را باز کند، کارت‌ها ناهم‌اندازه می‌شوند.`);
-	}
-	const php = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/includes/class-tbsm-admin.php'), 'utf8');
-	if (!/add_filter\(\s*'admin_body_class'/.test(php) || !/' tbsm-page'/.test(php)) {
-		problems.push('class-tbsm-admin.php — کلاس بدنهٔ tbsm-page روی صفحهٔ ما اضافه نمی‌شود.');
-	} else {
-		notes.push('کلاس بدنهٔ tbsm-page فقط روی صفحهٔ ما اضافه می‌شود ✓');
-	}
-}
+	const css = fs.readFileSync(path.join(ROOT, t.css), 'utf8');
+	const footerRe = new RegExp(`body\\.${t.bodyClass}\\s+#wpfooter\\s*\\{[^}]*display\\s*:\\s*none`);
+	const cardMaxRe = new RegExp(`\\.${t.wrapClass}\\s+\\.${t.cardClass}[^{]*\\{[^}]*max-width\\s*:\\s*min\\(\\s*100%\\s*,\\s*var\\(--tisa-max-w`);
+	const cardMarginRe = new RegExp(`\\.${t.wrapClass}\\s+\\.${t.cardClass}[^{]*\\{[^}]*margin-inline\\s*:\\s*auto`);
 
-/* C۳) منوی پیشخوان روی صفحهٔ ما خکوب شود + رفعِ بریدگی زیرمنوها در JS */
-{
-	const cssPath = 'plugins/src/tisacase-bulk-stock-manager/assets/admin.css';
-	const css = fs.readFileSync(path.join(ROOT, cssPath), 'utf8');
-	const pin = /@media screen and \(min-width: 783px\)[\s\S]{0,400}body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}position:\s*fixed/.test(css);
-	if (!pin || !/body\.tbsm-page #adminmenuwrap\s*\{[\s\S]{0,300}overflow-y:\s*auto/.test(css)) {
-		problems.push(`${cssPath} — بلوک خکوب‌کردن منو (body.tbsm-page #adminmenuwrap: fixed + overflow-y:auto از ۷۸۳px) نیست؛ ارتفاع صفحه به بلندی منو کشیده می‌شود.`);
-	} else {
-		notes.push('منوی پیشخوان روی صفحهٔ ما خکوب است (صفحه = محتوا) ✓');
+	if (!footerRe.test(css)) {
+		problems.push(`${t.css} — قاعدهٔ پنهان‌کردن فوتر پیشخوان (body.${t.bodyClass} #wpfooter) نیست.`);
 	}
-	const js = fs.readFileSync(path.join(ROOT, 'plugins/src/tisacase-bulk-stock-manager/assets/admin.js'), 'utf8');
+	if (!cardMaxRe.test(css) || !cardMarginRe.test(css)) {
+		problems.push(`${t.css} — قفل اندازهٔ کارت‌ها در سطح خودِ کارت نیست (max-width: min(100%, var(--tisa-max-w)) + margin-inline: auto).`);
+	}
+
+	const php = fs.readFileSync(path.join(ROOT, t.php), 'utf8');
+	if (!/add_filter\(\s*'admin_body_class'/.test(php) || !php.includes(`' ${t.bodyClass}'`)) {
+		problems.push(`${t.php} — کلاس بدنهٔ ${t.bodyClass} روی صفحهٔ افزونه اضافه نمی‌شود.`);
+	} else {
+		notes.push(`${t.name}: کلاس بدنهٔ ${t.bodyClass} فقط روی صفحهٔ خودش اضافه می‌شود ✓`);
+	}
+
+	const pinRe = new RegExp(`@media screen and \\(min-width: 783px\\)[\\s\\S]{0,400}body\\.${t.bodyClass} #adminmenuwrap\\s*\\{[\\s\\S]{0,300}position:\\s*fixed`);
+	const ovfRe = new RegExp(`body\\.${t.bodyClass} #adminmenuwrap\\s*\\{[\\s\\S]{0,300}overflow-y:\\s*auto`);
+	if (!pinRe.test(css) || !ovfRe.test(css)) {
+		problems.push(`${t.css} — بلوک خکوب‌کردن منو (body.${t.bodyClass} #adminmenuwrap: fixed + overflow-y:auto از ۷۸۳px) نیست.`);
+	} else {
+		notes.push(`${t.name}: منوی پیشخوان خکوب است ✓`);
+	}
+
+	const js = fs.readFileSync(path.join(ROOT, t.js), 'utf8');
 	if (!/function menuFlyoutEscape/.test(js) || !/\$\(menuFlyoutEscape\)/.test(js)) {
-		problems.push('admin.js — تابع menuFlyoutEscape (رفع بریدگی زیرمنوها زیر overflow) نیست یا صدا زده نمی‌شود.');
+		problems.push(`${t.js} — تابع menuFlyoutEscape نیست یا صدا زده نمی‌شود.`);
 	} else if (!/'fixed' !== window\.getComputedStyle\(wrap\)\.position/.test(js)) {
-		problems.push('admin.js — menuFlyoutEscape بدون بررسی «منو خکوب است» اجرا می‌شود؛ باید روی صفحه‌های دیگر بی‌اثر باشد.');
+		problems.push(`${t.js} — menuFlyoutEscape بدون بررسی «منو خکوب است» اجرا می‌شود.`);
 	} else {
-		notes.push('زیرمنوهای کشویی از قید overflow بیرون می‌آیند (و فقط وقتی منو خکوب است) ✓');
+		notes.push(`${t.name}: زیرمنوهای کشویی از قید overflow بیرون می‌آیند ✓`);
 	}
 }
 
