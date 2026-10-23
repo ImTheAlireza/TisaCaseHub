@@ -104,6 +104,45 @@
 		return db.items.length;
 	};
 
+	// ابزار آزمون: چند «رکورد بدون فایل» قطعی می‌سازد (رکورد هست، فایل روی دیسک نیست).
+	window.__tcoMockSeedMissing = (n = 2) => {
+		db.items = db.items.filter((i) => i.usage_status !== 'missing_file');
+		const count = Math.max(1, Number(n));
+		for (let i = 0; i < count; i += 1) {
+			const id = 7700 + i + 1;
+			const month = String(7 + i).padStart(2, '0');
+			db.items.unshift({
+				id,
+				filename: `missing-photo-${id}.png`,
+				rel_path: `2026/${month}/missing-photo-${id}.png`,
+				folder: `2026/${month}`,
+				title: `missing-photo-${id}`,
+				alt: '',
+				mime_type: 'image/png',
+				format: 'PNG',
+				date: `2026-${month}-10`,
+				width: 1200,
+				height: 1200,
+				main_bytes: 0,
+				subsizes_bytes: 0,
+				unscaled_bytes: 0,
+				subsizes_count: 0,
+				is_opaque_png: false,
+				is_optimized: false,
+				has_webp: false,
+				saved_bytes: 0,
+				is_pinned: false,
+				sha1: '',
+				exists: false,
+				usage_status: 'missing_file',
+				refs: [],
+				thumb_url: '',
+				full_url: `https://example.test/wp-content/uploads/2026/${month}/missing-photo-${id}.png`,
+			});
+		}
+		return db.items.filter((i) => i.usage_status === 'missing_file').length;
+	};
+
 	// ابزار آزمون: افزودن موارد ساختگی به قرنطینه (تا دکمهٔ «بازگردانی همه» موجود باشد).
 	window.__tcoMockSeedQuarantine = (n) => {
 		for (let i = 0; i < Number(n); i += 1) {
@@ -346,6 +385,63 @@
 				refs: [{ type: 'featured', post_id: 4850, label: 'تصویر شاخص محصول: قاب شفاف شیائومی 14T Pro' }],
 				thumb_url: svgCaseThumb('#0A5F52', '#129786', 'OPTIMIZED', '#0E7C6B'),
 			},
+			// رکورد بدون فایل: رکورد هست، فایل روی دیسک نیست (۴۰۴).
+			{
+				id: 5321,
+				filename: 'galaxy-s24-ultra-titanium-gray.png',
+				rel_path: '2026/05/galaxy-s24-ultra-titanium-gray.png',
+				folder: '2026/05',
+				title: 'galaxy-s24-ultra',
+				alt: 'گلکسی اس ۲۴ اولترا',
+				mime_type: 'image/png',
+				format: 'PNG',
+				date: '2026-05-11',
+				width: 1200,
+				height: 1200,
+				main_bytes: 0,
+				subsizes_bytes: 0,
+				unscaled_bytes: 0,
+				subsizes_count: 0,
+				is_opaque_png: false,
+				is_optimized: false,
+				has_webp: false,
+				saved_bytes: 0,
+				is_pinned: false,
+				sha1: '',
+				exists: false,
+				usage_status: 'missing_file',
+				refs: [],
+				thumb_url: '',
+				full_url: 'https://example.test/wp-content/uploads/2026/05/galaxy-s24-ultra-titanium-gray.png',
+			},
+			{
+				id: 5288,
+				filename: 'xiaomi-redmi-note-13-banner.jpg',
+				rel_path: '2025/12/xiaomi-redmi-note-13-banner.jpg',
+				folder: '2025/12',
+				title: 'redmi-note-13-banner',
+				alt: '',
+				mime_type: 'image/jpeg',
+				format: 'JPG',
+				date: '2025-12-02',
+				width: 1600,
+				height: 900,
+				main_bytes: 0,
+				subsizes_bytes: 0,
+				unscaled_bytes: 0,
+				subsizes_count: 0,
+				is_opaque_png: false,
+				is_optimized: false,
+				has_webp: false,
+				saved_bytes: 0,
+				is_pinned: false,
+				sha1: '',
+				exists: false,
+				usage_status: 'missing_file',
+				refs: [],
+				thumb_url: '',
+				full_url: 'https://example.test/wp-content/uploads/2025/12/xiaomi-redmi-note-13-banner.jpg',
+			},
 		],
 		diskOrphans: [
 			{
@@ -417,7 +513,7 @@
 			subsizes_total_bytes: item.subsizes_bytes + item.unscaled_bytes,
 			usage_status: status,
 			refs_count: (item.refs || []).length,
-			full_url: item.thumb_url,
+			full_url: item.full_url || item.thumb_url,
 		});
 	}
 
@@ -470,6 +566,7 @@
 
 		const strictUnused = rows.filter((r) => r.usage_status === 'strict_unused');
 		const drafts = rows.filter((r) => r.usage_status === 'draft_only');
+		const missing = rows.filter((r) => r.usage_status === 'missing_file');
 		const unscaled = rows.filter((r) => r.unscaled_bytes > 0);
 		const unopt = rows.filter((r) => !r.is_optimized);
 		const dups = computeDuplicates();
@@ -493,7 +590,7 @@
 					orphan_bytes: orphanB,
 					draft_count: drafts.length,
 					draft_bytes: drafts.reduce((s, r) => s + r.total_bytes, 0),
-					missing_db: 0,
+					missing_db: missing.length,
 				},
 				unscaled: {
 					count: unscaled.length,
@@ -520,14 +617,14 @@
 				originals_bytes: db.originals.reduce((s, o) => s + o.bytes, 0),
 			},
 			lifetime_stats: Object.assign({}, db.lifetime),
-			next_actions: buildNextActions(rows, strictUnused, unscaled, unopt, dups),
+			next_actions: buildNextActions(rows, strictUnused, unscaled, unopt, dups, missing),
 			scan_built_at: '2026-10-21 15:40:00',
 			scan_ms: 42,
 		};
 	}
 
 	// همان فهرست «قدم بعدی» که سرور واقعی می‌سازد (برای هم‌رفتاری پیش‌نمایش و افزونه).
-	function buildNextActions(rows, strictUnused, unscaled, unopt, dups) {
+	function buildNextActions(rows, strictUnused, unscaled, unopt, dups, missing) {
 		const fa = faNum;
 		const out = [];
 		if (strictUnused.length) {
@@ -539,6 +636,18 @@
 				count: strictUnused.length,
 				bytes: strictUnused.reduce((s, r) => s + r.total_bytes, 0),
 				cta: 'unused',
+				label: 'دیدن فهرست',
+			});
+		}
+		if (missing && missing.length) {
+			out.push({
+				key: 'missing_file',
+				tone: 'warn',
+				title: 'رکوردهای بدون فایل (۴۰۴) را مرتب کنید',
+				desc: `${fa(missing.length)} رکورد در کتابخانه هست ولی فایلش روی هاست نیست؛ در صفحهٔ سایت جای عکس، تصویر شکسته دیده می‌شود. با یک کلیک فقط رکورد پاک/قرنطینه می‌شود (فایلی برای حذف وجود ندارد).`,
+				count: missing.length,
+				bytes: 0,
+				cta: 'missing_file',
 				label: 'دیدن فهرست',
 			});
 		}
@@ -1238,7 +1347,7 @@
 					newlyDone.push(id);
 					if (job.mode !== 'permanent') {
 						db.quarantine.unshift({
-							id: 'q_' + Date.now() + '_' + id,
+							id: 'q_' + Date.now() + '_' + id + '_' + (window.__tcoMockQSeq = (window.__tcoMockQSeq || 0) + 1),
 							batch_id: job.batch_id,
 							attachment_id: item.id,
 							filename: item.filename,
@@ -1644,9 +1753,13 @@
 			}
 			const stepRestore = mockJobStep('restore', req, { mode: 'restore', queue: targetIds }, (qids) => {
 				let restored = 0;
+				let skipped = 0;
 				qids.forEach((qid) => {
 					const idx = db.quarantine.findIndex((q) => q.id === qid);
-					if (idx === -1) return;
+					if (idx === -1) {
+						skipped += 1;
+						return;
+					}
 					const q = db.quarantine.splice(idx, 1)[0];
 					restored += 1;
 					db.items.unshift(
@@ -1678,7 +1791,9 @@
 						}
 					);
 				});
-				return { done: restored, failed: qids.length - restored, payload: { vault: mockVaultPayload(), restored: restored } };
+				// هر شناسهٔ صف «پردازش‌شده» حساب می‌شود (حتی اگر رکوردش پیدا نشود)،
+				// وگرنه کار برای همیشه روی «۶ از ۷» گیر می‌کند.
+				return { done: qids.length, failed: skipped, payload: { vault: mockVaultPayload(), restored: restored } };
 			});
 			if (stepRestore && stepRestore.__conflict) {
 				return mockHttpFailure(stepRestore.__conflict.status, stepRestore.__conflict.payload);

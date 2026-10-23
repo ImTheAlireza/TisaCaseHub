@@ -875,7 +875,16 @@
 			return '<span class="tco-pill tco-pill--warn">★ پین‌شده در لیست سفید</span>';
 		}
 		if (row.usage_status === 'missing_file') {
-			return '<span class="tco-pill tco-pill--danger">فایل فیزیکی گم‌شده (۴۰۴)</span>';
+			// مسیر دقیقی که وردپرس انتظار دارد فایل را همان‌جا ببیند؛ همان چیزی که
+			// کاربر برای بررسی در هاست یا برگرداندن فایل لازم دارد.
+			const expected = String(row.rel_path || '').trim() || ('#' + row.id);
+			return `<span class="tco-pill tco-pill--danger" title="رکورد این تصویر در کتابخانه هست، ولی فایلش در مسیر زیر روی هاست نیست؛ به همین دلیل مرورگر خطای ۴۰۴ می‌گیرد.">فایل گم‌شده (۴۰۴) — رکورد بدون فایل</span>
+				<div class="tco-expected-path">
+					<span>انتظار می‌رفت این‌جا باشد:</span>
+					<code class="tco-code">uploads/${esc(expected)}</code>
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-copy-path="${esc(expected)}" title="کپی مسیر برای بررسی در مدیریت فایل هاست">کپی مسیر</button>
+					${row.full_url ? `<a class="tco-ref-chip" href="${esc(row.full_url)}" target="_blank" rel="noopener" title="بازکردن آدرس در تب تازه (اگر ۴۰۴ دید، یعنی فایل واقعاً نیست)">آزمایش آدرس</a>` : ''}
+				</div>`;
 		}
 		if (row.usage_status === 'strict_unused') {
 			return '<span class="tco-pill tco-pill--danger">مطلقاً بدون استفاده (۰ مرجع)</span>';
@@ -895,6 +904,49 @@
 			.join('');
 
 		return `${headPill}<div class="tco-refs-list">${chips}</div>`;
+	}
+
+	/**
+	 * راهنمای فارسی بخش «رکورد بدون فایل».
+	 *
+	 * چرا؟ کاربر پرسید: «فایل فیزیکی گم‌شده (۴۰۴) توی فایل‌های شکسته یعنی چی؟»
+	 * پس همین‌جا، بدون اصطلاح فنی، می‌گوییم این دسته چیست، چرا پیش می‌آید و
+	 * دقیقاً چه کاری می‌شود کرد.
+	 *
+	 * @return {string}
+	 */
+	function renderMissingFileGuide() {
+		return `<div class="tco-guide">
+			<h3 class="tco-guide__title">«رکورد بدون فایل» یعنی چه؟</h3>
+			<p class="tco-guide__text">
+				کتابخانهٔ رسانهٔ وردپرس برای هر تصویر یک <strong>رکورد</strong> دارد (شماره، عنوان، متن جایگزین، مسیر فایل).
+				در این دسته، آن رکورد <strong>هست</strong>، ولی خودِ فایل تصویری روی هاست <strong>نیست</strong>.
+				یعنی وردپرس فکر می‌کند این عکس را دارد، اما وقتی مرورگر آدرس آن را باز می‌کند، سرور می‌گوید
+				«پیدا نشد» (کد ۴۰۴). در صفحهٔ سایت هم جای آن عکس، شکسته یا خالی دیده می‌شود.
+			</p>
+			<div class="tco-guide__cols">
+				<div>
+					<strong>چرا پیش می‌آید؟</strong>
+					<ul class="tco-reason-list">
+						<li>فایل‌ها با FTP یا مدیریت فایل هاست <b>دستی</b> پاک/جابه‌جا شده‌اند.</li>
+						<li>انتقال یا مهاجرت هاست <b>نیمه‌کاره</b> مانده (دیتابیس منتقل شده، پوشهٔ uploads نه).</li>
+						<li>بازگردانی پشتیبان <b>فقط دیتابیس</b> بوده و فایل‌ها برنگشته‌اند.</li>
+						<li>افزونهٔ دیگری فایل را جابه‌جا یا تبدیل کرده ولی رکورد را به‌روز نکرده است.</li>
+					</ul>
+				</div>
+				<div>
+					<strong>چه کار کنم؟ (دو راه)</strong>
+					<ul class="tco-reason-list">
+						<li><b>اگر فایل را دارید:</b> آن را به همان مسیری که زیر هر ردیف نوشته شده برگردانید، بعد «اسکن مجدد» را بزنید. عکس دوباره سالم می‌شود.</li>
+						<li><b>اگر فایل را ندارید:</b> رکورد بی‌فایده است و فقط جای خالی و خطای ۴۰۴ تولید می‌کند. با دکمهٔ حذف، <b>فقط رکورد</b> به قرنطینه می‌رود (فایلی برای پاک‌کردن نیست) و در صورت نیاز از «پشتیبان و بازگردانی» قابل برگشت است.</li>
+					</ul>
+				</div>
+			</div>
+			<p class="tco-guide__note">
+				حجم آزادشده در این دسته همیشه <strong>۰ بایت</strong> است؛ چون فایلی روی دیسک وجود ندارد که آزاد شود.
+				ارزش این دسته «پاک‌سازی لینک‌های شکسته و مرتب‌کردن کتابخانه» است، نه آزادکردن فضا.
+			</p>
+		</div>`;
 	}
 
 	function renderDeleteModeSwitch() {
@@ -952,13 +1004,19 @@
 					<td>${renderUsageCell(r)}</td>
 					<td>
 						<div class="tco-row-actions">
-							<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-opt-one="${r.id}" title="فشرده‌سازی و تبدیل">بهینه</button>
+							${
+								r.usage_status === 'missing_file'
+									? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" disabled title="فشرده‌سازی ممکن نیست: فایل این تصویر روی دیسک نیست. اول فایل را به همان مسیر برگردانید و «اسکن مجدد» بزنید.">بهینه (فایل نیست)</button>'
+									: `<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-opt-one="${r.id}" title="فشرده‌سازی و تبدیل">بهینه</button>`
+							}
 							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-inspect="${r.id}" title="مقایسه قبل/بعد و جزئیات">جزئیات</button>
 							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tco-pin-btn${r.is_pinned ? ' is-pinned' : ''}" data-pin-one="${r.id}" data-pinned="${r.is_pinned ? '1' : '0'}" title="محافظت دائمی در لیست سفید">★</button>
 							${
-								state.deleteMode === 'permanent'
-									? `<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger${armed ? ' is-armed' : ''}" data-remove-one="${r.id}">${armed ? 'تأیید حذف؟' : 'حذف قطعی'}</button>`
-									: `<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-remove-one="${r.id}">قرنطینه</button>`
+								r.usage_status === 'missing_file'
+									? `<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm${armed ? ' is-armed' : ''}" data-remove-one="${r.id}" title="فایلی روی دیسک نیست؛ فقط رکورد کتابخانه قرنطینه می‌شود و در صورت نیاز قابل بازگردانی است">${armed ? 'تأیید پاک‌کردن رکورد؟' : 'پاک‌کردن رکورد'}</button>`
+									: state.deleteMode === 'permanent'
+										? `<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger${armed ? ' is-armed' : ''}" data-remove-one="${r.id}">${armed ? 'تأیید حذف؟' : 'حذف قطعی'}</button>`
+										: `<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-remove-one="${r.id}">قرنطینه</button>`
 							}
 						</div>
 					</td>
@@ -1108,17 +1166,20 @@
 					<button type="button" class="tco-subnav__btn${u.usage === 'unregistered_disk' ? ' is-active' : ''}" data-unused-bucket="unregistered_disk">
 						فایل‌های رهاشده روی دیسک بدون رکورد دیتابیس (${faNum(qw.orphan_count)} · ${formatBytes(qw.orphan_bytes)})
 					</button>
-					<button type="button" class="tco-subnav__btn${u.usage === 'missing_file' ? ' is-active' : ''}" data-unused-bucket="missing_file">
-						رکوردهای شکستهٔ ۴۰۴ (${faNum(qw.missing_db)})
+					<button type="button" class="tco-subnav__btn${u.usage === 'missing_file' ? ' is-active' : ''}" data-unused-bucket="missing_file" title="رکورد در کتابخانهٔ رسانه هست ولی فایلش روی هاست نیست؛ بازدیدکننده به‌جای عکس، خطای ۴۰۴ می‌بیند.">
+						رکورد بدون فایل — «فایل گم‌شده» (${faNum(qw.missing_db)})
 					</button>
 				</div>
 
 				${u.usage === 'strict_unused' ? scanHint : ''}
 
+				${u.usage === 'missing_file' ? renderMissingFileGuide() : ''}
+
 				<div class="tco-bulkbar">
 					<div>
 						<strong>${data ? faNum(data.total) : '۰'} مورد در این بخش (${formatBytes(data ? data.matched_bytes : 0)})</strong>
 						${u.usage === 'draft_only' ? ' · <span class="tco-pill tco-pill--warn">محافظت ایمپورت ربات تلگرام: این عکس‌ها به پیش‌نویس وصل‌اند</span>' : ''}
+						${u.usage === 'missing_file' ? ' · <span class="tco-pill tco-pill--neutral">حذف در این بخش یعنی «پاک‌کردن رکورد»، نه آزادکردن فضا</span>' : ''}
 					</div>
 					<div class="tco-bulkbar__actions">
 						${
@@ -1127,7 +1188,13 @@
 								: ''
 						}
 						<button type="button" class="tisa-btn ${state.deleteMode === 'permanent' ? 'tco-btn-danger' : 'tisa-btn--primary'} tisa-btn--sm ${sweepArm ? 'is-armed' : ''}" id="tco-sweep-all" ${!data || data.total === 0 ? 'disabled title="موردی در این دسته برای پاک‌سازی نیست"' : ''}>
-							${sweepArm ? 'تأیید نهایی روی همهٔ موارد؟' : `${state.deleteMode === 'permanent' ? 'حذف قطعی یک‌جای همهٔ' : 'انتقال یک‌جای همهٔ'} ${data ? faNum(data.total) : '۰'} مورد به قرنطینه`}
+							${
+								sweepArm
+									? 'تأیید نهایی روی همهٔ موارد؟'
+									: u.usage === 'missing_file'
+										? `پاک‌کردن رکوردِ ${data ? faNum(data.total) : '۰'} فایل گم‌شده (فقط رکورد؛ فایلی روی دیسک نیست)`
+										: `${state.deleteMode === 'permanent' ? 'حذف قطعی یک‌جای همهٔ' : 'انتقال یک‌جای همهٔ'} ${data ? faNum(data.total) : '۰'} مورد به قرنطینه`
+							}
 						</button>
 					</div>
 				</div>
@@ -3281,6 +3348,23 @@
 			return;
 		}
 
+		const copyPathBtn = ev.target.closest('[data-copy-path]');
+		if (copyPathBtn) {
+			const rel = copyPathBtn.getAttribute('data-copy-path') || '';
+			const full = 'wp-content/uploads/' + rel.replace(/^\/+/, '');
+			try {
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					await navigator.clipboard.writeText(full);
+				} else {
+					throw new Error('clipboard-unavailable');
+				}
+				toast(`مسیر کپی شد: ${full}`);
+			} catch (err) {
+				toast(`مسیر فایل: ${full} (کپی خودکار ممکن نشد؛ دستی انتخاب کنید)`, 'error');
+			}
+			return;
+		}
+
 		if (ev.target.closest('#tco-rescan-unused')) {
 			await ensureDataForCurrentView(true);
 			return;
@@ -3476,6 +3560,14 @@
 			} else if (cta === 'quarantine') {
 				state.module = 'vault';
 				render();
+			} else if (cta === 'missing_file') {
+				// «رکورد بدون فایل» زیرشاخهٔ بخش «بدون استفاده» است.
+				state.module = 'images';
+				state.subtab = 'unused';
+				state.unusedFilter.usage = 'missing_file';
+				state.unusedFilter.page = 1;
+				await ensureDataForCurrentView(false);
+				render();
 			} else if (cta === 'unused' || cta === 'duplicates' || cta === 'seo') {
 				state.subtab = cta;
 				await ensureDataForCurrentView(false);
@@ -3606,6 +3698,7 @@
 		'[data-page-edge]',
 		'#tco-dismiss-run',
 		'#tco-rescan-unused',
+		'[data-copy-path]',
 		'[data-page-go]',
 		'[data-save-seo]',
 		'[data-modal-close]',

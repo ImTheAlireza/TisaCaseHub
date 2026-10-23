@@ -1396,3 +1396,62 @@ body.tco-page #wpfooter {
 	font-weight: 600;
 	font-size: var(--tisa-fs-meta, 12px);
 }
+
+/* راهنمای فارسی بخش «رکورد بدون فایل» — بدون اصطلاح فنی و با مثال مسیر */
+.tco-guide {
+	margin: 0 0 var(--tisa-sp-3, 12px);
+	padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px);
+	border: 1px solid var(--tisa-border, rgba(0, 0, 0, 0.08));
+	border-inline-start: 4px solid var(--tisa-info, #2271b1);
+	border-radius: var(--tisa-radius, 8px);
+	background: var(--tisa-surface-2, #f6f7f7);
+}
+
+.tco-guide__title {
+	margin: 0 0 6px;
+	font-size: 14px;
+	font-weight: 700;
+}
+
+.tco-guide__text {
+	margin: 0 0 10px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 2;
+}
+
+.tco-guide__cols {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--tisa-sp-3, 12px);
+	font-size: var(--tisa-fs-meta, 12px);
+}
+
+.tco-guide__note {
+	margin: 10px 0 0;
+	padding-top: 8px;
+	border-top: 1px dashed var(--tisa-border, rgba(0, 0, 0, 0.12));
+	font-size: var(--tisa-fs-meta, 12px);
+	color: var(--tisa-muted, #50575e);
+}
+
+.tco-expected-path {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px;
+	margin-top: 6px;
+	font-size: var(--tisa-fs-meta, 12px);
+	line-height: 1.8;
+}
+
+.tco-expected-path .tco-code {
+	direction: ltr;
+	unicode-bidi: embed;
+	word-break: break-all;
+}
+
+@media (max-width: 960px) {
+	.tco-guide__cols {
+		grid-template-columns: 1fr;
+	}
+}

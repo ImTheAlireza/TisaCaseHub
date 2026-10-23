@@ -47,7 +47,7 @@ assert.match(window.document.getElementById('tco-toasts').textContent, /-scaled 
 window.document.querySelector('[data-go-subtab="explorer"]').click();
 await flush();
 const expRows = [...window.document.querySelectorAll('#tco-main tbody tr')];
-assert.equal(expRows.length, 7, 'همهٔ ۷ تصویر اولیه باید در کاوشگر لیست شوند');
+assert.equal(expRows.length, 9, 'همهٔ ۹ رکورد اولیه (۷ تصویر سالم + ۲ رکورد بدون فایل) باید در کاوشگر لیست شوند');
 assert.equal(expRows[0].getAttribute('data-row-id'), '5011', 'سنگین‌ترین تصویر روی دیسک باید در ردیف اول باشد');
 
 // باز کردن مودال مقایسهٔ زندهٔ قبل و بعد + تغییر اسلایدر
@@ -506,13 +506,16 @@ window.__tcoMockJob = null;
 window.__tcoMockJobs = {};
 
 // مجموعهٔ آزمون: همهٔ قرنطینه‌شده‌ها را برمی‌گردانیم تا صف فشرده‌سازی چند موردی باشد.
+// مثل خودِ کلاینت: هر درخواست بعدی «همان کار» را ادامه می‌دهد (job_id)، نه کار تازه.
+let restoreJobId = '';
 for (let i = 0; i < 30; i += 1) {
-	const rr = await window.fetch('http://localhost/wp-admin/admin-ajax.php', {
-		method: 'POST',
-		body: new URLSearchParams({ action: 'tisacase', op: 'restore_quarantine', restore_all: '1' }),
-	});
+	const body = new URLSearchParams({ action: 'tisacase', op: 'restore_quarantine', restore_all: '1' });
+	if (restoreJobId) body.set('job_id', restoreJobId);
+	const rr = await window.fetch('http://localhost/wp-admin/admin-ajax.php', { method: 'POST', body });
 	const rj = await rr.json();
-	if (!rj.data || !rj.data.job || rj.data.job.finished) break;
+	if (!rj.data || !rj.data.job) break;
+	restoreJobId = rj.data.job.id;
+	if (rj.data.job.finished) break;
 }
 window.__tcoMockLatency = 0;
 
@@ -949,4 +952,60 @@ window.__tcoMockTickMax = 6;
 window.__tcoMockJob = null;
 window.__tcoMockJobs = {};
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۱ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف») با موفقیت اجرا شدند!');
+// ۲۲. «رکورد بدون فایل (۴۰۴)» باید در همان‌جا توضیح داده شود: کارت «قدم بعدی»
+// به همین فهرست برسد، تعریف و علت‌ها و دو راه‌حل نوشته شود، مسیر مورد انتظار
+// هر ردیف با دکمهٔ کپی دیده شود، و «بهینه» برای این ردیف‌ها بی‌معنا/غیرفعال باشد.
+window.__tcoMockSeedMissing(2);
+window.document.querySelector('[data-go-module="images"]').click();
+await flush();
+window.document.querySelector('[data-go-subtab="overview"]').click();
+await flush();
+// خلاصهٔ «نمای کلی» باید تازه باشد تا کارت «قدم بعدی» ساخته شود.
+const missRescan = window.document.getElementById('tco-rescan-btn');
+if (missRescan) missRescan.click();
+for (let i = 0; i < 60 && !window.document.querySelector('[data-next-action="missing_file"]'); i += 1) {
+	await new Promise((r) => setTimeout(r, 50));
+}
+const missCta = window.document.querySelector('[data-next-action="missing_file"]');
+assert.ok(missCta, 'کارت «قدم بعدی» برای رکوردهای بدون فایل باید وجود داشته باشد');
+const missCard = missCta.closest('.tco-win');
+assert.ok(missCard, 'کارت «قدم بعدی» باید ساختار کارت استاندارد داشته باشد');
+assert.match(missCard.textContent, /۴۰۴/, 'کارت باید صریح بگوید موضوع خطای ۴۰۴ است');
+assert.match(missCard.textContent, /فایلی برای حذف وجود ندارد/, 'کارت باید بگوید فایلی برای حذف نیست');
+missCta.click();
+await flush();
+
+const missBucket = window.document.querySelector('[data-unused-bucket="missing_file"]');
+assert.ok(missBucket && missBucket.classList.contains('is-active'), 'کارت باید کاربر را به همان زیرشاخه ببرد');
+assert.match(missBucket.textContent, /فایل گم‌شده/, 'برچسب زیرشاخه باید فارسی و گویا باشد');
+
+const missGuide = window.document.querySelector('.tco-guide');
+assert.ok(missGuide, 'برای این دسته باید راهنمای درون‌صفحه‌ای نمایش داده شود');
+assert.match(missGuide.textContent, /۴۰۴/, 'راهنما باید معنی کد ۴۰۴ را بگوید');
+assert.match(missGuide.textContent, /۰ بایت/, 'راهنما باید بگوید این دسته فضا آزاد نمی‌کند');
+assert.match(missGuide.textContent, /اسکن مجدد/, 'راهنما باید راه‌حل «برگرداندن فایل + اسکن مجدد» را بگوید');
+assert.match(missGuide.textContent, /قابل برگشت/, 'راهنما باید بگوید پاک‌کردن رکورد قابل بازگشت است');
+
+const missRows = [...window.document.querySelectorAll('#tco-main tbody tr')];
+assert.equal(missRows.length, 2, 'دو رکورد بدون فایل باید در فهرست باشند');
+const expPath = missRows[0].querySelector('.tco-expected-path code');
+assert.ok(expPath && /^uploads\//.test(expPath.textContent.trim()), 'مسیر مورد انتظار باید با uploads/ نشان داده شود');
+assert.match(expPath.textContent, /missing-photo-7702\.png/, 'مسیر واقعی همان فایل باید نوشته شود');
+
+const missCopy = missRows[0].querySelector('[data-copy-path]');
+assert.ok(missCopy, 'هر ردیف باید دکمهٔ «کپی مسیر» داشته باشد');
+missCopy.click();
+await flush();
+assert.match(
+	window.document.getElementById('tco-toasts').textContent,
+	/wp-content\/uploads\/2026\/08\/missing-photo-7702\.png/,
+	'کپی مسیر باید مسیر کامل فایل را اعلام کند'
+);
+
+assert.equal(missRows[0].querySelector('[data-opt-one]'), null, 'برای ردیف بدون فایل دکمهٔ بهینه‌سازی نباید کلیک‌پذیر باشد');
+assert.match(missRows[0].textContent, /بهینه \(فایل نیست\)/, 'به‌جای «بهینه» باید صریح بگوید فایل نیست');
+const missDel = missRows[0].querySelector('[data-remove-one]');
+assert.ok(missDel && /پاک‌کردن رکورد/.test(missDel.textContent), 'دکمهٔ حذف باید «پاک‌کردن رکورد» نام داشته باشد');
+assert.match(window.document.getElementById('tco-main').textContent, /فقط رکورد/, 'نوار عملیات باید بگوید فقط رکورد پاک می‌شود');
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۲ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» و «توضیح رکورد بدون فایل (۴۰۴)») با موفقیت اجرا شدند!');

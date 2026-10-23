@@ -550,6 +550,25 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				);
 			}
 
+			// رکوردهای بدون فایل: عکس در صفحه شکسته (۴۰۴) دیده می‌شود ولی فایلی
+			// برای آزادکردن نیست؛ ارزش کار «مرتب‌کردن کتابخانه» است، نه فضا.
+			if ( ! empty( $unused['missing_db'] ) ) {
+				$actions[] = array(
+					'key'   => 'missing_file',
+					'tone'  => 'warn',
+					'title' => __( 'رکوردهای بدون فایل (۴۰۴) را مرتب کنید', 'tisacase-optimizer' ),
+					/* translators: %d: number of attachment records without a file. */
+					'desc'  => sprintf(
+						__( '%d رکورد در کتابخانه هست ولی فایلش روی هاست نیست؛ در صفحهٔ سایت جای عکس، تصویر شکسته دیده می‌شود. با یک کلیک فقط رکورد پاک/قرنطینه می‌شود (فایلی برای حذف وجود ندارد).', 'tisacase-optimizer' ),
+						(int) $unused['missing_db']
+					),
+					'count' => (int) $unused['missing_db'],
+					'bytes' => 0,
+					'cta'   => 'missing_file',
+					'label' => __( 'دیدن فهرست', 'tisacase-optimizer' ),
+				);
+			}
+
 			$compress = isset( $qw['compress'] ) ? $qw['compress'] : array();
 			if ( ! empty( $compress['count'] ) ) {
 				$actions[] = array(
