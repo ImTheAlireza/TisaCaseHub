@@ -181,7 +181,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		 * @param bool     $allow_draft حذف تصاویر «فقط پیش‌نویس».
 		 * @return array<string,mixed> کار تازه‌ساخته‌شده.
 		 */
-		public static function start_remove( array $ids, array $paths, $mode = 'quarantine', $allow_draft = false ) {
+		public static function start_remove( array $ids, array $paths, $mode = 'quarantine', $allow_draft = false, $reason = 'unused' ) {
 			$mode = in_array( $mode, array( 'quarantine', 'permanent' ), true ) ? $mode : 'quarantine';
 
 			$ids = array_values( array_unique( array_filter( array_map( 'absint', $ids ) ) ) );
@@ -220,6 +220,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				'coverage'      => '',
 				'needs_rescan'  => false,
 				'allow_draft'   => (bool) $allow_draft,
+				// علت حذف برای دسته‌بندی بسته‌های قرنطینه (در «پشتیبان و بازگردانی»
+				// کاربر می‌تواند همهٔ موارد یک علت را یک‌جا برگرداند).
+				'reason'        => sanitize_key( (string) $reason ),
 				'created'       => time(),
 				'updated'       => time(),
 				'started_at'    => time(),
@@ -553,6 +556,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		}
 
 		/**
+		 * علت حذفِ ثبت‌شده در کار (برای برچسب قرنطینه).
+		 *
+		 * @param array<string,mixed> $job کار.
+		 * @return string
+		 */
+		private static function remove_reason( array $job ) {
+			$allowed = array( 'unused', 'draft_only', 'missing_file', 'manual_unused' );
+			$reason  = isset( $job['reason'] ) ? sanitize_key( (string) $job['reason'] ) : '';
+			if ( in_array( $reason, $allowed, true ) ) {
+				return $reason;
+			}
+			return ! empty( $job['allow_draft'] ) ? 'draft_only' : 'unused';
+		}
+
+		/**
 		 * پردازش یک آیتم از صف تأییدشده.
 		 *
 		 * @param array<string,mixed> $job کار (با ارجاع).
@@ -580,7 +598,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 
 				$res = 'permanent' === $mode
 					? TisaCase_Optimizer_Vault::delete_attachment_permanently( $aid )
-					: TisaCase_Optimizer_Vault::quarantine_attachment( $aid, 'unused', (string) $job['batch_id'] );
+					: TisaCase_Optimizer_Vault::quarantine_attachment( $aid, self::remove_reason( $job ), (string) $job['batch_id'] );
 
 				if ( is_wp_error( $res ) ) {
 					$job['failed'][] = array(

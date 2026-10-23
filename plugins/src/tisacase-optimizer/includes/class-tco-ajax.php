@@ -353,6 +353,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 					$batch_filter = isset( $_POST['batch_id'] ) ? sanitize_key( wp_unslash( (string) $_POST['batch_id'] ) ) : '';
 					// phpcs:ignore WordPress.Security.NonceVerification.Missing
 					$restore_all  = ! empty( $_POST['restore_all'] );
+					// «بازگردانی دسته‌ای بر اساس علت حذف»: کلاینت فقط کلید علت را
+					// می‌فرستد، نه هزاران شناسه؛ فهرست روی سرور ساخته می‌شود.
+					// phpcs:ignore WordPress.Security.NonceVerification.Missing
+					$reason_filter = isset( $_POST['reason'] ) ? sanitize_key( wp_unslash( (string) $_POST['reason'] ) ) : '';
 					// phpcs:ignore WordPress.Security.NonceVerification.Missing
 					$job_id       = isset( $_POST['job_id'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['job_id'] ) ) : '';
 
@@ -363,18 +367,31 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 							self::fail( __( 'این کار دیگر فعال نیست یا منقضی شده است.', 'tisacase-optimizer' ), 409 );
 						}
 					} else {
-						if ( empty( $qids ) && ( '' !== $batch_filter || $restore_all ) ) {
+						if ( empty( $qids ) && ( '' !== $batch_filter || $restore_all || '' !== $reason_filter ) ) {
 							foreach ( TisaCase_Optimizer_Vault::list_quarantine() as $qi ) {
 								if ( empty( $qi['id'] ) ) {
 									continue;
 								}
-								if ( $restore_all || ( '' !== $batch_filter && isset( $qi['batch_id'] ) && $qi['batch_id'] === $batch_filter ) ) {
+								$qi_reason = isset( $qi['reason'] ) ? sanitize_key( (string) $qi['reason'] ) : '';
+								if ( $restore_all
+									|| ( '' !== $batch_filter && isset( $qi['batch_id'] ) && $qi['batch_id'] === $batch_filter )
+									|| ( '' !== $reason_filter && $qi_reason === $reason_filter )
+								) {
 									$qids[] = (string) $qi['id'];
 								}
 							}
 						}
 						if ( empty( $qids ) ) {
-							self::fail( __( 'هیچ بستهٔ قرنطینه‌ای برای بازگردانی انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
+							self::fail(
+								'' !== $reason_filter
+									? sprintf(
+										/* translators: %s: reason label */
+										__( 'هیچ بستهٔ قرنطینه‌ای با علت «%s» برای بازگردانی باقی نمانده است.', 'tisacase-optimizer' ),
+										TisaCase_Optimizer_Vault::reason_label( $reason_filter )
+									)
+									: __( 'هیچ بستهٔ قرنطینه‌ای برای بازگردانی انتخاب نشده است.', 'tisacase-optimizer' ),
+								400
+							);
 						}
 						$reclaimed = self::clear_way_for_new_job();
 						$job       = TisaCase_Optimizer_Job::start_restore( $qids );
@@ -693,6 +710,14 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				: (string) TisaCase_Optimizer_Settings::get( 'delete_mode', 'quarantine' );
 			// phpcs:ignore WordPress.Security.NonceVerification.Missing
 			$allow_draft = ! empty( $_POST['allow_draft_only'] );
+			// علت حذف برای دسته‌بندی در «پشتیبان و بازگردانی»: اگر کاربر صریحاً
+			// اجازهٔ حذف موارد «فقط پیش‌نویس» را داده باشد، علت همان است؛
+			// در غیر این صورت «بدون استفاده».
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing
+			$reason_raw = isset( $_POST['reason'] ) ? sanitize_key( wp_unslash( (string) $_POST['reason'] ) ) : '';
+			$reason     = in_array( $reason_raw, array( 'unused', 'draft_only', 'missing_file', 'manual_unused' ), true )
+				? $reason_raw
+				: ( $allow_draft ? 'draft_only' : 'unused' );
 
 			$job       = TisaCase_Optimizer_Job::get();
 			$reclaimed = null;
@@ -714,7 +739,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 				self::fail( __( 'هیچ تصویری برای حذف انتخاب نشده است.', 'tisacase-optimizer' ), 400 );
 			} else {
 				$reclaimed = self::clear_way_for_new_job();
-				$job       = TisaCase_Optimizer_Job::start_remove( $ids, $rel_paths, $mode, $allow_draft );
+				$job       = TisaCase_Optimizer_Job::start_remove( $ids, $rel_paths, $mode, $allow_draft, $reason );
 			}
 
 			$before_done = (int) $job['done'];
@@ -1113,11 +1138,54 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		private static function vault_payload() {
 			$quarantine   = TisaCase_Optimizer_Vault::list_quarantine();
 			$batch_counts = array();
-			foreach ( $quarantine as $q ) {
+			$reasons      = array();
+			foreach ( $quarantine as $idx => $q ) {
 				if ( ! empty( $q['batch_id'] ) ) {
 					$bid                  = (string) $q['batch_id'];
 					$batch_counts[ $bid ] = isset( $batch_counts[ $bid ] ) ? $batch_counts[ $bid ] + 1 : 1;
 				}
+
+				// «علت حذف» به زبان فارسی + آدرس پیش‌نمایش/بندانگشتی همان بسته.
+				// فایل‌های قرنطینه بیرون از `uploads/` هستند، پس آدرس عمومی
+				// ندارند و پیش‌نمایش از مسیر امن خودِ افزونه سرو می‌شود.
+				$rkey = isset( $q['reason'] ) ? sanitize_key( (string) $q['reason'] ) : '';
+				$quarantine[ $idx ]['reason_key']   = $rkey;
+				$quarantine[ $idx ]['reason_label'] = TisaCase_Optimizer_Vault::reason_label( $rkey );
+				$quarantine[ $idx ]['thumb_url']    = TisaCase_Optimizer_Preview::url( 'quarantine', (string) $q['id'], '', true );
+				$quarantine[ $idx ]['preview_url']  = TisaCase_Optimizer_Preview::url( 'quarantine', (string) $q['id'], '', false );
+				$quarantine[ $idx ]['is_image']     = self::looks_like_image( isset( $q['filename'] ) ? (string) $q['filename'] : '' );
+
+				if ( '' === $rkey ) {
+					$rkey = 'unknown';
+				}
+				if ( ! isset( $reasons[ $rkey ] ) ) {
+					$reasons[ $rkey ] = array(
+						'key'   => $rkey,
+						'label' => TisaCase_Optimizer_Vault::reason_label( $rkey ),
+						'count' => 0,
+						'bytes' => 0,
+					);
+				}
+				++$reasons[ $rkey ]['count'];
+				$reasons[ $rkey ]['bytes'] += isset( $q['total_bytes'] ) ? (int) $q['total_bytes'] : 0;
+			}
+
+			// علت‌های پرتکرار اول می‌آیند تا کاربر سریع دستهٔ بزرگ را ببیند.
+			$reasons = array_values( $reasons );
+			usort(
+				$reasons,
+				static function ( $a, $b ) {
+					if ( $a['count'] === $b['count'] ) {
+						return strcmp( $a['label'], $b['label'] );
+					}
+					return $b['count'] <=> $a['count'];
+				}
+			);
+
+			$originals = array_values( TisaCase_Optimizer_Vault::list_original_backups() );
+			foreach ( $originals as $oidx => $o ) {
+				$originals[ $oidx ]['thumb_url']   = TisaCase_Optimizer_Preview::url( 'original', (string) $o['attachment_id'], '', true );
+				$originals[ $oidx ]['preview_url'] = TisaCase_Optimizer_Preview::url( 'original', (string) $o['attachment_id'], '', false );
 			}
 
 			$history = TisaCase_Optimizer_Session::history();
@@ -1129,9 +1197,21 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 			return array(
 				'summary'    => TisaCase_Optimizer_Vault::summary(),
 				'quarantine' => $quarantine,
-				'originals'  => array_values( TisaCase_Optimizer_Vault::list_original_backups() ),
+				'reasons'    => $reasons,
+				'originals'  => $originals,
 				'history'    => $history,
 			);
+		}
+
+		/**
+		 * آیا نام فایل نشان می‌دهد تصویر قابل نمایش است؟
+		 *
+		 * @param string $filename نام فایل.
+		 * @return bool
+		 */
+		private static function looks_like_image( $filename ) {
+			$ext = strtolower( (string) pathinfo( (string) $filename, PATHINFO_EXTENSION ) );
+			return in_array( $ext, array( 'jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'bmp' ), true );
 		}
 
 		/**

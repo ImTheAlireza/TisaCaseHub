@@ -144,7 +144,8 @@
 	};
 
 	// ابزار آزمون: افزودن موارد ساختگی به قرنطینه (تا دکمهٔ «بازگردانی همه» موجود باشد).
-	window.__tcoMockSeedQuarantine = (n) => {
+	window.__tcoMockSeedQuarantine = (n, reason) => {
+		const why = reason || 'manual_unused';
 		for (let i = 0; i < Number(n); i += 1) {
 			const aid = 9500 + i;
 			db.quarantine.unshift({
@@ -153,7 +154,7 @@
 				attachment_id: aid,
 				filename: `seed-quarantine-${aid}.jpg`,
 				rel_path: `2026/03/seed-quarantine-${aid}.jpg`,
-				reason: 'manual_unused',
+				reason: why,
 				files_count: 1,
 				total_bytes: 512000,
 				created_at: '2026-10-20 21:15:00',
@@ -1077,15 +1078,54 @@
 
 	// بسته‌ٔ «گاوصندوق» (قرنطینه + نسخهٔ اصل + تاریخچه) — یک‌جا ساخته می‌شود تا
 	// هم شبیه‌ساز بازگردانی و هم get_vault دقیقاً یک شکل بدهند.
+	// همان برچسب‌های فارسی «علت حذف» که سرور واقعی می‌فرستد.
+	const REASON_LABELS = {
+		unused: 'بدون استفاده در سایت (۰ مرجع)',
+		draft_only: 'فقط در پیش‌نویس یا زباله‌دان',
+		duplicate: 'تصویر تکراری ادغام‌شده',
+		disk_orphan: 'فایل رهاشده روی دیسک (بدون رکورد)',
+		manual_unused: 'قرنطینهٔ دستی توسط شما',
+		missing_file: 'رکورد بدون فایل (۴۰۴)',
+	};
+
+	function mockQuarantineEnriched() {
+		return db.quarantine.map((q) => {
+			const rkey = q.reason || 'unused';
+			return Object.assign({}, q, {
+				reason_key: rkey,
+				reason_label: REASON_LABELS[rkey] || rkey,
+				is_image: /\.(jpe?g|png|gif|webp|avif|bmp)$/i.test(String(q.filename || '')),
+				thumb_url: `/mock-thumb/${encodeURIComponent(q.id)}.jpg`,
+				preview_url: `/mock-preview/${encodeURIComponent(q.id)}.jpg`,
+			});
+		});
+	}
+
 	function mockVaultPayload() {
 		const enrichedHistory = db.history.map((h) =>
 			Object.assign({}, h, {
 				recoverable_count: h.batch_id ? db.quarantine.filter((q) => q.batch_id === h.batch_id).length : 0,
 			})
 		);
+		const quarantine = mockQuarantineEnriched();
+		const reasonMap = {};
+		quarantine.forEach((q) => {
+			if (!reasonMap[q.reason_key]) {
+				reasonMap[q.reason_key] = { key: q.reason_key, label: q.reason_label, count: 0, bytes: 0 };
+			}
+			reasonMap[q.reason_key].count += 1;
+			reasonMap[q.reason_key].bytes += Number(q.total_bytes || 0);
+		});
+		const reasons = Object.values(reasonMap).sort((a, b) => b.count - a.count);
 		return {
-			quarantine: db.quarantine,
-			originals: db.originals,
+			quarantine,
+			reasons,
+			originals: db.originals.map((o) =>
+				Object.assign({}, o, {
+					thumb_url: `/mock-thumb/orig-${o.attachment_id}.jpg`,
+					preview_url: `/mock-preview/orig-${o.attachment_id}.jpg`,
+				})
+			),
 			history: enrichedHistory,
 			summary: {
 				quarantine_count: db.quarantine.length,
@@ -1761,6 +1801,9 @@
 					targetIds = db.quarantine.filter((q) => q.batch_id === req.batch_id).map((q) => q.id);
 				} else if (!targetIds.length && Number(req.restore_all) === 1) {
 					targetIds = db.quarantine.map((q) => q.id);
+				} else if (!targetIds.length && req.reason) {
+					// «بازگردانی همهٔ موارد یک علت» — فهرست روی سرور ساخته می‌شود.
+					targetIds = db.quarantine.filter((q) => (q.reason || 'unused') === req.reason).map((q) => q.id);
 				}
 			}
 			const stepRestore = mockJobStep('restore', req, { mode: 'restore', queue: targetIds }, (qids) => {

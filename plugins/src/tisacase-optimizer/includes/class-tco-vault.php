@@ -46,6 +46,41 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		const CRON_PURGE_HOOK    = 'tisacase_optimizer_daily_vault_purge';
 
 		/**
+		 * نام فارسی «علت حذف» برای هر بستهٔ قرنطینه.
+		 *
+		 * چرا؟ کاربر باید بتواند بر اساس علت، دسته‌ای انتخاب و بازگرداند
+		 * («همهٔ مواردی که چون پیش‌نویس بودند قرنطینه شدند»). کلیدها همان چیزی
+		 * است که در مانیفست ذخیره می‌شود؛ اینجا فقط به زبان آدم ترجمه می‌شوند.
+		 *
+		 * @return array<string,string>
+		 */
+		public static function reason_labels() {
+			return array(
+				'unused'       => __( 'بدون استفاده در سایت (۰ مرجع)', 'tisacase-optimizer' ),
+				'draft_only'   => __( 'فقط در پیش‌نویس یا زباله‌دان', 'tisacase-optimizer' ),
+				'duplicate'    => __( 'تصویر تکراری ادغام‌شده', 'tisacase-optimizer' ),
+				'disk_orphan'  => __( 'فایل رهاشده روی دیسک (بدون رکورد)', 'tisacase-optimizer' ),
+				'manual_unused'=> __( 'قرنطینهٔ دستی توسط شما', 'tisacase-optimizer' ),
+				'missing_file' => __( 'رکورد بدون فایل (۴۰۴)', 'tisacase-optimizer' ),
+			);
+		}
+
+		/**
+		 * نام فارسی یک علت (با بازگشت امن برای کلیدهای ناشناخته).
+		 *
+		 * @param string $key کلید علت.
+		 * @return string
+		 */
+		public static function reason_label( $key ) {
+			$key    = sanitize_key( (string) $key );
+			$labels = self::reason_labels();
+			if ( isset( $labels[ $key ] ) ) {
+				return $labels[ $key ];
+			}
+			return '' === $key ? __( 'نامشخص', 'tisacase-optimizer' ) : $key;
+		}
+
+		/**
 		 * مسیر ریشهٔ خزانه در `uploads/` و ایمن‌سازی دایرکتوری‌ها.
 		 *
 		 * @return string مسیر مطلق بدون اسلش انتهایی (یا رشتهٔ خالی در صورت خطا).

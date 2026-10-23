@@ -35,6 +35,7 @@ const inspector = read(`${P}/includes/class-tco-media-inspector.php`);
 const vault = read(`${P}/includes/class-tco-vault.php`);
 const settings = read(`${P}/includes/class-tco-settings.php`);
 const admin = read(`${P}/assets/admin.js`);
+const preview = read(`${P}/includes/class-tco-preview.php`);
 
 let pass = 0;
 const fails = [];
@@ -178,6 +179,29 @@ ok('اندپوینت job_cancel ثبت شده است', ajax.includes("'job_cance
 ok('حذف دسته‌ای بر پایهٔ موتور کار است', /TisaCase_Optimizer_Job::start_remove/.test(ajax) && /TisaCase_Optimizer_Job::advance/.test(ajax));
 ok('همهٔ اندپوینت‌ها از مسیر مشترک با nonce و مجوز عبور می‌کنند', ajax.includes('check_ajax_referer') && ajax.includes("current_user_can( 'manage_options' )"));
 ok('حذف و ادامهٔ کار فقط برای مدیر مجاز است (بدون مسیر میان‌بر)', !/function\s+handle_job_cancel[\s\S]{0,200}?check_ajax_referer/.test(ajax) || ajax.includes('self::dispatch'));
+
+console.log('── ۸) پیش‌نمایش و بندانگشتی خزانه (بدون فشار روی سرور) ──');
+ok('پیش‌نمایش فقط برای مدیر مجاز و با nonce سرو می‌شود', preview.includes('check_ajax_referer') && preview.includes('TisaCase_Optimizer_Ajax::user_can_access'));
+ok('مسیر فایل با realpath داخل پوشهٔ خزانه محدود می‌شود (ضد LFI)', /realpath\(/.test(preview) && /0 === strpos\( \$real, \$root \)/.test(preview));
+ok('مسیر نسبی پیش از استفاده، «..» را حذف می‌کند', /str_replace\( array\( '\.\.'/.test(preview));
+ok('بندانگشتی یک‌بار ساخته و روی دیسک کش می‌شود', preview.includes('function thumb_path') && preview.includes("'.jpg'") && /is_file\( \$cached \)/.test(preview));
+ok('کلید کش وابسته به mtime و حجم فایل است (نه محتوای تکراری)', /md5\( \$abs \. '\|' \. \(int\) @filemtime/.test(preview));
+ok('سقف حجم فایل برای ساخت بندانگشتی تعریف شده است', /THUMB_MAX_BYTES\s*=\s*\d+/.test(preview) && /filesize\( \$src \) > self::THUMB_MAX_BYTES/.test(preview));
+ok('ابعاد بندانگشتی محدود است (پیکسل ثابت)', /THUMB_MAX\s*=\s*\d+/.test(preview) && /self::THUMB_MAX, self::THUMB_MAX/.test(preview));
+ok('اگر ساخت بندانگشتی ممکن نبود، خود فایل سرو می‌شود (جای خالی نمی‌ماند)', /self::stream\( \$abs, \$mime \)/.test(preview));
+ok('پاسخ بدون دخالت کش صفحه و با هدر امن سرو می‌شود', preview.includes('nocache_headers') && preview.includes('X-Content-Type-Options'));
+ok('مرورگر مجاز است تصویر را کوتاه‌مدت کش کند (پس از حذف/بازگردانی تازه می‌شود)', /Cache-Control: private, max-age=\d+/.test(preview));
+ok('اندپوینت پیش‌نمایش از مسیر روتین JSON جدا ثبت شده است', boot.includes('TisaCase_Optimizer_Preview::init()') && preview.includes("const ACTION = 'tisacase_optimizer_preview'"));
+ok('فهرست خزانه برای هر ردیف آدرس پیش‌نمایش/بندانگشتی می‌سازد', /TisaCase_Optimizer_Preview::url\( 'quarantine'/.test(ajax) && /TisaCase_Optimizer_Preview::url\( 'original'/.test(ajax));
+ok('بندانگشتی‌ها در مرورگر تنبل بارگذاری می‌شوند', /loading="lazy"[\s\S]{0,80}data-preview-q/.test(admin) || /data-preview-q[^>]*loading="lazy"/.test(admin) || (admin.match(/loading="lazy"/g) || []).length >= 2);
+ok('فهرست قرنطینه صفحه‌بندی دارد (همهٔ ردیف‌ها یک‌جا رندر نمی‌شوند)', /function vaultPageInfo/.test(admin) && /renderPager\(\{ page, pages, total: filtered\.length/.test(admin));
+
+console.log('── ۹) بازگردانی دسته‌ای بر اساس علت حذف ──');
+ok('سرور فهرست را از کلید علت می‌سازد (نه هزاران شناسه از مرورگر)', /\$reason_filter\s*=\s*isset\( \$_POST\['reason'\]/.test(ajax) && /\$qi_reason === \$reason_filter/.test(ajax));
+ok('چیپ‌های علت در رابط ساخته می‌شوند', /data-vault-reason/.test(admin) && /function renderVaultReasonChips/.test(admin));
+ok('بازگردانی یک علت دو کلیک تأیید دارد', /armConfirm\('restore-reason'\)/.test(admin));
+ok('علت حذف هنگام قرنطینه ثبت می‌شود', /'reason'\s*=>\s*sanitize_key\( \(string\) \$reason \)/.test(job) && /self::remove_reason\( \$job \)/.test(job));
+ok('نام فارسی علت‌ها یک‌جا تعریف شده است (بدون تکرار در JS)', /function reason_labels/.test(vault) && /function reason_label\( \$key \)/.test(vault));
 
 console.log('');
 if (fails.length) {

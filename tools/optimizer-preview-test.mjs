@@ -1065,4 +1065,82 @@ assert.match(
 const wlAfter = [...window.document.querySelectorAll('#tco-main tbody tr[data-row-id]')].map((tr) => tr.getAttribute('data-row-id'));
 assert.ok(!wlAfter.includes(pinTargetId), 'بعد از خروج، فایل باید از لیست سفید حذف شود');
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۳ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید») با موفقیت اجرا شدند!');
+// ۲۴. «پشتیبان و بازگردانی»: انتخاب و بازگردانی دسته‌ای بر اساس علت حذف +
+// بندانگشتی و پیش‌نمایش فایل‌های قرنطینه.
+window.__tcoMockSeedQuarantine(2, 'unused');
+window.__tcoMockSeedQuarantine(3, 'draft_only');
+window.document.querySelector('[data-go-subtab="restore"]').click();
+await new Promise((r) => setTimeout(r, 150));
+await flush();
+
+const vaultMain = window.document.getElementById('tco-main');
+assert.match(vaultMain.textContent, /پشتیبان و بازگردانی/, 'بخش بازگردانی باید باز شود');
+
+// الف) دکمه‌های «علت حذف» با تعداد و حجم
+const reasonChips = [...vaultMain.querySelectorAll('[data-vault-reason]')];
+assert.ok(reasonChips.length >= 3, 'باید «همهٔ علت‌ها» و دست‌کم دو علت واقعی نمایش داده شود');
+const allChip = reasonChips.find((c) => c.getAttribute('data-vault-reason') === 'all');
+const draftChip = reasonChips.find((c) => c.getAttribute('data-vault-reason') === 'draft_only');
+assert.ok(allChip && draftChip, 'چیپ «همه» و «فقط در پیش‌نویس» باید باشد');
+assert.match(draftChip.textContent, /فقط در پیش‌نویس یا زباله‌دان/, 'برچسب علت باید فارسی و گویا باشد');
+assert.match(draftChip.textContent, /۳/, 'تعداد موارد هر علت باید در همان دکمه نوشته شود');
+
+// ب) انتخاب دسته با کلیک روی چیپ
+draftChip.click();
+await flush();
+const draftRows = [...window.document.querySelectorAll('#tco-main tbody tr[data-q-id]')];
+assert.equal(draftRows.length, 3, 'پس از فیلتر، فقط ۳ بستهٔ همین علت باید بماند');
+assert.match(window.document.getElementById('tco-main').textContent, /دستهٔ «فقط در پیش‌نویس یا زباله‌دان»/, 'باید صریح بگوید کدام دسته فیلتر شده');
+
+// ج) بندانگشتی واقعی برای هر ردیف
+const thumbs = draftRows.map((tr) => tr.querySelector('img.tco-thumb')).filter(Boolean);
+assert.equal(thumbs.length, 3, 'هر ردیف تصویری باید بندانگشتی داشته باشد');
+assert.match(thumbs[0].getAttribute('src'), /thumb/, 'آدرس بندانگشتی باید از مسیر امن پیش‌نمایش باشد');
+assert.equal(thumbs[0].getAttribute('loading'), 'lazy', 'بارگذاری بندانگشتی باید تنبل باشد (بار سرور کم)');
+
+// د) پیش‌نمایش بزرگ در مودال
+const previewBtn = draftRows[0].querySelector('[data-preview-q]');
+assert.ok(previewBtn, 'هر ردیف باید دکمهٔ پیش‌نمایش داشته باشد');
+previewBtn.click();
+await flush();
+const modal = window.document.getElementById('tco-modal');
+assert.ok(!modal.hidden, 'مودال پیش‌نمایش باید باز شود');
+const previewImg = modal.querySelector('.tco-preview__img');
+assert.ok(previewImg, 'تصویر پیش‌نمایش باید نمایش داده شود');
+assert.match(previewImg.getAttribute('src'), /preview/, 'پیش‌نمایش باید نسخهٔ کامل فایل باشد، نه بندانگشتی');
+assert.match(modal.textContent, /علت حذف/, 'مودال باید علت را بگوید');
+assert.match(modal.textContent, /فقط در پیش‌نویس/, 'علت فارسی در مودال دیده شود');
+assert.ok(modal.querySelector('[data-restore-q]'), 'داخل مودال هم باید دکمهٔ بازگردانی باشد');
+modal.querySelector('[data-modal-close]').click();
+await flush();
+assert.ok(modal.hidden, 'دکمهٔ بستن باید مودال را ببندد');
+
+// ه) انتخاب همهٔ این علت
+const selectReason = window.document.getElementById('tco-select-reason');
+assert.ok(selectReason, 'دکمهٔ «انتخاب همهٔ این علت» باید باشد');
+selectReason.click();
+await flush();
+assert.match(window.document.getElementById('tco-toasts').textContent, /۳ مورد از این علت انتخاب شد/, 'انتخاب دسته‌ای باید تعداد را اعلام کند');
+assert.ok(window.document.getElementById('tco-restore-selected-q'), 'با انتخاب موارد، دکمهٔ بازگردانی انتخاب‌شده‌ها باید ظاهر شود');
+
+// و) بازگردانی کل دستهٔ همان علت (دو کلیک تأیید)
+const restoreReason = window.document.getElementById('tco-restore-reason');
+assert.ok(restoreReason, 'دکمهٔ «بازگردانی همهٔ این علت» باید باشد');
+restoreReason.click();
+await flush();
+assert.match(window.document.getElementById('tco-restore-reason').textContent, /تأیید بازگردانی/, 'کلیک اول باید فقط تأیید بخواهد');
+window.document.getElementById('tco-restore-reason').click();
+await new Promise((r) => setTimeout(r, 1200));
+await flush();
+
+const reasonAfter = [...window.document.querySelectorAll('[data-vault-reason]')].map((c) => c.getAttribute('data-vault-reason'));
+assert.ok(!reasonAfter.includes('draft_only'), 'بعد از بازگردانی، آن علت دیگر بسته‌ای نباید داشته باشد');
+const remainingReasons = window.document.getElementById('tco-main').textContent;
+assert.match(remainingReasons, /همهٔ علت‌ها/, 'فهرست علت‌ها باید تازه شود');
+
+// بازگرداندن فیلتر به «همه» تا بخش‌های بعدی دست‌نخورده بمانند.
+const allChip2 = window.document.querySelector('[data-vault-reason="all"]');
+if (allChip2) allChip2.click();
+await flush();
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۴ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید» و «بازگردانی دسته‌ای بر اساس علت + بندانگشتی و پیش‌نمایش») با موفقیت اجرا شدند!');

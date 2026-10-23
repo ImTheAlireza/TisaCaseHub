@@ -3,7 +3,7 @@
  * Plugin Name:          مرکز بهینه‌سازی تیساکیس (TisaCase Optimizer)
  * Plugin URI:           https://tisacase.com
  * Description:          مرکز چندبخشی بهینه‌سازی و نگهداری فروشگاه تیساکیس — تحلیل دقیق حجم واقعی دیسک و Inode، کاوشگر سنگین‌ترین تصاویر، اسکنر ۱۲لایهٔ تصاویر بدون استفاده با راستی‌آزمایی زندهٔ پیش از حذف و قرنطینهٔ ۳۰ روزه، فشرده‌سازی بومی WebP/AVIF، ادغام هوشمند تکراری‌ها، مدیریت زیرسایزها و سئوی خودکار.
- * Version:              1.2.5
+ * Version:              1.2.6
  * Requires at least:    5.8
  * Requires PHP:         7.4
  * Author:               علیرضا شعبان زاده
@@ -21,7 +21,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCO_VERSION', '1.2.5' );
+define( 'TCO_VERSION', '1.2.6' );
 define( 'TCO_FILE', __FILE__ );
 define( 'TCO_DIR', plugin_dir_path( __FILE__ ) );
 define( 'TCO_URL', plugin_dir_url( __FILE__ ) );
@@ -59,6 +59,7 @@ function tco_autoload( $class ) {
 		'TisaCase_Optimizer_Module_Frontend'   => 'class-tco-module-frontend.php',
 		'TisaCase_Optimizer_Module_System'     => 'class-tco-module-system.php',
 		'TisaCase_Optimizer_Ajax'              => 'class-tco-ajax.php',
+		'TisaCase_Optimizer_Preview'           => 'class-tco-preview.php',
 		'TisaCase_Optimizer_Admin_Page'        => 'class-tco-admin-page.php',
 		'TisaCase_Optimizer_CLI'               => 'class-tco-cli.php',
 	);
@@ -122,6 +123,7 @@ function tco_boot() {
 
 		if ( is_admin() ) {
 			TisaCase_Optimizer_Ajax::init();
+			TisaCase_Optimizer_Preview::init();
 			TisaCase_Optimizer_Admin_Page::init();
 		} else {
 			TisaCase_Optimizer_WebP_Delivery::init_frontend();
