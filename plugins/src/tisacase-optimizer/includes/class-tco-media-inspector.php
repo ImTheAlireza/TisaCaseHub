@@ -352,6 +352,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					if ( isset( $cached_ov['layers'] ) && is_array( $cached_ov['layers'] ) ) {
 						$cached_ov['layers']['quarantine_bytes'] = (int) $vault_live['quarantine_bytes'] + (int) $vault_live['originals_bytes'];
 					}
+					// تعداد «لیست سفید» از تنظیماتِ زنده خوانده می‌شود تا پین/خروج
+					// فوراً در نشانگر زیرشاخه دیده شود (بقیهٔ اعداد از خلاصهٔ اسکن).
+					$cached_ov['whitelist'] = array(
+						'count'   => count( TisaCase_Optimizer_Settings::pinned_ids() ),
+						'bytes'   => isset( $cached_ov['whitelist']['bytes'] ) ? (int) $cached_ov['whitelist']['bytes'] : 0,
+						'missing' => isset( $cached_ov['whitelist']['missing'] ) ? (int) $cached_ov['whitelist']['missing'] : 0,
+					);
 					$cached_ov['next_actions'] = self::build_next_actions( $cached_ov );
 					return $cached_ov;
 				}
@@ -377,6 +384,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 			$heavy_est_save = 0;
 			$opaque_png_cnt = 0;
 			$missing_alt    = 0;
+			$pinned_count   = 0;
+			$pinned_bytes   = 0;
+			$pinned_missing = 0;
 			$formats        = array(
 				'JPEG'  => array( 'count' => 0, 'bytes' => 0 ),
 				'PNG'   => array( 'count' => 0, 'bytes' => 0 ),
@@ -404,6 +414,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					$draft_bytes += $it['total_bytes'];
 				} elseif ( 'missing_file' === $it['usage_status'] ) {
 					++$missing_count;
+				}
+
+				// «لیست سفید» بر اساس خودِ علامتِ پین شمرده می‌شود، نه وضعیتِ مصرف؛
+				// چون رکوردِ پین‌شده‌ای که فایلش هم گم شده باید در همین فهرست دیده شود.
+				if ( ! empty( $it['is_pinned'] ) ) {
+					++$pinned_count;
+					$pinned_bytes += $it['total_bytes'];
+					if ( empty( $it['exists'] ) ) {
+						++$pinned_missing;
+					}
 				}
 
 				if ( $it['unscaled_bytes'] > 0 ) {
@@ -494,6 +514,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 					'seo'        => array(
 						'missing_alt' => $missing_alt,
 					),
+				),
+				'whitelist'      => array(
+					'count'   => $pinned_count,
+					'bytes'   => $pinned_bytes,
+					'missing' => $pinned_missing,
 				),
 				'vault'          => $vault,
 				'lifetime_stats' => $saved,
@@ -717,7 +742,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Media_Inspector' ) ) {
 				} elseif ( ! in_array( $format, array( 'ALL', '', 'OPAQUE_PNG' ), true ) && $it['format'] !== $format ) {
 					continue;
 				}
-				if ( 'all' !== $usage && '' !== $usage && $it['usage_status'] !== $usage ) {
+				if ( 'pinned' === $usage ) {
+					// «لیست سفید» = هر رکوردی که علامت ★ دارد؛ حتی اگر فایلش روی
+					// دیسک نباشد (آن‌ها هم باید در همین فهرست دیده شوند).
+					if ( empty( $it['is_pinned'] ) ) {
+						continue;
+					}
+				} elseif ( 'all' !== $usage && '' !== $usage && $it['usage_status'] !== $usage ) {
 					continue;
 				}
 				if ( 'unoptimized' === $opt_flt && $it['is_optimized'] ) {

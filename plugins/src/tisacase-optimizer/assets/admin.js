@@ -136,6 +136,14 @@
 			search: '',
 			page: 1,
 		},
+		// «لیست سفید» (پین‌شده‌ها) — فهرست مستقل با جستجو و صفحه‌بندی خودش.
+		whitelistFilter: {
+			usage: 'pinned',
+			sort_by: 'total_bytes',
+			order: 'desc',
+			search: '',
+			page: 1,
+		},
 		seoFilter: 'missing_alt',
 		seoPage: 1,
 		// خلاصهٔ آخرین عملیات حذف/فشرده‌سازی برای نمایش شفاف «چه شد و چرا».
@@ -523,6 +531,7 @@
 		const counts = {
 			explorer: ov ? faNum(ov.total_images) : '',
 			unused: ov ? faNum(ov.quick_wins.unused.count + ov.quick_wins.unused.orphan_count) : '',
+			whitelist: ov && ov.whitelist ? faNum(ov.whitelist.count) : '',
 			restore: recCount > 0 ? faNum(recCount) : '',
 			compress: ov ? faNum(ov.quick_wins.compress.count) : '',
 			duplicates: ov ? faNum(ov.quick_wins.duplicates.groups) : '',
@@ -871,8 +880,14 @@
 	}
 
 	function renderUsageCell(row) {
-		if (row.usage_status === 'pinned') {
-			return '<span class="tco-pill tco-pill--warn">★ پین‌شده در لیست سفید</span>';
+		if (row.usage_status === 'pinned' || row.is_pinned) {
+			// پین‌شده = محافظت دائمی؛ اگر فایلش هم روی دیسک نباشد، همان‌جا گفته
+			// می‌شود تا در «لیست سفید» هم تصویر شکسته پنهان نماند.
+			return `<span class="tco-pill tco-pill--warn">★ پین‌شده در لیست سفید</span>${
+				row.exists === false
+					? '<div class="tco-subtext">فایل این رکورد روی هاست نیست (۴۰۴) — محافظت روی رکورد باقی است.</div>'
+					: ''
+			}`;
 		}
 		if (row.usage_status === 'missing_file') {
 			// مسیر دقیقی که وردپرس انتظار دارد فایل را همان‌جا ببیند؛ همان چیزی که
@@ -957,7 +972,8 @@
 		</div>`;
 	}
 
-	function renderAttachmentRows(rows, maxBytes) {
+	function renderAttachmentRows(rows, maxBytes, mode) {
+		const isWhitelist = mode === 'whitelist';
 		if (!rows || !rows.length) {
 			return '<tr><td colspan="6"><div class="tco-empty-state">موردی مطابق این فیلتر یافت نشد.</div></td></tr>';
 		}
@@ -1005,14 +1021,20 @@
 					<td>
 						<div class="tco-row-actions">
 							${
-								r.usage_status === 'missing_file'
+								isWhitelist
+									? `<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-pin-one="${r.id}" data-pinned="1" title="این تصویر دیگر در برابر حذف گروهی محافظت نمی‌شود؛ خودِ فایل پاک نمی‌شود">خروج از لیست سفید</button>
+									<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-inspect="${r.id}" title="جزئیات و نقشهٔ محل استفاده">جزئیات</button>`
+									: ''
+							}
+							${
+								isWhitelist ? '' : r.usage_status === 'missing_file'
 									? '<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" disabled title="فشرده‌سازی ممکن نیست: فایل این تصویر روی دیسک نیست. اول فایل را به همان مسیر برگردانید و «اسکن مجدد» بزنید.">بهینه (فایل نیست)</button>'
 									: `<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-opt-one="${r.id}" title="فشرده‌سازی و تبدیل">بهینه</button>`
 							}
-							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-inspect="${r.id}" title="مقایسه قبل/بعد و جزئیات">جزئیات</button>
-							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tco-pin-btn${r.is_pinned ? ' is-pinned' : ''}" data-pin-one="${r.id}" data-pinned="${r.is_pinned ? '1' : '0'}" title="محافظت دائمی در لیست سفید">★</button>
+							${isWhitelist ? '' : `<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-inspect="${r.id}" title="مقایسه قبل/بعد و جزئیات">جزئیات</button>
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm tco-pin-btn${r.is_pinned ? ' is-pinned' : ''}" data-pin-one="${r.id}" data-pinned="${r.is_pinned ? '1' : '0'}" title="محافظت دائمی در لیست سفید — این تصویر هرگز حذف/قرنطینه نمی‌شود">★</button>`}
 							${
-								r.usage_status === 'missing_file'
+								isWhitelist ? '' : r.usage_status === 'missing_file'
 									? `<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm${armed ? ' is-armed' : ''}" data-remove-one="${r.id}" title="فایلی روی دیسک نیست؛ فقط رکورد کتابخانه قرنطینه می‌شود و در صورت نیاز قابل بازگردانی است">${armed ? 'تأیید پاک‌کردن رکورد؟' : 'پاک‌کردن رکورد'}</button>`
 									: state.deleteMode === 'permanent'
 										? `<button type="button" class="tisa-btn tisa-btn--sm tco-btn-danger${armed ? ' is-armed' : ''}" data-remove-one="${r.id}">${armed ? 'تأیید حذف؟' : 'حذف قطعی'}</button>`
@@ -1175,6 +1197,15 @@
 
 				${u.usage === 'missing_file' ? renderMissingFileGuide() : ''}
 
+				${
+					state.overview && state.overview.whitelist && state.overview.whitelist.count > 0
+						? `<div class="tco-hint">
+							${faNum(state.overview.whitelist.count)} تصویر در «لیست سفید» (محافظت دائمی) هستند و عمداً در این فهرست نمی‌آیند.
+							<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" data-go-subtab="whitelist">دیدن لیست سفید</button>
+						</div>`
+						: ''
+				}
+
 				<div class="tco-bulkbar">
 					<div>
 						<strong>${data ? faNum(data.total) : '۰'} مورد در این بخش (${formatBytes(data ? data.matched_bytes : 0)})</strong>
@@ -1255,6 +1286,105 @@
 					pages: data ? data.pages : 1,
 					total: data ? data.total : rows.length,
 					scope: data && data.matching_ids ? data.matching_ids.length : rows.length,
+				})}
+			</div>
+		</div>`;
+	}
+
+	/**
+	 * «لیست سفید» — جایی که کاربر باید بتواند فایل‌های محافظت‌شده را ببیند.
+	 *
+	 * چرا اضافه شد؟ کاربر پرسید «فایل‌هایی که در لیست محافظت دائمی گذاشتم چه
+	 * شدند، کجا می‌بینمشان؟». قبلاً این فایل‌ها فقط با یک فیلتر تودرتو در
+	 * کاوشگر دیده می‌شدند (و از فهرست «بدون استفاده» هم عمداً حذف می‌شوند)، پس
+	 * عملاً پیدا نمی‌شدند. حالا یک زیرشاخهٔ مستقل با تعداد، جستجو، صفحه‌بندی و
+	 * دکمهٔ «خروج از لیست سفید» دارند.
+	 *
+	 * @return {string}
+	 */
+	function renderWhitelistTab() {
+		const data = state.media;
+		const rows = (data && data.rows) || [];
+		const maxBytes = rows.reduce((m, r) => Math.max(m, r.total_bytes || 0), 0);
+		const ov = state.overview || {};
+		const wl = ov.whitelist || {};
+		const total = data ? Number(data.total || 0) : rows.length;
+		const bytes = data ? Number(data.matched_bytes || 0) : 0;
+		const missing = Number(wl.missing || 0);
+		const selCount = state.selectedIds.size;
+		const unpinArm = state.armedKey === 'bulk-unpin';
+
+		return `<div class="tco-stack">
+			<div class="tco-guide">
+				<h3 class="tco-guide__title">لیست سفید (محافظت دائمی) — این فایل‌ها هرگز پاک نمی‌شوند</h3>
+				<p class="tco-guide__text">
+					هر تصویری که با دکمهٔ <strong>★</strong> علامت بزنید به این فهرست می‌آید. افزونه این فایل‌ها را
+					در هیچ عملیات گروهی (قرنطینه، حذف قطعی، ادغام تکراری‌ها) حذف نمی‌کند و عمداً از فهرست
+					«بدون استفاده» هم بیرون نگه می‌دارد تا اشتباهی پاک نشوند.
+					هم‌اکنون <strong>${faNum(wl.count != null ? wl.count : total)} مورد</strong> در لیست سفید است${bytes > 0 ? ` (${formatBytes(bytes)} روی دیسک)` : ''}.
+				</p>
+				<p class="tco-guide__note">
+					«خروج از لیست سفید» فقط همین محافظت را برمی‌دارد؛ هیچ فایلی پاک نمی‌شود. بعد از خروج، تصویر
+					دوباره در فهرست «بدون استفاده» دیده می‌شود و خودتان تصمیم می‌گیرید.
+				</p>
+			</div>
+
+			${
+				missing > 0
+					? `<div class="tco-hint tco-hint--warn">${faNum(missing)} مورد از فایل‌های لیست سفید، رکورد دارند ولی فایلشان روی هاست نیست (۴۰۴). محافظت روی رکورد باقی است؛ برای بررسی، زیرشاخهٔ «فایل گم‌شده» را ببینید.</div>`
+					: ''
+			}
+
+			<div class="tco-card">
+				<div class="tco-card__head">
+					<div>
+						<h2 class="tco-card__title">فایل‌های محافظت‌شده</h2>
+						<p class="tco-card__desc">مرتب‌شده بر اساس حجم دیسک؛ برای برداشتن محافظت، «خروج از لیست سفید» را بزنید.</p>
+					</div>
+					<input type="search" class="tco-input" id="tco-wl-q" value="${esc(state.whitelistFilter.search || '')}" placeholder="جستجو در نام فایل، عنوان یا شناسه…">
+				</div>
+
+				<div class="tco-bulkbar">
+					<div>
+						<strong>${faNum(total)} مورد در لیست سفید (${formatBytes(bytes)})</strong>
+						${selCount > 0 ? ` · <span class="tco-pill tco-pill--ok">${faNum(selCount)} مورد انتخاب شده</span>` : ''}
+						${selCount > 0 ? ' <button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-clear-sel">لغو انتخاب</button>' : ''}
+					</div>
+					<div class="tco-bulkbar__actions">
+						<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm ${unpinArm ? 'is-armed' : ''}" id="tco-bulk-unpin" ${selCount === 0 ? 'disabled title="ابتدا حداقل یک مورد را تیک بزنید"' : ''}>
+							${unpinArm ? `تأیید خروج ${faNum(selCount)} مورد از لیست سفید؟` : `خروج انتخابی از لیست سفید (${faNum(selCount)})`}
+						</button>
+					</div>
+				</div>
+
+				<div class="tco-table-wrap">
+					<table class="tco-table">
+						<thead>
+							<tr>
+								<th><input type="checkbox" id="tco-check-page" ${rows.length && rows.every((r) => state.selectedIds.has(r.id)) ? 'checked' : ''}></th>
+								<th>تصویر و مشخصات فایل</th>
+								<th>فرمت و ابعاد</th>
+								<th>حجم واقعی کل دیسک</th>
+								<th>وضعیت</th>
+								<th>عملیات</th>
+							</tr>
+						</thead>
+						<tbody>${
+							rows.length
+								? renderAttachmentRows(rows, maxBytes, 'whitelist')
+								: `<tr><td colspan="6"><div class="tco-empty-state">
+									هنوز هیچ فایلی در لیست سفید نیست. برای محافظت دائمی، در «سنگین‌ترین تصاویر» یا «تصاویر بدون استفاده» ستارهٔ ★ هر ردیف را بزنید.
+									<br><button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" data-go-subtab="explorer">رفتن به کاوشگر تصاویر</button>
+								</div></td></tr>`
+						}</tbody>
+					</table>
+				</div>
+
+				${renderPager({
+					page: data ? data.page : 1,
+					pages: data ? data.pages : 1,
+					total: total,
+					scope: rows.length,
 				})}
 			</div>
 		</div>`;
@@ -1455,6 +1585,15 @@
 				},
 			};
 		}
+		if (state.subtab === 'whitelist') {
+			return {
+				name: 'whitelist',
+				get: () => Number(state.whitelistFilter.page || 1),
+				set: (p) => {
+					state.whitelistFilter.page = p;
+				},
+			};
+		}
 		if (state.subtab === 'seo') {
 			return {
 				name: 'seo',
@@ -1508,7 +1647,7 @@
 	async function applyPerPage(value) {
 		const perPage = Math.max(0, Math.min(500, Number(value) || 0));
 		state.perPage = perPage;
-		['explorerFilter', 'unusedFilter'].forEach((k) => {
+		['explorerFilter', 'unusedFilter', 'whitelistFilter'].forEach((k) => {
 			state[k].page = 1;
 		});
 		state.dupPage = 1;
@@ -2150,6 +2289,7 @@
 			if (state.subtab === 'overview') body = renderOverviewTab();
 			else if (state.subtab === 'explorer') body = renderExplorerTab();
 			else if (state.subtab === 'unused') body = renderUnusedTab();
+			else if (state.subtab === 'whitelist') body = renderWhitelistTab();
 			else if (state.subtab === 'restore') body = renderVaultModule();
 			else if (state.subtab === 'compress') body = renderCompressTab();
 			else if (state.subtab === 'duplicates') body = renderDuplicatesTab();
@@ -2285,6 +2425,8 @@
 					state.media = await api('query_media', Object.assign({}, state.explorerFilter, { per_page: state.perPage }));
 				} else if (state.subtab === 'unused') {
 					state.media = await api('query_media', Object.assign({}, state.unusedFilter, { per_page: state.perPage }));
+				} else if (state.subtab === 'whitelist') {
+					state.media = await api('query_media', Object.assign({}, state.whitelistFilter, { per_page: state.perPage }));
 
 				} else if (state.subtab === 'restore') {
 					state.vault = await api('get_vault');
@@ -3262,6 +3404,13 @@
 			const isPinned = pinBtn.getAttribute('data-pinned') === '1';
 			const res = await api('toggle_pin', { ids: [id], pin: isPinned ? 0 : 1 });
 			if (res.overview) state.overview = res.overview;
+			// شمارندهٔ زیرشاخهٔ «لیست سفید» فوراً درست شود (بدون انتظار برای اسکن).
+			if (res && Array.isArray(res.pinned_ids)) {
+				state.overview = state.overview || {};
+				state.overview.whitelist = Object.assign({}, state.overview.whitelist || {}, {
+					count: res.pinned_ids.length,
+				});
+			}
 			toast(isPinned ? 'از لیست سفید خارج شد.' : 'در لیست سفید محافظت دائمی پین شد ★');
 			await ensureDataForCurrentView(false);
 			return;
@@ -3307,6 +3456,24 @@
 				return;
 			}
 			await runBatchOptimize([...state.selectedIds], { replaceMode: true });
+			return;
+		}
+
+		if (ev.target.closest('#tco-bulk-unpin')) {
+			// خروج گروهی از لیست سفید: فقط محافظت برداشته می‌شود، هیچ فایلی
+			// پاک نمی‌شود؛ با این حال دو کلیک می‌خواهد (عملیات گروهی است).
+			if (!armConfirm('bulk-unpin')) {
+				return;
+			}
+			const unpinIds = [...state.selectedIds];
+			if (!unpinIds.length) {
+				return;
+			}
+			const res = await api('toggle_pin', { ids: unpinIds, pin: 0 });
+			if (res && res.overview) state.overview = res.overview;
+			state.selectedIds.clear();
+			toast(`${faNum(unpinIds.length)} مورد از لیست سفید خارج شد — هیچ فایلی پاک نشد.`, 'success');
+			await ensureDataForCurrentView(false);
 			return;
 		}
 
@@ -3696,6 +3863,7 @@
 		'[data-pick-master]',
 		'[data-page-delta]',
 		'[data-page-edge]',
+		'#tco-bulk-unpin',
 		'#tco-dismiss-run',
 		'#tco-rescan-unused',
 		'[data-copy-path]',
@@ -3842,6 +4010,15 @@
 				el.focus();
 				el.setSelectionRange(el.value.length, el.value.length);
 			}
+			return;
+		}
+		if (ev.target.id === 'tco-wl-q') {
+			state.whitelistFilter.search = ev.target.value;
+			state.whitelistFilter.page = 1;
+			clearTimeout(searchDebounce);
+			searchDebounce = setTimeout(() => {
+				ensureDataForCurrentView(false);
+			}, 260);
 			return;
 		}
 		if (ev.target.id === 'tco-exp-q') {

@@ -1008,4 +1008,61 @@ const missDel = missRows[0].querySelector('[data-remove-one]');
 assert.ok(missDel && /پاک‌کردن رکورد/.test(missDel.textContent), 'دکمهٔ حذف باید «پاک‌کردن رکورد» نام داشته باشد');
 assert.match(window.document.getElementById('tco-main').textContent, /فقط رکورد/, 'نوار عملیات باید بگوید فقط رکورد پاک می‌شود');
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۲ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» و «توضیح رکورد بدون فایل (۴۰۴)») با موفقیت اجرا شدند!');
+// ۲۳. «لیست سفید» (محافظت دائمی) باید جای مشخص و قابل‌بازگشتی داشته باشد:
+// زیرشاخهٔ مستقل با تعداد، توضیح، دکمهٔ «خروج از لیست سفید» در هر ردیف و
+// خروج گروهی با تأیید دوم.
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+
+let pinTarget = null;
+for (const btn of window.document.querySelectorAll('#tco-main .tco-pin-btn')) {
+	if (btn.getAttribute('data-pinned') === '0') {
+		pinTarget = btn;
+		break;
+	}
+}
+assert.ok(pinTarget, 'برای آزمون باید ردیف پین‌نشده‌ای در کاوشگر باشد');
+const pinTargetId = pinTarget.getAttribute('data-pin-one');
+pinTarget.click();
+await flush();
+await new Promise((r) => setTimeout(r, 120));
+assert.match(window.document.getElementById('tco-toasts').textContent, /لیست سفید/, 'پین‌کردن باید پیام تأیید بدهد');
+
+const wlTab = window.document.querySelector('[data-go-subtab="whitelist"]');
+assert.ok(wlTab, 'زیرشاخهٔ «لیست سفید» باید در نوار بالا باشد');
+assert.match(wlTab.textContent, /لیست سفید/, 'نام زیرشاخه باید صریح باشد');
+wlTab.click();
+await flush();
+
+const wlMain = window.document.getElementById('tco-main');
+assert.match(wlMain.textContent, /محافظت دائمی/, 'صفحه باید توضیح بدهد این فهرست چیست');
+assert.match(wlMain.textContent, /هرگز پاک نمی‌شوند/, 'باید بگوید این فایل‌ها هرگز پاک نمی‌شوند');
+assert.match(wlMain.textContent, /هیچ فایلی پاک نمی‌شود/, 'باید بگوید خروج از لیست سفید فایل را پاک نمی‌کند');
+
+const wlRows = [...wlMain.querySelectorAll('tbody tr[data-row-id]')];
+assert.ok(wlRows.length >= 1, 'فایل‌های پین‌شده باید در همین فهرست دیده شوند');
+assert.ok(
+	wlRows.some((tr) => tr.getAttribute('data-row-id') === pinTargetId),
+	'همان فایلی که همین حالا پین شد باید در لیست سفید باشد'
+);
+const wlRow = wlRows.find((tr) => tr.getAttribute('data-row-id') === pinTargetId);
+const unpinBtn = wlRow.querySelector('[data-pin-one][data-pinned="1"]');
+assert.ok(unpinBtn, 'هر ردیف باید دکمهٔ «خروج از لیست سفید» داشته باشد');
+assert.match(unpinBtn.textContent, /خروج از لیست سفید/, 'متن دکمه باید گویا باشد');
+assert.equal(wlRow.querySelector('[data-remove-one]'), null, 'در لیست سفید نباید دکمهٔ حذف/قرنطینه باشد');
+
+const wlBadge = wlTab.querySelector('.tco-subnav__badge');
+assert.ok(wlBadge && /\d|۰|۱|۲|۳|۴|۵|۶|۷|۸|۹/.test(wlBadge.textContent), 'زیرشاخه باید تعداد فایل‌های محافظت‌شده را نشان دهد');
+
+unpinBtn.click();
+await flush();
+await new Promise((r) => setTimeout(r, 120));
+assert.match(
+	window.document.getElementById('tco-toasts').textContent,
+	/از لیست سفید خارج شد/,
+	'خروج از لیست سفید باید پیام تأیید بدهد'
+);
+const wlAfter = [...window.document.querySelectorAll('#tco-main tbody tr[data-row-id]')].map((tr) => tr.getAttribute('data-row-id'));
+assert.ok(!wlAfter.includes(pinTargetId), 'بعد از خروج، فایل باید از لیست سفید حذف شود');
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۳ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید») با موفقیت اجرا شدند!');

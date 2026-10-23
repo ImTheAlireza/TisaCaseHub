@@ -567,6 +567,7 @@
 		const strictUnused = rows.filter((r) => r.usage_status === 'strict_unused');
 		const drafts = rows.filter((r) => r.usage_status === 'draft_only');
 		const missing = rows.filter((r) => r.usage_status === 'missing_file');
+		const pinnedRows = rows.filter((r) => r.is_pinned);
 		const unscaled = rows.filter((r) => r.unscaled_bytes > 0);
 		const unopt = rows.filter((r) => !r.is_optimized);
 		const dups = computeDuplicates();
@@ -609,6 +610,11 @@
 				seo: {
 					missing_alt: rows.filter((r) => !r.alt).length,
 				},
+			},
+			whitelist: {
+				count: pinnedRows.length,
+				bytes: pinnedRows.reduce((s, r) => s + r.total_bytes, 0),
+				missing: pinnedRows.filter((r) => r.exists === false).length,
 			},
 			vault: {
 				quarantine_count: db.quarantine.length,
@@ -757,11 +763,12 @@
 				id: 'images',
 				title: 'تصاویر و رسانه',
 				icon: 'image',
-				badge: 'فعال · ۸ ابزار کامل',
+				badge: 'فعال · ۹ ابزار کامل',
 				subtabs: {
 					overview: 'نمای کلی دیسک',
 					explorer: 'سنگین‌ترین تصاویر',
 					unused: 'تصاویر بدون استفاده',
+					whitelist: 'لیست سفید (پین‌شده‌ها)',
 					restore: 'پشتیبان و بازگردانی',
 					compress: 'فشرده‌سازی و WebP',
 					duplicates: 'تصاویر تکراری',
@@ -1177,7 +1184,9 @@
 				if (req.format && req.format !== 'ALL') {
 					rows = rows.filter((r) => (req.format === 'OPAQUE_PNG' ? r.is_opaque_png : r.format === req.format));
 				}
-				if (req.usage && req.usage !== 'all') {
+				if (req.usage === 'pinned') {
+					rows = rows.filter((r) => r.is_pinned);
+				} else if (req.usage && req.usage !== 'all') {
 					rows = rows.filter((r) => r.usage_status === req.usage);
 				}
 
@@ -1203,7 +1212,10 @@
 			db.items.forEach((it) => {
 				if (ids.includes(it.id)) it.is_pinned = Number(req.pin) === 1;
 			});
-			data = { pinned_ids: db.items.filter((i) => i.is_pinned).map((i) => i.id) };
+			data = {
+				pinned_ids: db.items.filter((i) => i.is_pinned).map((i) => i.id),
+				overview: computeOverview(),
+			};
 		} else if (op === 'remove_items') {
 			// شبیه‌ساز موتور کار «قابل ادامه» با فاز راستی‌آزمایی (verify) و اجرا (run).
 			const tickMax = Number(window.__tcoMockTickMax || 6);
