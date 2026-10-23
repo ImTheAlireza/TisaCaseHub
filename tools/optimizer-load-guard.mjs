@@ -37,6 +37,7 @@ const settings = read(`${P}/includes/class-tco-settings.php`);
 const admin = read(`${P}/assets/admin.js`);
 const preview = read(`${P}/includes/class-tco-preview.php`);
 const scanner = read(`${P}/includes/class-tco-reference-scanner.php`);
+const runner = read(`${P}/includes/class-tco-server-runner.php`);
 const dedupe = read(`${P}/includes/class-tco-deduplicator.php`);
 
 let pass = 0;
@@ -223,6 +224,24 @@ ok('شمارش فایل‌های پوشه با بودجهٔ زمانی و سقف
 ok('رابط کاربری ورودی مسیر پوشه و دکمهٔ افزودن دارد', admin.includes('tco-wl-folder-add') && admin.includes('tco-wl-folder-input'));
 ok('هر پوشه دکمهٔ «حذف از لیست سفید» دارد (مسیر بن‌بست نیست)', /data-wl-folder-remove/.test(admin));
 ok('حذف از لیست سفید صریحاً می‌گوید هیچ فایلی پاک نشد', admin.includes('هیچ فایلی پاک نشد'));
+
+console.log('── ۱۱) «اجرا روی خود هاست»: کار بدون مرورگر ──');
+ok('موتور سمت هاست کلاس مستقل و قابل‌بارگذاری تنبل دارد', runner.includes('class TisaCase_Optimizer_Server_Runner') && boot.includes("'TisaCase_Optimizer_Server_Runner'     => 'class-tco-server-runner.php'"));
+ok('کرون در کران‌های ۳۰/۶۰ ثانیه‌ای سفارشی ثبت می‌شود', /function add_schedules/.test(runner) && runner.includes('tco_runner_30s') && runner.includes('tco_runner_60s'));
+ok('هر تیک سقف زمان و سقف تعداد دارد (نه نزدیک ۲۸ ثانیه)', /runner_tick_ms/.test(runner) && /runner_tick_max/.test(runner) && runner.includes('min( 8000'));
+ok('قفل اتمیک ضد تیک هم‌زمان وجود دارد', /add_option\( self::LOCK_OPTION/.test(runner) && /LOCK_TTL/.test(runner) && /function release_lock/.test(runner));
+ok('قفل رهاشده بعد از TTL آزاد می‌شود (کار هیچ‌وقت گیر نمی‌کند)', /LOCK_TTL\s*=\s*\d+/.test(runner) && /update_option\( self::LOCK_OPTION, \$now/.test(runner));
+ok('پیشرفت هر آیتم در سرور ذخیره می‌شود (مقاوم به مرگ PHP)', /(self|TisaCase_Optimizer_Job)::save\( \$job \)/.test(job) && /advance_now/.test(job));
+ok('پس از بستن مرورگر، PHP تیک را نیمه‌کاره رها نمی‌کند', /ignore_user_abort\( true \)/.test(runner) && /set_time_limit/.test(runner));
+ok('نتیجهٔ کار در نبود کاربر ذخیره و قابل دیدن است', /LAST_RESULT_OPTION/.test(runner) && /function last_result/.test(runner));
+ok('کار فعال از کرون قابل بیدارشدن فوری است (spawn_cron)', /spawn_cron\(\)/.test(runner) && /function wake/.test(runner));
+ok('نخستین درخواست کار را به هاست می‌سپارد (نه پردازش در مرورگر)', /runner_started/.test(job) && /TisaCase_Optimizer_Server_Runner::wake\(\)/.test(job));
+ok('کرون کارِ حالت پنل را هم‌زمان جلو نمی‌برد (ضد پردازش دوباره)', /panel_job/.test(runner));
+ok('کلید روشن/خاموش در تنظیمات هست', /'server_runner'/.test(settings) && /'runner_interval'/.test(settings));
+ok('رابط کاربری کلید و وضعیت کرون را نشان می‌دهد', admin.includes('tco-runner-toggle') && admin.includes('tco-runner-now') && /function renderRunnerCard/.test(admin));
+ok('در حین اجرا صریح می‌گوید «روی هاست اجرا می‌شود»', admin.includes('روی هاست اجرا می‌شود'));
+ok('اگر کرون هاست خواب بود، پنل بن‌بست نمی‌شود (تیک دستی)', admin.includes("api('runner_tick')") || /hostAwareCall/.test(admin));
+ok('نتیجهٔ کار در نبود کاربر در کارت نشان داده می‌شود', admin.includes('آخرین عملیاتی که روی هاست تمام شد'));
 
 console.log('');
 if (fails.length) {

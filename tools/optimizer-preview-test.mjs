@@ -31,6 +31,10 @@ window.eval(appSrc);
 
 const flush = () => new Promise((r) => setTimeout(r, 35));
 
+// سناریوهای ۱ تا ۲۵ موتور «مرورگرمحور» را می‌آزمایند؛ بخش ۲۶ خودش موتور
+// سمت هاست را روشن می‌کند. (پیش‌فرض پیش‌نمایش، مثل افزونهٔ واقعی، روشن است.)
+window.__tcoMockSetRunner(false);
+
 await flush();
 
 // ۱. بررسی بارگذاری هر ۵ ماژول و نمای کلی دیسک
@@ -1219,4 +1223,95 @@ assert.equal(
 	'پس از حذف پوشه از لیست سفید، همهٔ فایل‌ها دوباره باید دیده شوند (هیچ فایلی پاک نشده)'
 );
 
-console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۵ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید» و «بازگردانی دسته‌ای بر اساس علت + بندانگشتی و پیش‌نمایش» و «وایت‌لیست کردن یک پوشه (مستندات مالی)») با موفقیت اجرا شدند!');
+// ۲۶. «اجرای عملیات روی خود هاست»: با زدن دکمه، کار به موتور سمت هاست
+// سپرده می‌شود و مرورگر فقط ناظر است؛ بستن مرورگر کار را متوقف نمی‌کند.
+window.__tcoMockJob = null;
+Object.keys(window.__tcoMockJobs || {}).forEach((k) => {
+	delete window.__tcoMockJobs[k];
+});
+window.__tcoMockLatency = 0;
+
+window.document.querySelector('[data-go-subtab="explorer"]').click();
+await flush();
+const runnerCard = window.document.querySelector('.tco-runner');
+assert.ok(runnerCard, 'کارت «اجرا روی خود هاست» باید در بخش تصاویر دیده شود');
+assert.match(runnerCard.textContent, /خاموش/, 'پیش‌فرض پیش‌نمایش: کلید اجرای روی هاست خاموش است');
+
+// روشن‌کردن کلید
+window.document.getElementById('tco-runner-toggle').click();
+await new Promise((r) => setTimeout(r, 250));
+await flush();
+assert.match(window.document.getElementById('tco-toasts').textContent, /روی هاست روشن شد/, 'روشن‌کردن باید پیام صریح بدهد');
+assert.match(window.document.querySelector('.tco-runner').textContent, /روشن/, 'کارت باید وضعیت روشن را نشان دهد');
+
+// انتخاب همهٔ صفحه و شروع فشرده‌سازی
+[...window.document.querySelectorAll('#tco-main tbody tr')].forEach((tr) => {
+	const it = window.__tcoMockItem(tr.getAttribute('data-row-id'));
+	if (it) it.is_optimized = false;
+});
+const hostCheck = window.document.getElementById('tco-check-page');
+hostCheck.checked = true;
+hostCheck.dispatchEvent(new window.Event('change', { bubbles: true }));
+await flush();
+const hostBatchTotal = Object.values(window.__tcoSelected || {}).length || window.document.querySelectorAll('#tco-main tbody tr').length;
+// اندازهٔ هر تیک کرون شبیه‌سازی‌شده: بزرگ تا صف (که از بخش‌های قبلی
+// بزرگ شده) در یک تیک تمام شود و آزمون کند نباشد.
+window.__tcoMockHostTick = 400;
+window.document.getElementById('tco-bulk-opt').click();
+await new Promise((r) => setTimeout(r, 300));
+await flush();
+
+const hostJob = Object.values(window.__tcoMockJobs || {}).find((j) => j.byHost);
+assert.ok(hostJob, 'کار باید به موتور سمت هاست سپرده شود (نه گردانده‌شده با مرورگر)');
+assert.equal(hostJob.done, 0, 'در لحظهٔ سپردن، هیچ موردی با مرورگر پردازش نمی‌شود');
+assert.match(
+	window.document.getElementById('tco-toasts').textContent,
+	/روی خود هاست شروع شد/,
+	'باید صریح بگوید کار روی هاست شروع شد و می‌توان صفحه را بست'
+);
+assert.match(
+	window.document.getElementById('tco-main').textContent,
+	/روی هاست اجرا می‌شود/,
+	'نوار پیشرفت باید نشان دهد کار روی هاست اجرا می‌شود'
+);
+
+// صبر تا پایان کار توسط «کرون هاست» (شبیه‌سازی: هر poll دو مورد)
+let hostFinished = false;
+for (let i = 0; i < 40; i += 1) {
+	await new Promise((r) => setTimeout(r, 250));
+	await flush();
+	const running = Object.values(window.__tcoMockJobs || {}).find((j) => j.status === 'running');
+	if (!running && hostJob.status === 'done') {
+		hostFinished = true;
+		break;
+	}
+}
+assert.ok(hostFinished, 'کار باید بدون هیچ درخواست سنگینی از مرورگر روی هاست تمام شود');
+assert.ok(hostJob.done >= 1, 'پیشرفت باید واقعاً روی هاست ثبت شده باشد');
+
+// کارت نتیجهٔ کارِ تمام‌شده در نبود کاربر
+await new Promise((r) => setTimeout(r, 600));
+await flush();
+const runnerCard2 = window.document.querySelector('.tco-runner');
+assert.match(runnerCard2.textContent, /آخرین عملیاتی که روی هاست تمام شد/, 'نتیجهٔ کار هاست باید در کارت بماند');
+assert.match(runnerCard2.textContent, /فشرده‌سازی/, 'نوع عملیات باید در کارت نتیجه بیاید');
+
+// بستن کارت نتیجه
+const closeRes = window.document.getElementById('tco-host-result-close');
+assert.ok(closeRes, 'کارت نتیجه باید دکمهٔ بستن داشته باشد');
+closeRes.click();
+await new Promise((r) => setTimeout(r, 200));
+await flush();
+assert.ok(
+	!/آخرین عملیاتی که روی هاست تمام شد/.test(window.document.querySelector('.tco-runner').textContent),
+	'با بستن، کارت نتیجه باید کنار برود'
+);
+
+// خاموش‌کردن: از این پس پیشرفت با صفحه انجام می‌شود
+window.document.getElementById('tco-runner-toggle').click();
+await new Promise((r) => setTimeout(r, 250));
+await flush();
+assert.match(window.document.getElementById('tco-toasts').textContent, /خاموش شد/, 'خاموش‌کردن باید پیام صریح بدهد');
+assert.match(window.document.querySelector('.tco-runner').textContent, /خاموش/, 'کارت باید وضعیت خاموش را نشان دهد');
+
+console.log('✓ تمام سناریوهای تعاملی E2E مرکز بهینه‌سازی تیساکیس (۲۶ بخش شامل موتور اسکن نسل ۳، بازگردانی کامل نوبت‌ها، بازخورد جهانی «در حال انجام»، ادامهٔ کار حذف انبوه پس از قطع ناگهانی، اعلام صریح دلیل وقتی هیچ تصویری حذف نمی‌شود، موتور کار یکسان برای فشرده‌سازی/بازگردانی، و کارت‌های «قدم بعدی» و «چکاپ سرور»، سناریوی «تعارض کار»، «رهاکردن خودکار کار کهنه»، «صفحه‌بندی و انتخاب تعداد در هر صفحه» «بررسی بلااستفاده در خودِ اسکن و شفافیت نتیجهٔ حذف» و «کوتاه و شفاف بودن تیک‌های حذف» «توضیح رکورد بدون فایل (۴۰۴)» و «دیدن و برداشتن محافظت لیست سفید» و «بازگردانی دسته‌ای بر اساس علت + بندانگشتی و پیش‌نمایش» و «وایت‌لیست کردن یک پوشه (مستندات مالی)» و «اجرای عملیات روی خود هاست (بدون نیاز به مرورگر)») با موفقیت اجرا شدند!');

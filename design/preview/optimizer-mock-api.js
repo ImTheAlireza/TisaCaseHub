@@ -166,6 +166,13 @@
 	const faNum = (n) => String(Number(n) || 0).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[Number(d)]);
 
 	const db = {
+		// «اجرا روی خود هاست»: در پیش‌نمایش، کرون هاست شبیه‌سازی می‌شود؛ هر
+		// poll وضعیت، معادل یک تیک کرون است (پیش‌فرض خاموش تا بقیهٔ سناریوها
+		// مثل قبل با موتور مرورگر آزموده شوند).
+		serverRunner: true,
+		runnerTicks: 0,
+		runnerLastTick: 0,
+		runnerLast: null,
 		// پوشه‌های محافظت‌شده (وایت‌لیست پوشه) — همان چیزی که سرور در آپشن ذخیره می‌کند.
 		whitelistFolders: [],
 		settings: {
@@ -996,10 +1003,13 @@
 				last_error: '',
 				updated: mockNowSec(),
 			};
+			// «اجرا روی هاست»: کار ساخته می‌شود ولی تیکش با کرون هاست است، نه
+			// با همین درخواست؛ دقیقاً مثل سرور واقعی.
+			job.byHost = Boolean(db.serverRunner);
 			window.__tcoMockJobs[job.id] = job;
 		}
 
-		const chunk = job.queue.splice(0, perTick);
+		const chunk = job.byHost ? [] : job.queue.splice(0, perTick);
 		let payload = null;
 		let saved = 0;
 		if (chunk.length) {
@@ -1045,6 +1055,7 @@
 			hint: '',
 			block_reasons: [],
 			finished,
+			runner: { enabled: Boolean(db.serverRunner), by_host: Boolean(job.byHost) },
 		};
 
 		const out = {
@@ -1058,6 +1069,92 @@
 		};
 		if (finished && payload) Object.assign(out, payload);
 		return out;
+	}
+
+	// قلاب آزمون: روشن/خاموش‌کردن موتور هاست بدون کلیک در رابط.
+	window.__tcoMockSetRunner = (v) => {
+		db.serverRunner = Boolean(v);
+	};
+
+	// ── شبیه‌سازی «اجرای عملیات روی خود هاست» ─────────────────────────────
+	/**
+	 * وضعیت موتور سمت هاست (هم‌شکل با Server_Runner::status()).
+	 *
+	 * @return {Object}
+	 */
+	function mockRunnerStatus() {
+		const host = Object.values(window.__tcoMockJobs || {}).find((j) => j.status === 'running' && j.byHost);
+		const ago = db.runnerLastTick ? Math.max(0, mockNowSec() - db.runnerLastTick) : null;
+		return {
+			enabled: db.serverRunner,
+			interval: 30,
+			next_run: mockNowSec() + 30,
+			next_in: 30,
+			last_tick: db.runnerLastTick,
+			last_tick_ago: ago,
+			ticks: db.runnerTicks,
+			sleeping: false,
+			job_running: Boolean(host),
+			tick_ms: 4000,
+			tick_max: 25,
+		};
+	}
+
+	/**
+	 * یک تیک کرون هاست: چند مورد از کارِ سپرده‌شده را اجرا می‌کند.
+	 *
+	 * @param {number} n تعداد مورد در این تیک.
+	 * @return {number} تعداد انجام‌شده.
+	 */
+	function mockHostTick(n) {
+		const job = Object.values(window.__tcoMockJobs || {}).find((j) => j.status === 'running' && j.byHost);
+		if (!job) return 0;
+		const chunk = (job.queue || []).splice(0, Math.max(1, Number(n) || 2));
+		chunk.forEach((id) => {
+			const it = db.items.find((x) => Number(x.id) === Number(id));
+			if (it) {
+				it.is_optimized = true;
+				it.webp = it.webp || true;
+			}
+		});
+		job.done += chunk.length;
+		job.updated = mockNowSec();
+		db.runnerTicks += 1;
+		db.runnerLastTick = mockNowSec();
+		if (!job.queue.length) {
+			job.status = 'done';
+			db.runnerLast = { summary: mockHostSummary(job), finished: mockNowSec(), by_runner: true };
+		}
+		return chunk.length;
+	}
+
+	/**
+	 * خلاصهٔ کار برای کارت «در نبود شما تمام شد».
+	 *
+	 * @param {Object} job کار.
+	 * @return {Object}
+	 */
+	function mockHostSummary(job) {
+		return {
+			id: job.id,
+			op: job.op,
+			op_label: job.op === 'optimize' ? 'فشرده‌سازی' : 'بازگردانی',
+			mode: job.mode || '',
+			phase: 'finish',
+			status: job.status,
+			total: job.total,
+			done: job.done,
+			remaining: (job.queue || []).length,
+			verified: 0,
+			blocked_count: 0,
+			failed_count: job.failed || 0,
+			saved_bytes: job.saved || 0,
+			finished: job.status === 'done',
+			last_error: '',
+			hint: '',
+			block_reasons: [],
+			runner: { enabled: db.serverRunner, by_host: true },
+		};
 	}
 
 	// همان «توصیهٔ هوشمند» سرور واقعی برای هر زیرسایز.
@@ -1543,6 +1640,13 @@
 				reclaimed: reclaimedRemove || null,
 			};
 		} else if (op === 'job_status') {
+			// هر بار پرسیدن وضعیت = یک تیک کرون هاست (فقط اگر روشن باشد).
+			if (db.serverRunner) mockHostTick(Number(window.__tcoMockHostTick || 2));
+
+			const hostDone = db.serverRunner && !Object.values(window.__tcoMockJobs || {}).some((j) => j.status === 'running' && j.byHost)
+				? db.runnerLast
+				: null;
+
 			if (window.__tcoMockJob && window.__tcoMockJob.status === 'running') {
 				const j = window.__tcoMockJob;
 				const counts = {};
@@ -1615,10 +1719,33 @@
 								hint: '',
 								block_reasons: [],
 								finished: false,
+								runner: { enabled: Boolean(db.serverRunner), by_host: Boolean(other.byHost) },
 							},
 					  }
-					: { job: null };
+					: hostDone
+						? { job: hostDone.summary, last_result: hostDone, runner: mockRunnerStatus() }
+						: { job: null, runner: mockRunnerStatus() };
 			}
+		} else if (op === 'runner_status' || op === 'runner_toggle' || op === 'runner_tick' || op === 'runner_forget') {
+			if (op === 'runner_toggle') {
+				db.serverRunner = Boolean(Number(req.enabled));
+				if (db.serverRunner) db.runnerLastTick = mockNowSec();
+			}
+			let tick = null;
+			if (op === 'runner_tick') {
+				const n = mockHostTick(3);
+				tick = { ran: n > 0, done: n };
+			}
+			if (op === 'runner_forget') db.runnerLast = null;
+
+			const running = Object.values(window.__tcoMockJobs || {}).find((j) => j.status === 'running');
+			data = {
+				runner: mockRunnerStatus(),
+				job: running ? mockHostSummary(running) : null,
+				last_result: db.runnerLast,
+				overview: computeOverview(),
+			};
+			if (tick) data.tick = tick;
 		} else if (op === 'job_cancel') {
 			const job = window.__tcoMockJob;
 			// پیش از هر تغییری، کار «در جریان» را نگه می‌داریم تا گزارش دقیق بدهیم.

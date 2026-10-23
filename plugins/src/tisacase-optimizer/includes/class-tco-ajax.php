@@ -227,6 +227,35 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						self::handle_job_cancel();
 						break;
 
+					case 'runner_status':
+						self::ok( self::runner_payload() );
+						break;
+
+					case 'runner_toggle':
+						// phpcs:ignore WordPress.Security.NonceVerification.Missing
+						$on = ! empty( $_POST['enabled'] );
+						TisaCase_Optimizer_Settings::update( array( 'server_runner' => $on ? 1 : 0 ) );
+						TisaCase_Optimizer_Server_Runner::sync_schedule();
+						if ( $on ) {
+							TisaCase_Optimizer_Server_Runner::wake();
+						}
+						self::ok( self::runner_payload() );
+						break;
+
+					case 'runner_tick':
+						// «همین حالا ادامه بده»: یک تیک واقعی روی همین هاست
+						// (همان مسیری که کرون می‌زند؛ قفل ضد هم‌زمانی دارد).
+						$report = TisaCase_Optimizer_Server_Runner::tick();
+						$data   = self::runner_payload();
+						$data['tick'] = $report;
+						self::ok( $data );
+						break;
+
+					case 'runner_forget':
+						TisaCase_Optimizer_Server_Runner::forget_result();
+						self::ok( self::runner_payload() );
+						break;
+
 					case 'optimize_batch':
 						self::handle_optimize_batch();
 						break;
@@ -844,9 +873,39 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 		private static function handle_job_status() {
 			$job = TisaCase_Optimizer_Job::get();
 			if ( ! $job ) {
-				self::ok( array( 'job' => null ) );
+				self::ok(
+					array(
+						'job'    => null,
+						'runner' => TisaCase_Optimizer_Server_Runner::status(),
+					)
+				);
 			}
-			self::ok( array( 'job' => TisaCase_Optimizer_Job::summary( $job ) ) );
+			self::ok(
+				array(
+					'job'    => TisaCase_Optimizer_Job::summary( $job ),
+					'runner' => TisaCase_Optimizer_Server_Runner::status(),
+				)
+			);
+		}
+
+		/**
+		 * بستهٔ وضعیت «اجرا روی هاست» برای رابط کاربری.
+		 *
+		 * @return array<string,mixed>
+		 */
+		private static function runner_payload() {
+			$job     = TisaCase_Optimizer_Job::get();
+			$last    = TisaCase_Optimizer_Server_Runner::last_result();
+			$summary = ( $job && ! empty( $job['id'] ) ) ? TisaCase_Optimizer_Job::summary( $job ) : null;
+
+			return array(
+				'runner'      => TisaCase_Optimizer_Server_Runner::status(),
+				'job'         => $summary,
+				'last_result' => $last,
+				'overview'    => TisaCase_Optimizer_Media_Inspector::has_ready_catalog()
+					? TisaCase_Optimizer_Media_Inspector::overview_stats( false )
+					: null,
+			);
 		}
 
 		/**

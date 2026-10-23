@@ -148,6 +148,10 @@
 		seoPage: 1,
 		// خلاصهٔ آخرین عملیات حذف/فشرده‌سازی برای نمایش شفاف «چه شد و چرا».
 		lastRun: null,
+		// «اجرا روی هاست»: وضعیت کرون هاست و نتیجهٔ کاری که در نبود کاربر
+		// تمام شده است.
+		runner: null,
+		hostResult: null,
 		// پوشه‌های محافظت‌شده («وایت‌لیست پوشه») و آمار زندهٔ آن‌ها.
 		whitelistFolders: null,
 		whitelistFolderStats: null,
@@ -214,6 +218,10 @@
 		toggle_pin: 'به‌روزرسانی لیست سفید…',
 		save_whitelist_folders: 'ذخیرهٔ پوشه‌های محافظت‌شده…',
 		whitelist_folder_stats: 'شمارش فایل‌های پوشه‌های محافظت‌شده…',
+		runner_status: 'خواندن وضعیت اجرای روی هاست…',
+		runner_toggle: 'تغییر حالت اجرای روی هاست…',
+		runner_tick: 'اجرای تیک روی هاست…',
+		runner_forget: 'پاک‌کردن کارت نتیجه…',
 		save_single_seo: 'ذخیرهٔ متن جایگزین…',
 		bulk_generate_seo: 'تولید گروهی Alt و Title…',
 		restore_quarantine: 'بازگردانی از قرنطینه…',
@@ -638,6 +646,159 @@
 	}
 
 	/**
+	 * کارت «اجرا روی خود هاست».
+	 *
+	 * چرا؟ کاربر گفت: «دکمهٔ شروع فشرده‌سازی را می‌زنم، عملیات وابسته به خود
+	 * هاست باشه نه مرورگر من.» این کارت هم کلید روشن/خاموش دارد، هم صادقانه
+	 * می‌گوید کرون هاست آخرین بار کِی تیک زده، و هم نتیجهٔ کاری که در نبود
+	 * کاربر تمام شده را نشان می‌دهد.
+	 *
+	 * @return {string}
+	 */
+	function renderRunnerCard() {
+		const r = state.runner;
+		if (!r) return '';
+		const on = Boolean(r.enabled);
+		const ago = r.last_tick_ago == null ? null : Number(r.last_tick_ago);
+		const lastTxt = ago == null ? 'هنوز هیچ تیکی زده نشده' : `${faNum(ago)} ثانیه پیش`;
+		const result = state.hostResult;
+		const res = result && result.summary
+			? `<div class="tco-runner__result">
+					<strong>آخرین عملیاتی که روی هاست تمام شد:</strong>
+					${esc(opLabelOf(result.summary.op))} — ${faNum(result.summary.done)} از ${faNum(result.summary.total)} مورد انجام شد${
+						Number(result.summary.blocked_count || 0) > 0 ? ` · ${faNum(result.summary.blocked_count)} مورد محافظت‌شده` : ''
+					}${result.finished ? ` · ${esc(gmdateRelative(result.finished))}` : ''}
+					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-host-result-close">بستن</button>
+				</div>`
+			: '';
+
+		return `<div class="tco-card tco-runner ${on ? 'tco-runner--on' : ''}">
+			<div class="tco-card__head">
+				<div>
+					<h2 class="tco-card__title">اجرا روی خود هاست ${on ? '— روشن' : '— خاموش'}</h2>
+					<p class="tco-card__desc">
+						${
+							on
+								? `با زدن دکمهٔ هر عملیات (فشرده‌سازی، حذف، بازگردانی)، کار روی <strong>خود هاست</strong> پیش می‌رود؛
+									حتی اگر مرورگر را ببندید، اینترنت قطع شود یا سیستم را خاموش کنید، ادامه پیدا می‌کند و نتیجه‌اش همان‌جا ذخیره است.`
+								: 'در حالت خاموش، پیشرفت کار با همین صفحه انجام می‌شود و اگر مرورگر بسته شود کار می‌ایستد (پیشرفت ذخیره می‌ماند و با «ادامه» تکمیل می‌شود).'
+						}
+					</p>
+					<p class="tco-subtext">
+						${
+							on
+								? `هر ${faNum(r.interval)} ثانیه یک تیک کوچک (حداکثر ${faNum(r.tick_max)} مورد و ${faNum(Math.round(r.tick_ms / 1000))} ثانیه) — بسیار کمتر از سقف ۲۸ ثانیهٔ هاست.
+									آخرین تیک: ${lastTxt}${r.ticks ? ` · مجموع تیک‌ها: ${faNum(r.ticks)}` : ''}`
+								: 'کلید را روشن کنید تا کارها روی هاست ادامه پیدا کنند.'
+						}
+					</p>
+					${
+						on && r.sleeping
+							? `<p class="tco-hint tco-hint--warn">کرون هاست چند دقیقه است تیک نزده (بعضی هاست‌ها کرون را فقط با بازدید سایت اجرا می‌کنند). کار از بین نرفته: با دکمهٔ «همین حالا ادامه بده» یا نخستین بازدید سایت ادامه می‌یابد.</p>`
+							: ''
+					}
+					${res}
+				</div>
+				<div class="tco-row-actions">
+					<button type="button" class="tisa-btn ${on ? 'tisa-btn--secondary' : 'tisa-btn--primary'} tisa-btn--sm" id="tco-runner-toggle" data-runner-next="${on ? '0' : '1'}">
+						${on ? 'خاموش کردن اجرای روی هاست' : 'روشن کردن اجرای روی هاست'}
+					</button>
+					${on && r.job_running ? '<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-runner-now">همین حالا ادامه بده</button>' : ''}
+				</div>
+			</div>
+		</div>`;
+	}
+
+	/**
+	 * فاصلهٔ زمانی خوانا برای زمان پایان کار.
+	 *
+	 * @param {number} ts ثانیهٔ یونیکس.
+	 * @return {string}
+	 */
+	function gmdateRelative(ts) {
+		const diff = Math.max(0, Math.floor(Date.now() / 1000) - Number(ts || 0));
+		if (diff < 60) return 'همین حالا';
+		if (diff < 3600) return `${faNum(Math.floor(diff / 60))} دقیقه پیش`;
+		if (diff < 86400) return `${faNum(Math.floor(diff / 3600))} ساعت پیش`;
+		return `${faNum(Math.floor(diff / 86400))} روز پیش`;
+	}
+
+	/**
+	 * خواندن وضعیت «اجرا روی هاست» از سرور.
+	 *
+	 * @return {Promise<void>}
+	 */
+	async function loadRunner(payload) {
+		try {
+			const res = payload || (await api('runner_status'));
+			if (res && res.runner) state.runner = res.runner;
+			if (res && res.last_result) state.hostResult = res.last_result;
+			if (res && res.job && !res.job.finished) {
+				state.activeJob = state.activeJob || {
+					id: res.job.id,
+					op: res.job.op || 'remove',
+					done: res.job.done || 0,
+					total: res.job.total || 0,
+					remaining: res.job.remaining || 0,
+					blocked: res.job.blocked_count || 0,
+					failed: res.job.failed_count || 0,
+					phase: res.job.phase || '',
+					host: true,
+				};
+			}
+		} catch (e) {
+			/* وضعیت‌سنجی نباید صفحه را بشکند. */
+		}
+	}
+
+	/**
+	 * گذار به حالت «ناظر» وقتی سرور کار را به موتور سمت هاست سپرده است.
+	 *
+	 * @param {Object} job خلاصهٔ کار از سرور.
+	 * @return {void}
+	 */
+	function syncHostMode(job) {
+		if (state.batch.hostMode || !job || !job.runner || !job.runner.by_host) return;
+		state.batch.hostMode = true;
+		state.batch.hostDriven = true;
+		state.batch.hostIdleMs = 0;
+		toast('کار روی خود هاست شروع شد؛ می‌توانید این صفحه را ببندید یا سیستم را خاموش کنید — عملیات ادامه پیدا می‌کند و نتیجه همین‌جا می‌ماند.');
+	}
+
+	/**
+	 * یک گام از عملیات: در حالت هاست فقط نگاه می‌کنیم، وگرنه همان درخواست
+	 * معمولی را می‌فرستیم.
+	 *
+	 * @param {string} action عملیات سرور.
+	 * @param {string} jobId  شناسهٔ کار (برای ادامه).
+	 * @param {Object} first  دادهٔ شروع کار.
+	 * @return {Promise<Object>} پاسخ سرور.
+	 */
+	async function hostAwareCall(action, jobId, first) {
+		if (!state.batch.hostMode) {
+			return api(action, jobId ? { job_id: jobId } : first || {});
+		}
+
+		await new Promise((r) => setTimeout(r, state.batch.hostFallback ? 900 : 1200));
+		const res = await api(state.batch.hostFallback ? 'runner_tick' : 'job_status');
+		if (res && res.runner) {
+			state.runner = res.runner;
+			const interval = Number(res.runner.interval || 30);
+			const ago = res.runner.last_tick_ago;
+			const quiet = ago == null || Number(ago) > interval * 2 + 10;
+			state.batch.hostIdleMs = (state.batch.hostIdleMs || 0) + 1200;
+			// ضد بن‌بست: اگر کرون هاست خواب باشد، خودمان تیک کوچک می‌زنیم
+			// (همان مسیر قفل‌دار سرور؛ هرگز دو تیک هم‌زمان نمی‌شود).
+			if (!state.batch.hostFallback && (res.runner.sleeping || quiet) && state.batch.hostIdleMs > 12000) {
+				state.batch.hostFallback = true;
+				state.batch.hostNote = 'کرون هاست تیک نزد؛ از همین صفحه تیک‌های کوچک روی هاست می‌زنیم (کار همان‌جا ذخیره است).';
+				toast('کرون هاست دیر می‌زند، پس از همین صفحه کار را جلو می‌بریم — پیشرفت روی سرور ذخیره است و با بستن مرورگر از بین نمی‌رود.');
+			}
+		}
+		return res;
+	}
+
+	/**
 	 * نام فارسی نوع عملیات (برای همهٔ پیام‌ها و کارت‌ها).
 	 *
 	 * @param {string} op نوع عملیات.
@@ -667,13 +828,22 @@
 						: `${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)`
 				}${eta}${failed}</strong>
 				${inVerify ? '<span class="tco-pill tco-pill--neutral">هنوز چیزی حذف نشده؛ در حال بررسی استفاده‌بودن</span>' : ''}
+				${
+					b.hostMode
+						? `<span class="tco-pill tco-pill--ok">روی هاست اجرا می‌شود — بستن مرورگر یا قطع اینترنت کار را متوقف نمی‌کند</span>`
+						: ''
+				}
 				<div class="tco-row-actions">
 					<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
 					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
 				</div>
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
-			<p class="tco-muted">پیشرفت هر تصویر در سرور ذخیره می‌شود؛ حتی با بستن مرورگر یا قطع اینترنت، از همین نقطه ادامه می‌دهید.</p>
+			<p class="tco-muted">${
+				b.hostMode
+					? `این عملیات روی خود هاست اجرا می‌شود${b.hostFallback ? ' (کرون هاست کند بود، پس از همین صفحه تیک‌های کوچک می‌زنیم)' : ''}؛ هر تصویر پس از پردازش در سرور ذخیره می‌شود، پس بستن مرورگر یا خاموش‌کردن سیستم هیچ چیزی را از بین نمی‌برد.`
+					: 'پیشرفت هر تصویر در سرور ذخیره می‌شود؛ حتی با بستن مرورگر یا قطع اینترنت، از همین نقطه ادامه می‌دهید.'
+			}</p>
 		</div>`;
 	}
 
@@ -2643,7 +2813,7 @@
 			else if (state.subtab === 'seo') body = renderSeoTab();
 			else body = renderSettingsTab();
 
-			main.innerHTML = renderImageSubnav() + renderResumeCard() + renderBatchProgress() + body;
+			main.innerHTML = renderImageSubnav() + renderRunnerCard() + renderResumeCard() + renderBatchProgress() + body;
 		} else if (state.module === 'vault') {
 			main.innerHTML = renderResumeCard() + renderBatchProgress() + renderVaultModule();
 		} else {
@@ -2899,7 +3069,7 @@
 					reason: removeReason,
 				};
 
-				const res = await api('remove_items', payload);
+				const res = await hostAwareCall('remove_items', jobId, payload);
 				if (!res || !res.job) break;
 
 				// سرور ممکن است پیش از شروع، کار رهاشدهٔ قبلی را بسته باشد.
@@ -2935,11 +3105,23 @@
 
 				finished = Boolean(job.finished);
 
+				// اگر سرور کار را به موتور سمت هاست سپرده باشد، از این لحظه فقط
+				// ناظر می‌شویم (نه گرداننده) — دلیل اصلی درخواست کاربر همین بود.
+				if (!state.batch.hostMode && job.runner && job.runner.by_host) {
+					state.batch.hostMode = true;
+					state.batch.hostDriven = true;
+					state.batch.hostIdleMs = 0;
+					toast('کار روی خود هاست شروع شد؛ می‌توانید این صفحه را ببندید یا سیستم را خاموش کنید — عملیات ادامه پیدا می‌کند و نتیجه همین‌جا می‌ماند.');
+				}
+
 				const signature = `${state.batch.done}|${state.batch.verified}|${state.batch.remaining}`;
 				if (signature === lastSignature && !finished) {
-					stallTicks += 1;
+					// در حالت هاست، «بی‌حرکتی» چند ثانیه‌ای طبیعی است (فاصلهٔ
+					// تیک‌های کرون) و نباید کار را متوقف کند.
+					if (!state.batch.hostMode) stallTicks += 1;
 				} else {
 					stallTicks = 0;
+					if (state.batch.hostMode) state.batch.hostIdleMs = 0;
 					lastSignature = signature;
 				}
 
@@ -2955,7 +3137,7 @@
 					break;
 				}
 
-				if (stallTicks >= 3) {
+				if (!state.batch.hostMode && stallTicks >= 3) {
 					state.batch.error = state.batch.hint || 'سرور در سه درخواست پیاپی هیچ پیشرفتی ثبت نکرد؛ اگر ادامه دادید و باز هم متوقف شد، «اسکن کامل» را اجرا کنید.';
 					break;
 				}
@@ -3189,6 +3371,11 @@
 			savedBytes: 0,
 			blocked: 0,
 			needsRescan: false,
+			hostMode: Boolean(opts.hostMode),
+			hostFallback: false,
+			hostDriven: false,
+			hostIdleMs: 0,
+			hostNote: '',
 			jobId: opts.resumeJobId || '',
 			verified: 0,
 			phase: '',
@@ -3224,7 +3411,9 @@
 				}
 
 				const payload = jobId ? { job_id: jobId } : (opts.firstPayload || {});
-				const res = await api(opts.action, payload);
+				let res;
+
+				res = await hostAwareCall(opts.action, jobId, payload);
 				if (!res || !res.job) break;
 
 				const job = res.job;
@@ -3260,12 +3449,16 @@
 				}
 
 				finished = Boolean(job.finished);
+				syncHostMode(job);
 
 				const signature = `${state.batch.done}|${state.batch.verified}|${state.batch.remaining}`;
 				if (signature === lastSignature && !finished) {
-					stallTicks += 1;
+					// در حالت هاست، فاصلهٔ تیک‌های کرون طبیعی است و نباید
+					// «بی‌حرکتی» شمرده شود.
+					if (!state.batch.hostMode) stallTicks += 1;
 				} else {
 					stallTicks = 0;
+					if (state.batch.hostMode) state.batch.hostIdleMs = 0;
 					lastSignature = signature;
 				}
 
@@ -3281,7 +3474,7 @@
 					break;
 				}
 
-				if (stallTicks >= 3) {
+				if (!state.batch.hostMode && stallTicks >= 3) {
 					state.batch.error = state.batch.hint
 						|| 'سرور در سه درخواست پیاپی هیچ پیشرفتی ثبت نکرد؛ اگر ادامه دادید و باز هم متوقف شد، «اسکن کامل» را اجرا کنید.';
 					break;
@@ -3294,6 +3487,9 @@
 			}
 
 			if (finished) {
+				// در حالت «روی هاست»، نتیجهٔ نهایی را از سرور می‌خوانیم تا کارت
+				// «آخرین عملیاتی که روی هاست تمام شد» پر شود (نه حدس محلی).
+				if (state.batch.hostMode) await loadRunner();
 				state.activeJob = null;
 				state.conflictRun = null;
 				opts.onFinish(state.batch);
@@ -3838,6 +4034,43 @@
 			return;
 		}
 
+		if (ev.target.closest('#tco-runner-toggle')) {
+			const btn = ev.target.closest('#tco-runner-toggle');
+			const next = btn.getAttribute('data-runner-next') === '1';
+			const res = await api('runner_toggle', { enabled: next ? 1 : 0 });
+			state.runner = (res && res.runner) || state.runner;
+			toast(
+				next
+					? 'اجرای عملیات روی هاست روشن شد؛ از این به بعد کارها حتی با بسته‌بودن مرورگر ادامه پیدا می‌کنند.'
+					: 'اجرای عملیات روی هاست خاموش شد؛ از این به بعد پیشرفت با همین صفحه انجام می‌شود (پیشرفت ذخیره‌شده از بین نمی‌رود).'
+			);
+			render();
+			return;
+		}
+
+		if (ev.target.closest('#tco-runner-now')) {
+			// یک تیک فوری روی خود هاست (نه در مرورگر): کار همان‌جا جلو می‌رود.
+			const res = await api('runner_tick');
+			await loadRunner(res);
+			const tick = res && res.tick;
+			toast(
+				tick && tick.done > 0
+					? `${faNum(tick.done)} مورد همین حالا روی هاست انجام شد.`
+					: 'تیک روی هاست زده شد؛ اگر هنوز پیشرفتی نبود، کار در نخستین بازدید سایت ادامه می‌یابد.'
+			);
+			await refreshJobStatus();
+			render();
+			return;
+		}
+
+		if (ev.target.closest('#tco-host-result-close')) {
+			const res = await api('runner_forget');
+			state.hostResult = null;
+			if (res && res.runner) state.runner = res.runner;
+			render();
+			return;
+		}
+
 		if (ev.target.closest('#tco-wl-folder-add')) {
 			const input = document.getElementById('tco-wl-folder-input');
 			const raw = input ? String(input.value || '').trim() : '';
@@ -4336,6 +4569,9 @@
 		'[data-pick-master]',
 		'[data-page-delta]',
 		'[data-page-edge]',
+		'#tco-runner-toggle',
+		'#tco-runner-now',
+		'#tco-host-result-close',
 		'#tco-wl-folder-add',
 		'#tco-wl-folder-count',
 		'[data-wl-folder-remove]',
@@ -4517,8 +4753,26 @@
 		render();
 		refreshJobStatus()
 			.catch(() => {})
+			.then(() => loadRunner().catch(() => {}))
 			.then(() => {
 				render();
+				// اگر کار هنوز روی هاست در جریان است (کاربر صفحه را دوباره باز
+				// کرده)، بدون هیچ کلیکی به حالت ناظر می‌رویم تا نتیجه را ببیند.
+				const aj = state.activeJob;
+				if (aj && aj.host) {
+					state.batch.hostMode = true;
+					state.batch.hostDriven = true;
+					driveJob({
+						action: 'job_status',
+						hostMode: true,
+						op: aj.op,
+						title: opLabelOf(aj.op),
+						total: aj.total,
+						resumeJobId: aj.id,
+						onFinish: () => {},
+					});
+					return null;
+				}
 				return ensureDataForCurrentView(false);
 			});
 	});

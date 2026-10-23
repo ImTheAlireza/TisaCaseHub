@@ -1586,3 +1586,32 @@ body.tco-page #wpfooter {
 		width: 100%;
 	}
 }
+
+/* ── «اجرا روی خود هاست»: کارت کلید + وضعیت کرون ───────────────────────── */
+.tco-runner .tco-card__head {
+	align-items: flex-start;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+.tco-runner--on {
+	border-inline-start: 3px solid var(--tisa-ok, #1f9d55);
+}
+
+.tco-runner__result {
+	margin-top: 10px;
+	padding: 10px 12px;
+	border-radius: 8px;
+	background: rgba(31, 157, 85, 0.08);
+	border: 1px solid rgba(31, 157, 85, 0.25);
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+	font-size: 13px;
+}
+
+#tco-runner-toggle,
+#tco-runner-now {
+	white-space: nowrap;
+}

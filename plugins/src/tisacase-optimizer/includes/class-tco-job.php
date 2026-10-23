@@ -355,6 +355,33 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 		 * @return array<string,mixed> کار به‌روزشده.
 		 */
 		public static function advance( array $job, $budget_ms = 0, $max_items = 0 ) {
+			// «اجرا روی هاست»: نخستین درخواست، کار را به موتور سمت هاست
+			// می‌سپارد و خودش هیچ آیتمی را پردازش نمی‌کند؛ از این پس تیک‌ها را
+			// کرون هاست (یا دکمهٔ «همین حالا ادامه بده») می‌زند. همین موضوع
+			// باعث می‌شود بستن مرورگر یا قطع اینترنت، کار را متوقف نکند.
+			if (
+				class_exists( 'TisaCase_Optimizer_Server_Runner' ) &&
+				TisaCase_Optimizer_Server_Runner::enabled() &&
+				empty( $job['runner_started'] ) &&
+				'running' === ( isset( $job['status'] ) ? (string) $job['status'] : 'running' )
+			) {
+				$job['runner_started'] = time();
+				self::save( $job );
+				TisaCase_Optimizer_Server_Runner::wake();
+				return $job;
+			}
+			return self::advance_now( $job, $budget_ms, $max_items );
+		}
+
+		/**
+		 * اجرای یک تیک واقعی روی موتور کار (بدون سپردن به هاست).
+		 *
+		 * @param array<string,mixed> $job       کار.
+		 * @param int                 $budget_ms بودجهٔ زمانی هر تیک.
+		 * @param int                 $max_items حداکثر آیتم در تیک.
+		 * @return array<string,mixed>
+		 */
+		public static function advance_now( array $job, $budget_ms = 0, $max_items = 0 ) {
 			$started = microtime( true );
 
 			// کارهای ساخته‌شده با نسخه‌های قبلی ممکن است کلیدهای تازه را نداشته
@@ -1006,6 +1033,17 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				'hint'          => $hint,
 				'block_reasons' => $block_reasons,
 				'finished'      => in_array( (string) $job['status'], array( 'done', 'cancelled' ), true ),
+				// «روی هاست اجرا می‌شود»: کلاینت با دیدن این پرچم، حلقهٔ
+				// درخواست‌های سنگین را متوقف می‌کند و فقط ناظر می‌شود.
+				'runner'        => class_exists( 'TisaCase_Optimizer_Server_Runner' )
+					? array(
+						'enabled' => TisaCase_Optimizer_Server_Runner::enabled(),
+						'by_host' => ! empty( $job['runner_started'] ),
+					)
+					: array(
+						'enabled' => false,
+						'by_host' => false,
+					),
 			);
 		}
 
