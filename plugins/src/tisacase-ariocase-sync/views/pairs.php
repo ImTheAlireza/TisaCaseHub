@@ -4,17 +4,15 @@ $mappings = TCAS_Mapping::all( 6 );
 ?>
 <section class="tcas-card tcas-converter-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">↗</span><h2>تبدیل لینک به شناسه</h2></div><span class="tcas-tag">TisaCase + ArioCase</span></div>
-	<div class="tcas-converter-layout">
-		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-input-action"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
-		<span class="tcas-converter-arrow" aria-hidden="true">←</span>
-		<div id="tcas-link-result" class="tcas-converter-result">
+	<div class="tcas-converter-flow">
+		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-converter-input-row"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
+		<div id="tcas-link-result" class="tcas-converter-result" hidden>
+			<div class="tcas-converter-result-meta"><span id="tcas-link-shop" class="tcas-shop-label">SKU / ID</span><small id="tcas-link-product"></small></div>
 			<label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><span class="tcas-shop-label">انتخاب Variation</span><select id="tcas-link-variation" aria-label="انتخاب Variation"></select></label>
-			<span id="tcas-link-shop" class="tcas-shop-label">SKU / ID</span>
-			<span class="tcas-input-action"><input id="tcas-link-sku" type="text" dir="ltr" placeholder="SKU / ID" readonly><button type="button" id="tcas-link-copy" class="button" disabled>کپی</button></span>
-			<small id="tcas-link-product"></small>
+			<span class="tcas-converter-reference"><input id="tcas-link-sku" type="text" dir="ltr" placeholder="SKU / ID" readonly><button type="button" id="tcas-link-copy" class="button" disabled>کپی</button></span>
 		</div>
+		<div id="tcas-link-status" class="tcas-status" role="status" aria-live="polite"></div>
 	</div>
-	<div id="tcas-link-status" class="tcas-status" role="status" aria-live="polite"></div>
 </section>
 
 <section class="tcas-card">

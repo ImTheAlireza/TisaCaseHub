@@ -13,7 +13,7 @@ function entryMarkup() {
 }
 function makeDom() {
 	const dom = new JSDOM(`<!doctype html><html><body>
-		<input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button><div id="tcas-link-result"><label id="tcas-link-variation-wrap" hidden><select id="tcas-link-variation"></select></label><span id="tcas-link-shop"></span><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button><small id="tcas-link-product"></small></div><span id="tcas-link-status"></span>
+		<div class="tcas-converter-flow"><label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button></span></label><div id="tcas-link-result" class="tcas-converter-result" hidden><div class="tcas-converter-result-meta"><span id="tcas-link-shop"></span><small id="tcas-link-product"></small></div><label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><select id="tcas-link-variation"></select></label><span class="tcas-converter-reference"><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button></span></div><span id="tcas-link-status"></span></div>
 		<div id="tcas-pair-entries">${entryMarkup()}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template><button id="tcas-pair-add">افزودن</button>
 		<button id="tcas-preview-start">بررسی</button><span id="tcas-preview-status"></span>
 		<div id="tcas-preview-progress" hidden><progress max="100" value="0"><span></span></div>
@@ -91,8 +91,11 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	const dom = makeDom(); const { window } = dom; const calls = []; let copied = '';
 	window.fetch = async (url, options) => { calls.push(options.body); return reply({ shop: 'tisacase', shop_label: 'TisaCase', sku: 'TS0100', name: 'Local case', product_id: 41 }); };
 	Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value) => { copied = value; } } });
-	window.eval(script); window.document.getElementById('tcas-link-input').value = 'https://tisacase.com/product/local-case/'; window.document.getElementById('tcas-link-resolve').click();
+	window.eval(script);
+	ok('کارت نتیجه در حالت اولیه کاملاً مخفی است', window.document.getElementById('tcas-link-result').hidden);
+	window.document.getElementById('tcas-link-input').value = 'https://tisacase.com/product/local-case/'; window.document.getElementById('tcas-link-resolve').click();
 	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'TS0100');
+	ok('کارت نتیجه فقط بعد از تبدیل نمایش داده می‌شود', !window.document.getElementById('tcas-link-result').hidden);
 	ok('تبدیل لینک، URL را برای Resolver ارسال می‌کند', calls[0].get('action') === 'tcas_resolve_link' && calls[0].get('url') === 'https://tisacase.com/product/local-case/');
 	ok('فروشگاه و SKU در خروجی نمایش داده می‌شوند', window.document.getElementById('tcas-link-shop').textContent.includes('TisaCase') && window.document.getElementById('tcas-link-result').dataset.shop === 'tisacase');
 	ok('دکمهٔ کپی بعد از دریافت SKU فعال می‌شود', !window.document.getElementById('tcas-link-copy').disabled);
@@ -160,4 +163,5 @@ const uiCss = fs.readFileSync(path.join(root, 'assets/admin.css'), 'utf8');
 const pairsView = fs.readFileSync(path.join(root, 'views/pairs.php'), 'utf8');
 ok('Checkbox تنظیمات اندازهٔ ثابت دارد و تمام‌عرض نمی‌شود', uiCss.includes('.tcas-check-line input[type=checkbox]') && uiCss.includes('width:16px') && uiCss.includes('justify-self:start'));
 ok('Selector و استایل جمع‌وجور Variation در View واقعی وجود دارد', pairsView.includes('id="tcas-link-variation"') && pairsView.includes('class="tcas-link-variation" hidden') && uiCss.includes('.tcas-link-variation select'));
+ok('چیدمان قدیمی و فلش حذف و نتیجهٔ واقعی پیش‌فرض مخفی است', pairsView.includes('tcas-converter-flow') && pairsView.includes('id="tcas-link-result" class="tcas-converter-result" hidden') && !pairsView.includes('tcas-converter-layout') && !pairsView.includes('tcas-converter-arrow') && !uiCss.includes('.tcas-converter-arrow') && !uiCss.includes('.tcas-input-action'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

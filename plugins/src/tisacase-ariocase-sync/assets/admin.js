@@ -295,7 +295,10 @@
 		state.linkVariations = [];
 		setLinkOutput('', 'SKU / ID', '');
 		const result = $('tcas-link-result');
-		if (result) delete result.dataset.shop;
+		if (result) {
+			result.hidden = true;
+			delete result.dataset.shop;
+		}
 		const select = $('tcas-link-variation');
 		if (select) select.textContent = '';
 		const wrap = $('tcas-link-variation-wrap');
@@ -331,7 +334,10 @@
 			state.linkProduct = data;
 			state.linkVariations = Array.isArray(data.variations) ? data.variations : [];
 			const result = $('tcas-link-result');
-			if (result && data.shop) result.dataset.shop = data.shop;
+			if (result) {
+				result.hidden = false;
+				if (data.shop) result.dataset.shop = data.shop;
+			}
 			if (data.type === 'variable') {
 				const wrap = $('tcas-link-variation-wrap');
 				const select = $('tcas-link-variation');

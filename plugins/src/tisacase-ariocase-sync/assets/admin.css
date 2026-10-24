@@ -266,15 +266,17 @@
 .tcas-wrap a:focus-visible,.tcas-wrap button:focus-visible,.tcas-wrap summary:focus-visible { outline:2px solid var(--tcas-primary); outline-offset:2px; }
 
 .tcas-converter-card { border-color:var(--tisa-primary-soft,#E8F0EE); }
-.tcas-converter-layout { display:grid; grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr); gap:12px; align-items:end; }
-.tcas-converter-source,.tcas-converter-result { display:grid; gap:5px; min-width:0; }
-.tcas-link-variation { display:grid; gap:5px; margin-bottom:3px; }
+.tcas-converter-flow { display:grid; gap:10px; }
+.tcas-converter-source { display:grid; gap:6px; min-width:0; }
+.tcas-converter-input-row,.tcas-converter-reference { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:stretch; }
+.tcas-converter-input-row input,.tcas-converter-reference input { width:100%; min-width:0; }
+.tcas-converter-input-row .button,.tcas-converter-reference .button { min-width:64px; min-height:34px; }
+.tcas-converter-result { display:grid; gap:10px; min-width:0; padding:12px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-converter-result-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.tcas-link-variation { display:grid; gap:5px; }
 .tcas-link-variation select { width:100%; min-width:0; }
-.tcas-input-action { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; }
-.tcas-input-action input { width:100%; min-width:0; }
-.tcas-input-action .button { align-self:stretch; min-height:34px; }
-.tcas-converter-arrow { display:grid; place-items:center; height:34px; color:var(--tcas-primary); font-size:var(--tisa-fs-h2,16px); font-weight:700; }
-#tcas-link-product { min-height:17px; overflow:hidden; color:var(--tcas-muted); text-overflow:ellipsis; white-space:nowrap; }
+#tcas-link-product { min-width:0; overflow:hidden; color:var(--tcas-muted); text-overflow:ellipsis; white-space:nowrap; }
+#tcas-link-result[data-shop] { border-color:var(--tisa-primary-soft,#E8F0EE); }
 #tcas-link-result[data-shop] input { border-color:var(--tcas-primary); color:var(--tisa-primary-deep,#0A5F52); font-weight:700; }
 #tcas-link-result[data-shop=tisacase] .tcas-shop-label { color:var(--tisa-primary-deep,#0A5F52); }
 #tcas-link-result[data-shop=ariocase] .tcas-shop-label { color:var(--tisa-info,#246B8E); }
@@ -345,13 +347,12 @@
   .tcas-inline-form label,.tcas-inline-form .tcas-grow { flex:1 1 100%; }
   .tcas-inline-form .button { align-self:flex-start; }
   .tcas-advanced summary { align-items:flex-start; flex-direction:column; gap:3px; }
-  .tcas-converter-layout { grid-template-columns:1fr; }
-  .tcas-converter-arrow { display:none; }
+  .tcas-converter-result-meta { flex-wrap:wrap; }
   .tcas-pair-entries,.tcas-pair-list { grid-template-columns:minmax(0,1fr); }
 }
 @media(max-width:430px) {
   .tcas-pair-fields { grid-template-columns:1fr; }
   .tcas-pair-link { display:none; }
-  .tcas-input-action { grid-template-columns:1fr; }
-  .tcas-input-action .button { justify-self:start; }
+  .tcas-converter-input-row,.tcas-converter-reference { grid-template-columns:1fr; }
+  .tcas-converter-input-row .button,.tcas-converter-reference .button { justify-self:start; }
 }
