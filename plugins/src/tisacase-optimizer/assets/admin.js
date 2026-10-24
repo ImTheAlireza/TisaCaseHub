@@ -624,7 +624,7 @@
 			<div class="tco-card__head">
 				<div>
 					<h2 class="tco-card__title">عملیات نیمه‌تمام ${opLabel}: ${faNum(done)} از ${faNum(total)} انجام شده</h2>
-					<p class="tco-muted">${reason} — پیشرفت در سرور ذخیره شده است؛ با «ادامه» از همان نقطه تکمیل می‌شود. ${faNum(remaining)} مورد در صف باقی مانده.</p>
+					<p class="tco-muted">${reason} — ${faNum(remaining)} مورد باقی مانده؛ با «ادامه» از همان نقطه تکمیل می‌شود.</p>
 					${idleNote}
 					${hint}
 					${reasonList}
@@ -646,12 +646,8 @@
 	}
 
 	/**
-	 * کارت «اجرا روی خود هاست».
-	 *
-	 * چرا؟ کاربر گفت: «دکمهٔ شروع فشرده‌سازی را می‌زنم، عملیات وابسته به خود
-	 * هاست باشه نه مرورگر من.» این کارت هم کلید روشن/خاموش دارد، هم صادقانه
-	 * می‌گوید کرون هاست آخرین بار کِی تیک زده، و هم نتیجهٔ کاری که در نبود
-	 * کاربر تمام شده را نشان می‌دهد.
+	 * نوار فشردهٔ «اجرا روی خود هاست»: کلید روشن/خاموش، وضعیت آخرین تیک و
+	 * نتیجهٔ آخرین کارِ تمام‌شده — بدون توضیح اضافه.
 	 *
 	 * @return {string}
 	 */
@@ -660,52 +656,45 @@
 		if (!r) return '';
 		const on = Boolean(r.enabled);
 		const ago = r.last_tick_ago == null ? null : Number(r.last_tick_ago);
-		const lastTxt = ago == null ? 'هنوز هیچ تیکی زده نشده' : `${faNum(ago)} ثانیه پیش`;
+		const lastTxt = ago == null ? 'هنوز تیکی زده نشده' : `آخرین تیک ${faNum(ago)} ثانیه پیش`;
 		const result = state.hostResult;
 		const res = result && result.summary
 			? `<div class="tco-runner__result">
-					<strong>آخرین عملیاتی که روی هاست تمام شد:</strong>
-					${esc(opLabelOf(result.summary.op))} — ${faNum(result.summary.done)} از ${faNum(result.summary.total)} مورد انجام شد${
-						Number(result.summary.blocked_count || 0) > 0 ? ` · ${faNum(result.summary.blocked_count)} مورد محافظت‌شده` : ''
-					}${result.finished ? ` · ${esc(gmdateRelative(result.finished))}` : ''}
+					<span>
+						<strong>آخرین نتیجهٔ هاست:</strong>
+						${esc(opLabelOf(result.summary.op))} — ${faNum(result.summary.done)} از ${faNum(result.summary.total)}${
+							Number(result.summary.blocked_count || 0) > 0 ? ` · ${faNum(result.summary.blocked_count)} محافظت‌شده` : ''
+						}${result.finished ? ` · ${esc(gmdateRelative(result.finished))}` : ''}
+					</span>
 					<button type="button" class="tisa-btn tisa-btn--ghost tisa-btn--sm" id="tco-host-result-close">بستن</button>
 				</div>`
 			: '';
 
 		return `<div class="tco-card tco-runner ${on ? 'tco-runner--on' : ''}">
-			<div class="tco-card__head">
-				<div>
-					<h2 class="tco-card__title">اجرا روی خود هاست ${on ? '— روشن' : '— خاموش'}</h2>
-					<p class="tco-card__desc">
-						${
-							on
-								? `با زدن دکمهٔ هر عملیات (فشرده‌سازی، حذف، بازگردانی)، کار روی <strong>خود هاست</strong> پیش می‌رود؛
-									حتی اگر مرورگر را ببندید، اینترنت قطع شود یا سیستم را خاموش کنید، ادامه پیدا می‌کند و نتیجه‌اش همان‌جا ذخیره است.`
-								: 'در حالت خاموش، پیشرفت کار با همین صفحه انجام می‌شود و اگر مرورگر بسته شود کار می‌ایستد (پیشرفت ذخیره می‌ماند و با «ادامه» تکمیل می‌شود).'
-						}
-					</p>
-					<p class="tco-subtext">
-						${
-							on
-								? `هر ${faNum(r.interval)} ثانیه یک تیک کوچک (حداکثر ${faNum(r.tick_max)} مورد و ${faNum(Math.round(r.tick_ms / 1000))} ثانیه) — بسیار کمتر از سقف ۲۸ ثانیهٔ هاست.
-									آخرین تیک: ${lastTxt}${r.ticks ? ` · مجموع تیک‌ها: ${faNum(r.ticks)}` : ''}`
-								: 'کلید را روشن کنید تا کارها روی هاست ادامه پیدا کنند.'
-						}
-					</p>
-					${
-						on && r.sleeping
-							? `<p class="tco-hint tco-hint--warn">کرون هاست چند دقیقه است تیک نزده (بعضی هاست‌ها کرون را فقط با بازدید سایت اجرا می‌کنند). کار از بین نرفته: با دکمهٔ «همین حالا ادامه بده» یا نخستین بازدید سایت ادامه می‌یابد.</p>`
-							: ''
-					}
-					${res}
+			<div class="tco-runner__bar">
+				<span class="tco-runner__dot" aria-hidden="true"></span>
+				<div class="tco-runner__meta">
+					<strong class="tco-runner__title">اجرا روی خود هاست</strong>
+					<span class="tco-runner__stat">${
+						on
+							? `${lastTxt}${r.ticks ? ` · ${faNum(r.ticks)} تیک` : ''}`
+							: 'خاموش — پیشرفت فقط تا باز بودن همین صفحه پیش می‌رود'
+					}</span>
 				</div>
 				<div class="tco-row-actions">
-					<button type="button" class="tisa-btn ${on ? 'tisa-btn--secondary' : 'tisa-btn--primary'} tisa-btn--sm" id="tco-runner-toggle" data-runner-next="${on ? '0' : '1'}">
-						${on ? 'خاموش کردن اجرای روی هاست' : 'روشن کردن اجرای روی هاست'}
-					</button>
 					${on && r.job_running ? '<button type="button" class="tisa-btn tisa-btn--primary tisa-btn--sm" id="tco-runner-now">همین حالا ادامه بده</button>' : ''}
+					<button type="button" class="tco-switch${on ? ' is-on' : ''}" id="tco-runner-toggle" data-runner-next="${on ? '0' : '1'}" role="switch" aria-checked="${on ? 'true' : 'false'}" title="${on ? 'خاموش‌کردن اجرای روی هاست' : 'روشن‌کردن اجرای روی هاست'}">
+						<span class="tco-switch__track"><span class="tco-switch__knob"></span></span>
+						<span class="tco-switch__label">${on ? 'روشن' : 'خاموش'}</span>
+					</button>
 				</div>
 			</div>
+			${
+				on && r.sleeping
+					? '<p class="tco-runner__note">کرون هاست چند دقیقه است تیک نزده؛ با «همین حالا ادامه بده» یا نخستین بازدید سایت ادامه می‌یابد. کار از بین نرفته است.</p>'
+					: ''
+			}
+			${res}
 		</div>`;
 	}
 
@@ -762,7 +751,7 @@
 		state.batch.hostMode = true;
 		state.batch.hostDriven = true;
 		state.batch.hostIdleMs = 0;
-		toast('کار روی خود هاست شروع شد؛ می‌توانید این صفحه را ببندید یا سیستم را خاموش کنید — عملیات ادامه پیدا می‌کند و نتیجه همین‌جا می‌ماند.');
+		toast('کار روی خود هاست شروع شد؛ حتی با بستن مرورگر ادامه می‌یابد.');
 	}
 
 	/**
@@ -791,8 +780,8 @@
 			// (همان مسیر قفل‌دار سرور؛ هرگز دو تیک هم‌زمان نمی‌شود).
 			if (!state.batch.hostFallback && (res.runner.sleeping || quiet) && state.batch.hostIdleMs > 12000) {
 				state.batch.hostFallback = true;
-				state.batch.hostNote = 'کرون هاست تیک نزد؛ از همین صفحه تیک‌های کوچک روی هاست می‌زنیم (کار همان‌جا ذخیره است).';
-				toast('کرون هاست دیر می‌زند، پس از همین صفحه کار را جلو می‌بریم — پیشرفت روی سرور ذخیره است و با بستن مرورگر از بین نمی‌رود.');
+				state.batch.hostNote = 'کرون هاست کند بود؛ تیک‌های کوچک از همین صفحه زده می‌شود (پیشرفت روی سرور ذخیره است).';
+				toast('کرون هاست دیر می‌زند؛ از همین صفحه جلو می‌بریم — پیشرفت روی سرور ذخیره است.');
 			}
 		}
 		return res;
@@ -821,29 +810,31 @@
 		const eta = b.etaSec > 0 ? ` · حدود ${faNum(b.etaSec)} ثانیه باقی‌مانده` : '';
 		const failed = b.failed > 0 ? ` · ${faNum(b.failed)} خطای فایل` : '';
 		return `<div class="tco-progress-box">
-			<div class="tco-win__foot">
+			<div class="tco-progress-box__head">
 				<strong>${
 					inVerify
-						? `بازرسی ایمنی پیش از ${esc(b.title)} — ${faNum(shown)} از ${faNum(b.total)} بررسی شد (${faNum(pct)}٪)`
+						? `بازرسی ایمنی پیش از ${esc(b.title)} — ${faNum(shown)} از ${faNum(b.total)} (${faNum(pct)}٪)`
 						: `${esc(b.title)} — ${faNum(b.done)} از ${faNum(b.total)} (${faNum(pct)}٪)`
 				}${eta}${failed}</strong>
-				${inVerify ? '<span class="tco-pill tco-pill--neutral">هنوز چیزی حذف نشده؛ در حال بررسی استفاده‌بودن</span>' : ''}
-				${
-					b.hostMode
-						? `<span class="tco-pill tco-pill--ok">روی هاست اجرا می‌شود — بستن مرورگر یا قطع اینترنت کار را متوقف نمی‌کند</span>`
-						: ''
-				}
 				<div class="tco-row-actions">
-					<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
-					<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
+					${inVerify ? '<span class="tco-pill tco-pill--neutral">فاز بازرسی — هنوز حذفی انجام نشده</span>' : ''}
+					${
+						b.hostMode
+							? '<span class="tco-pill tco-pill--ok" title="روی خود هاست اجرا می‌شود؛ بستن مرورگر یا قطع اینترنت کار را متوقف نمی‌کند.">روی هاست</span>'
+							: ''
+					}
+					${
+						b.hostMode && b.hostFallback
+							? '<span class="tco-pill tco-pill--neutral" title="کرون هاست کند بود؛ تیک‌های کوچک از همین صفحه زده می‌شود. پیشرفت همچنان روی سرور ذخیره است.">تیک از همین صفحه</span>'
+							: ''
+					}
 				</div>
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
-			<p class="tco-muted">${
-				b.hostMode
-					? `این عملیات روی خود هاست اجرا می‌شود${b.hostFallback ? ' (کرون هاست کند بود، پس از همین صفحه تیک‌های کوچک می‌زنیم)' : ''}؛ هر تصویر پس از پردازش در سرور ذخیره می‌شود، پس بستن مرورگر یا خاموش‌کردن سیستم هیچ چیزی را از بین نمی‌برد.`
-					: 'پیشرفت هر تصویر در سرور ذخیره می‌شود؛ حتی با بستن مرورگر یا قطع اینترنت، از همین نقطه ادامه می‌دهید.'
-			}</p>
+			<div class="tco-progress-box__foot">
+				<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
+				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
+			</div>
 		</div>`;
 	}
 
@@ -1240,8 +1231,7 @@
 		return `<div class="tco-card">
 			<div class="tco-card__head">
 				<div>
-					<h2 class="tco-card__title">کاوشگر و رتبه‌بندی سنگین‌ترین تصاویر کتابخانهٔ رسانه</h2>
-					<p class="tco-card__desc">مرتب‌سازی واقعی بر اساس <strong>حجم کل اشغالی روی دیسک (اصلی + خام + تمام زیرسایزها)</strong> یا تک‌فایل اصلی، به همراه نقشهٔ دقیق محل استفاده.</p>
+					<h2 class="tco-card__title">کاوشگر سنگین‌ترین تصاویر کتابخانهٔ رسانه</h2>
 				</div>
 				${renderDeleteModeSwitch()}
 			</div>
@@ -3487,8 +3477,8 @@
 			}
 
 			if (finished) {
-				// در حالت «روی هاست»، نتیجهٔ نهایی را از سرور می‌خوانیم تا کارت
-				// «آخرین عملیاتی که روی هاست تمام شد» پر شود (نه حدس محلی).
+				// در حالت «روی هاست»، نتیجهٔ نهایی را از سرور می‌خوانیم تا نوار
+				// «آخرین نتیجهٔ هاست» پر شود (نه حدس محلی).
 				if (state.batch.hostMode) await loadRunner();
 				state.activeJob = null;
 				state.conflictRun = null;
@@ -4041,8 +4031,8 @@
 			state.runner = (res && res.runner) || state.runner;
 			toast(
 				next
-					? 'اجرای عملیات روی هاست روشن شد؛ از این به بعد کارها حتی با بسته‌بودن مرورگر ادامه پیدا می‌کنند.'
-					: 'اجرای عملیات روی هاست خاموش شد؛ از این به بعد پیشرفت با همین صفحه انجام می‌شود (پیشرفت ذخیره‌شده از بین نمی‌رود).'
+					? 'اجرای روی هاست روشن شد؛ کارها حتی با بسته‌بودن مرورگر ادامه می‌یابند.'
+					: 'اجرای روی هاست خاموش شد؛ پیشرفت با همین صفحه پیش می‌رود.'
 			);
 			render();
 			return;

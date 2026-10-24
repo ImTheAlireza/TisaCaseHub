@@ -239,9 +239,9 @@ ok('نخستین درخواست کار را به هاست می‌سپارد (ن�
 ok('کرون کارِ حالت پنل را هم‌زمان جلو نمی‌برد (ضد پردازش دوباره)', /panel_job/.test(runner));
 ok('کلید روشن/خاموش در تنظیمات هست', /'server_runner'/.test(settings) && /'runner_interval'/.test(settings));
 ok('رابط کاربری کلید و وضعیت کرون را نشان می‌دهد', admin.includes('tco-runner-toggle') && admin.includes('tco-runner-now') && /function renderRunnerCard/.test(admin));
-ok('در حین اجرا صریح می‌گوید «روی هاست اجرا می‌شود»', admin.includes('روی هاست اجرا می‌شود'));
+ok('در حین اجرا صریح می‌گوید «روی هاست»', admin.includes('روی خود هاست اجرا می‌شود'));
 ok('اگر کرون هاست خواب بود، پنل بن‌بست نمی‌شود (تیک دستی)', admin.includes("api('runner_tick')") || /hostAwareCall/.test(admin));
-ok('نتیجهٔ کار در نبود کاربر در کارت نشان داده می‌شود', admin.includes('آخرین عملیاتی که روی هاست تمام شد'));
+ok('نتیجهٔ کار در نبود کاربر در کارت نشان داده می‌شود', admin.includes('آخرین نتیجهٔ هاست'));
 
 console.log('');
 if (fails.length) {
