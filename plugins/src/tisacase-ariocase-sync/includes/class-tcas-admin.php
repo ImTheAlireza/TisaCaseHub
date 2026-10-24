@@ -51,6 +51,7 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			wp_localize_script( 'tcas-admin', 'TCAS_ADMIN', array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
 				'nonce'   => wp_create_nonce( TCAS_Core::NONCE ),
+				'maxPairs' => TCAS_Core::MAX_CODES,
 				'strings' => array(
 					'working'      => 'در حال انجام…',
 					'preview'      => 'دریافت پیش‌نمایش',

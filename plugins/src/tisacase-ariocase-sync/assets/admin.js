@@ -67,34 +67,122 @@
 		return (quantity !== '' ? quantity + ' · ' : '') + (statuses[stock.status] || 'وضعیت نامشخص');
 	}
 
-	function productCell(code, name, id) {
-		const cell = node('td', 'tcas-code-cell');
-		cell.appendChild(node('code', '', code || '—'));
-		if (name) cell.appendChild(node('small', '', name));
-		if (id) cell.appendChild(node('small', '', '#' + id));
-		return cell;
+	function readonlyShopField(labelText, code, shopClass) {
+		const label = node('label', 'tcas-shop-field ' + shopClass);
+		label.appendChild(node('span', 'tcas-shop-label', labelText));
+		const input = document.createElement('input');
+		input.type = 'text';
+		input.dir = 'ltr';
+		input.readOnly = true;
+		input.value = code || '—';
+		input.setAttribute('aria-label', labelText);
+		label.appendChild(input);
+		return label;
+	}
+
+	function pairFields(localCode, remoteCode) {
+		const fields = node('div', 'tcas-pair-fields');
+		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local'));
+		fields.appendChild(node('span', 'tcas-pair-link', '+'));
+		fields.appendChild(readonlyShopField('آریوکیس · ArioCase', remoteCode, 'tcas-shop-remote'));
+		return fields;
 	}
 
 	function addPreviewRow(row) {
-		const tbody = $('tcas-preview-table') && $('tcas-preview-table').querySelector('tbody');
-		if (!tbody) return;
-		const tr = node('tr', 'tcas-result-' + row.status);
-		const checkCell = node('td');
+		const list = $('tcas-preview-list');
+		if (!list) return;
+		const card = node('article', 'tcas-pair-card tcas-preview-card tcas-result-' + row.status);
+		const head = node('div', 'tcas-preview-head');
+		const selectLabel = node('label', 'tcas-pair-select');
 		const checkbox = document.createElement('input');
 		checkbox.type = 'checkbox';
 		checkbox.className = 'tcas-row-select';
 		checkbox.value = String(row.index);
 		checkbox.disabled = !row.selectable;
 		checkbox.checked = Boolean(row.selectable);
-		checkCell.appendChild(checkbox);
-		tr.appendChild(checkCell);
-		tr.appendChild(productCell(row.local_code, row.local_name, row.local_id));
-		tr.appendChild(productCell(row.remote_code, row.remote_name, 0));
-		tr.appendChild(node('td', '', stockLabel(row.stock)));
-		const message = node('td', '', row.message || '');
+		selectLabel.appendChild(checkbox);
+		selectLabel.appendChild(node('span', '', row.selectable ? 'انتخاب' : 'غیرقابل اتصال'));
+		head.appendChild(selectLabel);
+		head.appendChild(node('span', 'tcas-stock-pill', stockLabel(row.stock)));
+		card.appendChild(head);
+		card.appendChild(pairFields(row.local_code, row.remote_code));
+		const names = [row.local_name, row.remote_name].filter(Boolean).join(' / ');
+		if (names) card.appendChild(node('div', 'tcas-preview-names', names));
+		const message = node('p', 'tcas-preview-message', row.message || '');
 		if (row.status === 'error') message.classList.add('tcas-error-text');
-		tr.appendChild(message);
-		tbody.appendChild(tr);
+		card.appendChild(message);
+		list.appendChild(card);
+	}
+
+	function pairEntries() {
+		return Array.from(document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry'));
+	}
+
+	function refreshPairEntries() {
+		const entries = pairEntries();
+		const max = Number(cfg.maxPairs) || 50;
+		entries.forEach((entry) => {
+			const remove = entry.querySelector('.tcas-remove-pair');
+			if (remove) remove.disabled = entries.length === 1;
+		});
+		const add = $('tcas-pair-add');
+		if (add) add.disabled = entries.length >= max;
+	}
+
+	function invalidatePreview() {
+		if (!state.token || state.running) return;
+		state.token = '';
+		state.previewDone = false;
+		const panel = $('tcas-preview-panel');
+		if (panel) panel.hidden = true;
+		text('tcas-preview-status', 'تغییرات را دوباره بررسی کنید.');
+	}
+
+	function wirePairEntry(entry) {
+		const remove = entry.querySelector('.tcas-remove-pair');
+		if (remove) remove.addEventListener('click', () => {
+			if (pairEntries().length <= 1) return;
+			entry.remove();
+			refreshPairEntries();
+			invalidatePreview();
+		});
+		entry.querySelectorAll('input').forEach((input) => input.addEventListener('input', invalidatePreview));
+	}
+
+	function addPairEntry() {
+		const template = $('tcas-pair-entry-template');
+		const list = $('tcas-pair-entries');
+		const max = Number(cfg.maxPairs) || 50;
+		if (!template || !list || pairEntries().length >= max) return;
+		const entry = template.content.firstElementChild.cloneNode(true);
+		list.appendChild(entry);
+		wirePairEntry(entry);
+		refreshPairEntries();
+		invalidatePreview();
+		const input = entry.querySelector('.tcas-local-code');
+		if (input) input.focus();
+	}
+
+	function collectPairs() {
+		const lines = [];
+		for (const entry of pairEntries()) {
+			const localInput = entry.querySelector('.tcas-local-code');
+			const remoteInput = entry.querySelector('.tcas-remote-code');
+			const local = localInput ? localInput.value.trim() : '';
+			const remote = remoteInput ? remoteInput.value.trim() : '';
+			if (!local && !remote) continue;
+			if (!local || !remote) {
+				const missing = local ? remoteInput : localInput;
+				if (missing) missing.focus();
+				throw new Error('برای هر جفت، شناسهٔ هر دو فروشگاه را وارد کنید.');
+			}
+			if (/^(?:[a-z]+:\/\/|www\.)/i.test(local) || /^(?:[a-z]+:\/\/|www\.)/i.test(remote)) {
+				throw new Error('لینک را ابتدا در «تبدیل لینک به شناسه» به SKU تبدیل کنید.');
+			}
+			lines.push(local + ' - ' + remote);
+		}
+		if (!lines.length) throw new Error('حداقل یک جفت شناسه وارد کنید.');
+		return lines;
 	}
 
 	async function previewLoop(button) {
@@ -116,8 +204,8 @@
 
 	async function startPreview() {
 		if (state.running) return;
-		const pairs = $('tcas-pairs') ? $('tcas-pairs').value : '';
-		if (!pairs.trim()) { text('tcas-preview-status', 'حداقل یک جفت وارد کنید.', true); return; }
+		let lines;
+		try { lines = collectPairs(); } catch (error) { text('tcas-preview-status', error.message, true); return; }
 		const button = $('tcas-preview-start');
 		state.running = true;
 		state.previewDone = false;
@@ -126,12 +214,12 @@
 		text('tcas-preview-status', 'در حال ساخت عملیات…');
 		const panel = $('tcas-preview-panel');
 		if (panel) panel.hidden = true;
-		const tbody = $('tcas-preview-table') && $('tcas-preview-table').querySelector('tbody');
-		if (tbody) tbody.textContent = '';
+		const list = $('tcas-preview-list');
+		if (list) list.textContent = '';
 		const results = $('tcas-connect-results');
 		if (results) results.textContent = '';
 		try {
-			const data = await request('preview_start', { pairs });
+			const data = await request('preview_start', { pairs: lines.join('\n') });
 			state.token = data.token;
 			if (panel) panel.hidden = false;
 			progress('tcas-preview', 0, data.total || 0);
@@ -191,6 +279,62 @@
 		}
 	}
 
+	function resetLinkResult() {
+		const sku = $('tcas-link-sku');
+		if (sku) sku.value = '';
+		const copy = $('tcas-link-copy');
+		if (copy) copy.disabled = true;
+		const shop = $('tcas-link-shop');
+		if (shop) shop.textContent = 'شناسه SKU';
+		const product = $('tcas-link-product');
+		if (product) product.textContent = '';
+		const result = $('tcas-link-result');
+		if (result) delete result.dataset.shop;
+	}
+
+	async function resolveLink() {
+		const input = $('tcas-link-input');
+		const button = $('tcas-link-resolve');
+		const url = input ? input.value.trim() : '';
+		if (!url || !/^https?:\/\//i.test(url)) { text('tcas-link-status', 'لینک کامل محصول را وارد کنید.', true); return; }
+		resetLinkResult();
+		busy(button, true, 'در حال تشخیص…');
+		text('tcas-link-status', 'در حال تشخیص فروشگاه و دریافت شناسه…');
+		try {
+			const data = await request('resolve_link', { url });
+			const sku = $('tcas-link-sku');
+			if (sku) sku.value = data.sku || '';
+			const shop = $('tcas-link-shop');
+			if (shop) shop.textContent = (data.shop_label || 'محصول') + ' · SKU';
+			const product = $('tcas-link-product');
+			if (product) product.textContent = data.name || '';
+			const result = $('tcas-link-result');
+			if (result && data.shop) result.dataset.shop = data.shop;
+			const copy = $('tcas-link-copy');
+			if (copy) copy.disabled = !data.sku;
+			text('tcas-link-status', data.sku ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !data.sku);
+		} catch (error) { text('tcas-link-status', error.message, true); }
+		busy(button, false);
+	}
+
+	async function copyLinkSku() {
+		const input = $('tcas-link-sku');
+		const value = input ? input.value : '';
+		if (!value) return;
+		let copied = false;
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			try { await navigator.clipboard.writeText(value); copied = true; } catch (error) { copied = false; }
+		}
+		if (!copied) {
+			input.focus();
+			input.select();
+			if (document.execCommand) {
+				try { copied = document.execCommand('copy'); } catch (error) { copied = false; }
+			}
+		}
+		text('tcas-link-status', copied ? 'شناسه کپی شد.' : 'شناسه انتخاب شد؛ آن را با کلید کپی بردارید.');
+	}
+
 	async function testConnection() {
 		const button = $('tcas-test-connection');
 		const code = $('tcas-test-code') ? $('tcas-test-code').value.trim() : '';
@@ -220,6 +364,10 @@
 		busy(button, false);
 	}
 
+	pairEntries().forEach(wirePairEntry);
+	refreshPairEntries();
+	const pairAdd = $('tcas-pair-add');
+	if (pairAdd) pairAdd.addEventListener('click', addPairEntry);
 	const previewButton = $('tcas-preview-start');
 	if (previewButton) previewButton.addEventListener('click', startPreview);
 	const connectButton = $('tcas-connect-start');
@@ -230,6 +378,15 @@
 		const allChecked = boxes.length && boxes.every((box) => box.checked);
 		boxes.forEach((box) => { box.checked = !allChecked; });
 	});
+	const resolveButton = $('tcas-link-resolve');
+	if (resolveButton) resolveButton.addEventListener('click', resolveLink);
+	const linkInput = $('tcas-link-input');
+	if (linkInput) {
+		linkInput.addEventListener('input', () => { resetLinkResult(); text('tcas-link-status', ''); });
+		linkInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); resolveLink(); } });
+	}
+	const copyButton = $('tcas-link-copy');
+	if (copyButton) copyButton.addEventListener('click', copyLinkSku);
 	const testButton = $('tcas-test-connection');
 	if (testButton) testButton.addEventListener('click', testConnection);
 	const mapButton = $('tcas-map-add');

@@ -11,7 +11,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 	final class TCAS_Ajax {
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -154,6 +154,19 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				'total'     => $total,
 				'row'       => $row,
 			) );
+		}
+
+		public static function resolve_link() {
+			self::auth();
+			$url = isset( $_POST['url'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['url'] ) ) ) : '';
+			if ( '' === $url ) {
+				wp_send_json_error( array( 'message' => 'لینک محصول را وارد کنید.' ), 400 );
+			}
+			$result = TCAS_Link_Resolver::resolve( $url );
+			if ( is_wp_error( $result ) ) {
+				wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
+			}
+			wp_send_json_success( $result );
 		}
 
 		public static function test_connection() {

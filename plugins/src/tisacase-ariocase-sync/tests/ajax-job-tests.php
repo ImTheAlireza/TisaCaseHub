@@ -17,6 +17,7 @@ class TCAS_Pairing {
 	public static function preview( $pair ) { self::$preview_calls++; return array( 'row' => array( 'selectable' => true, 'status' => 'connect', 'local_code' => $pair['local_code'], 'remote_code' => 'RESOLVED-22' ), 'fresh' => 'fresh-' . self::$preview_calls ); }
 	public static function connect( $preview ) { self::$received_preview = $preview; return array( 'message' => 'done', 'product_id' => 91 ); }
 }
+class TCAS_Link_Resolver { public static function resolve( $url ) { return array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple' ); } }
 class TCAS_Mapping { public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } }
 class TCAS_Live { public static $state = null; public static function refresh( $id ) { return self::$state; } }
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
@@ -38,6 +39,10 @@ TCAS_Pairing::$preview_calls = 0; $GLOBALS['transients'][ 'tcas_job_' . $token ]
 $response = invoke_ajax( 'connect_step' );
 ajax_test( 'Job کاربر دیگر با 409 رد می‌شود', $response && ! $response->success && 409 === $response->status );
 ajax_test( 'Job نامعتبر هیچ اتصال یا APIای اجرا نمی‌کند', 0 === TCAS_Pairing::$preview_calls );
+$_POST['url'] = 'https://tisacase.com/product/local-case/';
+$response = invoke_ajax( 'resolve_link' );
+ajax_test( 'AJAX تبدیل لینک SKU و فروشگاه را برمی‌گرداند', $response && $response->success && 'TS0100' === $response->data['sku'] && 'tisacase' === $response->data['shop'] );
+unset( $_POST['url'] );
 $_POST['product_id'] = 91; TCAS_Live::$state = null;
 $response = invoke_ajax( 'sync_mapping' );
 ajax_test( 'State ناموجود در Sync دستی موفقیت کاذب ندارد', $response && ! $response->success && 409 === $response->status );
