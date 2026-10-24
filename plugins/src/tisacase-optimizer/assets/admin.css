@@ -1587,28 +1587,148 @@ body.tco-page #wpfooter {
 	}
 }
 
-/* ── «اجرا روی خود هاست»: کارت کلید + وضعیت کرون ───────────────────────── */
-.tco-runner .tco-card__head {
-	align-items: flex-start;
-	gap: 16px;
-	flex-wrap: wrap;
-}
-
+/* ── «اجرا روی خود هاست»: نوار فشردهٔ وضعیت + کلید ─────────────────────── */
 .tco-runner--on {
 	border-inline-start: 3px solid var(--tisa-ok, #1f9d55);
 }
 
+.tco-runner__bar {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.tco-runner__dot {
+	flex: none;
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: var(--tisa-muted, #77828A);
+}
+
+.tco-runner--on .tco-runner__dot {
+	background: var(--tisa-ok, #1f9d55);
+	box-shadow: 0 0 0 3px rgba(31, 157, 85, 0.15);
+}
+
+.tco-runner__meta {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	flex-wrap: wrap;
+	min-width: 0;
+	margin-inline-end: auto;
+}
+
+.tco-runner__title {
+	font-size: 14px;
+	font-weight: 800;
+	color: var(--tisa-ink, #1F2A2E);
+}
+
+.tco-runner__stat {
+	font-size: 12px;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tco-runner__note {
+	margin: 10px 0 0;
+	font-size: 12px;
+	font-weight: 600;
+	color: #8a5a00;
+}
+
 .tco-runner__result {
 	margin-top: 10px;
-	padding: 10px 12px;
+	padding: 8px 12px;
 	border-radius: 8px;
 	background: rgba(31, 157, 85, 0.08);
 	border: 1px solid rgba(31, 157, 85, 0.25);
 	display: flex;
 	align-items: center;
+	justify-content: space-between;
 	gap: 10px;
 	flex-wrap: wrap;
+	font-size: 12px;
+}
+
+/* کلید روشن/خاموش */
+.tco-switch {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	padding: 2px;
+	border: 0;
+	background: none;
+	cursor: pointer;
+	font: inherit;
+}
+
+.tco-switch__track {
+	position: relative;
+	flex: none;
+	width: 38px;
+	height: 22px;
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-border-strong, #C9DCD7);
+	transition: background 150ms ease;
+}
+
+.tco-switch__knob {
+	position: absolute;
+	top: 3px;
+	inset-inline-start: 3px;
+	width: 16px;
+	height: 16px;
+	border-radius: 50%;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+	transition: inset-inline-start 150ms ease;
+}
+
+.tco-switch.is-on .tco-switch__track {
+	background: var(--tisa-primary, #0E7C6B);
+}
+
+.tco-switch.is-on .tco-switch__knob {
+	inset-inline-start: calc(100% - 19px);
+}
+
+.tco-switch__label {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--tisa-text, #2A3439);
+}
+
+.tco-switch:focus-visible .tco-switch__track {
+	outline: 2px solid var(--tisa-primary, #0E7C6B);
+	outline-offset: 2px;
+}
+
+/* ── نوار پیشرفت دسته‌ای: سربرگ و پابرگ فشرده ─────────────────────────── */
+.tco-progress-box__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px 12px;
+	flex-wrap: wrap;
 	font-size: 13px;
+}
+
+.tco-progress-box__foot {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px 12px;
+	flex-wrap: wrap;
+	margin-top: 8px;
+	font-size: 12px;
+	color: var(--tisa-muted, #77828A);
+}
+
+.tco-progress-box__foot strong {
+	color: var(--tisa-text, #2A3439);
 }
 
 #tco-runner-toggle,

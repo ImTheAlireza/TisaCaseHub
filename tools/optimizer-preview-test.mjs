@@ -1269,9 +1269,8 @@ assert.match(
 	/روی خود هاست شروع شد/,
 	'باید صریح بگوید کار روی هاست شروع شد و می‌توان صفحه را بست'
 );
-assert.match(
-	window.document.getElementById('tco-main').textContent,
-	/روی هاست اجرا می‌شود/,
+assert.ok(
+	[...window.document.querySelectorAll('.tco-progress-box .tco-pill')].some((p) => /روی هاست/.test(p.textContent)),
 	'نوار پیشرفت باید نشان دهد کار روی هاست اجرا می‌شود'
 );
 
@@ -1293,7 +1292,7 @@ assert.ok(hostJob.done >= 1, 'پیشرفت باید واقعاً روی هاست
 await new Promise((r) => setTimeout(r, 600));
 await flush();
 const runnerCard2 = window.document.querySelector('.tco-runner');
-assert.match(runnerCard2.textContent, /آخرین عملیاتی که روی هاست تمام شد/, 'نتیجهٔ کار هاست باید در کارت بماند');
+assert.match(runnerCard2.textContent, /آخرین نتیجهٔ هاست/, 'نتیجهٔ کار هاست باید در کارت بماند');
 assert.match(runnerCard2.textContent, /فشرده‌سازی/, 'نوع عملیات باید در کارت نتیجه بیاید');
 
 // بستن کارت نتیجه
@@ -1303,7 +1302,7 @@ closeRes.click();
 await new Promise((r) => setTimeout(r, 200));
 await flush();
 assert.ok(
-	!/آخرین عملیاتی که روی هاست تمام شد/.test(window.document.querySelector('.tco-runner').textContent),
+	!/آخرین نتیجهٔ هاست/.test(window.document.querySelector('.tco-runner').textContent),
 	'با بستن، کارت نتیجه باید کنار برود'
 );
 
