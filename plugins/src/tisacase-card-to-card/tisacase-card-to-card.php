@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — کارت به کارت تیساکیس
  * Plugin URI:        https://tisacase.com
  * Description:       کارت‌به‌کارت با رسید خصوصی، نمایش روش پرداخت در لیست سفارش‌ها و تأیید/رد مستقیم داخل سفارش ووکامرس.
- * Version:           1.0.0
+ * Version:           1.1.0
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -14,7 +14,7 @@
  * TisaCase Hub:      key=card-to-card; title="کارت به کارت تیساکیس"; icon=doc; group=orders; page=admin.php?page=tisacase-card-to-card; screen=woocommerce_page_tisacase-card-to-card; parent=woocommerce; slug=tisacase-card-to-card; cap=manage_options; desc="تنظیمات کارت‌به‌کارت؛ بررسی، تأیید و رد رسید مستقیماً از داخل سفارش."
  */
 defined( 'ABSPATH' ) || exit;
-define( 'TCC_VERSION', '1.0.0' );
+define( 'TCC_VERSION', '1.1.0' );
 define( 'TCC_FILE', __FILE__ );
 define( 'TCC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCC_URL', plugin_dir_url( __FILE__ ) );

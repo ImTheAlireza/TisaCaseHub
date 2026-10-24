@@ -3,14 +3,14 @@ Contributors: ImTheAlireza
 Tags: woocommerce, manual-payment, receipt, card-to-card, rtl
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 پرداخت کارت‌به‌کارت با رسید خصوصی و بررسی مستقیم داخل سفارش ووکامرس.
 
 == Description ==
-نسخه اولیه قابل نصب برای آزمایش روی staging؛ تأیید عملی سازگاری کامل با سایت زنده هنوز لازم است.
+بسته قابل نصب برای آزمایش روی staging؛ تأیید عملی سازگاری کامل با سایت زنده هنوز لازم است.
 
 * عنوان ثابت «کارت به کارت تیساکیس» و وضعیت رسید در لیست سفارش‌ها.
 * مشاهده تصویر، اطلاعات، سابقه، تأیید، رد با علت و درخواست اصلاح داخل همان سفارش.
@@ -81,6 +81,11 @@ Action Scheduler ووکامرس، با WP-Cron به‌عنوان مسیر جای
 گیت مخصوص افزونه قبل از بسته‌بندی اجرا می‌شود و حتی در runtimeهایی که exit code PHP را درست منتقل نمی‌کنند، وجود نتیجه بدون شکست را بررسی می‌کند.
 
 == Changelog ==
+
+= 1.1.0 =
+* Compact TisaCase UI: tabbed settings, collapsible destination cards, side-by-side receipt review and a refreshed customer payment page.
+* Keep operational warnings and move technical setup details out of the interface.
+* Accessible RTL keyboard tabs, all-fields submission and invalid-field reveal; financial workflow unchanged.
 
 = 1.0.0 =
 * اولین نسخه آزمایشی: درگاه مستقل، رسید خصوصی، مدیریت داخل سفارش، لیست روش پرداخت و تنظیمات پیشرفته.

@@ -381,7 +381,7 @@
 
 
 
-## افزونه جدید: کارت به کارت تیساکیس — 1.0.0
+## افزونه جدید: کارت به کارت تیساکیس — 1.1.0
 
 - سورس: `plugins/src/tisacase-card-to-card/`؛ درگاه: `tisacase_card_to_card`؛ عنوان ذخیره‌شده سفارش: «کارت به کارت تیساکیس».
 - روش/وضعیت در لیست سفارش‌ها؛ رسید، تأیید، رد با علت و تاریخچه داخل ویرایش همان سفارش (اتصال HPOS و قدیمی).
@@ -389,4 +389,6 @@
 - مالک داده: گزینه‌های `tcc_settings`، `tcc_db_version`، `tcc_reviewers` و جدول‌های `{prefix}tcc_attempts`، `tcc_submissions`، `tcc_events`. مجوز بررسی: `tcc_review_payments` به‌علاوه مجوز همان سفارش.
 - فایل مالی بیرون webroot با `TCC_PRIVATE_DIR` اختیاری؛ هیچ attachment عمومی یا مسیر داخل uploads ساخته نمی‌شود. حذف افزونه، داده مالی را خودکار پاک نمی‌کند.
 - تست و بسته‌بندی: `tools/test-card-to-card.sh` و `tools/build-plugin-zip.sh tisacase-card-to-card`؛ آزمون‌ها از ZIP حذف می‌شوند.
-- وضعیت انتشار: نسخه اولیه برای staging؛ تأیید WordPress/MySQL/WooCommerce و مرورگر واقعی هنوز لازم است. جزئیات: `CARD_TO_CARD_REPORT.md`.
+- رابط ۱٫۱: تنظیمات چهار تب در یک فرم (`templates/settings.php`)، بررسی فشرده داخل سفارش (`templates/order-review.php`)، CSS مستقل مدیریت (`assets/admin.css`) و قالب مشتری؛ بدون تغییر منطق مالی/مجوزها.
+- تست: ۱۹۷ بررسی اصلی روی PHP 7.4/8.5 و ۱۷۶ بررسی واقعی Chromium روی fixture؛ پیش‌نمایش غیرعملیاتی با `tools/preview-card-to-card.mjs` و آزمون `tools/test-card-to-card-browser.mjs`.
+- وضعیت انتشار: بسته staging؛ تأیید WordPress/MySQL/WooCommerce روی هاست و قالب واقعی هنوز لازم است. جزئیات: `CARD_TO_CARD_REPORT.md`.

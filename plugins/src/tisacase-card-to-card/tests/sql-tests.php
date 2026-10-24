@@ -5,7 +5,7 @@ error_reporting( E_ALL );
 set_error_handler( function ( $severity, $message, $file, $line ) { if ( error_reporting() & $severity ) { throw new ErrorException( $message, 0, $severity, $file, $line ); } return false; } );
 define( 'ABSPATH', '/wordpress/' );
 $root = dirname( __DIR__ );
-foreach ( array( 'helpers', 'settings', 'repository', 'storage', 'access', 'service', 'notifications', 'frontend', 'order-list', 'order-admin' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
+foreach ( array( 'helpers', 'settings', 'repository', 'storage', 'access', 'service', 'notifications', 'frontend', 'order-list', 'order-admin', 'admin' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
 require_once __DIR__ . '/stubs.php';
 class TCC_SQLite_WPDB {
     public $prefix = 'wp_'; public $posts = 'wp_posts'; public $insert_id = 0; public $last_error = ''; public $fail_events = false; public $queries = 0; public $pdo; public $lock_result = '1';
@@ -74,6 +74,15 @@ t( 'Order box has receipt, approve and reject controls', strpos( $box, 'value="a
 t( 'Order box escapes user-supplied note and owner', strpos( $box, '<script>hello' ) === false && strpos( $box, '<script>owner' ) === false );
 t( 'Form rendered externally, never nested in Woo form', strpos( $box, '<form' ) === false && strpos( $forms, '<form id="tcc-review-101"' ) !== false && strpos( $box, 'form="tcc-review-101"' ) !== false );
 t( 'Revision/fingerprint/CSRF carried with order decision', strpos( $forms, 'name="revision"' ) !== false && strpos( $forms, 'name="fingerprint"' ) !== false && strpos( $forms, 'name="_wpnonce"' ) !== false );
+t( 'Matching payment snapshot does not repeat the same amount', strpos( $box, 'مبلغ ثبت‌شده پرداخت' ) === false );
+$order->amount = '485001'; ob_start(); TCC_Order_Admin::box( $order ); $mismatch_box = ob_get_clean(); $order->amount = '485000';
+t( 'Changed amount retains historical amount and visible approval warning', strpos( $mismatch_box, 'مبلغ ثبت‌شده پرداخت' ) !== false && strpos( $mismatch_box, 'تأیید تا تطبیق مالی مسدود است' ) !== false );
+$wpdb->update( 'wp_tcc_attempts', array( 'status' => 'approving' ), array( 'order_id' => 101 ) );
+ob_start(); TCC_Order_Admin::box( $order ); $interrupted_box = ob_get_clean();
+t( 'Interrupted unpaid approval has warning and no replay action', strpos( $interrupted_box, 'تأیید قبلی ناتمام است' ) !== false && strpos( $interrupted_box, 'value="approve"' ) === false );
+$order->paid = true; $order->status = 'processing'; ob_start(); TCC_Order_Admin::box( $order ); $recovery_box = ob_get_clean(); $order->paid = false; $order->status = 'on-hold';
+t( 'Paid interrupted approval exposes ledger recovery only, not rejection', strpos( $recovery_box, 'تکمیل سابقه تأیید' ) !== false && strpos( $recovery_box, 'value="reject"' ) === false && strpos( $recovery_box, 'نه پرداخت دوباره' ) !== false );
+$wpdb->update( 'wp_tcc_attempts', array( 'status' => 'under_review' ), array( 'order_id' => 101 ) );
 $GLOBALS['review'] = false; ob_start(); TCC_Order_Admin::box( $order ); $forbidden = ob_get_clean(); t( 'Unauthorized order editor cannot see receipt or buttons', strpos( $forbidden, '<img' ) === false && strpos( $forbidden, 'value="approve"' ) === false && strpos( $forbidden, 'INTERNAL SECRET' ) === false ); $GLOBALS['review'] = true;
 $id = 101; $a = $repo->attempt( 101 ); $settings = TCC_Settings::get(); $card = json_decode( $a['card'], true ); $latest = $repo->submission( 1 ); $reason = '<script>reason</script>'; $a['status'] = 'rejected'; $editable = true; $flash = null;
 ob_start(); include $root . '/templates/payment.php'; $customer = ob_get_clean();
@@ -116,8 +125,34 @@ t( 'Email failure uses bounded backoff without changing financial decision', (in
 $before_mail = count( $GLOBALS['mails'] ); TCC_Notifications::send( $e2 ); t( 'Backoff prevents immediate retry storm', $before_mail === count( $GLOBALS['mails'] ) );
 $_POST = array(); $_REQUEST = array();
 
+// Render the exact settings template, including populated non-default values on every tab.
+$ui_settings = array_merge( TCC_Settings::defaults(), array( 'enabled' => 'yes', 'max_mb' => 3, 'hours' => 12, 'guest_days' => 5, 'support' => 'پشتیبانی آزمایشی', 'cards' => array(
+    array( 'id' => 'test-one', 'number' => '6037990000000001', 'holder' => '<script>owner</script>', 'bank' => 'بانک آزمایشی', 'label' => 'کارت فروشگاه', 'active' => true ),
+    array( 'id' => 'test-two', 'number' => '6219860000000002', 'holder' => 'TEST ONLY', 'bank' => 'بانک دوم', 'label' => 'کارت پشتیبان', 'active' => false ),
+), 'default_card' => 'test-one' ) );
+$ui_status = array( array( 'ok', 'ذخیره رسید آماده است' ) );
+ob_start(); TCC_Admin::render( $ui_settings, $ui_status, array( 2, 7 ) ); $settings_html = ob_get_clean();
+t( 'Settings use one form across all four panels', 1 === substr_count( $settings_html, '<form ' ) && 4 === substr_count( $settings_html, 'data-tcc-panel=' ) );
+t( 'Settings include every editable option, not only current tab', array_reduce( array_diff( array_keys( TCC_Settings::defaults() ), array( 'cards' ) ), function ( $ok, $key ) use ( $settings_html ) { return $ok && false !== strpos( $settings_html, 'name="settings[' . $key . ']"' ); }, true ) );
+t( 'Settings preserve non-default values and reviewer identifiers', strpos( $settings_html, 'value="12"' ) !== false && strpos( $settings_html, 'value="2,7"' ) !== false && strpos( $settings_html, 'پشتیبانی آزمایشی' ) !== false );
+t( 'Settings escape holder input and preserve CSRF', strpos( $settings_html, '<script>owner' ) === false && strpos( $settings_html, '&lt;script&gt;owner' ) !== false && strpos( $settings_html, 'name="_wpnonce"' ) !== false );
+t( 'Settings omit hosting paths and long implementation tutorials', strpos( $settings_html, 'TCC_PRIVATE_DIR' ) === false && strpos( $settings_html, 'webroot' ) === false && strpos( $settings_html, 'دفتر رویداد' ) === false );
+t( 'Auto-cancel retains no-receipt/no-declaration guard wording', strpos( $settings_html, 'فقط بدون رسید یا اعلام واریز' ) !== false );
+$_GET['tab'] = 'access'; ob_start(); TCC_Admin::render( $ui_settings, $ui_status ); $access_html = ob_get_clean();
+t( 'Selected settings tab survives full-page save redirect', strpos( $access_html, 'data-active-tab="access"' ) !== false );
+$_GET['tab'] = array( 'malformed' ); ob_start(); TCC_Admin::render( $ui_settings, $ui_status ); $safe_tab_html = ob_get_clean();
+t( 'Malformed tab input falls back safely', strpos( $safe_tab_html, 'data-active-tab="cards"' ) !== false ); unset( $_GET['tab'] );
+ob_start(); TCC_Admin::render( TCC_Settings::defaults(), array( array( 'error', 'ذخیره خصوصی رسید آماده نیست' ), array( 'error', 'کارت مقصد فعال ندارید' ) ) ); $empty_settings = ob_get_clean();
+t( 'First-run settings have an open card editor and concise readiness errors', strpos( $empty_settings, 'class="tcc-card-row" open' ) !== false && 2 === substr_count( $empty_settings, 'tcc-health-item is-error' ) );
+t( 'Order review keeps less-used sections collapsed', strpos( $box, '<details class="tcc-private-note">' ) !== false && strpos( $box, '<details class="tcc-history">' ) !== false );
+
 if ( getenv( 'TCC_TEST_OUTPUT' ) ) {
     $dir = getenv( 'TCC_TEST_OUTPUT' ); if ( ! is_dir( $dir ) ) { mkdir( $dir, 0755, true ); }
+    file_put_contents( $dir . '/settings.html', '<!doctype html><html lang="fa" dir="rtl"><body class="woocommerce_page_tisacase-card-to-card">' . $settings_html . '</body></html>' );
+    file_put_contents( $dir . '/settings-empty.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $empty_settings . '</body></html>' );
+    $latest = null; $reason = ''; $a['status'] = 'awaiting';
+    ob_start(); include $root . '/templates/payment.php'; $new_payment = ob_get_clean();
+    file_put_contents( $dir . '/payment-new.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $new_payment . '</body></html>' );
     file_put_contents( $dir . '/customer.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $customer . '</body></html>' );
     file_put_contents( $dir . '/admin.html', '<!doctype html><html lang="fa" dir="rtl"><body><form id="post"><input name="order_total" value="485000">' . $box . '</form><footer>' . $forms . '</footer></body></html>' );
 }
