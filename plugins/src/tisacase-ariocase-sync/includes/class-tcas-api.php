@@ -235,9 +235,26 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			return self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن پردازش است؛ ابتدا آن را دسته‌بندی کنید.' );
 		}
 
-		private static function reference_id( $reference ) {
+		private static function reference_parts( $reference ) {
 			$matches = array();
-			return preg_match( '/^ID:([1-9][0-9]*)$/i', trim( (string) $reference ), $matches ) ? absint( $matches[1] ) : 0;
+			if ( ! preg_match( '/^ID:([1-9][0-9]*)(?:\/([1-9][0-9]*))?$/i', trim( (string) $reference ), $matches ) ) {
+				return array();
+			}
+			$is_variation = isset( $matches[2] ) && '' !== (string) $matches[2];
+			return array(
+				'remote_id'        => absint( $is_variation ? $matches[2] : $matches[1] ),
+				'parent_remote_id' => $is_variation ? absint( $matches[1] ) : 0,
+			);
+		}
+
+		private static function reference_id( $reference ) {
+			$parts = self::reference_parts( $reference );
+			return ! empty( $parts['remote_id'] ) ? absint( $parts['remote_id'] ) : 0;
+		}
+
+		private static function reference_parent_id( $reference ) {
+			$parts = self::reference_parts( $reference );
+			return ! empty( $parts['parent_remote_id'] ) ? absint( $parts['parent_remote_id'] ) : 0;
 		}
 
 		public static function fetch_product( $code ) {
@@ -252,6 +269,31 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 		public static function fetch_product_by_id( $remote_id, $code = '' ) {
 			$payload = self::request_by_id( $remote_id );
 			return is_wp_error( $payload ) ? $payload : self::normalize_product_response( $payload, trim( (string) $code ) );
+		}
+
+		private static function fetch_variation_by_id( $parent_remote_id, $remote_id, $code = '' ) {
+			$parent_remote_id = absint( $parent_remote_id );
+			$remote_id        = absint( $remote_id );
+			if ( ! $parent_remote_id || ! $remote_id ) {
+				return self::error( 'tcas_invalid_variation_reference', 'مرجع Variation باید Parent ID و Variation ID معتبر داشته باشد.' );
+			}
+			$payload = self::request_by_id( $parent_remote_id, $remote_id );
+			if ( is_wp_error( $payload ) ) {
+				return $payload;
+			}
+			$product = self::normalize_product_response( $payload, trim( (string) $code ) );
+			if ( is_wp_error( $product ) ) {
+				return $product;
+			}
+			if ( empty( $product['remote_id'] ) || absint( $product['remote_id'] ) !== $remote_id ) {
+				return self::error( 'tcas_id_mismatch', 'Variation ID پاسخ ArioCase با مرجع درخواستی یکسان نیست.' );
+			}
+			if ( ! empty( $product['parent_remote_id'] ) && absint( $product['parent_remote_id'] ) !== $parent_remote_id ) {
+				return self::error( 'tcas_parent_id_mismatch', 'Parent ID پاسخ ArioCase با مرجع Variation یکسان نیست.' );
+			}
+			$product['parent_remote_id'] = $parent_remote_id;
+			$product['type']             = 'variation';
+			return $product;
 		}
 
 		private static function slug_candidates( $payload, $depth = 0 ) {
@@ -303,10 +345,11 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 
 		/** لینک محصول فقط به slug/ID تبدیل می‌شود؛ خود لینک هرگز Fetch نمی‌شود. */
 		public static function fetch_reference( $reference ) {
-			$reference    = trim( (string) $reference );
-			$reference_id = self::reference_id( $reference );
+			$reference           = trim( (string) $reference );
+			$reference_id        = self::reference_id( $reference );
+			$reference_parent_id = self::reference_parent_id( $reference );
 			if ( $reference_id ) {
-				$product = self::fetch_product_by_id( $reference_id );
+				$product = $reference_parent_id ? self::fetch_variation_by_id( $reference_parent_id, $reference_id ) : self::fetch_product_by_id( $reference_id );
 				if ( is_wp_error( $product ) ) {
 					return $product;
 				}
@@ -419,30 +462,34 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			$identifiers = wp_parse_args( is_array( $identifiers ) ? $identifiers : array(), array(
 				'type' => '', 'remote_id' => 0, 'parent_remote_id' => 0, 'parent_code' => '',
 			) );
-			$settings         = TCAS_Core::settings();
-			$reference_id     = self::reference_id( $code );
-			$expected_code    = $reference_id ? '' : $code;
-			$remote_id        = absint( $identifiers['remote_id'] );
-			$parent_remote_id = absint( $identifiers['parent_remote_id'] );
-			$parent_code      = trim( (string) $identifiers['parent_code'] );
-			$is_variation     = 'variation' === $identifiers['type'];
-			$product          = null;
-			$stock_parent_id  = 0;
+			$settings            = TCAS_Core::settings();
+			$reference_id        = self::reference_id( $code );
+			$reference_parent_id = self::reference_parent_id( $code );
+			$expected_code       = $reference_id ? '' : $code;
+			$remote_id           = absint( $identifiers['remote_id'] );
+			$parent_remote_id    = absint( $identifiers['parent_remote_id'] );
+			$parent_code         = trim( (string) $identifiers['parent_code'] );
+			$is_variation        = 'variation' === $identifiers['type'];
+			$product             = null;
+			$stock_parent_id     = 0;
 			if ( $reference_id ) {
-				if ( $remote_id && $remote_id !== $reference_id ) {
+				if ( ( $remote_id && $remote_id !== $reference_id ) || ( $reference_parent_id && $parent_remote_id && $parent_remote_id !== $reference_parent_id ) ) {
 					return self::error( 'tcas_id_mismatch', 'ID ذخیره‌شده با مرجع نگاشت یکسان نیست.' );
 				}
+				if ( $reference_parent_id && ! in_array( (string) $identifiers['type'], array( '', 'variation' ), true ) ) {
+					return self::error( 'tcas_variation_type_mismatch', 'مرجع Variation برای محصول سادهٔ نگاشت‌شده معتبر نیست.' );
+				}
 				$remote_id = $reference_id;
+				if ( $reference_parent_id ) {
+					$parent_remote_id = $reference_parent_id;
+					$is_variation     = true;
+				}
 			}
 
 			// Endpoint موجودی سفارشی اولویت دارد؛ در قرارداد فعلی ArioCase این فیلد خالی است.
 			if ( empty( $settings['stock_endpoint'] ) ) {
 				if ( $is_variation && $remote_id && $parent_remote_id ) {
-					$payload = self::request_by_id( $parent_remote_id, $remote_id );
-					if ( is_wp_error( $payload ) ) {
-						return $payload;
-					}
-					$product = self::normalize_product_response( $payload, $expected_code );
+					$product = self::fetch_variation_by_id( $parent_remote_id, $remote_id, $expected_code );
 					$stock_parent_id = $parent_remote_id;
 				} elseif ( $is_variation && ( $parent_remote_id || '' !== $parent_code ) ) {
 					$parent = $parent_remote_id ? self::fetch_product_by_id( $parent_remote_id, $parent_code ) : self::fetch_product( $parent_code );

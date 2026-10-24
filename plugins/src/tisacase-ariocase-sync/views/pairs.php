@@ -8,6 +8,7 @@ $mappings = TCAS_Mapping::all( 6 );
 		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-input-action"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
 		<span class="tcas-converter-arrow" aria-hidden="true">←</span>
 		<div id="tcas-link-result" class="tcas-converter-result">
+			<label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><span class="tcas-shop-label">انتخاب Variation</span><select id="tcas-link-variation" aria-label="انتخاب Variation"></select></label>
 			<span id="tcas-link-shop" class="tcas-shop-label">SKU / ID</span>
 			<span class="tcas-input-action"><input id="tcas-link-sku" type="text" dir="ltr" placeholder="SKU / ID" readonly><button type="button" id="tcas-link-copy" class="button" disabled>کپی</button></span>
 			<small id="tcas-link-product"></small>

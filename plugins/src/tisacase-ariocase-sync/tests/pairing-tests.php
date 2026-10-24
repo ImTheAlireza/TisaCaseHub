@@ -132,5 +132,13 @@ TCAS_Api::$responses['NO-IDENTITY'] = remote_product( '', array( 'remote_id' => 
 $no_identity = TCAS_Pairing::preview( pair_of( 'NO-IDENTITY-LOCAL', 'NO-IDENTITY' ) );
 pair_test( 'محصول بدون SKU و ID نگاشت جعلی نمی‌سازد', 'error' === $no_identity['row']['status'] && '' === TCAS_Mapping::remote_code( 26 ) );
 
+local_product( 27, 'LOCAL-ID-VAR', 'variation', 100 );
+TCAS_Api::$responses['ID:700/701'] = remote_product( '', array( 'remote_id' => 701, 'parent_remote_id' => 700, 'type' => 'variation', 'stock' => array( 'quantity' => 8.0, 'status' => 'instock' ) ) );
+list( $id_variation_preview, $id_variation_result ) = connect_pair( 'LOCAL-ID-VAR', 'ID:700/701' );
+$id_variation_ids = TCAS_Mapping::remote_identifiers( 27 );
+pair_test( 'Variation بدون SKU با مرجع والد/تنوع جفت و نگاشت می‌شود', is_array( $id_variation_result ) && 'ID:700/701' === $id_variation_preview['row']['remote_code'] && 'ID:700/701' === TCAS_Mapping::remote_code( 27 ) && 701 === $id_variation_ids['remote_id'] && 700 === $id_variation_ids['parent_remote_id'] && 8.0 === $GLOBALS['products'][27]->get_stock_quantity() );
+$id_variation_again = TCAS_Pairing::preview( pair_of( 'LOCAL-ID-VAR', 'ID:700/701' ) );
+pair_test( 'مرجع Variation در Preview دوباره Connected می‌شود', 'connected' === $id_variation_again['row']['status'] && 'ID:700/701' === $id_variation_again['row']['remote_code'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

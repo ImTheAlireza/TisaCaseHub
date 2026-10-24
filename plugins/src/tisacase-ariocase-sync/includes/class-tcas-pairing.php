@@ -79,8 +79,13 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return array( 'row' => self::row( $pair, 'error', $remote->get_error_message(), $extra ), 'remote' => null, 'local_id' => $local_id );
 			}
 			$remote_key = isset( $remote['code'] ) ? trim( (string) $remote['code'] ) : '';
-			if ( '' === $remote_key && ! empty( $remote['remote_id'] ) ) {
-				$remote_key = 'ID:' . absint( $remote['remote_id'] );
+			$remote_id  = ! empty( $remote['remote_id'] ) ? absint( $remote['remote_id'] ) : 0;
+			if ( '' === $remote_key && $remote_id ) {
+				$parent_remote_id = ! empty( $remote['parent_remote_id'] ) ? absint( $remote['parent_remote_id'] ) : 0;
+				if ( isset( $remote['type'] ) && 'variation' === $remote['type'] && ! $parent_remote_id ) {
+					return array( 'row' => self::row( $pair, 'error', 'برای Variation بدون SKU، Parent ID در پاسخ ArioCase لازم است.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+				}
+				$remote_key = 'ID:' . ( $parent_remote_id ? $parent_remote_id . '/' : '' ) . $remote_id;
 			}
 			if ( '' === $remote_key ) {
 				return array( 'row' => self::row( $pair, 'error', 'محصول ArioCase باید SKU یا Product ID داشته باشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );

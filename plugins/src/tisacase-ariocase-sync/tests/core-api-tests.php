@@ -273,5 +273,29 @@ $GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 658, 'sku' 
 $late_sku_stock = TCAS_Api::fetch_stock( 'ID:658' );
 api_test( 'افزوده‌شدن SKU بعد از نگاشت، خواندن با ID را نمی‌شکند', is_array( $late_sku_stock ) && 6.0 === $late_sku_stock['quantity'] && 'LATE-SKU' === $late_sku_stock['product']['code'] );
 
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 701, 'parent_id' => 700, 'sku' => '', 'stock_quantity' => 8, 'stock_status' => 'instock', 'attributes' => array( array( 'name' => 'Color', 'option' => 'Black' ) ) ) ) );
+$variation_by_id = TCAS_Api::fetch_reference( 'ID:700/701' );
+api_test( 'مرجع ترکیبی، Variation بدون SKU را با والد Resolve می‌کند', is_array( $variation_by_id ) && 'variation' === $variation_by_id['type'] && 701 === $variation_by_id['remote_id'] && 700 === $variation_by_id['parent_remote_id'] && 'https://ariocase.com/wp-json/wc/v3/products/700/variations/701' === $GLOBALS['requests'][0][0] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 702, 'parent_id' => 700, 'sku' => '', 'stock_quantity' => 8 ) ) );
+$variation_child_mismatch = TCAS_Api::fetch_reference( 'ID:700/701' );
+api_test( 'Variation ID متفاوت در پاسخ رد می‌شود', is_wp_error( $variation_child_mismatch ) && 'tcas_id_mismatch' === $variation_child_mismatch->get_error_code() );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 701, 'parent_id' => 699, 'sku' => '', 'stock_quantity' => 8 ) ) );
+$variation_parent_mismatch = TCAS_Api::fetch_reference( 'ID:700/701' );
+api_test( 'Parent ID متفاوت در پاسخ Variation رد می‌شود', is_wp_error( $variation_parent_mismatch ) && 'tcas_parent_id_mismatch' === $variation_parent_mismatch->get_error_code() );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 701, 'parent_id' => 700, 'sku' => '', 'stock_quantity' => 8, 'stock_status' => 'instock' ) ) );
+$variation_id_stock = TCAS_Api::fetch_stock( 'ID:700/701' );
+api_test( 'موجودی Variation با مرجع والد/تنوع تازه خوانده می‌شود', is_array( $variation_id_stock ) && 8.0 === $variation_id_stock['quantity'] && 700 === $variation_id_stock['parent_remote_id'] && 'https://ariocase.com/wp-json/wc/v3/products/700/variations/701' === $GLOBALS['requests'][0][0] );
+configure( $actual );
+$variation_stored_parent_mismatch = TCAS_Api::fetch_stock( 'ID:700/701', array( 'type' => 'variation', 'remote_id' => 701, 'parent_remote_id' => 699 ) );
+api_test( 'تضاد Parent ID ذخیره‌شده پیش از HTTP رد می‌شود', is_wp_error( $variation_stored_parent_mismatch ) && 'tcas_id_mismatch' === $variation_stored_parent_mismatch->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+configure( $actual );
+$variation_type_mismatch = TCAS_Api::fetch_stock( 'ID:700/701', array( 'type' => 'simple', 'remote_id' => 701, 'parent_remote_id' => 700 ) );
+api_test( 'مرجع Variation برای نگاشت محصول ساده پذیرفته نمی‌شود', is_wp_error( $variation_type_mismatch ) && 'tcas_variation_type_mismatch' === $variation_type_mismatch->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) { exit( $fail ? 1 : 0 ); }

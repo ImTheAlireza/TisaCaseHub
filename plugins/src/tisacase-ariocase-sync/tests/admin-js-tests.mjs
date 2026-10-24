@@ -13,7 +13,7 @@ function entryMarkup() {
 }
 function makeDom() {
 	const dom = new JSDOM(`<!doctype html><html><body>
-		<input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button><div id="tcas-link-result"><span id="tcas-link-shop"></span><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button><small id="tcas-link-product"></small></div><span id="tcas-link-status"></span>
+		<input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button><div id="tcas-link-result"><label id="tcas-link-variation-wrap" hidden><select id="tcas-link-variation"></select></label><span id="tcas-link-shop"></span><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button><small id="tcas-link-product"></small></div><span id="tcas-link-status"></span>
 		<div id="tcas-pair-entries">${entryMarkup()}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template><button id="tcas-pair-add">افزودن</button>
 		<button id="tcas-preview-start">بررسی</button><span id="tcas-preview-status"></span>
 		<div id="tcas-preview-progress" hidden><progress max="100" value="0"><span></span></div>
@@ -125,4 +125,39 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	ok('دکمهٔ تست آزاد می‌شود', !window.document.getElementById('tcas-test-connection').disabled);
 	dom.window.close();
 }
+{
+	const dom = makeDom(); const { window } = dom; let copied = '';
+	window.fetch = async () => reply({ shop: 'ariocase', shop_label: 'ArioCase', sku: '', reference: 'ID:700', name: 'Remote variable', product_id: 700, type: 'variable', variations: [
+		{ product_id: 701, parent_id: 700, sku: '', reference: 'ID:700/701', label: 'مشکی' },
+		{ product_id: 702, parent_id: 700, sku: 'AR-BLUE', reference: 'AR-BLUE', label: 'آبی' },
+	] });
+	Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value) => { copied = value; } } });
+	window.eval(script); window.document.getElementById('tcas-link-input').value = 'https://ariocase.com/product/remote-variable/'; window.document.getElementById('tcas-link-resolve').click();
+	await waitFor(() => window.document.getElementById('tcas-link-variation').options.length === 3);
+	ok('لینک والد، منوی Variation را می‌سازد و کپی والد را قفل می‌کند', !window.document.getElementById('tcas-link-variation-wrap').hidden && window.document.getElementById('tcas-link-sku').value === '' && window.document.getElementById('tcas-link-copy').disabled);
+	ok('گزینه، ID عددی و مرجع کامل Variation را نشان می‌دهد', window.document.getElementById('tcas-link-variation').options[1].textContent.includes('#701') && window.document.getElementById('tcas-link-variation').options[1].textContent.includes('ID:700/701'));
+	const select = window.document.getElementById('tcas-link-variation'); select.value = '0'; select.dispatchEvent(new window.Event('change'));
+	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'ID:700/701');
+	ok('انتخاب Variation مرجع والد/تنوع را قابل‌کپی می‌کند', !window.document.getElementById('tcas-link-copy').disabled && window.document.getElementById('tcas-link-shop').textContent.includes('ID'));
+	window.document.getElementById('tcas-link-copy').click(); await waitFor(() => copied === 'ID:700/701');
+	ok('Clipboard مرجع Variation را می‌گیرد نه ID والد را', copied === 'ID:700/701');
+	select.value = '1'; select.dispatchEvent(new window.Event('change'));
+	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'AR-BLUE');
+	ok('Variation دارای SKU همچنان همان SKU را می‌دهد', window.document.getElementById('tcas-link-sku').value === 'AR-BLUE');
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async () => reply({ shop: 'tisacase', shop_label: 'TisaCase', sku: 'TS-PARENT', reference: 'TS-PARENT', name: 'Local variable', product_id: 43, type: 'variable', variations: [ { product_id: 44, parent_id: 43, sku: 'TS-RED', reference: 'TS-RED', label: 'قرمز' } ] });
+	window.eval(script); window.document.getElementById('tcas-link-input').value = 'https://tisacase.com/product/local-variable/'; window.document.getElementById('tcas-link-resolve').click();
+	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'TS-RED');
+	ok('تک‌Variation تیساکیس خودکار انتخاب و SKU آن آماده می‌شود', window.document.getElementById('tcas-link-sku').value === 'TS-RED' && !window.document.getElementById('tcas-link-copy').disabled);
+	dom.window.close();
+}
+
+const uiCss = fs.readFileSync(path.join(root, 'assets/admin.css'), 'utf8');
+const pairsView = fs.readFileSync(path.join(root, 'views/pairs.php'), 'utf8');
+ok('Checkbox تنظیمات اندازهٔ ثابت دارد و تمام‌عرض نمی‌شود', uiCss.includes('.tcas-check-line input[type=checkbox]') && uiCss.includes('width:16px') && uiCss.includes('justify-self:start'));
+ok('Selector و استایل جمع‌وجور Variation در View واقعی وجود دارد', pairsView.includes('id="tcas-link-variation"') && pairsView.includes('class="tcas-link-variation" hidden') && uiCss.includes('.tcas-link-variation select'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

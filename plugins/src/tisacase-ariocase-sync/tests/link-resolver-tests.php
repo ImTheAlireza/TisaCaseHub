@@ -21,11 +21,13 @@ function get_page_by_path( $slug, $output, $post_type ) {
 function url_to_postid( $url ) { $GLOBALS['url_calls'][] = $url; return isset( $GLOBALS['pretty'][ $url ] ) ? $GLOBALS['pretty'][ $url ] : 0; }
 function wc_get_product( $id ) { return isset( $GLOBALS['products'][ $id ] ) ? $GLOBALS['products'][ $id ] : false; }
 class TCAS_Test_Product {
-	private $sku; private $name; private $type;
-	public function __construct( $sku, $name = 'Product', $type = 'simple' ) { $this->sku = $sku; $this->name = $name; $this->type = $type; }
+	private $sku; private $name; private $type; private $children; private $attributes;
+	public function __construct( $sku, $name = 'Product', $type = 'simple', $children = array(), $attributes = array() ) { $this->sku = $sku; $this->name = $name; $this->type = $type; $this->children = $children; $this->attributes = $attributes; }
 	public function get_sku() { return $this->sku; }
 	public function get_name() { return $this->name; }
 	public function get_type() { return $this->type; }
+	public function get_children() { return $this->children; }
+	public function get_attributes() { return $this->attributes; }
 }
 class TCAS_Core { public static function settings() { return array( 'base_url' => 'https://ariocase.com/wp-json/wc/v3' ); } }
 class TCAS_Api {
@@ -55,6 +57,15 @@ $plain = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?product=local-case'
 resolver_test( 'Plain Permalink تیساکیس با نامک محصول Resolve می‌شود', is_array( $plain ) && 'TS0100' === $plain['sku'] && array( array( 'local-case', 'product' ) ) === $GLOBALS['slug_calls'] );
 
 reset_resolver_fixtures();
+$local_variable_url = 'https://tisacase.com/product/local-variable/';
+$GLOBALS['products'][43] = new TCAS_Test_Product( 'TS-PARENT', 'Local variable', 'variable', array( 44, 45 ) );
+$GLOBALS['products'][44] = new TCAS_Test_Product( 'TS-RED', 'Local variable - Red', 'variation', array(), array( 'attribute_color' => 'قرمز' ) );
+$GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', 'variation', array(), array( 'attribute_color' => 'آبی' ) );
+$GLOBALS['pretty'][ $local_variable_url ] = 43;
+$local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
+resolver_test( 'لینک والد تیساکیس، Variationها و SKU قابل‌کپی را می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'TS-RED' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && '' === $local_variable['variations'][1]['reference'] );
+
+reset_resolver_fixtures();
 $no_sku = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?p=42' );
 resolver_test( 'محصول تیساکیس بدون SKU برای کپی رد می‌شود', is_wp_error( $no_sku ) && 'tcas_local_sku_missing' === $no_sku->get_error_code() );
 $missing = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?p=999' );
@@ -65,6 +76,19 @@ $remote_url = 'https://ariocase.com/product/remote-case/';
 TCAS_Api::$responses[ $remote_url ] = remote_result();
 $remote = TCAS_Link_Resolver::resolve( $remote_url );
 resolver_test( 'لینک ArioCase از همان API قبلی به SKU تبدیل می‌شود', is_array( $remote ) && 'ariocase' === $remote['shop'] && 'AR22' === $remote['sku'] && 'AR22' === $remote['reference'] && 222 === $remote['product_id'] && array( $remote_url ) === TCAS_Api::$calls );
+
+reset_resolver_fixtures();
+$remote_variable_url = 'https://ariocase.com/product/remote-variable/';
+$remote_variable_response = remote_result( '' );
+$remote_variable_response['type'] = 'variable';
+$remote_variable_response['variations'] = array(
+	array( 'remote_id' => 223, 'parent_remote_id' => 222, 'code' => '', 'name' => '', 'variation_attributes' => array( 'Color' => 'مشکی' ) ),
+	array( 'remote_id' => 224, 'parent_remote_id' => 222, 'code' => 'AR-BLUE', 'name' => 'Blue', 'variation_attributes' => array( 'Color' => 'آبی' ) ),
+);
+TCAS_Api::$responses[ $remote_variable_url ] = $remote_variable_response;
+$remote_variable = TCAS_Link_Resolver::resolve( $remote_variable_url );
+resolver_test( 'Variation آریوکیس بدون SKU مرجع والد/تنوع می‌گیرد', is_array( $remote_variable ) && 'ID:222/223' === $remote_variable['variations'][0]['reference'] && 223 === $remote_variable['variations'][0]['product_id'] && 222 === $remote_variable['variations'][0]['parent_id'] && 'مشکی' === $remote_variable['variations'][0]['label'] );
+resolver_test( 'Variation آریوکیس دارای SKU با همان SKU و ID نمایش داده می‌شود', 'AR-BLUE' === $remote_variable['variations'][1]['reference'] && 224 === $remote_variable['variations'][1]['product_id'] );
 
 reset_resolver_fixtures();
 $id_only_url = 'https://ariocase.com/product/id-only-case/';

@@ -3,7 +3,7 @@
 
 	const cfg = window.TCAS_ADMIN || {};
 	const $ = (id) => document.getElementById(id);
-	const state = { token: '', previewDone: false, running: false };
+	const state = { token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [] };
 
 	function text(id, value, isError) {
 		const node = $(id);
@@ -177,7 +177,7 @@
 				throw new Error('برای هر جفت، شناسهٔ هر دو فروشگاه را وارد کنید.');
 			}
 			if (/^(?:[a-z]+:\/\/|www\.)/i.test(local) || /^(?:[a-z]+:\/\/|www\.)/i.test(remote)) {
-				throw new Error('لینک را ابتدا در «تبدیل لینک به شناسه» به SKU تبدیل کنید.');
+				throw new Error('لینک را ابتدا در «تبدیل لینک به شناسه» به شناسه تبدیل کنید.');
 			}
 			lines.push(local + ' - ' + remote);
 		}
@@ -279,17 +279,43 @@
 		}
 	}
 
-	function resetLinkResult() {
+	function setLinkOutput(reference, shopLabel, productName) {
 		const sku = $('tcas-link-sku');
-		if (sku) sku.value = '';
+		if (sku) sku.value = reference || '';
 		const copy = $('tcas-link-copy');
-		if (copy) copy.disabled = true;
+		if (copy) copy.disabled = !reference;
 		const shop = $('tcas-link-shop');
-		if (shop) shop.textContent = 'SKU / ID';
+		if (shop) shop.textContent = shopLabel || 'SKU / ID';
 		const product = $('tcas-link-product');
-		if (product) product.textContent = '';
+		if (product) product.textContent = productName || '';
+	}
+
+	function resetLinkResult() {
+		state.linkProduct = null;
+		state.linkVariations = [];
+		setLinkOutput('', 'SKU / ID', '');
 		const result = $('tcas-link-result');
 		if (result) delete result.dataset.shop;
+		const select = $('tcas-link-variation');
+		if (select) select.textContent = '';
+		const wrap = $('tcas-link-variation-wrap');
+		if (wrap) wrap.hidden = true;
+	}
+
+	function chooseLinkVariation() {
+		const select = $('tcas-link-variation');
+		const data = state.linkProduct;
+		if (!select || !data) return;
+		const variation = '' !== select.value ? state.linkVariations[Number(select.value)] : null;
+		if (!variation || !variation.reference) {
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+			text('tcas-link-status', 'یک Variation با شناسهٔ معتبر انتخاب کنید.', true);
+			return;
+		}
+		const reference = String(variation.reference);
+		const label = variation.label ? data.name + ' — ' + variation.label : data.name;
+		setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), label || '');
+		text('tcas-link-status', 'شناسهٔ Variation آمادهٔ کپی است.');
 	}
 
 	async function resolveLink() {
@@ -302,18 +328,41 @@
 		text('tcas-link-status', 'در حال تشخیص فروشگاه و دریافت شناسه…');
 		try {
 			const data = await request('resolve_link', { url });
-			const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
-			const sku = $('tcas-link-sku');
-			if (sku) sku.value = reference;
-			const shop = $('tcas-link-shop');
-			if (shop) shop.textContent = (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU');
-			const product = $('tcas-link-product');
-			if (product) product.textContent = data.name || '';
+			state.linkProduct = data;
+			state.linkVariations = Array.isArray(data.variations) ? data.variations : [];
 			const result = $('tcas-link-result');
 			if (result && data.shop) result.dataset.shop = data.shop;
-			const copy = $('tcas-link-copy');
-			if (copy) copy.disabled = !reference;
-			text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
+			if (data.type === 'variable') {
+				const wrap = $('tcas-link-variation-wrap');
+				const select = $('tcas-link-variation');
+				if (wrap) wrap.hidden = false;
+				if (select) {
+					select.textContent = '';
+					const placeholder = node('option', '', 'انتخاب Variation…');
+					placeholder.value = '';
+					select.appendChild(placeholder);
+					state.linkVariations.forEach((variation, index) => {
+						const identity = variation.sku || variation.reference || 'بدون شناسه';
+						const details = [variation.label || 'Variation', variation.product_id ? '#' + String(variation.product_id) : '', identity].filter(Boolean);
+						const option = node('option', '', details.join(' · '));
+						option.value = String(index);
+						option.disabled = !variation.reference;
+						select.appendChild(option);
+					});
+				}
+				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+				const usable = state.linkVariations.filter((variation) => Boolean(variation.reference));
+				if (usable.length === 1 && select) {
+					select.value = String(state.linkVariations.indexOf(usable[0]));
+					chooseLinkVariation();
+				} else {
+					text('tcas-link-status', usable.length ? 'یک Variation را انتخاب کنید.' : 'Variation با شناسهٔ معتبر پیدا نشد.', !usable.length);
+				}
+			} else {
+				const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
+				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), data.name || '');
+				text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
+			}
 		} catch (error) { text('tcas-link-status', error.message, true); }
 		busy(button, false);
 	}
@@ -340,7 +389,7 @@
 		const button = $('tcas-test-connection');
 		const code = $('tcas-test-code') ? $('tcas-test-code').value.trim() : '';
 		const out = $('tcas-test-result');
-		if (!code) { if (out) out.textContent = 'لینک یا SKU را وارد کنید.'; return; }
+		if (!code) { if (out) out.textContent = 'لینک یا شناسه را وارد کنید.'; return; }
 		busy(button, true);
 		if (out) out.textContent = 'در حال اتصال و بررسی ساختار پاسخ…';
 		try {
@@ -388,6 +437,8 @@
 	}
 	const copyButton = $('tcas-link-copy');
 	if (copyButton) copyButton.addEventListener('click', copyLinkSku);
+	const variationSelect = $('tcas-link-variation');
+	if (variationSelect) variationSelect.addEventListener('change', chooseLinkVariation);
 	const testButton = $('tcas-test-connection');
 	if (testButton) testButton.addEventListener('click', testConnection);
 	const mapButton = $('tcas-map-add');

@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, ariocase
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.5.0
+Stable tag: 1.6.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -16,7 +16,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 `AR120 - AR22`
 
-اگر شناسهٔ یکی از دو فروشگاه را ندارید، لینک محصول را در «تبدیل لینک به شناسه» وارد کنید. فروشگاه از روی دامنه تشخیص داده می‌شود و SKU واقعی برای کپی نمایش داده می‌شود. اگر محصول ArioCase فقط Product ID داشته باشد، خروجی قابل‌کپی `ID:<product_id>` است.
+اگر شناسهٔ یکی از دو فروشگاه را ندارید، لینک محصول را در «تبدیل لینک به شناسه» وارد کنید. فروشگاه از روی دامنه تشخیص داده می‌شود و SKU واقعی برای کپی نمایش داده می‌شود. اگر محصول ArioCase فقط Product ID داشته باشد، خروجی قابل‌کپی `ID:<product_id>` است. برای محصول متغیر، منوی «انتخاب Variation» باز می‌شود و شناسهٔ همان متغیر کپی می‌شود؛ شناسهٔ والد برای اتصال پیشنهاد نمی‌شود.
 
 قالب خطی قبلی با دو SKU و قالب لینک‌دار نسخهٔ 1.3.0 برای سازگاری در لایهٔ پردازش حفظ شده است. لینک ArioCase با وب‌سرویس و لینک TisaCase از روی محصولات همان وردپرس Resolve می‌شود.
 
@@ -27,6 +27,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 * هر SKU تیساکیس و هر کد ArioCase فقط در یک جفت فعال قرار می‌گیرد.
 * پیش‌نمایش دو محصول قبل از اتصال و خواندن دوبارهٔ موجودی تازه هنگام اجرا.
 * پشتیبانی از محصول ساده با ساده و Variation با Variation؛ والد متغیر مستقیماً سینک نمی‌شود.
+* دریافت Variationهای محصول متغیر در تبدیل‌کننده و کپی SKU یا مرجع ID همان Variation.
 * کنترل موجودی در افزودن به سبد، سبد و تسویه‌حساب با تجمیع تعداد هر قلم.
 * عدم تبدیل Timeout، خطای HTTP یا JSON خراب به موجودی صفر.
 * گزارش ۱۰۰ رویداد آخر بدون ذخیرهٔ Token و ثبت در TisaCase Hub.
@@ -38,7 +39,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. به ووکامرس › جفت موجودی ArioCase › تنظیمات API بروید.
 4. آدرس پیش‌فرض را حفظ کنید، روش Bearer را انتخاب و Token را در API Key وارد کنید.
 5. با یک لینک، SKU یا مرجع `ID:<product_id>` واقعی «تست اتصال» را اجرا کنید.
-6. اگر شناسه را ندارید، لینک TisaCase یا ArioCase را در «تبدیل لینک به شناسه» وارد و SKU یا ID خروجی را کپی کنید.
+6. اگر شناسه را ندارید، لینک TisaCase یا ArioCase را در «تبدیل لینک به شناسه» وارد کنید؛ برای محصول متغیر ابتدا Variation را از منو انتخاب و سپس SKU یا ID خروجی را کپی کنید.
 7. در کارت جفت، شناسهٔ تیساکیس و آریوکیس را در فیلد مربوط به همان فروشگاه قرار دهید؛ برای دستهٔ بزرگ‌تر «افزودن جفت» بزنید.
 8. پیش‌نمایش را بررسی و فقط جفت‌های تأییدشده را متصل کنید.
 
@@ -52,13 +53,13 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 * تشخیص لینک Pretty/Plain Permalink: `products?status=publish&per_page=100&slug={slug}`
 * لینک کوتاه `?p={id}`، مرجع مستقیم `ID:<product_id>` و دریافت محصول شناسایی‌شده: `products/{id}`
 * دریافت جزئیات تنوع‌ها هنگام نیاز: `products/{parent_id}/variations`
-* خواندن موجودی تنوع شناسایی‌شده: `products/{parent_id}/variations/{variation_id}`
+* خواندن موجودی تنوع شناسایی‌شده با مرجع `ID:<parent_id>/<variation_id>`: `products/{parent_id}/variations/{variation_id}`
 
-پاسخ List با کد دقیق و حساس‌به‌حروف بررسی می‌شود. در مرجع `ID:<product_id>`، Product ID پاسخ باید دقیقاً با ID درخواستی یکی باشد؛ ورودی عددی بدون پیشوند `ID:` همچنان SKU است. در حالت لینک، Host باید با دامنهٔ API تنظیم‌شده یکی باشد، خود صفحهٔ محصول Fetch نمی‌شود و Slug پاسخ باید دقیقاً با لینک یکی باشد. Product ID و Parent/Variation ID فقط برای یافتن همان محصول در درخواست‌های بعدی نگهداری می‌شوند.
+پاسخ List با کد دقیق و حساس‌به‌حروف بررسی می‌شود. در مراجع `ID:<product_id>` و `ID:<parent_id>/<variation_id>`، IDهای پاسخ باید دقیقاً با مرجع درخواستی یکی باشند؛ ورودی عددی بدون پیشوند `ID:` همچنان SKU است. در حالت لینک، Host باید با دامنهٔ API تنظیم‌شده یکی باشد، خود صفحهٔ محصول Fetch نمی‌شود و Slug پاسخ باید دقیقاً با لینک یکی باشد. Product ID و Parent/Variation ID فقط برای یافتن همان محصول در درخواست‌های بعدی نگهداری می‌شوند.
 
 == TisaCase link resolver ==
 
-لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink با Rewrite خود وردپرس به Product ID تبدیل می‌شود. SKU خالی، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
+لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink با Rewrite خود وردپرس به Product ID تبدیل می‌شود. برای محصول متغیر، Variationها و SKUهای واقعی همان وردپرس بازگردانده می‌شوند. SKU خالی در محصول ساده، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
 
 == Security and stock behavior ==
 
@@ -75,10 +76,10 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 نه. هیچ فیلد محصول به‌جز `manage_stock`، `stock_quantity` و `stock_status` تغییر نمی‌کند. نگاشت و شناسه‌های API هم فقط Meta داخلی افزونه هستند.
 
 = چه لینک‌هایی پشتیبانی می‌شوند؟ =
-لینک محصول TisaCase یا ArioCase با Pretty Permalink مثل `/product/case-slug/`، نامک در Query مثل `?product=case-slug` و لینک کوتاه `?p=123`. دامنه باید با سایت جاری یا ArioCase تنظیم‌شده یکی باشد. لینک دسته‌بندی، برچسب یا دامنهٔ دیگر پذیرفته نمی‌شود. برای Variation در حال حاضر باید SKU دقیق همان Variation را وارد کنید.
+لینک محصول TisaCase یا ArioCase با Pretty Permalink مثل `/product/case-slug/`، نامک در Query مثل `?product=case-slug` و لینک کوتاه `?p=123`. دامنه باید با سایت جاری یا ArioCase تنظیم‌شده یکی باشد. لینک دسته‌بندی، برچسب یا دامنهٔ دیگر پذیرفته نمی‌شود. برای Variation، لینک والد را در تبدیل‌کننده وارد و متغیر را از منو انتخاب کنید؛ SKU یا مرجع ID قابل‌کپی همان Variation ساخته می‌شود.
 
 = اگر محصول ArioCase فقط Product ID داشته باشد چه می‌شود؟ =
-لینک محصول در تبدیل‌کننده مرجع `ID:<product_id>` می‌سازد. این مرجع در Preview، اتصال و نگاشت داخلی حفظ می‌شود و خواندن تازهٔ موجودی با `products/{id}` انجام می‌شود. SKU ساختگی ساخته نمی‌شود.
+لینک محصول ساده در تبدیل‌کننده مرجع `ID:<product_id>` می‌سازد. برای Variation بدون SKU، مرجع `ID:<parent_id>/<variation_id>` ساخته می‌شود تا والد و تنوع هر دو مشخص باشند. این مراجع در Preview، اتصال و نگاشت داخلی حفظ می‌شوند و خواندن تازهٔ موجودی از Endpoint متناظر انجام می‌شود. SKU ساختگی ساخته نمی‌شود.
 
 = اگر یکی از دو کد وجود نداشته باشد چه می‌شود؟ =
 همان جفت با خطا رد می‌شود. هیچ محصول جدیدی ساخته نمی‌شود و هیچ نگاشتی ذخیره نمی‌شود.
@@ -90,6 +91,12 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.6.0 =
+* افزودن منوی انتخاب Variation به تبدیل‌کنندهٔ لینک در TisaCase و ArioCase.
+* کپی SKU یا مرجع `ID:<parent_id>/<variation_id>` برای Variation و پشتیبانی کامل از Preview، نگاشت و Stock تازه.
+* قفل کپی شناسهٔ والد تا انتخاب Variation و نمایش ID عددی هر متغیر در گزینه‌ها.
+* اصلاح پهن‌شدن Checkbox پاک‌کردن کلید و حفظ چیدمان جمع‌وجور کارت‌ها.
 
 = 1.5.0 =
 * پشتیبانی از محصول ArioCase با Product ID و SKU خالی در تبدیل‌کننده، Preview، اتصال و خواندن موجودی.

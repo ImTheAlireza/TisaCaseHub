@@ -31,14 +31,53 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			return array_values( array_unique( $hosts ) );
 		}
 
+		private static function variation_label( $attributes, $fallback = '' ) {
+			$values = array();
+			foreach ( (array) $attributes as $attribute ) {
+				if ( is_array( $attribute ) ) {
+					if ( isset( $attribute['option'] ) ) {
+						$attribute = $attribute['option'];
+					} elseif ( isset( $attribute['value'] ) ) {
+						$attribute = $attribute['value'];
+					} elseif ( ! empty( $attribute['options'] ) && is_array( $attribute['options'] ) ) {
+						$attribute = reset( $attribute['options'] );
+					}
+				}
+				if ( is_scalar( $attribute ) && '' !== trim( (string) $attribute ) ) {
+					$values[] = trim( (string) $attribute );
+				}
+			}
+			$values = array_values( array_unique( $values ) );
+			return $values ? implode( ' / ', $values ) : trim( (string) $fallback );
+		}
+
 		private static function local_result( $product_id ) {
 			$product_id = absint( $product_id );
 			$product    = $product_id && function_exists( 'wc_get_product' ) ? wc_get_product( $product_id ) : false;
 			if ( ! $product || ! is_object( $product ) ) {
 				return self::error( 'tcas_local_product_missing', 'این لینک به یک محصول موجود در TisaCase اشاره نمی‌کند.' );
 			}
-			$sku = trim( (string) $product->get_sku() );
-			if ( '' === $sku ) {
+			$sku        = trim( (string) $product->get_sku() );
+			$type       = (string) $product->get_type();
+			$variations = array();
+			if ( 'variable' === $type ) {
+				foreach ( (array) $product->get_children() as $variation_id ) {
+					$variation_id = absint( $variation_id );
+					$variation    = $variation_id ? wc_get_product( $variation_id ) : false;
+					if ( ! $variation || ! is_object( $variation ) || 'variation' !== $variation->get_type() ) {
+						continue;
+					}
+					$variation_sku = trim( (string) $variation->get_sku() );
+					$variations[]  = array(
+						'product_id' => $variation_id,
+						'parent_id'  => $product_id,
+						'sku'        => $variation_sku,
+						'reference'  => $variation_sku,
+						'label'      => self::variation_label( $variation->get_attributes(), $variation->get_name() ),
+					);
+				}
+			}
+			if ( '' === $sku && 'variable' !== $type ) {
 				return self::error( 'tcas_local_sku_missing', 'برای این محصول در TisaCase شناسهٔ SKU ثبت نشده است.' );
 			}
 			return array(
@@ -48,7 +87,8 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 				'reference'  => $sku,
 				'name'       => (string) $product->get_name(),
 				'product_id' => $product_id,
-				'type'       => (string) $product->get_type(),
+				'type'       => $type,
+				'variations' => $variations,
 			);
 		}
 
@@ -104,9 +144,25 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 				}
 				$product_id = absint( $product['remote_id'] );
 				$sku        = isset( $product['code'] ) ? trim( (string) $product['code'] ) : '';
+				$type       = (string) $product['type'];
 				$reference  = '' !== $sku ? $sku : ( $product_id ? 'ID:' . $product_id : '' );
 				if ( '' === $reference ) {
 					return self::error( 'tcas_remote_id_missing', 'محصول ArioCase باید SKU یا Product ID داشته باشد.' );
+				}
+				$variations = array();
+				if ( 'variable' === $type ) {
+					foreach ( (array) $product['variations'] as $variation ) {
+						$variation_id = ! empty( $variation['remote_id'] ) ? absint( $variation['remote_id'] ) : 0;
+						$parent_id    = ! empty( $variation['parent_remote_id'] ) ? absint( $variation['parent_remote_id'] ) : $product_id;
+						$variation_sku = isset( $variation['code'] ) ? trim( (string) $variation['code'] ) : '';
+						$variations[]  = array(
+							'product_id' => $variation_id,
+							'parent_id'  => $parent_id,
+							'sku'        => $variation_sku,
+							'reference'  => '' !== $variation_sku ? $variation_sku : ( $parent_id && $variation_id ? 'ID:' . $parent_id . '/' . $variation_id : '' ),
+							'label'      => self::variation_label( isset( $variation['variation_attributes'] ) ? $variation['variation_attributes'] : array(), isset( $variation['name'] ) ? $variation['name'] : '' ),
+						);
+					}
 				}
 				return array(
 					'shop'       => 'ariocase',
@@ -115,7 +171,8 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 					'reference'  => $reference,
 					'name'       => (string) $product['name'],
 					'product_id' => $product_id,
-					'type'       => (string) $product['type'],
+					'type'       => $type,
+					'variations' => $variations,
 				);
 			}
 			return self::error( 'tcas_unknown_shop', 'دامنهٔ لینک با TisaCase یا ArioCase تنظیم‌شده یکسان نیست.' );

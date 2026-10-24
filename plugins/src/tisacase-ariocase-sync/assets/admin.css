@@ -189,7 +189,8 @@
 .tcas-form-grid label,.tcas-settings-grid label { min-width:0; }
 .tcas-form-grid input,.tcas-form-grid select,.tcas-settings-grid select { width:100%; max-width:100%; }
 .tcas-span-2,.tcas-check-line { grid-column:span 2; }
-.tcas-check-line { display:flex; align-items:center; gap:6px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-check-line { display:flex; align-items:center; justify-self:start; gap:7px; min-height:34px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-check-line input[type=checkbox],.tcas-switch-row input[type=checkbox],.tcas-pair-select input[type=checkbox] { width:16px; min-width:16px; height:16px; min-height:16px; flex:0 0 16px; margin:0; padding:0; }
 .tcas-switch-row {
   display:flex;
   align-items:center;
@@ -267,6 +268,8 @@
 .tcas-converter-card { border-color:var(--tisa-primary-soft,#E8F0EE); }
 .tcas-converter-layout { display:grid; grid-template-columns:minmax(0,1fr) 30px minmax(0,1fr); gap:12px; align-items:end; }
 .tcas-converter-source,.tcas-converter-result { display:grid; gap:5px; min-width:0; }
+.tcas-link-variation { display:grid; gap:5px; margin-bottom:3px; }
+.tcas-link-variation select { width:100%; min-width:0; }
 .tcas-input-action { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:7px; }
 .tcas-input-action input { width:100%; min-width:0; }
 .tcas-input-action .button { align-self:stretch; min-height:34px; }
