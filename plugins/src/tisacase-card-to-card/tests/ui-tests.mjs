@@ -83,6 +83,60 @@ decide('approve'); await pause();
 test('Unsaved Woo order edits block financial decisions', () => { assert.equal(fetched.length, before); assert.match(box.querySelector('.tcc-feedback').textContent, /ذخیره/); });
 const image = box.querySelector('.tcc-admin-image img'); box.querySelector('.tcc-rotate').click();
 test('Rotation changes presentation, not receipt source', () => { assert.equal(image.style.transform, 'rotate(90deg)'); assert.ok(image.src.includes('action=tcc_receipt')); });
+// Real order values, not UI events or widget bookkeeping, determine dirtiness.
+function reviewFixture(id = 'post') {
+    const fixture = dom('admin.html'), win = fixture.window, document = win.document;
+    const main = document.querySelector('#post'); main.id = id;
+    const extra = document.createElement('input'); extra.name = 'billing_company'; extra.value = 'TEST'; main.append(extra);
+    const checked = document.createElement('input'); checked.type = 'checkbox'; checked.name = 'billing_opt_in'; checked.value = ''; main.append(checked);
+    const multiple = document.createElement('select'); multiple.name = 'custom_choices[]'; multiple.multiple = true; multiple.innerHTML = '<option value="a" selected>A</option><option value="b">B</option>'; main.append(multiple);
+    const requests = [];
+    win.fetch = async (url, options) => { requests.push(options.body); return {ok: false, json: async () => ({success: false, data: {message: 'TEST ONLY: no financial action'}})}; };
+    win.eval(fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8'));
+    document.querySelector('[name=confirmed]').checked = true;
+    return {win, document, main, extra, checked, multiple, requests, decide: async (decision = 'approve') => {
+        const button = document.querySelector('[value="' + decision + '"][name=decision]');
+        document.querySelector('.tcc-review-form').dispatchEvent(new win.SubmitEvent('submit', {bubbles: true, cancelable: true, submitter: button})); await pause();
+    }};
+}
+for (const id of ['post', 'order', 'woocommerce-order']) {
+    const fixture = reviewFixture(id);
+    fixture.main.querySelector('[name=order_total]').dispatchEvent(new fixture.win.Event('change', {bubbles: true}));
+    await fixture.decide();
+    test('Unchanged Woo initialization events do not block review: #' + id, () => assert.equal(fixture.requests.length, 1));
+    fixture.extra.value = 'EDITED'; fixture.extra.dispatchEvent(new fixture.win.Event('input', {bubbles: true})); await fixture.decide();
+    test('Real order edits still block review: #' + id, () => assert.equal(fixture.requests.length, 1));
+    fixture.extra.value = 'TEST'; fixture.extra.dispatchEvent(new fixture.win.Event('input', {bubbles: true})); await fixture.decide();
+    test('Reverting actual edits restores a clean order: #' + id, () => assert.equal(fixture.requests.length, 2));
+    fixture.win.close();
+}
+const widgets = reviewFixture();
+const search = widgets.document.createElement('input'); search.name = 'select2_search'; search.className = 'select2-search__field'; widgets.main.append(search); search.value = 'customer search'; search.dispatchEvent(new widgets.win.Event('input', {bubbles: true}));
+await widgets.decide();
+test('SelectWoo/Select2 search text is not an unsaved order edit', () => assert.equal(widgets.requests.length, 1));
+const blankMeta = widgets.document.createElement('input'); blankMeta.name = 'meta_value[999]'; widgets.main.append(blankMeta); blankMeta.dispatchEvent(new widgets.win.Event('change', {bubbles: true}));
+await widgets.decide();
+test('Dynamic empty metadata rows do not block review', () => assert.equal(widgets.requests.length, 2));
+widgets.main.prepend(widgets.extra); await widgets.decide();
+test('Metabox/control reordering does not change order data', () => assert.equal(widgets.requests.length, 3));
+const foreign = widgets.document.createElement('input'); foreign.name = 'other_action'; foreign.setAttribute('form', 'tcc-review-101'); widgets.main.append(foreign); foreign.value = 'separate form'; foreign.dispatchEvent(new widgets.win.Event('change', {bubbles: true}));
+await widgets.decide();
+test('Controls owned by another form do not dirty the Woo order', () => assert.equal(widgets.requests.length, 4));
+blankMeta.value = 'ACTUAL NEW METADATA'; await widgets.decide();
+test('Populating new order metadata silently still blocks review', () => assert.equal(widgets.requests.length, 4)); blankMeta.value = '';
+widgets.checked.checked = true; await widgets.decide();
+test('Silent changes to real order checkboxes remain protected', () => assert.equal(widgets.requests.length, 4)); widgets.checked.checked = false;
+widgets.multiple.options[1].selected = true; await widgets.decide();
+test('Silent changes to multiple selections remain protected', () => assert.equal(widgets.requests.length, 4)); widgets.multiple.options[1].selected = false;
+widgets.extra.value = ''; await widgets.decide();
+test('Clearing previously saved order text still blocks review', () => assert.equal(widgets.requests.length, 4)); widgets.extra.value = 'TEST';
+for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
+    widgets.document.querySelector('[name=reason]').value = 'دلیل آزمایشی مشتری';
+    widgets.document.querySelector('[name=reason]').dispatchEvent(new widgets.win.Event('input', {bubbles: true}));
+    const countBefore = widgets.requests.length; await widgets.decide(decision);
+    test('Decision remains usable after harmless UI updates: ' + decision, () => { assert.equal(widgets.requests.length, countBefore + 1); assert.equal(widgets.requests.at(-1).get('decision'), decision); assert.ok(widgets.requests.at(-1).get('fingerprint')); });
+}
+widgets.win.close();
 const settingsDom = dom('settings.html'); const sw = settingsDom.window, sd = sw.document;
 const sf = sd.querySelector('#tcc-settings-form');
 test('No-JS settings keep all panels visible and submittable', () => {

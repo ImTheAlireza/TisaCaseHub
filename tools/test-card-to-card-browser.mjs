@@ -46,6 +46,61 @@ async function geometry() {
     });
 }
 try {
+    // Reproduce storefronts that inherit left alignment or style Woo forms
+    // explicitly, even when their stylesheet is loaded AFTER the gateway CSS.
+    for (const host of ['inherited', 'explicit']) {
+        for (const width of [1024, 390, 320]) {
+            await page.setViewportSize({width, height: 1000});
+            for (const route of ['/payment', '/correction']) {
+                const label = `${route} ${width}px ${host} LTR theme`;
+                await goto(route);
+                await page.evaluate(() => {
+                    document.documentElement.dir = 'ltr';
+                    document.body.classList.add('woocommerce');
+                    const outside = document.createElement('p'); outside.id = 'theme-copy'; outside.textContent = 'Unrelated theme content'; document.body.append(outside);
+                });
+                await page.addStyleTag({content: `
+                    html, body { direction: ltr; text-align: left; }
+                    ${host === 'explicit' ? `
+                    .woocommerce form { text-align: left; }
+                    .woocommerce :is(h1, h2, h3, p, small, details, summary, label) { direction: ltr; text-align: left; }
+                    .woocommerce form :is(input, textarea) { direction: ltr; text-align: left; }
+                    ` : ''}
+                `});
+                await check('Persian payment text resists theme alignment: ' + label, async () => {
+                    const alignment = await page.locator('.tcc-payment, .tcc-payment h2, .tcc-payment p, .tcc-payment details, .tcc-payment summary, .tcc-upload-form, .tcc-field, .tcc-upload-form > small, .tcc-upload-form textarea').evaluateAll(nodes => nodes.map(el => ({
+                        element: el.tagName + '.' + el.className, direction: getComputedStyle(el).direction, align: getComputedStyle(el).textAlign
+                    })));
+                    assert.ok(alignment.length >= 10);
+                    assert.deepEqual(alignment.filter(el => el.direction !== 'rtl' || el.align !== 'right'), [], 'Theme must not left-align customer payment text');
+                });
+                await check('LTR values and centered bank card survive RTL fix: ' + label, async () => {
+                    await page.locator('[name=reference]').fill('000123-AB'); await page.locator('[name=last4]').fill('0123');
+                    await page.locator('[name=note]').fill('توضیح آزمایشی مشتری');
+                    const values = await page.locator('.tcc-upload-form').evaluate(form => ({
+                        values: ['reference', 'last4', 'note'].map(name => new FormData(form).get(name)),
+                        inputs: ['reference', 'last4'].map(name => ({direction: getComputedStyle(form.elements[name]).direction, align: getComputedStyle(form.elements[name]).textAlign})),
+                        fileDirection: getComputedStyle(form.elements.receipt).direction
+                    }));
+                    assert.deepEqual(values.values, ['000123-AB', '0123', 'توضیح آزمایشی مشتری']);
+                    assert.deepEqual(values.inputs, [{direction: 'ltr', align: 'left'}, {direction: 'ltr', align: 'left'}]); assert.equal(values.fileDirection, 'rtl');
+                    const card = await page.locator('.tcc-card-number').evaluate(el => ({direction: getComputedStyle(el).direction, align: getComputedStyle(el).textAlign}));
+                    assert.deepEqual(card, {direction: 'ltr', align: 'center'});
+                    assert.deepEqual(await page.locator('.tcc-money, .tcc-bank').evaluateAll(nodes => nodes.map(el => getComputedStyle(el).textAlign)), ['center', 'center']);
+                });
+                await check('RTL fix stays scoped and fits mobile: ' + label, async () => {
+                    assert.deepEqual(await page.locator('#theme-copy').evaluate(el => ({direction: getComputedStyle(el).direction, align: getComputedStyle(el).textAlign})), {direction: 'ltr', align: 'left'});
+                    const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); assert.deepEqual(result.offenders, []);
+                    const text = await page.locator('label:has([name=reference])').evaluate(el => {
+                        const range = document.createRange(); range.selectNodeContents(el.firstChild);
+                        return {right: range.getBoundingClientRect().right, fieldRight: el.getBoundingClientRect().right};
+                    });
+                    assert.ok(Math.abs(text.right - text.fieldRight) < 2, JSON.stringify(text));
+                });
+                if (host === 'explicit' && route === '/payment') await page.locator('.tcc-payment').screenshot({path: path.join(out, `payment-rtl-theme-${width}.png`)});
+            }
+        }
+    }
     for (const shared of [false, true]) {
         for (const width of [1440, 1024, 768, 390, 320]) {
             await page.setViewportSize({width, height: 1000});
@@ -143,6 +198,40 @@ try {
     await check('Real browser previews selected PNG locally', async () => { const image = page.locator('.tcc-preview'); assert.equal(await image.isVisible(), true); assert.match(await image.getAttribute('src'), /^blob:/); });
     await page.locator('.tcc-upload-form [type=submit]').click();
     await check('Preview upload is non-operational: no HTTP receipt submission', async () => { assert.equal(reviews.length, 1); assert.match(await page.locator('.tcc-upload-form .tcc-feedback').innerText(), /پیش‌نمایش/); });
+    await goto('/order');
+    await page.evaluate(() => {
+        const form = document.querySelector('#post');
+        form.querySelector('[name=order_total]').dispatchEvent(new Event('change', {bubbles: true}));
+        const search = document.createElement('input'); search.name = 'select2_search'; search.className = 'select2-search__field'; search.value = 'customer lookup'; form.append(search); search.dispatchEvent(new Event('input', {bubbles: true}));
+        const blank = document.createElement('input'); blank.name = 'meta_value[999]'; form.append(blank); blank.dispatchEvent(new Event('change', {bubbles: true}));
+        form.append(form.querySelector('[name=order_total]'));
+    });
+    await page.locator('[name=confirmed]').check();
+    await page.locator('[name=reason]').fill('دلیل آزمایشی برای بررسی دکمه‌ها');
+    for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
+        await check('Review button works after harmless Woo UI updates: ' + decision, async () => {
+            const [request] = await Promise.all([
+                page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/preview-action')),
+                page.locator('[name=decision][value=' + decision + ']').click()
+            ]);
+            await page.locator('.tcc-feedback').filter({hasText: 'هیچ تغییری ثبت نشد'}).waitFor();
+            assert.match(request.postData(), new RegExp('name="decision"\\r\\n\\r\\n' + decision));
+            for (const name of ['revision', 'fingerprint', '_wpnonce']) assert.ok(request.postData().includes('name="' + name + '"'));
+        });
+    }
+    const posted = reviews.length;
+    await page.locator('[name=order_total]').fill('600000');
+    await check('Real unsaved amount blocks every review decision', async () => {
+        for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
+            await page.locator('[name=decision][value=' + decision + ']').click();
+            assert.match(await page.locator('.tcc-feedback').innerText(), /به‌روزرسانی/); assert.equal(reviews.length, posted);
+        }
+    });
+    await page.locator('[name=order_total]').fill('485000');
+    await check('Restoring the original order value makes review usable again', async () => {
+        await Promise.all([page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/preview-action')), page.locator('[name=decision][value=approve]').click()]);
+        await page.locator('.tcc-feedback').filter({hasText: 'هیچ تغییری ثبت نشد'}).waitFor(); assert.equal(reviews.length, posted + 1);
+    });
     const noJS = await browser.newContext({javaScriptEnabled: false, viewport: {width: 390, height: 844}});
     const fallback = await noJS.newPage(); await fallback.goto(base + '/');
     await check('No-JS browser exposes all settings panels, with one valid form', async () => { assert.equal(await fallback.locator('[data-tcc-panel]:visible').count(), 4); assert.equal(await fallback.locator('form').count(), 1); });
@@ -172,7 +261,7 @@ try {
     await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
     const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
     const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
-    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.2.0'); assert.equal(Object.keys(data.cases).length, 75); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.2.1'); assert.equal(Object.keys(data.cases).length, 75); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
     for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});
         await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });

@@ -15,6 +15,8 @@
     line-height: 1.75;
     font-variant-numeric: tabular-nums;
     color-scheme: light;
+    direction: rtl;
+    text-align: right;
     isolation: isolate;
 }
 .tcc-panel *, .tcc-panel *::before, .tcc-panel *::after { box-sizing: border-box; }
@@ -28,7 +30,7 @@
     min-height: 44px; max-width: 100%; padding: 8px 16px; margin: 0;
     border: 1px solid #c9dcd7; border-radius: 10px; background: var(--tcc-surface); color: var(--tcc-deep);
     font: 600 13px/1.6 var(--tisa-font, "Vazirmatn", Tahoma, Arial, sans-serif);
-    text-decoration: none; box-shadow: none; cursor: pointer; transition: background 150ms, border-color 150ms;
+    text-align: center; text-decoration: none; box-shadow: none; cursor: pointer; transition: background 150ms, border-color 150ms;
 }
 .tcc-panel .tcc-btn:hover { background: var(--tcc-soft); border-color: var(--tcc-brand); }
 .tcc-panel .tcc-primary { color: #fff; background: var(--tcc-brand); border-color: var(--tcc-brand); }
@@ -43,7 +45,9 @@
     display: block; width: 100%; max-width: 100%; min-width: 0; min-height: 44px; margin: 0;
     border: 1px solid #d2d9d5; border-radius: 10px; background: var(--tcc-surface); color: var(--tcc-ink);
     padding: 9px 12px; font: inherit; font-weight: 400; line-height: 1.65; box-shadow: none;
+    direction: inherit; text-align: inherit;
 }
+.tcc-panel .tcc-field [dir="ltr"] { direction: ltr; text-align: left; }
 .tcc-panel .tcc-field textarea { resize: vertical; }
 .tcc-panel .tcc-field select { padding-inline-end: 30px; }
 .tcc-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -66,6 +70,10 @@
 .tcc-history { border-block-start: 1px solid var(--tcc-border); margin-block-start: 14px; padding-block-start: 10px; }
 .tcc-history[open] > summary { margin-block-end: 12px; }
 .tcc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Customer copy must not inherit a storefront's LTR form/label rules.
+ * Keep bank/amount cards centered and explicit LTR field values independent. */
+.tcc-panel.tcc-payment :is(h1, h2, h3, p, form, label, small, details, summary) { direction: rtl; text-align: right; }
 
 /* Customer page: keep 44px touch targets even when admin controls are compact. */
 .tcc-payment { max-width: 840px; margin: 24px auto; padding: clamp(18px, 3vw, 28px); border: 1px solid var(--tcc-border); border-radius: 20px; background: var(--tcc-surface); box-shadow: 0 6px 24px #1f2a2e06; }

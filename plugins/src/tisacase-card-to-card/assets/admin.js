@@ -1,14 +1,27 @@
 (function () {
     'use strict';
-    let dirty = false;
     const orderForm = document.querySelector('form#post, form#order, form#woocommerce-order');
-    const orderValues = () => orderForm ? JSON.stringify(Array.from(orderForm.querySelectorAll('input,select,textarea')).filter(field => field.name && !field.closest('.tcc-panel') && !['hidden', 'submit', 'button'].includes(field.type)).map(field => [field.name, field.value, field.checked, field.multiple ? Array.from(field.selectedOptions).map(option => option.value) : null])) : '';
-    const initialOrderValues = orderValues();
-    const markDirty = event => {
-        if (event.target.closest('.tcc-panel')) return;
-        if (event.target.closest('form#post, form#order, form#woocommerce-order')) dirty = true;
+    // A Woo/SelectWoo initialization event is not an edit. Compare actual named
+    // order values instead; never reset this baseline after user interaction.
+    const orderValues = () => {
+        if (!orderForm) return '';
+        const values = new Map();
+        Array.from(orderForm.elements).forEach(field => {
+            if (!field.matches('input,select,textarea') || !field.name || field.form !== orderForm ||
+                field.closest('.tcc-panel, .select2-container, .select2-dropdown') || field.matches('.select2-search__field') ||
+                ['hidden', 'submit', 'button', 'reset'].includes(field.type)) return;
+            const checkable = ['checkbox', 'radio'].includes(field.type);
+            if (checkable && !field.checked) return;
+            const value = field.tagName === 'SELECT' && field.multiple ? Array.from(field.selectedOptions, option => option.value).filter(Boolean) : field.value;
+            // Empty dynamic metadata/search rows do not represent pending data.
+            if (!checkable && (value === '' || (Array.isArray(value) && !value.length))) return;
+            if (!values.has(field.name)) values.set(field.name, []);
+            values.get(field.name).push(value);
+        });
+        // Moving metaboxes is cosmetic; preserve ordering within array fields.
+        return JSON.stringify(Array.from(values).sort(([a], [b]) => a.localeCompare(b)));
     };
-    document.addEventListener('input', markDirty); document.addEventListener('change', markDirty);
+    const initialOrderValues = orderValues();
     document.querySelectorAll('.tcc-reason-preset').forEach(select => select.addEventListener('change', () => { if (select.value) select.closest('.tcc-panel').querySelector('[name=reason]').value = select.value; }));
     document.querySelectorAll('.tcc-rotate').forEach(button => button.addEventListener('click', () => { const image = button.closest('.tcc-admin-image').querySelector('img'); const rotation = (Number(image.dataset.rotation || 0) + 90) % 360; image.dataset.rotation = rotation; image.style.transform = 'rotate(' + rotation + 'deg)'; }));
     document.querySelectorAll('.tcc-review-form').forEach(form => form.addEventListener('submit', async event => {
@@ -16,7 +29,7 @@
         event.preventDefault();
         const panel = document.querySelector('[data-tcc-order="' + form.elements.order_id.value + '"]');
         const feedback = panel.querySelector('.tcc-feedback');
-        if (dirty || orderValues() !== initialOrderValues) { feedback.textContent = 'تغییرات ذخیره‌نشده در سفارش دارید. ابتدا سفارش را به‌روزرسانی و سپس پرداخت را بررسی کنید.'; return; }
+        if (orderValues() !== initialOrderValues) { feedback.textContent = 'تغییرات ذخیره‌نشده در سفارش دارید. ابتدا دکمه «به‌روزرسانی» سفارش را بزنید، سپس پرداخت را بررسی کنید.'; return; }
         const decision = event.submitter && event.submitter.value;
         if (!decision) { feedback.textContent = 'یک اقدام مشخص انتخاب کنید.'; return; }
         const data = new FormData(form); data.set('decision', decision);

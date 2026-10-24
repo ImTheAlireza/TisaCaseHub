@@ -3,7 +3,7 @@ Contributors: ImTheAlireza
 Tags: woocommerce, manual-payment, receipt, card-to-card, rtl
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -81,6 +81,10 @@ Action Scheduler ووکامرس، با WP-Cron به‌عنوان مسیر جای
 گیت مخصوص افزونه قبل از بسته‌بندی اجرا می‌شود و حتی در runtimeهایی که exit code PHP را درست منتقل نمی‌کنند، وجود نتیجه بدون شکست را بررسی می‌کند.
 
 == Changelog ==
+
+= 1.2.1 =
+* راست‌چین صریح فرم و متن‌های پرداخت مشتری، مستقل از تراز قالب؛ حفظ شماره کارت و ورودی‌های عددی LTR.
+* تشخیص تغییرات واقعی سفارش به‌جای رویدادهای نمایشی ووکامرس؛ حفظ الزام ذخیره و محافظ‌های مالی سمت سرور.
 
 = 1.2.0 =
 * انتخاب نقش‌های وردپرس/سفارشی برای بررسی و تأیید رسید؛ حفظ دسترسی اختصاصی افراد و محافظت از مدیر سایت.
