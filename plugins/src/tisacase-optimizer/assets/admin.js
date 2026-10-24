@@ -832,7 +832,7 @@
 			</div>
 			<div class="tco-progress-bar"><span style="width:${pct}%"></span></div>
 			<div class="tco-progress-box__foot">
-				<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong></span>
+				<span>باقی‌مانده: <strong>${faNum(remaining)}</strong> · آزادشده: <strong>${formatBytes(b.savedBytes)}</strong>${b.ratePerMin ? ` · <strong>${faNum(b.ratePerMin)}</strong> مورد/دقیقه` : ''}</span>
 				<button type="button" class="tisa-btn tisa-btn--secondary tisa-btn--sm" id="tco-stop-batch">توقف و ادامهٔ بعدی</button>
 			</div>
 		</div>`;
@@ -3015,6 +3015,7 @@
 			hint: '',
 			blockReasons: [],
 			etaSec: 0,
+			ratePerMin: 0,
 			remaining: totalItems,
 			failed: 0,
 			error: '',
@@ -3084,6 +3085,7 @@
 				state.batch.blocked = job.blocked_count || 0;
 				state.batch.failed = job.failed_count || 0;
 				state.batch.etaSec = job.eta_sec || 0;
+				state.batch.ratePerMin = job.rate_per_min || 0;
 				state.batch.lastError = job.last_error || '';
 				state.batch.verified = job.verified || 0;
 				state.batch.phase = job.phase || '';
@@ -3372,6 +3374,7 @@
 			hint: '',
 			blockReasons: [],
 			etaSec: 0,
+			ratePerMin: 0,
 			remaining: totalItems,
 			failed: 0,
 			error: '',
@@ -3417,6 +3420,7 @@
 				state.batch.blocked = job.blocked_count || 0;
 				state.batch.failed = job.failed_count || 0;
 				state.batch.etaSec = job.eta_sec || 0;
+				state.batch.ratePerMin = job.rate_per_min || 0;
 				state.batch.lastError = job.last_error || '';
 				state.batch.verified = job.verified || 0;
 				state.batch.phase = job.phase || '';
