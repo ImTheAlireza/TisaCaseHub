@@ -368,6 +368,7 @@ if ( ! class_exists( 'TCAS_Normalizer' ) ) {
 				'remote_id'   => $remote_id,
 				'parent_remote_id' => $parent_remote_id,
 				'code'        => $code,
+				'slug'        => self::string_value( $source, $settings, '_no_slug_setting', array( 'slug' ) ),
 				'name'        => '' !== $name ? $name : $code,
 				'type'        => strtolower( $type ),
 				'description' => self::string_value( $source, $settings, 'field_description', array( 'description', 'short_description' ) ),

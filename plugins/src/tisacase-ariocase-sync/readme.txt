@@ -4,11 +4,11 @@ Tags: woocommerce, stock, sync, api, ariocase
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-جفت‌کردن دو محصول موجود با SKU تیساکیس و کد ArioCase؛ فقط و فقط برای سینک موجودی.
+جفت‌کردن دو محصول موجود با SKU تیساکیس و لینک یا SKU محصول ArioCase؛ فقط و فقط برای سینک موجودی.
 
 == Description ==
 
@@ -16,7 +16,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 `AR120 - AR22`
 
-در این مثال، محصول تیساکیس با SKU برابر `AR120` به محصول ArioCase با کد `AR22` متصل می‌شود.
+در این مثال، محصول تیساکیس با SKU برابر `AR120` به محصول ArioCase با کد `AR22` متصل می‌شود. اگر SKU طرف ArioCase را ندارید، لینک محصول را جای `AR22` بگذارید:
+
+`AR120 - https://ariocase.com/product/case-slug/`
+
+لینک معتبر با وب‌سرویس به SKU و Product ID واقعی تبدیل می‌شود و فقط SKU در نگاشت ذخیره می‌شود.
 
 * هر دو محصول باید از قبل وجود داشته باشند؛ هیچ محصولی ساخته نمی‌شود.
 * فقط نگاشت داخلی و موجودی تغییر می‌کند.
@@ -34,8 +38,8 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 2. فایل `tisacase-ariocase-sync.zip` را از پیشخوان › افزونه‌ها › افزودن › بارگذاری نصب و فعال کنید.
 3. به ووکامرس › جفت موجودی ArioCase › تنظیمات API بروید.
 4. آدرس پیش‌فرض را حفظ کنید، روش Bearer را انتخاب و Token را در API Key وارد کنید.
-5. با یک کد واقعی «تست اتصال» را اجرا کنید.
-6. در تب «اتصال جفتی»، هر خط را با قالب `SKU تیساکیس - کد ArioCase` وارد کنید.
+5. با یک لینک یا SKU واقعی «تست اتصال» را اجرا کنید.
+6. در تب «اتصال جفتی»، هر خط را با قالب `SKU تیساکیس - لینک یا SKU محصول ArioCase` وارد کنید.
 7. پیش‌نمایش را بررسی و فقط جفت‌های تأییدشده را متصل کنید.
 
 == ArioCase API contract ==
@@ -45,11 +49,12 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 * Base URL: `https://ariocase.com/wp-json/wc/v3`
 * Auth: `Authorization: Bearer YOUR_TOKEN`
 * جست‌وجوی کد ArioCase: `products?status=publish&per_page=100&sku={code}`
-* دریافت محصول شناسایی‌شده: `products/{id}`
+* تشخیص لینک Pretty/Plain Permalink: `products?status=publish&per_page=100&slug={slug}`
+* لینک کوتاه `?p={id}` و دریافت محصول شناسایی‌شده: `products/{id}`
 * دریافت جزئیات تنوع‌ها هنگام نیاز: `products/{parent_id}/variations`
 * خواندن موجودی تنوع شناسایی‌شده: `products/{parent_id}/variations/{variation_id}`
 
-پاسخ List با کد دقیق و حساس‌به‌حروف بررسی می‌شود. Product ID و Parent/Variation ID فقط برای یافتن همان محصول در درخواست‌های بعدی نگهداری می‌شوند.
+پاسخ List با کد دقیق و حساس‌به‌حروف بررسی می‌شود. در حالت لینک، Host باید با دامنهٔ API تنظیم‌شده یکی باشد، خود صفحهٔ محصول Fetch نمی‌شود و Slug پاسخ باید دقیقاً با لینک یکی باشد. Product ID و Parent/Variation ID فقط برای یافتن همان محصول در درخواست‌های بعدی نگهداری می‌شوند.
 
 == Security and stock behavior ==
 
@@ -65,6 +70,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 = آیا نام یا قیمت هم بین دو فروشگاه سینک می‌شود؟ =
 نه. هیچ فیلد محصول به‌جز `manage_stock`، `stock_quantity` و `stock_status` تغییر نمی‌کند. نگاشت و شناسه‌های API هم فقط Meta داخلی افزونه هستند.
 
+= چه لینک‌هایی پشتیبانی می‌شوند؟ =
+لینک محصول Pretty Permalink مثل `/product/case-slug/`، نامک در Query مثل `?product=case-slug` و لینک کوتاه `?p=123`. لینک دسته‌بندی، برچسب یا دامنهٔ دیگر پذیرفته نمی‌شود. برای Variation در حال حاضر باید SKU دقیق همان Variation را وارد کنید.
+
 = اگر یکی از دو کد وجود نداشته باشد چه می‌شود؟ =
 همان جفت با خطا رد می‌شود. هیچ محصول جدیدی ساخته نمی‌شود و هیچ نگاشتی ذخیره نمی‌شود.
 
@@ -75,6 +83,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.3.0 =
+* پذیرش لینک محصول ArioCase و تشخیص SKU با WooCommerce REST `slug` یا Product ID.
+* پشتیبانی از Pretty/Plain Permalink و لینک کوتاه با اعتبارسنجی HTTPS و Host.
+* ذخیرهٔ SKU واقعی در نگاشت، طراحی جمع‌وجورتر و حذف توضیحات غیرضروری رابط.
 
 = 1.2.0 =
 * تبدیل رابط به ورودی جفتی «SKU تیساکیس - کد ArioCase».

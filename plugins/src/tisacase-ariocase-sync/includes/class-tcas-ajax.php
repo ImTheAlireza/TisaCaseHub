@@ -49,14 +49,15 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		}
 
 		private static function pair_label( $pair ) {
-			return trim( (string) $pair['local_code'] . ' - ' . (string) $pair['remote_code'] );
+			$remote = preg_match( '#^https?://#i', (string) $pair['remote_code'] ) ? '[ArioCase URL]' : (string) $pair['remote_code'];
+			return trim( (string) $pair['local_code'] . ' - ' . $remote );
 		}
 
 		public static function preview_start() {
 			self::auth();
 			$pairs = TCAS_Core::parse_pairs( isset( $_POST['pairs'] ) ? wp_unslash( $_POST['pairs'] ) : '' );
 			if ( ! $pairs ) {
-				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - کد ArioCase» وارد کنید.' ), 400 );
+				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - لینک یا SKU محصول ArioCase» وارد کنید.' ), 400 );
 			}
 			$token = wp_generate_password( 32, false, false );
 			$job   = array(
@@ -130,7 +131,10 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			// فقط دادهٔ تازه؛ Snapshot پیش‌نمایش برای اتصال نهایی استفاده نمی‌شود.
 			$preview = TCAS_Pairing::preview( $pair );
 			$result  = TCAS_Pairing::connect( $preview );
-			$row     = array( 'local_code' => $pair['local_code'], 'remote_code' => $pair['remote_code'] );
+			$row     = array(
+				'local_code'  => isset( $preview['row']['local_code'] ) ? $preview['row']['local_code'] : $pair['local_code'],
+				'remote_code' => isset( $preview['row']['remote_code'] ) ? $preview['row']['remote_code'] : $pair['remote_code'],
+			);
 			if ( is_wp_error( $result ) ) {
 				$row['status']  = 'error';
 				$row['message'] = $result->get_error_message();
@@ -156,14 +160,15 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			self::auth();
 			$code = isset( $_POST['code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['code'] ) ) ) : '';
 			if ( '' === $code ) {
-				wp_send_json_error( array( 'message' => 'برای تست، یک کد محصول معتبر در ArioCase وارد کنید.' ), 400 );
+				wp_send_json_error( array( 'message' => 'برای تست، SKU یا لینک محصول ArioCase را وارد کنید.' ), 400 );
 			}
-			$product = TCAS_Api::fetch_product( $code );
+			$product = TCAS_Api::fetch_reference( $code );
+			$label   = preg_match( '#^https?://#i', $code ) ? '[ArioCase URL]' : $code;
 			if ( is_wp_error( $product ) ) {
-				TCAS_Logger::add( 'connection_error', $code, $product->get_error_message() );
+				TCAS_Logger::add( 'connection_error', $label, $product->get_error_message() );
 				wp_send_json_error( array( 'message' => $product->get_error_message() ), 400 );
 			}
-			TCAS_Logger::add( 'connection_ok', $code, 'اتصال و تشخیص ساختار پاسخ موفق بود.' );
+			TCAS_Logger::add( 'connection_ok', $label, 'اتصال و تشخیص ساختار پاسخ موفق بود.' );
 			wp_send_json_success( array(
 				'message' => 'اتصال موفق بود و ساختار پاسخ شناسایی شد.',
 				'product' => array( 'code' => $product['code'], 'name' => $product['name'], 'type' => $product['type'], 'stock' => $product['stock'], 'variations' => count( $product['variations'] ) ),

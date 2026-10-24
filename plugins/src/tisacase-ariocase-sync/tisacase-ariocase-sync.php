@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       TisaCase — اتصال جفتی موجودی ArioCase
  * Plugin URI:        https://tisacase.com
- * Description:       جفت‌کردن SKU تیساکیس و کد ArioCase برای دو محصول موجود و سینک فقط موجودی؛ بدون تغییر نام، قیمت یا سایر مشخصات.
- * Version:           1.2.0
+ * Description:       جفت‌کردن SKU تیساکیس با لینک یا SKU محصول ArioCase و سینک فقط موجودی؛ بدون تغییر نام، قیمت یا سایر مشخصات.
+ * Version:           1.3.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -14,14 +14,14 @@
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub:      key=ariocase-sync; title="جفت موجودی ArioCase"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="اتصال جفتی دو محصول موجود با SKU تیساکیس و کد ArioCase؛ سینک فقط موجودی و کنترل آن هنگام خرید."
+ * TisaCase Hub:      key=ariocase-sync; title="جفت موجودی ArioCase"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="اتصال جفتی با SKU تیساکیس و لینک یا SKU محصول ArioCase؛ سینک فقط موجودی و کنترل آن هنگام خرید."
  *
  * @package TisaCase_ArioCase_Sync
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCAS_VERSION', '1.2.0' );
+define( 'TCAS_VERSION', '1.3.0' );
 define( 'TCAS_FILE', __FILE__ );
 define( 'TCAS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCAS_URL', plugin_dir_url( __FILE__ ) );
@@ -50,7 +50,7 @@ add_filter( 'tisacase_hub_items', function( $items ) {
 	if ( is_array( $items ) && ! isset( $items['ariocase-sync'] ) ) {
 		$items['ariocase-sync'] = array(
 			'title' => 'جفت موجودی ArioCase',
-			'desc'  => 'جفت‌کردن دو محصول موجود با دو کد و سینک فقط موجودی؛ بدون تغییر سایر مشخصات.',
+			'desc'  => 'جفت‌کردن دو محصول موجود با لینک یا SKU و سینک فقط موجودی؛ بدون تغییر سایر مشخصات.',
 			'group' => 'products',
 			'icon'  => 'box',
 			'dir'   => 'tisacase-ariocase-sync',

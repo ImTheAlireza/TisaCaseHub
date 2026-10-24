@@ -52,6 +52,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				'checkout_guard'      => 'yes',
 				'base_url'            => 'https://ariocase.com/wp-json/wc/v3',
 				'product_endpoint'    => 'products?status=publish&per_page=100&sku={code}',
+				'slug_endpoint'       => 'products?status=publish&per_page=100&slug={slug}',
 				'stock_endpoint'      => '',
 				'code_parameter'      => 'sku',
 				'auth_type'           => 'bearer',
@@ -104,7 +105,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			}
 			$clean['live_scope'] = isset( $input['live_scope'] ) && 'purchase' === $input['live_scope'] ? 'purchase' : 'all';
 
-			$url_keys = array( 'base_url', 'product_endpoint', 'stock_endpoint' );
+			$url_keys = array( 'base_url', 'product_endpoint', 'slug_endpoint', 'stock_endpoint' );
 			foreach ( $url_keys as $key ) {
 				$clean[ $key ] = isset( $input[ $key ] ) ? trim( sanitize_text_field( $input[ $key ] ) ) : '';
 			}
@@ -176,7 +177,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				$parts = preg_split( '/\s+-\s+/u', $line );
 				if ( 2 !== count( $parts ) ) {
 					$entry['local_code'] = $line;
-					$entry['error'] = 'قالب جفت معتبر نیست؛ بنویسید: SKU تیساکیس - کد ArioCase';
+					$entry['error'] = 'قالب جفت معتبر نیست؛ بنویسید: SKU تیساکیس - لینک یا SKU محصول ArioCase';
 					$out[] = $entry;
 					continue;
 				}
@@ -184,8 +185,9 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				$remote = trim( (string) $parts[1] );
 				$entry['local_code'] = $local;
 				$entry['remote_code'] = $remote;
-				if ( '' === $local || '' === $remote || strlen( $local ) > 190 || strlen( $remote ) > 190 ) {
-					$entry['error'] = 'کد تیساکیس یا ArioCase خالی/بسیار طولانی است.';
+				$remote_limit = preg_match( '#^https?://#i', $remote ) ? 2048 : 190;
+				if ( '' === $local || '' === $remote || strlen( $local ) > 190 || strlen( $remote ) > $remote_limit ) {
+					$entry['error'] = 'SKU یا مرجع ArioCase خالی/بسیار طولانی است.';
 					$out[] = $entry;
 					continue;
 				}

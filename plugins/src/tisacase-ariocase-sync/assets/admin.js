@@ -195,7 +195,7 @@
 		const button = $('tcas-test-connection');
 		const code = $('tcas-test-code') ? $('tcas-test-code').value.trim() : '';
 		const out = $('tcas-test-result');
-		if (!code) { if (out) out.textContent = 'یک کد وارد کنید.'; return; }
+		if (!code) { if (out) out.textContent = 'لینک یا SKU را وارد کنید.'; return; }
 		busy(button, true);
 		if (out) out.textContent = 'در حال اتصال و بررسی ساختار پاسخ…';
 		try {

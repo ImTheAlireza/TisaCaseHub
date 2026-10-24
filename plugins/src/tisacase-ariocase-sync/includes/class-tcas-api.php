@@ -73,6 +73,24 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			return $url;
 		}
 
+		private static function build_slug_url( $slug, $settings ) {
+			$base = self::validated_base_url( $settings );
+			if ( is_wp_error( $base ) ) {
+				return $base;
+			}
+			$endpoint = isset( $settings['slug_endpoint'] ) ? trim( (string) $settings['slug_endpoint'] ) : '';
+			if ( '' === $endpoint ) {
+				return self::error( 'tcas_no_slug_endpoint', 'Endpoint دریافت با لینک تنظیم نشده است.' );
+			}
+			if ( preg_match( '#^[a-z][a-z0-9+.-]*://#i', $endpoint ) || false !== strpos( $endpoint, '..' ) ) {
+				return self::error( 'tcas_invalid_endpoint', 'Endpoint لینک باید مسیر نسبی و بدون «..» باشد.' );
+			}
+			$has_placeholder = false !== strpos( $endpoint, '{slug}' ) || false !== strpos( $endpoint, '%7Bslug%7D' );
+			$endpoint = str_replace( array( '{slug}', '%7Bslug%7D' ), rawurlencode( (string) $slug ), $endpoint );
+			$url = $base . '/' . ltrim( $endpoint, '/' );
+			return $has_placeholder ? $url : add_query_arg( 'slug', (string) $slug, $url );
+		}
+
 		/** مسیرهای استاندارد WooCommerce برای دریافت با ID و جزئیات تنوع‌ها. */
 		private static function build_id_url( $product_id, $variation_id, $settings, $list = false, $page = 1 ) {
 			$base = self::validated_base_url( $settings );
@@ -100,6 +118,11 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 				return self::error( 'tcas_not_configured', 'تنظیمات API کامل نیست؛ آدرس، Endpoint و روش احراز هویت را بررسی کنید.' );
 			}
 			$url = self::build_url( $code, $kind, $settings );
+			return is_wp_error( $url ) ? $url : self::request_url( $url, $settings );
+		}
+
+		private static function request_slug( $slug, $settings ) {
+			$url = self::build_slug_url( $slug, $settings );
 			return is_wp_error( $url ) ? $url : self::request_url( $url, $settings );
 		}
 
@@ -224,6 +247,111 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 		public static function fetch_product_by_id( $remote_id, $code = '' ) {
 			$payload = self::request_by_id( $remote_id );
 			return is_wp_error( $payload ) ? $payload : self::normalize_product_response( $payload, trim( (string) $code ) );
+		}
+
+		private static function slug_candidates( $payload, $depth = 0 ) {
+			if ( ! is_array( $payload ) || $depth > 4 ) {
+				return self::error( 'tcas_slug_response', 'ساختار پاسخ لینک ArioCase معتبر نیست.' );
+			}
+			if ( TCAS_Normalizer::is_list( $payload ) ) {
+				return $payload;
+			}
+			if ( isset( $payload['slug'] ) && is_scalar( $payload['slug'] ) ) {
+				return array( $payload );
+			}
+			foreach ( array( 'products', 'items', 'results', 'data', 'result' ) as $key ) {
+				if ( isset( $payload[ $key ] ) && is_array( $payload[ $key ] ) ) {
+					return self::slug_candidates( $payload[ $key ], $depth + 1 );
+				}
+			}
+			return self::error( 'tcas_slug_response', 'فهرست محصول در پاسخ لینک ArioCase پیدا نشد.' );
+		}
+
+		public static function fetch_product_by_slug( $slug ) {
+			$slug = trim( rawurldecode( (string) $slug ) );
+			if ( '' === $slug || strlen( $slug ) > 200 ) {
+				return self::error( 'tcas_invalid_slug', 'نامک محصول در لینک ArioCase معتبر نیست.' );
+			}
+			$settings = TCAS_Core::settings();
+			if ( ! TCAS_Core::is_configured( $settings ) ) {
+				return self::error( 'tcas_not_configured', 'تنظیمات API کامل نیست.' );
+			}
+			$payload = self::request_slug( $slug, $settings );
+			if ( is_wp_error( $payload ) ) {
+				return $payload;
+			}
+			$items = self::slug_candidates( $payload );
+			if ( is_wp_error( $items ) ) {
+				return $items;
+			}
+			$matches = array();
+			foreach ( $items as $item ) {
+				if ( is_array( $item ) && isset( $item['slug'] ) && is_scalar( $item['slug'] ) && rawurldecode( (string) $item['slug'] ) === $slug ) {
+					$matches[] = $item;
+				}
+			}
+			if ( 1 !== count( $matches ) ) {
+				return self::error( 'tcas_slug_not_unique', count( $matches ) ? 'لینک ArioCase به بیش از یک محصول اشاره می‌کند.' : 'محصول این لینک در ArioCase پیدا نشد.' );
+			}
+			return self::normalize_product_response( $matches[0], '' );
+		}
+
+		/** لینک محصول فقط به slug/ID تبدیل می‌شود؛ خود لینک هرگز Fetch نمی‌شود. */
+		public static function fetch_reference( $reference ) {
+			$reference = trim( (string) $reference );
+			if ( ! preg_match( '#^https?://#i', $reference ) ) {
+				return self::fetch_product( $reference );
+			}
+			$parts = wp_parse_url( $reference );
+			if ( ! is_array( $parts ) || empty( $parts['host'] ) || empty( $parts['scheme'] ) ) {
+				return self::error( 'tcas_invalid_product_url', 'لینک محصول ArioCase معتبر نیست.' );
+			}
+			$settings   = TCAS_Core::settings();
+			$base_parts = wp_parse_url( isset( $settings['base_url'] ) ? $settings['base_url'] : '' );
+			$base_host  = is_array( $base_parts ) && ! empty( $base_parts['host'] ) ? strtolower( $base_parts['host'] ) : '';
+			if ( '' === $base_host ) {
+				return self::error( 'tcas_invalid_base_url', 'آدرس وب‌سرویس معتبر نیست.' );
+			}
+			$host       = strtolower( $parts['host'] );
+			$allowed    = array_unique( array_filter( array( $base_host, preg_replace( '/^www\./', '', $base_host ), 'www.' . preg_replace( '/^www\./', '', $base_host ) ) ) );
+			$allow_http = defined( 'TISACASE_ARIOCASE_ALLOW_HTTP' ) && TISACASE_ARIOCASE_ALLOW_HTTP;
+			$scheme     = strtolower( $parts['scheme'] );
+			if ( ( 'https' !== $scheme && ! ( $allow_http && 'http' === $scheme ) ) || ! in_array( $host, $allowed, true ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['port'] ) ) {
+				return self::error( 'tcas_untrusted_product_url', 'لینک باید HTTPS و متعلق به دامنهٔ تنظیم‌شدهٔ ArioCase باشد.' );
+			}
+			$query = array();
+			if ( isset( $parts['query'] ) ) {
+				parse_str( $parts['query'], $query );
+			}
+			$requested_id = 0;
+			if ( isset( $query['p'] ) && is_scalar( $query['p'] ) && ctype_digit( (string) $query['p'] ) && absint( $query['p'] ) ) {
+				$requested_id = absint( $query['p'] );
+				$product      = self::fetch_product_by_id( $requested_id );
+			} else {
+				$slug = '';
+				if ( isset( $query['product'] ) && is_scalar( $query['product'] ) ) {
+					$slug = trim( (string) $query['product'] );
+				} else {
+					$path     = isset( $parts['path'] ) ? trim( (string) $parts['path'], '/' ) : '';
+					$segments = '' !== $path ? explode( '/', $path ) : array();
+					$segments = array_map( 'rawurldecode', $segments );
+					if ( array_intersect( $segments, array( 'product-category', 'product-tag', 'wp-json' ) ) ) {
+						return self::error( 'tcas_not_product_url', 'لینک باید متعلق به یک محصول باشد، نه دسته‌بندی، برچسب یا API.' );
+					}
+					$slug = $segments ? (string) end( $segments ) : '';
+				}
+				$product = self::fetch_product_by_slug( $slug );
+			}
+			if ( is_wp_error( $product ) ) {
+				return $product;
+			}
+			if ( $requested_id && ( empty( $product['remote_id'] ) || absint( $product['remote_id'] ) !== $requested_id ) ) {
+				return self::error( 'tcas_id_mismatch', 'شناسهٔ محصول در پاسخ ArioCase با لینک کوتاه یکسان نیست.' );
+			}
+			if ( empty( $product['code'] ) ) {
+				return self::error( 'tcas_sku_missing', 'برای محصول این لینک در ArioCase کد SKU ثبت نشده است.' );
+			}
+			return $product;
 		}
 
 		private static function find_variation( $parent, $code ) {

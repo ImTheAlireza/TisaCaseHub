@@ -84,7 +84,7 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			}
 			$notice = sanitize_key( wp_unslash( $_GET['tcas_notice'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			if ( 'settings_saved' === $notice ) {
-				echo '<div class="notice notice-success is-dismissible"><p>تنظیمات ذخیره شد. قبل از ساخت جفت، «تست اتصال» را با یک کد واقعی انجام دهید.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p>تنظیمات ذخیره شد.</p></div>';
 			}
 		}
 
@@ -93,9 +93,6 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 				wp_die( 'دسترسی غیرمجاز است.' );
 			}
 			$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'pairs'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			if ( 'import' === $tab ) {
-				$tab = 'pairs';
-			}
 			if ( ! in_array( $tab, array( 'pairs', 'mappings', 'settings', 'logs' ), true ) ) {
 				$tab = 'pairs';
 			}
@@ -110,20 +107,16 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			?>
 			<div class="wrap tisa-wrap tcas-wrap" dir="rtl">
 				<header class="tcas-hero">
-					<div>
-						<span class="tcas-eyebrow">TisaCase × ArioCase</span>
-						<h1>اتصال جفتی موجودی ArioCase</h1>
-						<p>هر خط: SKU تیساکیس - کد ArioCase؛ فقط موجودی دو محصول موجود به هم متصل می‌شود.</p>
-					</div>
+					<div class="tcas-brand"><span class="tcas-brand-mark" aria-hidden="true">A→T</span><div><h1>جفت موجودی ArioCase</h1><p>TisaCase ← ArioCase</p></div></div>
 					<div class="tcas-hero-badges">
 						<span class="tcas-badge <?php echo class_exists( 'WooCommerce' ) ? 'is-ok' : 'is-bad'; ?>">ووکامرس <?php echo class_exists( 'WooCommerce' ) ? 'فعال' : 'غیرفعال'; ?></span>
-						<span class="tcas-badge <?php echo TCAS_Core::is_configured( $settings ) ? 'is-ok' : 'is-warn'; ?>">API <?php echo TCAS_Core::is_configured( $settings ) ? 'تنظیم‌شده' : 'نیازمند تنظیم'; ?></span>
-						<span class="tcas-badge">نسخه <?php echo esc_html( TCAS_VERSION ); ?></span>
+						<span class="tcas-badge <?php echo TCAS_Core::is_configured( $settings ) ? 'is-ok' : 'is-warn'; ?>">API <?php echo TCAS_Core::is_configured( $settings ) ? 'تنظیم‌شده' : 'تنظیم نشده'; ?></span>
+						<span class="tcas-badge">v<?php echo esc_html( TCAS_VERSION ); ?></span>
 					</div>
 				</header>
 				<?php self::notice(); ?>
 				<?php if ( ! TCAS_Core::is_configured( $settings ) && 'settings' !== $tab ) : ?>
-					<div class="notice notice-warning inline"><p>برای شروع، ابتدا <a href="<?php echo esc_url( $base . '&tab=settings' ); ?>">تنظیمات API</a> را کامل و تست اتصال را انجام دهید.</p></div>
+					<div class="notice notice-warning inline"><p>ابتدا <a href="<?php echo esc_url( $base . '&tab=settings' ); ?>">تنظیمات API</a> را کامل کنید.</p></div>
 				<?php endif; ?>
 				<nav class="tcas-tabs" aria-label="بخش‌های افزونه">
 					<?php foreach ( $tabs as $key => $label ) : ?>

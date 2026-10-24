@@ -60,19 +60,34 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				'local_name' => $product->get_name(),
 				'local_type' => $product->get_type(),
 			);
-			$current = TCAS_Mapping::remote_code( $local_id );
-			if ( '' !== $current && $current !== $pair['remote_code'] ) {
+			$current   = TCAS_Mapping::remote_code( $local_id );
+			$reference = $pair['remote_code'];
+			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
+			if ( ! $is_url && '' !== $current && $current !== $reference ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به کد ArioCase دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id );
 			}
-			foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'] ) as $mapped_id ) {
-				if ( $mapped_id !== $local_id ) {
-					return array( 'row' => self::row( $pair, 'error', sprintf( 'کد ArioCase از قبل به محصول #%d متصل است.', $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
+			if ( ! $is_url ) {
+				foreach ( TCAS_Mapping::ids_by_remote_code( $reference ) as $mapped_id ) {
+					if ( $mapped_id !== $local_id ) {
+						return array( 'row' => self::row( $pair, 'error', sprintf( 'کد ArioCase از قبل به محصول #%d متصل است.', $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
+					}
 				}
 			}
 
-			$remote = TCAS_Api::fetch_product( $pair['remote_code'] );
+			$remote = TCAS_Api::fetch_reference( $reference );
 			if ( is_wp_error( $remote ) ) {
 				return array( 'row' => self::row( $pair, 'error', $remote->get_error_message(), $extra ), 'remote' => null, 'local_id' => $local_id );
+			}
+			$pair['remote_code'] = $remote['code'];
+			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
+				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به کد ArioCase دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+			}
+			if ( $is_url ) {
+				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'] ) as $mapped_id ) {
+					if ( $mapped_id !== $local_id ) {
+						return array( 'row' => self::row( $pair, 'error', sprintf( 'کد ArioCase از قبل به محصول #%d متصل است.', $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
+					}
+				}
 			}
 			$extra['remote_name'] = $remote['name'];
 			$extra['stock']       = $remote['stock'];

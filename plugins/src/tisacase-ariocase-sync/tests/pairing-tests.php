@@ -37,7 +37,8 @@ class TCAS_Test_Product {
 class WC_Product_Variable { public static function sync_stock_status( $id, $save = true ) {} }
 class TCAS_Api {
 	public static $responses = array(); public static $calls = array();
-	public static function fetch_product( $code ) { self::$calls[] = $code; return isset( self::$responses[ $code ] ) ? self::$responses[ $code ] : new WP_Error( 'not_found', 'محصول ArioCase پیدا نشد.' ); }
+	public static function fetch_product( $code ) { return self::fetch_reference( $code ); }
+	public static function fetch_reference( $reference ) { self::$calls[] = $reference; return isset( self::$responses[ $reference ] ) ? self::$responses[ $reference ] : new WP_Error( 'not_found', 'محصول ArioCase پیدا نشد.' ); }
 }
 require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
@@ -105,6 +106,14 @@ pair_test( 'Preview کهنه به محصول جایگزین وصل نمی‌شو
 local_product( 21, 'FAIL-SAVE', 'simple', 0, true ); TCAS_Api::$responses['FAIL-REMOTE'] = remote_product( 'FAIL-REMOTE' );
 $failed = connect_pair( 'FAIL-SAVE', 'FAIL-REMOTE' );
 pair_test( 'خطای ذخیرهٔ Stock نگاشت تازه را Rollback می‌کند', is_wp_error( $failed[1] ) && '' === TCAS_Mapping::remote_code( 21 ) );
+
+local_product( 23, 'LINK-LOCAL' );
+$link = 'https://ariocase.com/product/resolved-case/';
+TCAS_Api::$responses[ $link ] = remote_product( 'LINK-RESOLVED', array( 'remote_id' => 777 ) );
+list( $link_preview, $link_result ) = connect_pair( 'LINK-LOCAL', $link );
+pair_test( 'لینک به SKU واقعی تبدیل و فقط همان SKU نگاشت می‌شود', is_array( $link_result ) && 'LINK-RESOLVED' === $link_preview['row']['remote_code'] && 'LINK-RESOLVED' === TCAS_Mapping::remote_code( 23 ) && 777 === TCAS_Mapping::remote_identifiers( 23 )['remote_id'] );
+$link_again = TCAS_Pairing::preview( pair_of( 'LINK-LOCAL', $link ) );
+pair_test( 'پیش‌نمایش دوباره با همان لینک، اتصال موجود را تشخیص می‌دهد', 'connected' === $link_again['row']['status'] && 'LINK-RESOLVED' === $link_again['row']['remote_code'] );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

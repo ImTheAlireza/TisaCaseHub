@@ -135,6 +135,9 @@ $actual = array(
 );
 $defaults = TCAS_Core::defaults();
 api_test( 'پیش‌فرض‌ها به API واقعی ArioCase و جست‌وجوی SKU اشاره دارند', $actual['base_url'] === $defaults['base_url'] && $actual['product_endpoint'] === $defaults['product_endpoint'] && 'bearer' === $defaults['auth_type'] );
+api_test( 'Endpoint لینک، جست‌وجوی دقیق Slug ووکامرس است', 'products?status=publish&per_page=100&slug={slug}' === $defaults['slug_endpoint'] );
+$url_pair = TCAS_Core::parse_pairs( 'LOCAL - https://ariocase.com/product/galaxy-case/?utm_source=email' );
+api_test( 'لینک محصول در قالب جفت بدون تغییر پذیرفته می‌شود', 1 === count( $url_pair ) && '' === $url_pair[0]['error'] && 'https://ariocase.com/product/galaxy-case/?utm_source=email' === $url_pair[0]['remote_code'] );
 $url = call_build_url( 'CH 100', 'product', array_merge( $defaults, $actual ) );
 api_test( 'SKU در Query قرارداد واقعی درست Encode می‌شود', 'https://ariocase.com/wp-json/wc/v3/products?status=publish&per_page=100&sku=CH%20100' === $url, $url );
 
@@ -147,6 +150,55 @@ configure( $actual );
 $GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 501, 'parent_id' => 500, 'sku' => 'VAR-1-B', 'type' => 'variation', 'stock_quantity' => 2, 'stock_status' => 'instock' ) ) ) );
 $variation_product = TCAS_Api::fetch_product( 'VAR-1-B' );
 api_test( 'جست‌وجوی SKU تنوع، Parent ID را هم برای جفت حفظ می‌کند', is_array( $variation_product ) && 'variation' === $variation_product['type'] && 501 === $variation_product['remote_id'] && 500 === $variation_product['parent_remote_id'] );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array(
+	array( 'id' => 999, 'slug' => 'other-case', 'sku' => 'OTHER', 'stock_quantity' => 99 ),
+	array( 'id' => 321, 'slug' => 'galaxy-case', 'sku' => 'LINK-100', 'name' => 'Linked case', 'type' => 'simple', 'stock_quantity' => 6, 'stock_status' => 'instock' ),
+) ) );
+$linked = TCAS_Api::fetch_reference( 'https://ariocase.com/product/galaxy-case/?utm_source=email' );
+api_test( 'Pretty Permalink فقط با Slug دقیق به SKU و ID تبدیل می‌شود', is_array( $linked ) && 'LINK-100' === $linked['code'] && 321 === $linked['remote_id'] && 6.0 === $linked['stock']['quantity'] );
+api_test( 'لینک به API محصول با پارامتر slug ترجمه می‌شود، نه Fetch صفحه', 1 === count( $GLOBALS['requests'] ) && 'https://ariocase.com/wp-json/wc/v3/products?status=publish&per_page=100&slug=galaxy-case' === $GLOBALS['requests'][0][0], isset( $GLOBALS['requests'][0][0] ) ? $GLOBALS['requests'][0][0] : 'no request' );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 321, 'sku' => 'LINK-100', 'name' => 'Linked case', 'type' => 'simple', 'stock_quantity' => 8 ) ) );
+$short = TCAS_Api::fetch_reference( 'https://www.ariocase.com/?p=321' );
+api_test( 'لینک کوتاه p=ID با تک‌محصولی ووکامرس Resolve می‌شود', is_array( $short ) && 'LINK-100' === $short['code'] && 'https://ariocase.com/wp-json/wc/v3/products/321' === $GLOBALS['requests'][0][0] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 999, 'sku' => 'WRONG-ID', 'stock_quantity' => 1 ) ) );
+$wrong_id = TCAS_Api::fetch_reference( 'https://ariocase.com/?p=321' );
+api_test( 'پاسخ با Product ID متفاوت برای لینک کوتاه رد می‌شود', is_wp_error( $wrong_id ) && 'tcas_id_mismatch' === $wrong_id->get_error_code() );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'data' => array( 'products' => array( array( 'id' => 654, 'slug' => 'plain-case', 'sku' => 'PLAIN-1', 'stock_quantity' => 2 ) ) ) ) ) );
+$plain = TCAS_Api::fetch_reference( 'https://ariocase.com/?product=plain-case' );
+api_test( 'Plain Permalink و پاسخ Wrapped هم به SKU محصول می‌رسند', is_array( $plain ) && 'PLAIN-1' === $plain['code'] && 654 === $plain['remote_id'] && false !== strpos( $GLOBALS['requests'][0][0], 'slug=plain-case' ) );
+
+configure( $actual );
+$persian_slug = 'قاب-گوشی';
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 656, 'slug' => $persian_slug, 'sku' => 'FA-1', 'stock_quantity' => 1 ) ) ) );
+$persian = TCAS_Api::fetch_reference( 'https://ariocase.com/product/' . rawurlencode( $persian_slug ) . '/' );
+api_test( 'نامک فارسی URL-encoded بدون خرابی Resolve می‌شود', is_array( $persian ) && 'FA-1' === $persian['code'] && false !== strpos( $GLOBALS['requests'][0][0], 'slug=' . rawurlencode( $persian_slug ) ) );
+
+configure( $actual );
+$untrusted = TCAS_Api::fetch_reference( 'https://evil.example/product/galaxy-case/' );
+api_test( 'لینک دامنهٔ دیگر بدون هیچ HTTP Request رد می‌شود', is_wp_error( $untrusted ) && 'tcas_untrusted_product_url' === $untrusted->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+$insecure = TCAS_Api::fetch_reference( 'http://ariocase.com/product/galaxy-case/' );
+api_test( 'لینک HTTP در حالت عادی رد می‌شود', is_wp_error( $insecure ) && 'tcas_untrusted_product_url' === $insecure->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+$category = TCAS_Api::fetch_reference( 'https://ariocase.com/product-category/galaxy-case/' );
+api_test( 'لینک دسته‌بندی به محصول تبدیل نمی‌شود', is_wp_error( $category ) && 'tcas_not_product_url' === $category->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+configure( array_merge( $actual, array( 'slug_endpoint' => 'https://evil.example/{slug}' ) ) );
+$bad_slug_endpoint = TCAS_Api::fetch_reference( 'https://ariocase.com/product/galaxy-case/' );
+api_test( 'Endpoint لینک مطلق برای جلوگیری از نشت JWT رد می‌شود', is_wp_error( $bad_slug_endpoint ) && 'tcas_invalid_endpoint' === $bad_slug_endpoint->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 999, 'slug' => 'other-case', 'sku' => 'OTHER' ) ) ) );
+$slug_mismatch = TCAS_Api::fetch_reference( 'https://ariocase.com/product/galaxy-case/' );
+api_test( 'پاسخ با Slug متفاوت به محصول دیگر تبدیل نمی‌شود', is_wp_error( $slug_mismatch ) && 'tcas_slug_not_unique' === $slug_mismatch->get_error_code() );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 657, 'slug' => 'no-sku', 'sku' => '', 'stock_quantity' => 3 ) ) ) );
+$no_sku = TCAS_Api::fetch_reference( 'https://ariocase.com/product/no-sku/' );
+api_test( 'محصول لینک‌شدهٔ بدون SKU برای نگاشت رد می‌شود', is_wp_error( $no_sku ) && 'tcas_sku_missing' === $no_sku->get_error_code() );
 
 configure( $actual );
 $remote_parent = array( 'id' => 500, 'sku' => 'VAR-1', 'name' => 'Variable', 'type' => 'variable', 'variations' => array( 501, 502 ), 'attributes' => array( array( 'name' => 'Color', 'options' => array( 'Black', 'White' ), 'variation' => true ) ) );
