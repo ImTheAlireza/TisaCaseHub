@@ -142,6 +142,63 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			return $product_id ? self::local_result( $product_id ) : self::error( 'tcas_local_product_missing', 'محصول این لینک در TisaCase پیدا نشد.' );
 		}
 
+		private static function remote_result( $product ) {
+			if ( ! is_array( $product ) ) {
+				return self::error( 'tcas_remote_product_missing', 'ساختار محصول ArioCase معتبر نیست.' );
+			}
+			$product_id = isset( $product['remote_id'] ) ? absint( $product['remote_id'] ) : 0;
+			$sku        = isset( $product['code'] ) ? trim( (string) $product['code'] ) : '';
+			$type       = isset( $product['type'] ) ? (string) $product['type'] : '';
+			$reference  = '' !== $sku ? $sku : ( $product_id ? 'ID:' . $product_id : '' );
+			if ( '' === $reference ) {
+				return self::error( 'tcas_remote_id_missing', 'محصول ArioCase باید SKU یا Product ID داشته باشد.' );
+			}
+			$variations = array();
+			if ( 'variable' === $type ) {
+				foreach ( (array) $product['variations'] as $variation ) {
+					$variation_id  = ! empty( $variation['remote_id'] ) ? absint( $variation['remote_id'] ) : 0;
+					$parent_id     = ! empty( $variation['parent_remote_id'] ) ? absint( $variation['parent_remote_id'] ) : $product_id;
+					$variation_sku = isset( $variation['code'] ) ? trim( (string) $variation['code'] ) : '';
+					$variations[]  = array(
+						'product_id' => $variation_id,
+						'parent_id'  => $parent_id,
+						'sku'        => $variation_sku,
+						'reference'  => '' !== $variation_sku ? $variation_sku : ( $parent_id && $variation_id ? 'ID:' . $parent_id . '/' . $variation_id : '' ),
+						'label'      => self::variation_label( isset( $variation['variation_attributes'] ) ? $variation['variation_attributes'] : array(), isset( $variation['name'] ) ? $variation['name'] : '' ),
+					);
+				}
+			}
+			return array(
+				'shop'       => 'ariocase',
+				'shop_label' => 'ArioCase',
+				'sku'        => $sku,
+				'reference'  => $reference,
+				'name'       => isset( $product['name'] ) ? (string) $product['name'] : '',
+				'product_id' => $product_id,
+				'type'       => $type,
+				'variations' => $variations,
+			);
+		}
+
+		public static function resolve_remote_reference( $reference ) {
+			$reference = trim( (string) $reference );
+			if ( '' === $reference || strlen( $reference ) > 2048 ) {
+				return self::error( 'tcas_invalid_remote_reference', 'لینک، SKU یا ID محصول ArioCase معتبر نیست.' );
+			}
+			if ( preg_match( '#^https?://#i', $reference ) ) {
+				$result = self::resolve( $reference );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+				return ! empty( $result['shop'] ) && 'ariocase' === $result['shop'] ? $result : self::error( 'tcas_remote_wrong_shop', 'مرجع ArioCase باید متعلق به فروشگاه ArioCase باشد.' );
+			}
+			if ( strlen( $reference ) > 190 ) {
+				return self::error( 'tcas_invalid_remote_reference', 'SKU یا ID محصول ArioCase بسیار طولانی است.' );
+			}
+			$product = TCAS_Api::fetch_reference( $reference );
+			return is_wp_error( $product ) ? $product : self::remote_result( $product );
+		}
+
 		public static function resolve( $url ) {
 			$url = trim( (string) $url );
 			if ( '' === $url || strlen( $url ) > 2048 || ! preg_match( '#^https?://#i', $url ) ) {
@@ -165,41 +222,7 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			}
 			if ( in_array( $host, $remote_hosts, true ) ) {
 				$product = TCAS_Api::fetch_reference( $url );
-				if ( is_wp_error( $product ) ) {
-					return $product;
-				}
-				$product_id = absint( $product['remote_id'] );
-				$sku        = isset( $product['code'] ) ? trim( (string) $product['code'] ) : '';
-				$type       = (string) $product['type'];
-				$reference  = '' !== $sku ? $sku : ( $product_id ? 'ID:' . $product_id : '' );
-				if ( '' === $reference ) {
-					return self::error( 'tcas_remote_id_missing', 'محصول ArioCase باید SKU یا Product ID داشته باشد.' );
-				}
-				$variations = array();
-				if ( 'variable' === $type ) {
-					foreach ( (array) $product['variations'] as $variation ) {
-						$variation_id = ! empty( $variation['remote_id'] ) ? absint( $variation['remote_id'] ) : 0;
-						$parent_id    = ! empty( $variation['parent_remote_id'] ) ? absint( $variation['parent_remote_id'] ) : $product_id;
-						$variation_sku = isset( $variation['code'] ) ? trim( (string) $variation['code'] ) : '';
-						$variations[]  = array(
-							'product_id' => $variation_id,
-							'parent_id'  => $parent_id,
-							'sku'        => $variation_sku,
-							'reference'  => '' !== $variation_sku ? $variation_sku : ( $parent_id && $variation_id ? 'ID:' . $parent_id . '/' . $variation_id : '' ),
-							'label'      => self::variation_label( isset( $variation['variation_attributes'] ) ? $variation['variation_attributes'] : array(), isset( $variation['name'] ) ? $variation['name'] : '' ),
-						);
-					}
-				}
-				return array(
-					'shop'       => 'ariocase',
-					'shop_label' => 'ArioCase',
-					'sku'        => $sku,
-					'reference'  => $reference,
-					'name'       => (string) $product['name'],
-					'product_id' => $product_id,
-					'type'       => $type,
-					'variations' => $variations,
-				);
+				return is_wp_error( $product ) ? $product : self::remote_result( $product );
 			}
 			return self::error( 'tcas_unknown_shop', 'دامنهٔ لینک با TisaCase یا ArioCase تنظیم‌شده یکسان نیست.' );
 		}

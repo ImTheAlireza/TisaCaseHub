@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, ariocase
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.8.1
+Stable tag: 1.8.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -111,6 +111,12 @@ SKU یا Label تکراری، چند کاندیدای هم‌امتیاز، اس
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.8.2 =
+* اصلاح Smart Match برای عبور پاسخ خام ArioCase از همان Resolver تبدیل‌کننده؛ ساخت `reference`، `label` و ID تنوع پیش از Matcher.
+* پشتیبانی یکسان از لینک، SKU و ID والد ArioCase در مسیر تطبیق و حفظ مرجع دقیق `ID:<parent_id>/<variation_id>` در خروجی.
+* رگرسیون یکپارچه با ۱۷ و ۳۳ Variation: هشت جفت یکتا، ۳۴ مورد کنارگذاشته و عدم جفت `A56` وقتی فقط Attribute option والد است.
+* حفظ تطبیق یک‌به‌یک، Fresh Preview و رفتار Stock-only بدون تغییر.
 
 = 1.8.1 =
 * Load صریح همهٔ Variationهای واقعی والد و نمایش تعداد موارد قابل‌اتصال در Selector و Smart Match.

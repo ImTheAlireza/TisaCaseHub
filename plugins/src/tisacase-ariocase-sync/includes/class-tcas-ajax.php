@@ -188,11 +188,11 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			if ( empty( $local['shop'] ) || 'tisacase' !== $local['shop'] || empty( $local['type'] ) || 'variable' !== $local['type'] || empty( $local['variations'] ) ) {
 				wp_send_json_error( array( 'message' => 'مرجع TisaCase باید یک محصول متغیر با Variation باشد.' ), 422 );
 			}
-			$remote = TCAS_Api::fetch_reference( $remote_code );
+			$remote = TCAS_Link_Resolver::resolve_remote_reference( $remote_code );
 			if ( is_wp_error( $remote ) ) {
 				wp_send_json_error( array( 'message' => $remote->get_error_message() ), 422 );
 			}
-			if ( empty( $remote['type'] ) || 'variable' !== $remote['type'] || empty( $remote['variations'] ) ) {
+			if ( empty( $remote['shop'] ) || 'ariocase' !== $remote['shop'] || empty( $remote['type'] ) || 'variable' !== $remote['type'] || empty( $remote['variations'] ) ) {
 				wp_send_json_error( array( 'message' => 'مرجع ArioCase باید یک محصول متغیر با Variation باشد.' ), 422 );
 			}
 			$remote_variations = $remote['variations'];

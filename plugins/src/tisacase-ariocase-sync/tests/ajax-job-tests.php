@@ -21,6 +21,7 @@ class TCAS_Link_Resolver {
 	public static $product = null;
 	public static function resolve( $url ) { return self::$product ? self::$product : array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple', 'reference' => 'TS0100' ); }
 	public static function resolve_local_reference( $reference ) { return self::resolve( $reference ); }
+	public static function resolve_remote_reference( $reference ) { return TCAS_Api::fetch_reference( $reference ); }
 }
 class TCAS_Api {
 	public static $product = null; public static $reference = null;
@@ -61,7 +62,7 @@ TCAS_Link_Resolver::$product = array(
 	),
 );
 TCAS_Api::$product = array(
-	'name' => 'Remote variable', 'type' => 'variable', 'reference' => 'ID:70',
+	'shop' => 'ariocase', 'name' => 'Remote variable', 'type' => 'variable', 'reference' => 'ID:70',
 	'variations' => array(
 		array( 'reference' => 'REMOTE-SKU', 'product_id' => 71, 'parent_id' => 70, 'label' => 's25ultra', 'sku' => 'SHARED' ),
 		array( 'reference' => 'ID:70/72', 'label' => 'S23', 'sku' => 'SHARED' ),

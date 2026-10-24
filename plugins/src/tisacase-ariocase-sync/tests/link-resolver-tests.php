@@ -116,6 +116,10 @@ $remote_variable = TCAS_Link_Resolver::resolve( $remote_variable_url );
 resolver_test( 'Variation آریوکیس بدون SKU مرجع والد/تنوع می‌گیرد', is_array( $remote_variable ) && 'ID:222/223' === $remote_variable['variations'][0]['reference'] && 223 === $remote_variable['variations'][0]['product_id'] && 222 === $remote_variable['variations'][0]['parent_id'] && 'مشکی' === $remote_variable['variations'][0]['label'] );
 resolver_test( 'Variation آریوکیس دارای SKU با همان SKU و ID نمایش داده می‌شود', 'AR-BLUE' === $remote_variable['variations'][1]['reference'] && 224 === $remote_variable['variations'][1]['product_id'] );
 
+TCAS_Api::$responses['ID:222'] = $remote_variable_response;
+$remote_by_reference = TCAS_Link_Resolver::resolve_remote_reference( 'ID:222' );
+resolver_test( 'ورودی مستقیم ArioCase از شکل خام API به مرجع و برچسب تنوع تبدیل می‌شود', is_array( $remote_by_reference ) && 'ID:222' === $remote_by_reference['reference'] && 'ID:222/223' === $remote_by_reference['variations'][0]['reference'] && 'مشکی' === $remote_by_reference['variations'][0]['label'] && 223 === $remote_by_reference['variations'][0]['product_id'] && 222 === $remote_by_reference['variations'][0]['parent_id'] );
+
 reset_resolver_fixtures();
 $id_only_url = 'https://ariocase.com/product/id-only-case/';
 TCAS_Api::$responses[ $id_only_url ] = remote_result( '' );
