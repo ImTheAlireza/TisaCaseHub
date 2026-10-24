@@ -26,8 +26,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			), $extra );
 		}
 
+		private static function local_reference_id( $reference ) {
+			$matches = array();
+			return preg_match( '/^ID:([1-9][0-9]*)$/i', trim( (string) $reference ), $matches ) ? absint( $matches[1] ) : 0;
+		}
+
 		private static function local_product( $local_code ) {
-			$local_id = TCAS_Mapping::local_by_sku( $local_code );
+			$reference_id = self::local_reference_id( $local_code );
+			$local_id     = $reference_id ? $reference_id : TCAS_Mapping::local_by_sku( $local_code );
 			if ( is_wp_error( $local_id ) ) {
 				return $local_id;
 			}
@@ -35,8 +41,8 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return new WP_Error( 'tcas_local_not_found', 'محصولی با این SKU در تیساکیس پیدا نشد؛ هیچ محصولی ساخته نمی‌شود.' );
 			}
 			$product = wc_get_product( $local_id );
-			if ( ! $product ) {
-				return new WP_Error( 'tcas_local_not_found', 'محصول تیساکیس پیدا نشد.' );
+			if ( ! $product || ( $reference_id && in_array( $product->get_status(), array( 'trash', 'auto-draft' ), true ) ) ) {
+				return new WP_Error( 'tcas_local_not_found', 'محصول تیساکیس با این شناسه پیدا نشد.' );
 			}
 			if ( ! in_array( $product->get_type(), array( 'simple', 'variation' ), true ) ) {
 				return new WP_Error( 'tcas_parent_not_supported', 'برای محصول متغیر باید کد هر Variation را جداگانه جفت کنید؛ والد مستقیماً سینک نمی‌شود.' );

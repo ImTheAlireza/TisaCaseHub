@@ -46,7 +46,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		public static function local_by_sku( $sku ) {
 			$ids = self::local_ids_by_sku( $sku );
 			if ( count( $ids ) > 1 ) {
-				return new WP_Error( 'tcas_duplicate_sku', 'این SKU در بیش از یک محصول/تنوع استفاده شده است؛ ابتدا تکراری‌ها را اصلاح کنید.' );
+				return new WP_Error( 'tcas_duplicate_sku', 'این SKU در چند محصول/Variation مشترک است؛ Variation را در تبدیل‌کننده انتخاب کنید تا با ID یکتا جفت شود.' );
 			}
 			return $ids ? (int) $ids[0] : 0;
 		}

@@ -24,7 +24,7 @@ $mappings = TCAS_Mapping::all( 6 );
 		<article class="tcas-pair-entry">
 			<button type="button" class="tcas-remove-pair" aria-label="حذف جفت" disabled>×</button>
 			<div class="tcas-pair-fields">
-				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
 				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
@@ -34,7 +34,7 @@ $mappings = TCAS_Mapping::all( 6 );
 		<article class="tcas-pair-entry">
 			<button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
 			<div class="tcas-pair-fields">
-				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
 				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>

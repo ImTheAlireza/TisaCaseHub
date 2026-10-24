@@ -63,7 +63,16 @@ $GLOBALS['products'][44] = new TCAS_Test_Product( 'TS-RED', 'Local variable - Re
 $GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', 'variation', array(), array( 'attribute_color' => 'آبی' ) );
 $GLOBALS['pretty'][ $local_variable_url ] = 43;
 $local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
-resolver_test( 'لینک والد تیساکیس، Variationها و SKU قابل‌کپی را می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'TS-RED' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && '' === $local_variable['variations'][1]['reference'] );
+resolver_test( 'لینک والد تیساکیس، Variationها را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] );
+
+reset_resolver_fixtures();
+$local_duplicate_url = 'https://tisacase.com/product/local-duplicate-skus/';
+$GLOBALS['products'][46] = new TCAS_Test_Product( 'SB193', 'Shared SKU parent', 'variable', array( 47, 48 ) );
+$GLOBALS['products'][47] = new TCAS_Test_Product( 'SB193', 'Shared SKU - iPhone 13', 'variation', array(), array( 'attribute_model' => 'iPhone 13' ) );
+$GLOBALS['products'][48] = new TCAS_Test_Product( 'SB193', 'Shared SKU - iPhone 13 Pro', 'variation', array(), array( 'attribute_model' => 'iPhone 13 Pro' ) );
+$GLOBALS['pretty'][ $local_duplicate_url ] = 46;
+$local_duplicates = TCAS_Link_Resolver::resolve( $local_duplicate_url );
+resolver_test( 'SKU مشترک والد و Variationها به مرجع ID متفاوت تبدیل می‌شود', is_array( $local_duplicates ) && 'ID:47' === $local_duplicates['variations'][0]['reference'] && 'ID:48' === $local_duplicates['variations'][1]['reference'] && 'SB193' === $local_duplicates['variations'][0]['sku'] && 'SB193' === $local_duplicates['variations'][1]['sku'] );
 
 reset_resolver_fixtures();
 $no_sku = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?p=42' );

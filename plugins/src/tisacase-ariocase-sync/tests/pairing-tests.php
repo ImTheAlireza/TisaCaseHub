@@ -140,5 +140,19 @@ pair_test( 'Variation بدون SKU با مرجع والد/تنوع جفت و ن�
 $id_variation_again = TCAS_Pairing::preview( pair_of( 'LOCAL-ID-VAR', 'ID:700/701' ) );
 pair_test( 'مرجع Variation در Preview دوباره Connected می‌شود', 'connected' === $id_variation_again['row']['status'] && 'ID:700/701' === $id_variation_again['row']['remote_code'] );
 
+local_product( 200, 'SB193', 'variable' );
+local_product( 201, 'SB193', 'variation', 200 );
+local_product( 202, 'SB193', 'variation', 200 );
+TCAS_Api::$responses['ID:700/702'] = remote_product( '', array( 'remote_id' => 702, 'parent_remote_id' => 700, 'type' => 'variation', 'stock' => array( 'quantity' => 6.0, 'status' => 'instock' ) ) );
+list( $shared_id_preview, $shared_id_result ) = connect_pair( 'ID:201', 'ID:700/702' );
+pair_test( 'با SKU مشترک، ID تیساکیس فقط همان Variation را جفت می‌کند', is_array( $shared_id_result ) && 201 === $shared_id_result['product_id'] && 'ID:201' === $shared_id_preview['row']['local_code'] && 'ID:700/702' === TCAS_Mapping::remote_code( 201 ) && 6.0 === $GLOBALS['products'][201]->get_stock_quantity() && '' === TCAS_Mapping::remote_code( 202 ) );
+$shared_id_again = TCAS_Pairing::preview( pair_of( 'ID:201', 'ID:700/702' ) );
+pair_test( 'اتصال Variation با ID در Preview دوباره Connected می‌شود', 'connected' === $shared_id_again['row']['status'] && 201 === $shared_id_again['local_id'] );
+$before_shared_sku_calls = count( TCAS_Api::$calls );
+$shared_sku = TCAS_Pairing::preview( pair_of( 'SB193', 'ID:700/703' ) );
+pair_test( 'ورود دستی SKU مشترک بدون API و با راهنمای ID رد می‌شود', 'error' === $shared_sku['row']['status'] && false !== strpos( $shared_sku['row']['message'], 'ID' ) && $before_shared_sku_calls === count( TCAS_Api::$calls ) );
+$missing_local_id = TCAS_Pairing::preview( pair_of( 'ID:999', 'ID:700/704' ) );
+pair_test( 'ID ناموجود تیساکیس محصول جعلی نمی‌سازد', 'error' === $missing_local_id['row']['status'] && 0 === $missing_local_id['local_id'] && ! isset( $GLOBALS['products'][999] ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

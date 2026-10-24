@@ -29,5 +29,5 @@ const js = fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8');
 ok('رابط فقط connect_start/connect_step دارد', js.includes("request('connect_start'") && js.includes("request('connect_step'") && !js.includes('prices') && !js.includes('images'));
 const main = fs.readFileSync(path.join(root, 'tisacase-ariocase-sync.php'), 'utf8');
 const readme = fs.readFileSync(path.join(root, 'readme.txt'), 'utf8');
-ok('نسخهٔ Pair-only یکسان است', main.includes('Version:           1.6.1') && main.includes("TCAS_VERSION', '1.6.1'") && readme.includes('Stable tag: 1.6.1'));
+ok('نسخهٔ Pair-only یکسان است', main.includes('Version:           1.7.0') && main.includes("TCAS_VERSION', '1.7.0'") && readme.includes('Stable tag: 1.7.0'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

@@ -61,6 +61,8 @@ $local_conflict = TCAS_Core::parse_pairs( "AR120 - AR22\nAR120 - OTHER" );
 api_test( 'یک SKU با دو کد ArioCase در یک دسته رد می‌شود', '' !== $local_conflict[1]['error'] );
 $remote_conflict = TCAS_Core::parse_pairs( "AR120 - AR22\nOTHER - AR22" );
 api_test( 'یک کد ArioCase با دو SKU در یک دسته رد می‌شود', '' !== $remote_conflict[1]['error'] );
+$id_variation_pair = TCAS_Core::parse_pairs( 'ID:201 - ID:700/702' );
+api_test( 'قالب جفت با ID تیساکیس و ID والد/Variation آریوکیس پذیرفته می‌شود', 1 === count( $id_variation_pair ) && '' === $id_variation_pair[0]['error'] && 'ID:201' === $id_variation_pair[0]['local_code'] && 'ID:700/702' === $id_variation_pair[0]['remote_code'] );
 $current = array_merge( TCAS_Core::defaults(), array( 'api_key' => 'old-secret' ) );
 $clean = TCAS_Core::sanitize_settings( array( 'enabled' => '1', 'api_key' => '', 'timeout' => 99, 'auth_type' => 'invalid' ), $current );
 api_test( 'کلید با فیلد خالی حفظ و Timeout محدود می‌شود', 'old-secret' === $clean['api_key'] && 20 === $clean['timeout'] );

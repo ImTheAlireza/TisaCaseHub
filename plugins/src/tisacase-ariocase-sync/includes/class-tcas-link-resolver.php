@@ -72,7 +72,7 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 						'product_id' => $variation_id,
 						'parent_id'  => $product_id,
 						'sku'        => $variation_sku,
-						'reference'  => $variation_sku,
+						'reference'  => 'ID:' . $variation_id,
 						'label'      => self::variation_label( $variation->get_attributes(), $variation->get_name() ),
 					);
 				}
