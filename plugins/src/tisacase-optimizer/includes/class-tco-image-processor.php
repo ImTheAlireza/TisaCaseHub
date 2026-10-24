@@ -312,8 +312,6 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 		 * @return true|WP_Error
 		 */
 		private static function replace_attachment_format( $attachment_id, $old_abs, $old_rel, $format, array $cfg, $max_w, $max_h, $known_files = null ) {
-			global $wpdb;
-
 			$uploads = wp_upload_dir();
 			$basedir = wp_normalize_path( trailingslashit( $uploads['basedir'] ) );
 			$baseurl = trailingslashit( $uploads['baseurl'] );
@@ -366,38 +364,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 				}
 			}
 
-			foreach ( $replacements as $old_url => $new_url ) {
-				if ( $old_url === $new_url ) {
-					continue;
-				}
-				// ۱) اصلاح در محتوای نوشته‌ها و محصولات.
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-				$wpdb->query(
-					$wpdb->prepare(
-						"UPDATE {$wpdb->posts}
-						 SET post_content = REPLACE( post_content, %s, %s )
-						 WHERE post_content LIKE %s",
-						$old_url,
-						$new_url,
-						'%' . $wpdb->esc_like( $old_url ) . '%'
-					)
-				);
-
-				// ۲) اصلاح در دیتای JSON المنتور (با اسلش Escapeشده `\/`!).
-				$old_esc = str_replace( '/', '\\/', $old_url );
-				$new_esc = str_replace( '/', '\\/', $new_url );
-				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-				$wpdb->query(
-					$wpdb->prepare(
-						"UPDATE {$wpdb->postmeta}
-						 SET meta_value = REPLACE( meta_value, %s, %s )
-						 WHERE meta_key = '_elementor_data' AND meta_value LIKE %s",
-						$old_esc,
-						$new_esc,
-						'%' . $wpdb->esc_like( $old_esc ) . '%'
-					)
-				);
-			}
+			self::bulk_replace_urls( $replacements, $old_rel );
 
 			// پاک‌سازی فایل‌های قدیمی از دیسک برای آزادسازی واقعی فضا.
 			foreach ( $old_files as $of ) {
@@ -407,6 +374,83 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 			}
 
 			return true;
+		}
+
+		/**
+		 * بازنویسی دسته‌ای جفت‌های URL قدیم ← جدید در محتوا و دیتای المنتور.
+		 *
+		 * چرا دسته‌ای؟ روش قبلی «به‌ازای هر جفت» دو UPDATE با اسکن LIKE `%…%` کل
+		 * جدول اجرا می‌کرد؛ برای هر تصویر (اصلی + هر زیرسایز) یعنی ده‌ها اسکن
+		 * کامل جدول_posts و postmeta. برای چند هزار تصویر این همان گلوگاه اصلی
+		 * «جایگزینی لینک‌ها» بود. این‌جا برای هر جدول فقط یک UPDATE اجرا می‌شود:
+		 * REPLACE تودرتو برای همهٔ جفت‌ها + یک شرط LIKE روی «ساقهٔ» نام فایل
+		 * (هر URL قدیمی، ساده یا Escapeشده، آن ساقه را دارد).
+		 *
+		 * @param array<string,string> $replacements نقشهٔ URL قدیم ← جدید.
+		 * @param string               $old_rel    مسیر نسبی فایل قدیم (برای ساقه).
+		 * @return void
+		 */
+		private static function bulk_replace_urls( array $replacements, $old_rel = '' ) {
+			global $wpdb;
+
+			$pairs = array();
+			foreach ( $replacements as $old_url => $new_url ) {
+				if ( (string) $old_url === (string) $new_url ) {
+					continue;
+				}
+				$pairs[] = array( (string) $old_url, (string) $new_url );
+			}
+			if ( empty( $pairs ) ) {
+				return;
+			}
+
+			// ساقهٔ مشترک: basename بدون پسوند فایل قدیم؛ همهٔ URLهای اصلی و
+			// زیرسایزها (و شکل Escapeشدهٔ آن‌ها) این رشته را دارند.
+			$stem = (string) preg_replace( '/\.[a-z0-9]+$/i', '', (string) basename( (string) $old_rel ) );
+			if ( '' === $stem ) {
+				$stem = (string) basename( (string) $old_rel );
+			}
+
+			// ۱) محتوای نوشته‌ها و محصولات: یک UPDATE با REPLACE تودرتو.
+			$expr     = 'post_content';
+			$set_args = array();
+			foreach ( $pairs as $p ) {
+				$expr       = 'REPLACE( ' . $expr . ', %s, %s )';
+				$set_args[] = $p[0];
+				$set_args[] = $p[1];
+			}
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$wpdb->posts}
+					 SET post_content = {$expr}
+					 WHERE post_content LIKE %s",
+					array_merge( $set_args, array( '%' . $wpdb->esc_like( $stem ) . '%' ) )
+				)
+			);
+
+			// ۲) دیتای JSON المنتور (با اسلش Escapeشده `\/`) + شکل سادهٔ URLها.
+			$meta_expr = 'meta_value';
+			$meta_args = array();
+			foreach ( $pairs as $p ) {
+				$meta_expr       = 'REPLACE( ' . $meta_expr . ', %s, %s )';
+				$meta_args[]     = str_replace( '/', '\\/', $p[0] );
+				$meta_args[]     = str_replace( '/', '\\/', $p[1] );
+			}
+			foreach ( $pairs as $p ) {
+				$meta_expr   = 'REPLACE( ' . $meta_expr . ', %s, %s )';
+				$meta_args[] = $p[0];
+				$meta_args[] = $p[1];
+			}
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$wpdb->postmeta}
+					 SET meta_value = {$meta_expr}
+					 WHERE meta_key = '_elementor_data' AND meta_value LIKE %s",
+					array_merge( $meta_args, array( '%' . $wpdb->esc_like( $stem ) . '%' ) )
+				)
+			);
 		}
 
 		/**
@@ -497,6 +541,18 @@ if ( ! class_exists( 'TisaCase_Optimizer_Image_Processor' ) ) {
 					$im->setImageCompressionQuality( $quality );
 					if ( 'jpeg' === $format ) {
 						$im->setInterlaceScheme( Imagick::INTERLACE_PLANE );
+					}
+					// سرعت رمزنگاری: متد پیش‌فرض libwebp بسیار کند است؛ متد ۴ همان
+					// فشرده‌سازی تقریبی را با چند برابر سرعت می‌دهد. AVIF هم با سرعت
+					// بالاترِ heic چند برابر سریع‌تر می‌شود (افت حجم ناچیز).
+					try {
+						if ( 'webp' === $format ) {
+							$im->setOption( 'webp:method', '4' );
+						} elseif ( 'avif' === $format ) {
+							$im->setOption( 'heic:speed', '6' );
+						}
+					} catch ( Throwable $ignored ) {
+						unset( $ignored ); // گزینهٔ ناشناخته ⇒ همان پیش‌فرض موتور.
 					}
 					$written = $im->writeImage( $dst );
 					$im->clear();

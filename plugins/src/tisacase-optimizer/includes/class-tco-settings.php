@@ -51,12 +51,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				// اندازهٔ بستهٔ بازرسی ایمنی پیش از حذف (کوچک = درخواست کوتاه‌تر).
 				'verify_chunk'           => 20,
 				// اجرای عملیات روی خود هاست (کرون وردپرس) تا بستن مرورگر یا قطع
-				// اینترنت کار را متوقف نکند. بازه و سقف هر تیک محافظه‌کارانه و
-				// به‌مراتب کمتر از سقف ۲۸ ثانیهٔ هاست انتخاب شده است.
+				// اینترنت کار را متوقف نکند. سقف هر تیک بزرگ‌تر از قبل (۱۲ ثانیه /
+				// ۶۰ مورد) ولی همچنان کمتر از سقف ۲۸ ثانیه هاست؛ حین کار هم
+				// «زنجیرهٔ توربو» تیک‌ها را پشت‌سرهم می‌کند تا کار سریع تمام شود.
 				'server_runner'          => 1,
 				'runner_interval'        => 30,
-				'runner_tick_ms'         => 4000,
-				'runner_tick_max'        => 25,
+				'runner_tick_ms'         => 12000,
+				'runner_tick_max'        => 60,
 				// تعداد ردیف در هر صفحهٔ فهرست‌ها (کاربر選択؛ پیش‌فرض ۲۵).
 				'per_page'               => 25,
 				'include_draft_in_scan'  => 1,
@@ -190,10 +191,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				$clean['runner_interval'] = 60 === (int) $raw['runner_interval'] ? 60 : 30;
 			}
 			if ( isset( $raw['runner_tick_ms'] ) ) {
-				$clean['runner_tick_ms'] = max( 1500, min( 8000, (int) $raw['runner_tick_ms'] ) );
+				$clean['runner_tick_ms'] = max( 1500, min( 16000, (int) $raw['runner_tick_ms'] ) );
 			}
 			if ( isset( $raw['runner_tick_max'] ) ) {
-				$clean['runner_tick_max'] = max( 5, min( 60, (int) $raw['runner_tick_max'] ) );
+				$clean['runner_tick_max'] = max( 5, min( 250, (int) $raw['runner_tick_max'] ) );
 			}
 			if ( isset( $raw['per_page'] ) ) {
 				$clean['per_page'] = self::clamp_per_page( $raw['per_page'] );

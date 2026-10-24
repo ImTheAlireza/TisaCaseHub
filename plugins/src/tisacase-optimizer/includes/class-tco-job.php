@@ -415,8 +415,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			}
 			$throttle_ms = max( 0, min( 250, (int) TisaCase_Optimizer_Settings::get( 'delete_throttle_ms', 15 ) ) );
 
-			$budget_s = $budget_ms / 1000;
+			$budget_s  = $budget_ms / 1000;
 			$processed = 0;
+			$last_save = $started;
 
 			// فاز ۱: راستی‌آزمایی ایمنی — فقط برای «حذف» معنا دارد.
 			// (فشرده‌سازی و بازگردانی چیزی را نابود نمی‌کنند، پس بازرسی لازم نیست.)
@@ -440,8 +441,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 						break;
 					}
 					++$processed;
-					// ذخیرهٔ وضعیت بعد از هر آیتم ⇒ مقاوم در برابر قطع ناگهانی PHP.
-					self::save( $job );
+					// ذخیرهٔ وضعیت: حداکثر هر ۲ ثانیه یک‌بار داخل حلقه (و همیشه یک‌بار
+					// در پایان تیک). ذخیره بعد از «هر» آیتم یعنی سریال‌سازی صفِ چند هزار
+					// تایی پس از هر مورد — خودش یک گلوگاه پنهان O(n²) بود. با این ریتم،
+					// در قطع ناگهانی PHP فقط چند موردِ همان تیک دوباره اجرا می‌شوند
+					// (هر سه عملیات حذف/فشرده‌سازی/بازگردانی در برابر تکرار ایمن‌اند).
+					if ( ( microtime( true ) - $last_save ) >= 2.0 ) {
+						self::refresh_rate_base( $job );
+						self::save( $job );
+						$last_save = microtime( true );
+					}
 					if ( $throttle_ms > 0 && ( microtime( true ) - $started ) < $budget_s ) {
 						usleep( $throttle_ms * 1000 );
 					}
@@ -464,8 +473,24 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				$job = self::finish( $job );
 			}
 
+			self::refresh_rate_base( $job );
 			self::save( $job );
 			return $job;
+		}
+
+		/**
+		 * جلوبردن پایهٔ «پنجرهٔ نرخ» هر ~۲۰ ثانیه تا نرخ لحظه‌ای صادق بماند.
+		 *
+		 * @param array<string,mixed> $job کار (با ارجاع).
+		 * @return void
+		 */
+		private static function refresh_rate_base( array &$job ) {
+			$base_at = (int) ( isset( $job['rate_base_at'] ) ? $job['rate_base_at'] : (int) $job['started_at'] );
+			if ( ( time() - $base_at ) < 20 ) {
+				return;
+			}
+			$job['rate_base_done'] = (int) $job['done'];
+			$job['rate_base_at']   = time();
 		}
 
 		/**
@@ -720,6 +745,10 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 					'mime'  => isset( $res['nextgen'] ) ? (string) $res['nextgen'] : '',
 					'saved' => isset( $res['saved_bytes'] ) ? (int) $res['saved_bytes'] : 0,
 				);
+				// تاریخچهٔ بلند = سریال‌سازی سنگین‌تر در هر ذخیره؛ فقط دنبالهٔ اخیر نگه داشته می‌شود.
+				if ( count( $job['optimized'] ) > 60 ) {
+					$job['optimized'] = array_slice( $job['optimized'], -60 );
+				}
 			}
 
 			$job['current'] = 0;
@@ -942,6 +971,13 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 			$idle    = self::age_sec( $job );
 			$rate    = $elapsed > 0 ? ( (int) $job['done'] / $elapsed ) : 0;
 			$eta     = ( $rate > 0 && $remaining > 0 ) ? (int) ceil( $remaining / $rate ) : 0;
+			// نرخ پنجرهٔ اخیر (پایهٔ آن در مسیر نوشتنِ advance_now جلو می‌رود) برای
+			// نمایش «مورد در دقیقه» و ETA صادقانه‌تر وقتی سرعت تازه تغییر کرده.
+			$win_done   = (int) $job['done'] - (int) ( isset( $job['rate_base_done'] ) ? $job['rate_base_done'] : 0 );
+			$win_sec    = time() - (int) ( isset( $job['rate_base_at'] ) ? $job['rate_base_at'] : (int) $job['started_at'] );
+			$win_rate   = $win_sec > 3 ? ( $win_done / $win_sec ) : 0;
+			$use_rate   = $win_rate > 0 ? $win_rate : $rate;
+			$eta_recent = ( $use_rate > 0 && $remaining > 0 ) ? (int) ceil( $remaining / $use_rate ) : $eta;
 
 			$blocked_sample = array();
 			$i = 0;
@@ -1026,7 +1062,8 @@ if ( ! class_exists( 'TisaCase_Optimizer_Job' ) ) {
 				'idle_sec'      => $idle,
 				'stale'         => self::is_stale( $job ),
 				'stale_after'   => self::stale_after(),
-				'eta_sec'       => $eta,
+				'eta_sec'       => $eta_recent,
+				'rate_per_min'  => (int) round( $use_rate * 60 ),
 				'coverage'      => (string) $job['coverage'],
 				'needs_rescan'  => ! empty( $job['needs_rescan'] ),
 				'last_error'    => (string) $job['last_error'],

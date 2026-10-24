@@ -14,8 +14,11 @@
  *      بقیهٔ کار نیستند.
  *
  * قواعد ایمنی هاست:
- *   • هر تیک سقف زمانی (پیش‌فرض ۴ ثانیه) و سقف تعداد (پیش‌فرض ۲۵ مورد) دارد؛
- *     هیچ درخواستی به سقف ۲۸ ثانیهٔ هاست نزدیک نمی‌شود.
+ *   • هر تیک سقف زمانی (پیش‌فرض ۱۲ ثانیه، کران ۱۶) و سقف تعداد (پیش‌فرض ۶۰ مورد،
+ *     کران ۲۵۰) دارد؛ به‌همراه set_time_limit(24) هیچ درخواستی به سقف ۲۸ ثانیه
+ *     هاست نزدیک نمی‌شود.
+ *   • حین اجرای کار، «زنجیرهٔ توربو» تیک بعدی را ~۳ ثانیه بعد ثبت می‌کند تا کار
+ *     منتظر بازهٔ ۳۰/۶۰ ثانیه کرون نماند و تقریباً پیوسته پیش برود.
  *   • پیشرفت بعد از **هر آیتم** در سرور ذخیره می‌شود؛ اگر PHP وسط کار بمیرد،
  *     تیک بعدی از همان نقطه ادامه می‌دهد (هیچ موردی دوباره انجام نمی‌شود).
  *   • قفل سبک (option) از اجرای هم‌زمان دو تیک جلوگیری می‌کند؛ قفل رهاشده
@@ -223,14 +226,15 @@ class TisaCase_Optimizer_Server_Runner {
 		if ( function_exists( 'ignore_user_abort' ) ) {
 			ignore_user_abort( true );
 		}
-		// سقف مطلق اجرای این درخواست؛ همیشه بسیار کمتر از ۲۸ ثانیهٔ هاست.
+		// سقف مطلق اجرای این درخواست؛ همیشه کمتر از سقف ۲۸ ثانیه هاست و کمی
+		// بزرگ‌تر از بودجهٔ پردازش تا ذخیرهٔ پایان تیک جا بگیرد.
 		if ( function_exists( 'set_time_limit' ) ) {
-			@set_time_limit( 20 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			@set_time_limit( 24 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		}
 
 		try {
-			$budget = max( 1500, min( 8000, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_ms', 4000 ) ) );
-			$max    = max( 5, min( 60, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_max', 25 ) ) );
+			$budget = max( 1500, min( 16000, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_ms', 12000 ) ) );
+			$max    = max( 5, min( 250, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_max', 60 ) ) );
 
 			$before = (int) $job['done'];
 			$job    = TisaCase_Optimizer_Job::advance_now( $job, $budget, $max );
@@ -258,7 +262,33 @@ class TisaCase_Optimizer_Server_Runner {
 			update_option( self::TICKS_OPTION, (int) get_option( self::TICKS_OPTION, 0 ) + 1, false );
 		}
 
+		// زنجیرهٔ توربو: تا وقتی کار باقی است، تیک بعدی را به بازهٔ ۳۰/۶۰ ثانیه
+		// کرون نسپار؛ یک رویداد تک‌بارهٔ چند ثانیه‌ای ثبت می‌شود تا پردازش
+		// تقریباً پیوسته پیش برود (هر درخواست همچنان بودجه و قفل خودش را دارد).
+		if ( $report['ran'] && ! $report['finished'] ) {
+			self::chain_next_tick();
+		}
+
 		return $report;
+	}
+
+	/**
+	 * ثبت رویداد تک‌بارهٔ نزدیک برای تیک بعدی (زنجیرهٔ توربو حین اجرای کار).
+	 *
+	 * ایمن: اگر همین حالا رویداد نزدیکی (≤۱۰ ثانیه) در صف باشد ثبت نمی‌کند تا
+	 * زنجیره‌های موازی ساخته نشوند؛ قفل اتمیک هم اجرای هم‌زمان را غیرممکن می‌کند.
+	 *
+	 * @return void
+	 */
+	private static function chain_next_tick() {
+		$next = wp_next_scheduled( self::HOOK );
+		if ( $next && ( (int) $next - time() ) <= 10 ) {
+			return;
+		}
+		wp_schedule_single_event( time() + 3, self::HOOK );
+		if ( function_exists( 'spawn_cron' ) ) {
+			spawn_cron();
+		}
 	}
 
 	/**
@@ -362,8 +392,8 @@ class TisaCase_Optimizer_Server_Runner {
 			// «همین حالا ادامه بده» می‌دهد.
 			'sleeping'     => (bool) $sleeping,
 			'job_running'  => (bool) ( $job && 'running' === (string) $job['status'] ),
-			'tick_ms'      => max( 1500, min( 8000, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_ms', 4000 ) ) ),
-			'tick_max'     => max( 5, min( 60, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_max', 25 ) ) ),
+			'tick_ms'      => max( 1500, min( 16000, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_ms', 12000 ) ) ),
+			'tick_max'     => max( 5, min( 250, (int) TisaCase_Optimizer_Settings::get( 'runner_tick_max', 60 ) ) ),
 		);
 	}
 }

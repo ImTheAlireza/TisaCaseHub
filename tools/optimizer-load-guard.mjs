@@ -9,7 +9,7 @@
  * JSON را بازنویسی می‌کرد (IO سنگین).
  *
  * این محافظ تضمین می‌کند آن معماری برنگردد و افزونه خودش بار روی سرور نباشد:
- *   A) صف در سرور (نه در مرورگر) و ذخیرهٔ وضعیت بعد از هر آیتم.
+ *   A) صف در سرور (نه در مرورگر) و ذخیرهٔ دوره‌ای وضعیت (داخل تیک + پایان تیک).
  *   B) تیک‌های زمان‌بندی‌شده + سقف تعداد + مکث بین آیتم‌ها.
  *   C) نوشتن کاتالوگ یک‌بار در پایان کار (نه هر بسته).
  *   D) راستی‌آزمایی ارزان در حالت دسته‌ای (بدون بازرسی محتوای هر تصویر).
@@ -38,6 +38,7 @@ const admin = read(`${P}/assets/admin.js`);
 const preview = read(`${P}/includes/class-tco-preview.php`);
 const scanner = read(`${P}/includes/class-tco-reference-scanner.php`);
 const runner = read(`${P}/includes/class-tco-server-runner.php`);
+const proc = read(`${P}/includes/class-tco-image-processor.php`);
 const dedupe = read(`${P}/includes/class-tco-deduplicator.php`);
 
 let pass = 0;
@@ -67,7 +68,7 @@ ok('صف در یک آپشن مستقل ذخیره می‌شود', /const\s+OPTIO
 ok('آپشن کار autoload نمی‌شود (بار اضافه روی هر صفحهٔ سایت)', /update_option\(\s*self::OPTION,\s*\$job,\s*false\s*\)/.test(job));
 ok('فقط یک کار هم‌زمان مجاز است (پاسخ ۴۰۹ به شروع کار دوم)', ajax.includes('یک عملیات نیمه‌تمام در جریان است') && /409/.test(ajax));
 ok('ادامهٔ کار با تطبیق شناسهٔ کار انجام می‌شود', /\$job\['id'\]\s*!==\s*\$job_id/.test(ajax));
-ok('وضعیت بعد از هر آیتم ذخیره می‌شود (مقاوم به قطع ناگهانی)', /self::run_one\(\s*\$job\s*\);[\s\S]{0,400}?self::save\(\s*\$job\s*\);/.test(job));
+ok('وضعیت کار داخل تیک دوره‌ای و در پایان تیک ذخیره می‌شود (مقاوم به قطع ناگهانی، بدون گلوگاه سریال‌سازی هر آیتم)', /self::run_one\(\s*\$job\s*\);[\s\S]{0,1200}?self::save\(\s*\$job\s*\);/.test(job) && /refresh_rate_base\( \$job \);[\s\S]{0,40}?self::save\(\s*\$job\s*\);/.test(job));
 ok('وضعیت شامل شناسهٔ آیتم در حال پردازش است', job.includes("'current'"));
 ok('کار رهاشده در شروع کار بعدی تسویه می‌شود', /function\s+reap_orphans\s*\(/.test(job) && job.includes('reap_orphans()'));
 ok('لغو کار، صف را خالی و وضعیت را ثبت می‌کند', /function\s+cancel\s*\(/.test(job));
@@ -228,10 +229,10 @@ ok('حذف از لیست سفید صریحاً می‌گوید هیچ فایلی
 console.log('── ۱۱) «اجرا روی خود هاست»: کار بدون مرورگر ──');
 ok('موتور سمت هاست کلاس مستقل و قابل‌بارگذاری تنبل دارد', runner.includes('class TisaCase_Optimizer_Server_Runner') && boot.includes("'TisaCase_Optimizer_Server_Runner'     => 'class-tco-server-runner.php'"));
 ok('کرون در کران‌های ۳۰/۶۰ ثانیه‌ای سفارشی ثبت می‌شود', /function add_schedules/.test(runner) && runner.includes('tco_runner_30s') && runner.includes('tco_runner_60s'));
-ok('هر تیک سقف زمان و سقف تعداد دارد (نه نزدیک ۲۸ ثانیه)', /runner_tick_ms/.test(runner) && /runner_tick_max/.test(runner) && runner.includes('min( 8000'));
+ok('هر تیک سقف زمان و سقف تعداد دارد (نه نزدیک ۲۸ ثانیه)', /runner_tick_ms/.test(runner) && /runner_tick_max/.test(runner) && runner.includes('min( 16000'));
 ok('قفل اتمیک ضد تیک هم‌زمان وجود دارد', /add_option\( self::LOCK_OPTION/.test(runner) && /LOCK_TTL/.test(runner) && /function release_lock/.test(runner));
 ok('قفل رهاشده بعد از TTL آزاد می‌شود (کار هیچ‌وقت گیر نمی‌کند)', /LOCK_TTL\s*=\s*\d+/.test(runner) && /update_option\( self::LOCK_OPTION, \$now/.test(runner));
-ok('پیشرفت هر آیتم در سرور ذخیره می‌شود (مقاوم به مرگ PHP)', /(self|TisaCase_Optimizer_Job)::save\( \$job \)/.test(job) && /advance_now/.test(job));
+ok('پیشرفت کار در سرور ذخیره می‌شود (ذخیرهٔ دوره‌ای داخل تیک + پایان تیک؛ مقاوم به مرگ PHP)', /(self|TisaCase_Optimizer_Job)::save\( \$job \)/.test(job) && /advance_now/.test(job));
 ok('پس از بستن مرورگر، PHP تیک را نیمه‌کاره رها نمی‌کند', /ignore_user_abort\( true \)/.test(runner) && /set_time_limit/.test(runner));
 ok('نتیجهٔ کار در نبود کاربر ذخیره و قابل دیدن است', /LAST_RESULT_OPTION/.test(runner) && /function last_result/.test(runner));
 ok('کار فعال از کرون قابل بیدارشدن فوری است (spawn_cron)', /spawn_cron\(\)/.test(runner) && /function wake/.test(runner));
@@ -242,6 +243,9 @@ ok('رابط کاربری کلید و وضعیت کرون را نشان می‌�
 ok('در حین اجرا صریح می‌گوید «روی هاست»', admin.includes('روی خود هاست اجرا می‌شود'));
 ok('اگر کرون هاست خواب بود، پنل بن‌بست نمی‌شود (تیک دستی)', admin.includes("api('runner_tick')") || /hostAwareCall/.test(admin));
 ok('نتیجهٔ کار در نبود کاربر در کارت نشان داده می‌شود', admin.includes('آخرین نتیجهٔ هاست'));
+ok('جایگزینی لینک‌ها دسته‌ای است (یک UPDATE بر جدول، نه بر جفت‌URL)', /function bulk_replace_urls/.test(proc) && !/SET post_content = REPLACE\( post_content, %s, %s \)/.test(proc));
+ok('زنجیرهٔ توربو تیک‌ها را حین اجرای کار پشت‌سرهم می‌کند', /function chain_next_tick/.test(runner) && /wp_schedule_single_event\( time\(\) \+ 3, self::HOOK \)/.test(runner));
+ok('رمزنگار WebP/AVIF گزینهٔ سرعت دارد', /webp:method/.test(proc) && /heic:speed/.test(proc));
 
 console.log('');
 if (fails.length) {
