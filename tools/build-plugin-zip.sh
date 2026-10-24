@@ -9,6 +9,10 @@ if [ -d "plugins/src/$name" ]; then src="plugins/src/$name";
 elif [ -d "plugins/$name" ]; then src="plugins/$name";
 else echo "پوشه نیست: plugins/src/$name یا plugins/$name" >&2; exit 2; fi
 top=$(basename "$src")
+# Payment releases must pass their behavioural/security regression gate.
+if [ "$name" = "tisacase-card-to-card" ]; then
+  bash tools/test-card-to-card.sh
+fi
 
 python3 tools/php-check.py "$src" >/dev/null
 # بررسی سینتکس واقعی PHP (خطای کشنده مثل کامای جاافتاده را می‌گیرد).
@@ -55,7 +59,9 @@ for f in $js; do node --check "$f" >/dev/null || { echo "JS خطا دارد: $f"
 mkdir -p plugins/dist
 out="plugins/dist/$top.zip"
 rm -f "$out"
-( cd "$(dirname "$src")" && zip -qrD "$OLDPWD/$out" "$top" -x "*/.DS_Store" "*/__MACOSX/*" )
+exclude=("*/.DS_Store" "*/__MACOSX/*")
+if [ "$name" = "tisacase-card-to-card" ]; then exclude+=("*/tests/*"); fi
+( cd "$(dirname "$src")" && zip -qrD "$OLDPWD/$out" "$top" -x "${exclude[@]}" )
 
 # آخرین حلقه: خودِ زیپ هم با پارسر واقعی خوانده می‌شود (چیزی که به سایت می‌رود).
 if node -e "require.resolve('php-parser')" >/dev/null 2>&1 && [ -f tools/zip-parse.mjs ]; then
