@@ -379,3 +379,18 @@
 - **tisacase-bulk-stock-manager 1.4.0** — **بازطراحی UI هم‌زبان با بقیهٔ افزونه‌ها (فاز ۴، طبق `PLUGIN_REDESIGN.md`):** سرِ گرادیانی سبز با نشان/ابرو/قرصِ نسخه (هم‌خانوادهٔ `tisacase-exporter` v2 و `tisacase-bulk-variation-manager`)، نوار سفیدِ حالت کار با قرص‌های فیروزه‌ای و آیکون، کارت‌های تخت با سرِ شماره‌دار و بدنهٔ جدا (`tbsm-card-body`)، نوار ابزار/پایینِ چسبان با سطح `surface-2`، و بج/چیپ/اعلان منطبق بر کامپوننت‌های هاب. **توکنی‌شدن کامل:** صفر hex/گوشه/قلم هاردکد بیرون از fallback (`ui-audit` پاک) تا حالت کم‌فضا (`body.tisa-compact`) و رنگ برند هاب روی این صفحه هم اثر کند؛ شمارنده‌ها با قلم رابط + `tabular-nums` و مونو فقط برای SKU/کد (§۸). **دکمه‌ها از `.tisa-btn` هاب** و فقط با کلاس `is-standalone` (هاب خاموش) محلی تعریف می‌شوند — همان الگوی `tisacase-exporter`. **رفع باگ مارک‌آپ:** یک `</div>` اضافه در `render_page()` گام ۲ گروهی را بیرون پنل و گام ۳ را بیرون `.tbsm-wrap` می‌انداخت (پیش‌نمایش درست بود و تست‌ها سبز می‌ماندند)؛ حالا ابزار تازهٔ `tools/markup-parity.mjs` ساختار خروجی PHP را با پیش‌نمایش هم‌قفل می‌کند (۱۳۴ گره · ۴۳ شناسه؛ کنترل مثبت: با یک گره افزوده در پیش‌نمایش خروج ۱) و در `build-plugin-zip.sh` هم اجرا می‌شود. سرِ فهرست نتایج محدوده به‌جای تکرار راهنما، شمارش زنده نشان می‌دهد («نمایش ۳ محصول — از فهرست تیک بزنید»). آزمون‌ها: jsdom **۲۱۳ سنجه** سبز · `layout-guard` و `layout-geometry` (کارت‌ها هم‌اندازه و وسط، حتی زیر CSS بیگانه) · `i18n-parity` ۸۳ کلید · `ajax-contract` سالم.
   - **لینک مستقیم زیپ (شاخهٔ کاری، تا قبل از مرج):** `https://raw.githubusercontent.com/ImTheAlireza/TisaCaseHub/arena/75ac2a0c-tisacasehub/plugins/dist/tisacase-bulk-stock-manager.zip`
 
+
+
+## افزونه جدید: کارت به کارت تیساکیس — 1.2.0
+
+- سورس: `plugins/src/tisacase-card-to-card/`؛ درگاه: `tisacase_card_to_card`؛ عنوان ذخیره‌شده سفارش: «کارت به کارت تیساکیس».
+- روش/وضعیت در لیست سفارش‌ها؛ رسید، تأیید، رد با علت و تاریخچه داخل ویرایش همان سفارش (اتصال HPOS و قدیمی).
+- صفحه `admin.php?page=tisacase-card-to-card` برای تنظیمات سراسری؛ معرفی خودکار با هدر/فیلتر هاب؛ بدون تغییر هسته هاب.
+- مالک داده: گزینه‌های `tcc_settings`، `tcc_db_version`، `tcc_reviewers`، `tcc_reviewer_roles` و جدول‌های `{prefix}tcc_attempts`، `tcc_submissions`، `tcc_events`. مجوز بررسی: `tcc_review_payments` به‌علاوه مجوز همان سفارش.
+- فایل مالی بیرون webroot با `TCC_PRIVATE_DIR` اختیاری؛ هیچ attachment عمومی یا مسیر داخل uploads ساخته نمی‌شود. حذف افزونه، داده مالی را خودکار پاک نمی‌کند.
+- تست و بسته‌بندی: `tools/test-card-to-card.sh` و `tools/build-plugin-zip.sh tisacase-card-to-card`؛ آزمون‌ها از ZIP حذف می‌شوند.
+- رابط ۱٫۱: تنظیمات چهار تب در یک فرم (`templates/settings.php`)، بررسی فشرده داخل سفارش (`templates/order-review.php`)، CSS مستقل مدیریت (`assets/admin.css`) و قالب مشتری؛ بدون تغییر منطق مالی/مجوزها.
+- نقش‌ها: `includes/class-tcc-permissions.php` فقط capability مالی را روی نقش‌های انتخابی و استثنای فردی مدیریت می‌کند؛ مدیر محافظت‌شده و مجوز همان سفارش همچنان الزامی است.
+- چک‌لیست: ۷۵ سناریوی staging در `CARD_TO_CARD_TEST_CHECKLIST.md` و HTML تیک‌زدنی `design/preview/card-to-card-checklist.html`، مستقل از محیط افزونه.
+- تست: ۲۴۷ بررسی اصلی روی PHP 7.4/8.5 و ۱۸۹ بررسی واقعی Chromium روی fixture/چک‌لیست؛ پیش‌نمایش غیرعملیاتی با `tools/preview-card-to-card.mjs` و آزمون `tools/test-card-to-card-browser.mjs`.
+- وضعیت انتشار: بسته staging؛ تأیید WordPress/MySQL/WooCommerce روی هاست و قالب واقعی هنوز لازم است. جزئیات: `CARD_TO_CARD_REPORT.md`.
