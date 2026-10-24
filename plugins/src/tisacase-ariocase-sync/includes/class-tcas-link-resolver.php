@@ -45,6 +45,7 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 				'shop'       => 'tisacase',
 				'shop_label' => 'TisaCase',
 				'sku'        => $sku,
+				'reference'  => $sku,
 				'name'       => (string) $product->get_name(),
 				'product_id' => $product_id,
 				'type'       => (string) $product->get_type(),
@@ -101,12 +102,19 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 				if ( is_wp_error( $product ) ) {
 					return $product;
 				}
+				$product_id = absint( $product['remote_id'] );
+				$sku        = isset( $product['code'] ) ? trim( (string) $product['code'] ) : '';
+				$reference  = '' !== $sku ? $sku : ( $product_id ? 'ID:' . $product_id : '' );
+				if ( '' === $reference ) {
+					return self::error( 'tcas_remote_id_missing', 'محصول ArioCase باید SKU یا Product ID داشته باشد.' );
+				}
 				return array(
 					'shop'       => 'ariocase',
 					'shop_label' => 'ArioCase',
-					'sku'        => (string) $product['code'],
+					'sku'        => $sku,
+					'reference'  => $reference,
 					'name'       => (string) $product['name'],
-					'product_id' => absint( $product['remote_id'] ),
+					'product_id' => $product_id,
 					'type'       => (string) $product['type'],
 				);
 			}

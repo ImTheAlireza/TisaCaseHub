@@ -198,7 +198,25 @@ api_test( 'پاسخ با Slug متفاوت به محصول دیگر تبدیل �
 configure( $actual );
 $GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 657, 'slug' => 'no-sku', 'sku' => '', 'stock_quantity' => 3 ) ) ) );
 $no_sku = TCAS_Api::fetch_reference( 'https://ariocase.com/product/no-sku/' );
-api_test( 'محصول لینک‌شدهٔ بدون SKU برای نگاشت رد می‌شود', is_wp_error( $no_sku ) && 'tcas_sku_missing' === $no_sku->get_error_code() );
+api_test( 'محصول لینک‌شدهٔ بدون SKU با Product ID معتبر پذیرفته می‌شود', is_array( $no_sku ) && '' === $no_sku['code'] && 657 === $no_sku['remote_id'] && 3.0 === $no_sku['stock']['quantity'] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 0, 'slug' => 'no-identity', 'sku' => '', 'stock_quantity' => 3 ) ) ) );
+$no_identity = TCAS_Api::fetch_reference( 'https://ariocase.com/product/no-identity/' );
+api_test( 'نبود هم SKU و هم Product ID برای لینک خطای امن است', is_wp_error( $no_identity ) && 'tcas_remote_id_missing' === $no_identity->get_error_code() );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 658, 'sku' => '', 'name' => 'ID only', 'type' => 'simple', 'stock_quantity' => 4, 'stock_status' => 'instock' ) ) );
+$by_id = TCAS_Api::fetch_reference( 'ID:658' );
+api_test( 'مرجع صریح ID بدون نیاز به SKU Resolve می‌شود', is_array( $by_id ) && '' === $by_id['code'] && 658 === $by_id['remote_id'] );
+api_test( 'مرجع ID به تک‌محصولی ووکامرس می‌رود', 'https://ariocase.com/wp-json/wc/v3/products/658' === $GLOBALS['requests'][0][0], $GLOBALS['requests'][0][0] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 999, 'sku' => '', 'stock_quantity' => 4 ) ) );
+$id_mismatch = TCAS_Api::fetch_reference( 'ID:658' );
+api_test( 'پاسخ با ID متفاوت برای مرجع صریح رد می‌شود', is_wp_error( $id_mismatch ) && 'tcas_id_mismatch' === $id_mismatch->get_error_code() );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 660, 'sku' => '658', 'stock_quantity' => 2 ) ) ) );
+$numeric_sku = TCAS_Api::fetch_reference( '658' );
+api_test( 'ورودی عددی بدون پیشوند همچنان SKU است نه Product ID', is_array( $numeric_sku ) && '658' === $numeric_sku['code'] && false !== strpos( $GLOBALS['requests'][0][0], 'sku=658' ) );
 
 configure( $actual );
 $remote_parent = array( 'id' => 500, 'sku' => 'VAR-1', 'name' => 'Variable', 'type' => 'variable', 'variations' => array( 501, 502 ), 'attributes' => array( array( 'name' => 'Color', 'options' => array( 'Black', 'White' ), 'variation' => true ) ) );
@@ -238,6 +256,22 @@ $GLOBALS['responses'][] = response( 200, json_encode( $remote_parent ) );
 $GLOBALS['responses'][] = response( 200, json_encode( $remote_variations ) );
 $stock = TCAS_Api::fetch_stock( 'VAR-1-W', array( 'type' => 'variation', 'parent_remote_id' => 500, 'parent_code' => 'VAR-1' ) );
 api_test( 'نگاشت قدیمی تنوع از والد Resolve و کد دقیق کنترل می‌شود', is_array( $stock ) && 0.0 === $stock['quantity'] && 502 === $stock['product']['remote_id'] && 2 === count( $GLOBALS['requests'] ) );
+
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 658, 'sku' => '', 'stock_quantity' => 5, 'stock_status' => 'instock' ) ) );
+$stock = TCAS_Api::fetch_stock( 'ID:658' );
+api_test( 'موجودی ID-only بدون SKU از تک‌محصولی خوانده می‌شود', is_array( $stock ) && 5.0 === $stock['quantity'] && 'https://ariocase.com/wp-json/wc/v3/products/658' === $GLOBALS['requests'][0][0] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 999, 'sku' => '', 'stock_quantity' => 9 ) ) );
+$stock_id_mismatch = TCAS_Api::fetch_stock( 'ID:658' );
+api_test( 'موجودی پاسخ با Product ID متفاوت اعمال نمی‌شود', is_wp_error( $stock_id_mismatch ) && 'tcas_id_mismatch' === $stock_id_mismatch->get_error_code() );
+configure( $actual );
+$stored_id_mismatch = TCAS_Api::fetch_stock( 'ID:658', array( 'type' => 'simple', 'remote_id' => 659 ) );
+api_test( 'تضاد مرجع ID و ID ذخیره‌شده پیش از HTTP رد می‌شود', is_wp_error( $stored_id_mismatch ) && 'tcas_id_mismatch' === $stored_id_mismatch->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( 'id' => 658, 'sku' => 'LATE-SKU', 'stock_quantity' => 6, 'stock_status' => 'instock' ) ) );
+$late_sku_stock = TCAS_Api::fetch_stock( 'ID:658' );
+api_test( 'افزوده‌شدن SKU بعد از نگاشت، خواندن با ID را نمی‌شکند', is_array( $late_sku_stock ) && 6.0 === $late_sku_stock['quantity'] && 'LATE-SKU' === $late_sku_stock['product']['code'] );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) { exit( $fail ? 1 : 0 ); }

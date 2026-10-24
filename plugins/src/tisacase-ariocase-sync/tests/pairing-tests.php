@@ -115,5 +115,22 @@ pair_test( 'لینک به SKU واقعی تبدیل و فقط همان SKU نگ�
 $link_again = TCAS_Pairing::preview( pair_of( 'LINK-LOCAL', $link ) );
 pair_test( 'پیش‌نمایش دوباره با همان لینک، اتصال موجود را تشخیص می‌دهد', 'connected' === $link_again['row']['status'] && 'LINK-RESOLVED' === $link_again['row']['remote_code'] );
 
+local_product( 24, 'ID-LINK-LOCAL' );
+$id_link = 'https://ariocase.com/product/id-only-case/';
+TCAS_Api::$responses[ $id_link ] = remote_product( '', array( 'remote_id' => 658 ) );
+list( $id_link_preview, $id_link_result ) = connect_pair( 'ID-LINK-LOCAL', $id_link );
+pair_test( 'لینک بدون SKU به ID canonical نگاشت و فقط Stock اعمال می‌شود', is_array( $id_link_result ) && 'ID:658' === $id_link_preview['row']['remote_code'] && 'ID:658' === TCAS_Mapping::remote_code( 24 ) && 658 === TCAS_Mapping::remote_identifiers( 24 )['remote_id'] && 4.0 === $GLOBALS['products'][24]->get_stock_quantity() );
+$id_link_again = TCAS_Pairing::preview( pair_of( 'ID-LINK-LOCAL', $id_link ) );
+pair_test( 'لینک ID-only در Preview دوباره Connected تشخیص داده می‌شود', 'connected' === $id_link_again['row']['status'] && 'ID:658' === $id_link_again['row']['remote_code'] );
+
+local_product( 25, 'ID-DIRECT-LOCAL' );
+TCAS_Api::$responses['ID:659'] = remote_product( '', array( 'remote_id' => 659 ) );
+list( $id_direct_preview, $id_direct_result ) = connect_pair( 'ID-DIRECT-LOCAL', 'ID:659' );
+pair_test( 'مرجع مستقیم ID در Preview و Connect حفظ می‌شود', is_array( $id_direct_result ) && 'ID:659' === $id_direct_preview['row']['remote_code'] && 'ID:659' === TCAS_Mapping::remote_code( 25 ) && 659 === TCAS_Mapping::remote_identifiers( 25 )['remote_id'] );
+local_product( 26, 'NO-IDENTITY-LOCAL' );
+TCAS_Api::$responses['NO-IDENTITY'] = remote_product( '', array( 'remote_id' => 0 ) );
+$no_identity = TCAS_Pairing::preview( pair_of( 'NO-IDENTITY-LOCAL', 'NO-IDENTITY' ) );
+pair_test( 'محصول بدون SKU و ID نگاشت جعلی نمی‌سازد', 'error' === $no_identity['row']['status'] && '' === TCAS_Mapping::remote_code( 26 ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -56,6 +56,6 @@ $field = function( $key ) use ( $settings ) {
 
 <section class="tcas-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">✓</span><h2>تست اتصال</h2></div><span class="tcas-tag">فقط خواندنی</span></div>
-	<div class="tcas-inline-form"><label class="tcas-grow"><span>لینک یا SKU در ArioCase</span><input id="tcas-test-code" type="text" dir="ltr" placeholder="https://ariocase.com/product/case-slug/"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div>
+	<div class="tcas-inline-form"><label class="tcas-grow"><span>لینک، SKU یا ID در ArioCase</span><input id="tcas-test-code" type="text" dir="ltr" placeholder="https://ariocase.com/product/case-slug/"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div>
 	<div id="tcas-test-result" class="tcas-test-result" role="status" aria-live="polite"></div>
 </section>

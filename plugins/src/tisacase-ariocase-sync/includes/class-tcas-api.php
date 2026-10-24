@@ -235,6 +235,11 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			return self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن پردازش است؛ ابتدا آن را دسته‌بندی کنید.' );
 		}
 
+		private static function reference_id( $reference ) {
+			$matches = array();
+			return preg_match( '/^ID:([1-9][0-9]*)$/i', trim( (string) $reference ), $matches ) ? absint( $matches[1] ) : 0;
+		}
+
 		public static function fetch_product( $code ) {
 			$code = trim( (string) $code );
 			if ( '' === $code ) {
@@ -298,7 +303,18 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 
 		/** لینک محصول فقط به slug/ID تبدیل می‌شود؛ خود لینک هرگز Fetch نمی‌شود. */
 		public static function fetch_reference( $reference ) {
-			$reference = trim( (string) $reference );
+			$reference    = trim( (string) $reference );
+			$reference_id = self::reference_id( $reference );
+			if ( $reference_id ) {
+				$product = self::fetch_product_by_id( $reference_id );
+				if ( is_wp_error( $product ) ) {
+					return $product;
+				}
+				if ( empty( $product['remote_id'] ) || absint( $product['remote_id'] ) !== $reference_id ) {
+					return self::error( 'tcas_id_mismatch', 'شناسهٔ محصول در پاسخ ArioCase با ID درخواستی یکسان نیست.' );
+				}
+				return $product;
+			}
 			if ( ! preg_match( '#^https?://#i', $reference ) ) {
 				return self::fetch_product( $reference );
 			}
@@ -348,8 +364,8 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			if ( $requested_id && ( empty( $product['remote_id'] ) || absint( $product['remote_id'] ) !== $requested_id ) ) {
 				return self::error( 'tcas_id_mismatch', 'شناسهٔ محصول در پاسخ ArioCase با لینک کوتاه یکسان نیست.' );
 			}
-			if ( empty( $product['code'] ) ) {
-				return self::error( 'tcas_sku_missing', 'برای محصول این لینک در ArioCase کد SKU ثبت نشده است.' );
+			if ( empty( $product['remote_id'] ) ) {
+				return self::error( 'tcas_remote_id_missing', 'پاسخ ArioCase برای این لینک Product ID معتبر ندارد.' );
 			}
 			return $product;
 		}
@@ -363,14 +379,21 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 			return self::error( 'tcas_variation_not_found', 'تنوع با این کد دقیق در محصول والد ArioCase پیدا نشد.' );
 		}
 
-		private static function stock_result( $product, $code, $parent_remote_id = 0 ) {
-			if ( '' === $product['code'] || $product['code'] !== $code ) {
+		private static function stock_result( $product, $code, $parent_remote_id = 0, $reference_id = 0 ) {
+			if ( $reference_id ) {
+				if ( empty( $product['remote_id'] ) || absint( $product['remote_id'] ) !== $reference_id ) {
+					return self::error( 'tcas_id_mismatch', 'ID پاسخ موجودی ArioCase با ID نگاشت یکسان نیست.' );
+				}
+			} elseif ( '' === $product['code'] || $product['code'] !== $code ) {
 				return self::error( 'tcas_code_mismatch', 'کد پاسخ موجودی ArioCase با کد درخواست‌شده یکسان نیست.' );
 			}
 			$stock = $product['stock'];
 			if ( null === $stock['quantity'] && null === $stock['status'] ) {
 				foreach ( (array) $product['variations'] as $variation ) {
-					if ( $variation['code'] === $code ) {
+					$matches_reference = $reference_id
+						? ! empty( $variation['remote_id'] ) && absint( $variation['remote_id'] ) === $reference_id
+						: isset( $variation['code'] ) && $variation['code'] === $code;
+					if ( $matches_reference ) {
 						$stock = $variation['stock'];
 						break;
 					}
@@ -397,12 +420,20 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 				'type' => '', 'remote_id' => 0, 'parent_remote_id' => 0, 'parent_code' => '',
 			) );
 			$settings         = TCAS_Core::settings();
+			$reference_id     = self::reference_id( $code );
+			$expected_code    = $reference_id ? '' : $code;
 			$remote_id        = absint( $identifiers['remote_id'] );
 			$parent_remote_id = absint( $identifiers['parent_remote_id'] );
 			$parent_code      = trim( (string) $identifiers['parent_code'] );
 			$is_variation     = 'variation' === $identifiers['type'];
 			$product          = null;
 			$stock_parent_id  = 0;
+			if ( $reference_id ) {
+				if ( $remote_id && $remote_id !== $reference_id ) {
+					return self::error( 'tcas_id_mismatch', 'ID ذخیره‌شده با مرجع نگاشت یکسان نیست.' );
+				}
+				$remote_id = $reference_id;
+			}
 
 			// Endpoint موجودی سفارشی اولویت دارد؛ در قرارداد فعلی ArioCase این فیلد خالی است.
 			if ( empty( $settings['stock_endpoint'] ) ) {
@@ -411,7 +442,7 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 					if ( is_wp_error( $payload ) ) {
 						return $payload;
 					}
-					$product = self::normalize_product_response( $payload, $code );
+					$product = self::normalize_product_response( $payload, $expected_code );
 					$stock_parent_id = $parent_remote_id;
 				} elseif ( $is_variation && ( $parent_remote_id || '' !== $parent_code ) ) {
 					$parent = $parent_remote_id ? self::fetch_product_by_id( $parent_remote_id, $parent_code ) : self::fetch_product( $parent_code );
@@ -421,7 +452,7 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 					$product = self::find_variation( $parent, $code );
 					$stock_parent_id = ! empty( $parent['remote_id'] ) ? absint( $parent['remote_id'] ) : $parent_remote_id;
 				} elseif ( ! $is_variation && $remote_id ) {
-					$product = self::fetch_product_by_id( $remote_id, $code );
+					$product = self::fetch_product_by_id( $remote_id, $expected_code );
 				}
 				if ( is_wp_error( $product ) ) {
 					return $product;
@@ -433,12 +464,12 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 				if ( is_wp_error( $payload ) ) {
 					return $payload;
 				}
-				$product = self::normalize_product_response( $payload, $code );
+				$product = self::normalize_product_response( $payload, $expected_code );
 			}
 			if ( is_wp_error( $product ) ) {
 				return $product;
 			}
-			return self::stock_result( $product, $code, $stock_parent_id );
+			return self::stock_result( $product, $code, $stock_parent_id, $reference_id );
 		}
 	}
 }

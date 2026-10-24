@@ -173,7 +173,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			self::auth();
 			$code = isset( $_POST['code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['code'] ) ) ) : '';
 			if ( '' === $code ) {
-				wp_send_json_error( array( 'message' => 'برای تست، SKU یا لینک محصول ArioCase را وارد کنید.' ), 400 );
+				wp_send_json_error( array( 'message' => 'برای تست، لینک، SKU یا ID محصول ArioCase را وارد کنید.' ), 400 );
 			}
 			$product = TCAS_Api::fetch_reference( $code );
 			$label   = preg_match( '#^https?://#i', $code ) ? '[ArioCase URL]' : $code;
@@ -181,10 +181,19 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				TCAS_Logger::add( 'connection_error', $label, $product->get_error_message() );
 				wp_send_json_error( array( 'message' => $product->get_error_message() ), 400 );
 			}
+			$reference = ! empty( $product['code'] ) ? (string) $product['code'] : ( ! empty( $product['remote_id'] ) ? 'ID:' . absint( $product['remote_id'] ) : '' );
 			TCAS_Logger::add( 'connection_ok', $label, 'اتصال و تشخیص ساختار پاسخ موفق بود.' );
 			wp_send_json_success( array(
 				'message' => 'اتصال موفق بود و ساختار پاسخ شناسایی شد.',
-				'product' => array( 'code' => $product['code'], 'name' => $product['name'], 'type' => $product['type'], 'stock' => $product['stock'], 'variations' => count( $product['variations'] ) ),
+				'product' => array(
+					'code'       => $product['code'],
+					'reference'  => $reference,
+					'product_id' => absint( $product['remote_id'] ),
+					'name'       => $product['name'],
+					'type'       => $product['type'],
+					'stock'      => $product['stock'],
+					'variations' => count( $product['variations'] ),
+				),
 			) );
 		}
 

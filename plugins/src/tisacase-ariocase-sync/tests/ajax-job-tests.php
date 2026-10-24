@@ -18,6 +18,10 @@ class TCAS_Pairing {
 	public static function connect( $preview ) { self::$received_preview = $preview; return array( 'message' => 'done', 'product_id' => 91 ); }
 }
 class TCAS_Link_Resolver { public static function resolve( $url ) { return array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple' ); } }
+class TCAS_Api {
+	public static $product = null; public static $reference = null;
+	public static function fetch_reference( $reference ) { self::$reference = $reference; return self::$product; }
+}
 class TCAS_Mapping { public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } }
 class TCAS_Live { public static $state = null; public static function refresh( $id ) { return self::$state; } }
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
@@ -43,6 +47,11 @@ $_POST['url'] = 'https://tisacase.com/product/local-case/';
 $response = invoke_ajax( 'resolve_link' );
 ajax_test( 'AJAX تبدیل لینک SKU و فروشگاه را برمی‌گرداند', $response && $response->success && 'TS0100' === $response->data['sku'] && 'tisacase' === $response->data['shop'] );
 unset( $_POST['url'] );
+$_POST['code'] = 'ID:658';
+TCAS_Api::$product = array( 'code' => '', 'remote_id' => 658, 'name' => 'ID only', 'type' => 'simple', 'stock' => array( 'quantity' => 5.0, 'status' => 'instock' ), 'variations' => array() );
+$response = invoke_ajax( 'test_connection' );
+ajax_test( 'تست اتصال برای محصول بدون SKU، مرجع و Product ID را برمی‌گرداند', $response && $response->success && 'ID:658' === TCAS_Api::$reference && 'ID:658' === $response->data['product']['reference'] && 658 === $response->data['product']['product_id'] );
+unset( $_POST['code'] );
 $_POST['product_id'] = 91; TCAS_Live::$state = null;
 $response = invoke_ajax( 'sync_mapping' );
 ajax_test( 'State ناموجود در Sync دستی موفقیت کاذب ندارد', $response && ! $response->success && 409 === $response->status );

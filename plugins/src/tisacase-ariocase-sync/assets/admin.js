@@ -285,7 +285,7 @@
 		const copy = $('tcas-link-copy');
 		if (copy) copy.disabled = true;
 		const shop = $('tcas-link-shop');
-		if (shop) shop.textContent = 'شناسه SKU';
+		if (shop) shop.textContent = 'SKU / ID';
 		const product = $('tcas-link-product');
 		if (product) product.textContent = '';
 		const result = $('tcas-link-result');
@@ -302,17 +302,18 @@
 		text('tcas-link-status', 'در حال تشخیص فروشگاه و دریافت شناسه…');
 		try {
 			const data = await request('resolve_link', { url });
+			const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
 			const sku = $('tcas-link-sku');
-			if (sku) sku.value = data.sku || '';
+			if (sku) sku.value = reference;
 			const shop = $('tcas-link-shop');
-			if (shop) shop.textContent = (data.shop_label || 'محصول') + ' · SKU';
+			if (shop) shop.textContent = (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU');
 			const product = $('tcas-link-product');
 			if (product) product.textContent = data.name || '';
 			const result = $('tcas-link-result');
 			if (result && data.shop) result.dataset.shop = data.shop;
 			const copy = $('tcas-link-copy');
-			if (copy) copy.disabled = !data.sku;
-			text('tcas-link-status', data.sku ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !data.sku);
+			if (copy) copy.disabled = !reference;
+			text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
 		} catch (error) { text('tcas-link-status', error.message, true); }
 		busy(button, false);
 	}

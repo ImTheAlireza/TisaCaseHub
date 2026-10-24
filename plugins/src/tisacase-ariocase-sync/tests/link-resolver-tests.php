@@ -64,7 +64,19 @@ reset_resolver_fixtures();
 $remote_url = 'https://ariocase.com/product/remote-case/';
 TCAS_Api::$responses[ $remote_url ] = remote_result();
 $remote = TCAS_Link_Resolver::resolve( $remote_url );
-resolver_test( 'لینک ArioCase از همان API قبلی به SKU تبدیل می‌شود', is_array( $remote ) && 'ariocase' === $remote['shop'] && 'AR22' === $remote['sku'] && 222 === $remote['product_id'] && array( $remote_url ) === TCAS_Api::$calls );
+resolver_test( 'لینک ArioCase از همان API قبلی به SKU تبدیل می‌شود', is_array( $remote ) && 'ariocase' === $remote['shop'] && 'AR22' === $remote['sku'] && 'AR22' === $remote['reference'] && 222 === $remote['product_id'] && array( $remote_url ) === TCAS_Api::$calls );
+
+reset_resolver_fixtures();
+$id_only_url = 'https://ariocase.com/product/id-only-case/';
+TCAS_Api::$responses[ $id_only_url ] = remote_result( '' );
+$id_only = TCAS_Link_Resolver::resolve( $id_only_url );
+resolver_test( 'محصول ArioCase بدون SKU مرجع ID قابل‌کپی می‌گیرد', is_array( $id_only ) && '' === $id_only['sku'] && 'ID:222' === $id_only['reference'] && 222 === $id_only['product_id'] );
+reset_resolver_fixtures();
+$identityless_url = 'https://ariocase.com/product/identityless-case/';
+$identityless_response = remote_result( '' ); $identityless_response['remote_id'] = 0;
+TCAS_Api::$responses[ $identityless_url ] = $identityless_response;
+$identityless = TCAS_Link_Resolver::resolve( $identityless_url );
+resolver_test( 'بدون SKU و ID خروجی کپی ساخته نمی‌شود', is_wp_error( $identityless ) && 'tcas_remote_id_missing' === $identityless->get_error_code() );
 
 reset_resolver_fixtures();
 $before = count( TCAS_Api::$calls );

@@ -78,7 +78,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( is_wp_error( $remote ) ) {
 				return array( 'row' => self::row( $pair, 'error', $remote->get_error_message(), $extra ), 'remote' => null, 'local_id' => $local_id );
 			}
-			$pair['remote_code'] = $remote['code'];
+			$remote_key = isset( $remote['code'] ) ? trim( (string) $remote['code'] ) : '';
+			if ( '' === $remote_key && ! empty( $remote['remote_id'] ) ) {
+				$remote_key = 'ID:' . absint( $remote['remote_id'] );
+			}
+			if ( '' === $remote_key ) {
+				return array( 'row' => self::row( $pair, 'error', 'محصول ArioCase باید SKU یا Product ID داشته باشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+			}
+			$pair['remote_code'] = $remote_key;
 			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به کد ArioCase دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}

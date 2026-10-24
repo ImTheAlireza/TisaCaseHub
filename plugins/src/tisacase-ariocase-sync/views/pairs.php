@@ -8,8 +8,8 @@ $mappings = TCAS_Mapping::all( 6 );
 		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-input-action"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
 		<span class="tcas-converter-arrow" aria-hidden="true">←</span>
 		<div id="tcas-link-result" class="tcas-converter-result">
-			<span id="tcas-link-shop" class="tcas-shop-label">شناسه SKU</span>
-			<span class="tcas-input-action"><input id="tcas-link-sku" type="text" dir="ltr" placeholder="SKU" readonly><button type="button" id="tcas-link-copy" class="button" disabled>کپی</button></span>
+			<span id="tcas-link-shop" class="tcas-shop-label">SKU / ID</span>
+			<span class="tcas-input-action"><input id="tcas-link-sku" type="text" dir="ltr" placeholder="SKU / ID" readonly><button type="button" id="tcas-link-copy" class="button" disabled>کپی</button></span>
 			<small id="tcas-link-product"></small>
 		</div>
 	</div>
@@ -27,7 +27,7 @@ $mappings = TCAS_Mapping::all( 6 );
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
-				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
 		</article>
 	</div>
@@ -37,7 +37,7 @@ $mappings = TCAS_Mapping::all( 6 );
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
-				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
 		</article>
 	</template>
