@@ -67,6 +67,14 @@
 		return (quantity !== '' ? quantity + ' · ' : '') + (statuses[stock.status] || 'وضعیت نامشخص');
 	}
 
+	function productCell(code, name, id) {
+		const cell = node('td', 'tcas-code-cell');
+		cell.appendChild(node('code', '', code || '—'));
+		if (name) cell.appendChild(node('small', '', name));
+		if (id) cell.appendChild(node('small', '', '#' + id));
+		return cell;
+	}
+
 	function addPreviewRow(row) {
 		const tbody = $('tcas-preview-table') && $('tcas-preview-table').querySelector('tbody');
 		if (!tbody) return;
@@ -75,14 +83,13 @@
 		const checkbox = document.createElement('input');
 		checkbox.type = 'checkbox';
 		checkbox.className = 'tcas-row-select';
-		checkbox.value = row.code;
+		checkbox.value = String(row.index);
 		checkbox.disabled = !row.selectable;
 		checkbox.checked = Boolean(row.selectable);
 		checkCell.appendChild(checkbox);
 		tr.appendChild(checkCell);
-		tr.appendChild(node('td', 'tcas-code-cell', row.code));
-		tr.appendChild(node('td', '', row.name || '—'));
-		tr.appendChild(node('td', '', row.local_id ? ('#' + row.local_id + ' · ' + row.local_type) : 'محصول جدید'));
+		tr.appendChild(productCell(row.local_code, row.local_name, row.local_id));
+		tr.appendChild(productCell(row.remote_code, row.remote_name, 0));
 		tr.appendChild(node('td', '', stockLabel(row.stock)));
 		const message = node('td', '', row.message || '');
 		if (row.status === 'error') message.classList.add('tcas-error-text');
@@ -100,17 +107,17 @@
 			done = Boolean(data.done);
 		}
 		state.previewDone = true;
-		text('tcas-preview-status', 'پیش‌نمایش کامل شد؛ ردیف‌ها را بررسی و تأیید کنید.');
-		const importButton = $('tcas-import-start');
-		if (importButton) importButton.disabled = false;
+		text('tcas-preview-status', 'بررسی کامل شد؛ جفت‌ها را تأیید کنید.');
+		const connectButton = $('tcas-connect-start');
+		if (connectButton) connectButton.disabled = false;
 		busy(button, false);
 		state.running = false;
 	}
 
 	async function startPreview() {
 		if (state.running) return;
-		const codes = $('tcas-codes') ? $('tcas-codes').value : '';
-		if (!codes.trim()) { text('tcas-preview-status', 'حداقل یک کد وارد کنید.', true); return; }
+		const pairs = $('tcas-pairs') ? $('tcas-pairs').value : '';
+		if (!pairs.trim()) { text('tcas-preview-status', 'حداقل یک جفت وارد کنید.', true); return; }
 		const button = $('tcas-preview-start');
 		state.running = true;
 		state.previewDone = false;
@@ -121,10 +128,10 @@
 		if (panel) panel.hidden = true;
 		const tbody = $('tcas-preview-table') && $('tcas-preview-table').querySelector('tbody');
 		if (tbody) tbody.textContent = '';
-		const results = $('tcas-import-results');
+		const results = $('tcas-connect-results');
 		if (results) results.textContent = '';
 		try {
-			const data = await request('preview_start', { codes });
+			const data = await request('preview_start', { pairs });
 			state.token = data.token;
 			if (panel) panel.hidden = false;
 			progress('tcas-preview', 0, data.total || 0);
@@ -136,56 +143,51 @@
 		}
 	}
 
-	function importResult(row) {
-		const wrap = $('tcas-import-results');
+	function connectResult(row) {
+		const wrap = $('tcas-connect-results');
 		if (!wrap) return;
 		const card = node('div', 'tcas-result-card ' + (row.status === 'done' ? 'is-success' : 'is-error'));
-		card.appendChild(node('strong', '', row.code + ' — ' + row.message));
+		const label = row.local_code + ' - ' + row.remote_code;
+		card.appendChild(node('strong', '', label + ' — ' + row.message));
 		if (row.edit_url) {
-			const link = node('a', '', 'بازکردن محصول');
+			const link = node('a', '', 'بازکردن محصول تیساکیس');
 			link.href = row.edit_url;
 			card.appendChild(link);
 		}
-		(row.warnings || []).forEach((warning) => card.appendChild(node('small', 'tcas-warning-text', warning)));
 		wrap.appendChild(card);
 	}
 
-	async function importLoop(button) {
+	async function connectLoop(button) {
 		let done = false;
 		while (!done) {
-			const data = await request('import_step', { token: state.token });
-			if (data.row) importResult(data.row);
-			progress('tcas-import', data.processed || 0, data.total || 0);
+			const data = await request('connect_step', { token: state.token });
+			if (data.row) connectResult(data.row);
+			progress('tcas-connect', data.processed || 0, data.total || 0);
 			done = Boolean(data.done);
 		}
-		text('tcas-import-status', 'عملیات ردیف‌های انتخابی تمام شد.');
+		text('tcas-connect-status', 'عملیات جفت‌های انتخابی تمام شد.');
 		busy(button, false);
 		state.running = false;
 	}
 
-	async function startImport() {
+	async function startConnect() {
 		if (state.running || !state.token || !state.previewDone) return;
-		const codes = Array.from(document.querySelectorAll('.tcas-row-select:checked')).map((input) => input.value);
-		if (!codes.length) { text('tcas-import-status', (cfg.strings && cfg.strings.selectRows) || 'ردیفی انتخاب نشده.', true); return; }
-		const button = $('tcas-import-start');
+		const pairs = Array.from(document.querySelectorAll('.tcas-row-select:checked')).map((input) => input.value);
+		if (!pairs.length) { text('tcas-connect-status', (cfg.strings && cfg.strings.selectRows) || 'جفتی انتخاب نشده.', true); return; }
+		const button = $('tcas-connect-start');
 		state.running = true;
 		busy(button, true);
-		text('tcas-import-status', 'در حال آماده‌سازی…');
-		const results = $('tcas-import-results');
+		text('tcas-connect-status', 'در حال آماده‌سازی…');
+		const results = $('tcas-connect-results');
 		if (results) results.textContent = '';
 		try {
-			const data = await request('import_start', {
-				token: state.token,
-				codes,
-				prices: $('tcas-import-prices') && $('tcas-import-prices').checked ? '1' : '',
-				images: $('tcas-import-images') && $('tcas-import-images').checked ? '1' : ''
-			});
-			progress('tcas-import', 0, data.total || 0);
-			await importLoop(button);
+			const data = await request('connect_start', { token: state.token, pairs });
+			progress('tcas-connect', 0, data.total || 0);
+			await connectLoop(button);
 		} catch (error) {
 			state.running = false;
 			busy(button, false);
-			text('tcas-import-status', error.message, true);
+			text('tcas-connect-status', error.message, true);
 		}
 	}
 
@@ -220,8 +222,8 @@
 
 	const previewButton = $('tcas-preview-start');
 	if (previewButton) previewButton.addEventListener('click', startPreview);
-	const importButton = $('tcas-import-start');
-	if (importButton) importButton.addEventListener('click', startImport);
+	const connectButton = $('tcas-connect-start');
+	if (connectButton) connectButton.addEventListener('click', startConnect);
 	const selectValid = $('tcas-select-valid');
 	if (selectValid) selectValid.addEventListener('click', () => {
 		const boxes = Array.from(document.querySelectorAll('.tcas-row-select:not(:disabled)'));

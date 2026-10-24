@@ -197,25 +197,16 @@
   width:60px;
   text-align:center}
 .tcas-code-cell {
+  direction:rtl;
+  text-align:right}
+.tcas-code-cell code {
   direction:ltr;
-  text-align:right;
+  unicode-bidi:embed;
   font-family:ui-monospace,monospace}
 .tcas-result-connected {
   opacity:.65}
 .tcas-result-error {
   background:var(--tisa-danger-soft,#FBECEA)}
-.tcas-import-options {
-  display:flex;
-  flex-wrap:wrap;
-  gap:10px 24px;
-  margin-top:17px;
-  padding:14px;
-  background:var(--tcas-soft);
-  border-radius:var(--tisa-r-sm,10px)}
-.tcas-import-options label {
-  font-size:var(--tisa-fs-meta,12.5px)}
-.tcas-import-options .tcas-help {
-  flex-basis:100%}
 .tcas-results {
   display:grid;
   gap:8px;
@@ -393,8 +384,6 @@
   width:100%}
 .tcas-tabs a {
   padding:8px 12px}
-.tcas-import-options {
-  flex-direction:column}
 .tcas-actions {
   align-items:flex-start;
   flex-direction:column}

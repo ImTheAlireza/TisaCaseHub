@@ -161,6 +161,56 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			return array_values( $out );
 		}
 
+		public static function parse_pairs( $raw ) {
+			$lines = is_array( $raw ) ? $raw : preg_split( '/\r\n|\r|\n/', (string) $raw );
+			$out = array(); $seen = array(); $locals = array(); $remotes = array();
+			foreach ( (array) $lines as $line ) {
+				$line = trim( sanitize_text_field( $line ) );
+				if ( '' === $line ) {
+					continue;
+				}
+				if ( count( $out ) >= self::MAX_CODES ) {
+					break;
+				}
+				$entry = array( 'local_code' => '', 'remote_code' => '', 'error' => '' );
+				$parts = preg_split( '/\s+-\s+/u', $line );
+				if ( 2 !== count( $parts ) ) {
+					$entry['local_code'] = $line;
+					$entry['error'] = 'قالب جفت معتبر نیست؛ بنویسید: SKU تیساکیس - کد ArioCase';
+					$out[] = $entry;
+					continue;
+				}
+				$local  = trim( (string) $parts[0] );
+				$remote = trim( (string) $parts[1] );
+				$entry['local_code'] = $local;
+				$entry['remote_code'] = $remote;
+				if ( '' === $local || '' === $remote || strlen( $local ) > 190 || strlen( $remote ) > 190 ) {
+					$entry['error'] = 'کد تیساکیس یا ArioCase خالی/بسیار طولانی است.';
+					$out[] = $entry;
+					continue;
+				}
+				$fingerprint = json_encode( array( $local, $remote ) );
+				if ( isset( $seen[ $fingerprint ] ) ) {
+					continue;
+				}
+				if ( isset( $locals[ $local ] ) && $locals[ $local ] !== $remote ) {
+					$entry['error'] = 'این SKU تیساکیس در همین دسته با کد دیگری جفت شده است.';
+					$out[] = $entry;
+					continue;
+				}
+				if ( isset( $remotes[ $remote ] ) && $remotes[ $remote ] !== $local ) {
+					$entry['error'] = 'این کد ArioCase در همین دسته با SKU دیگری جفت شده است.';
+					$out[] = $entry;
+					continue;
+				}
+				$seen[ $fingerprint ] = true;
+				$locals[ $local ] = $remote;
+				$remotes[ $remote ] = $local;
+				$out[] = $entry;
+			}
+			return $out;
+		}
+
 		public static function activate() {
 			if ( false === get_option( self::OPTION_SETTINGS, false ) ) {
 				add_option( self::OPTION_SETTINGS, self::defaults(), '', 'no' );

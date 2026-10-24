@@ -4,7 +4,7 @@ $mappings = TCAS_Mapping::all();
 ?>
 <section class="tcas-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">+</span><h2>اتصال دستی با SKU</h2></div></div>
-	<p class="tcas-help">برای محصول ساده یا یک Variation مشخص؛ SKU دقیق ووکامرس و کد همان قلم در ArioCase را وارد کنید. برای تنوع دستی، ابتدا والد را متصل کنید تا ID والد و تنوع از API شناسایی شود.</p>
+	<p class="tcas-help">همان اتصال جفتی برای یک محصول: SKU دقیق تیساکیس و کد همان قلم در ArioCase. اتصال فقط بعد از تأیید هر دو محصول و خواندن موجودی انجام می‌شود.</p>
 	<div class="tcas-inline-form">
 		<label><span>SKU در تیساکیس</span><input id="tcas-map-sku" type="text" dir="ltr" placeholder="CH1001-RED"></label>
 		<label><span>کد در ArioCase</span><input id="tcas-map-code" type="text" dir="ltr" placeholder="ARIO-8841"></label>
@@ -17,7 +17,7 @@ $mappings = TCAS_Mapping::all();
 	<div class="tcas-card-head"><div><span class="tcas-step">↻</span><h2>محصولات متصل</h2></div><span class="tcas-muted"><?php echo count( $mappings ); ?> نگاشت</span></div>
 	<div id="tcas-sync-status" class="tcas-status" role="status" aria-live="polite"></div>
 	<?php if ( ! $mappings ) : ?>
-		<div class="tcas-empty">هنوز محصولی متصل نشده است. از تب «ایمپورت و اتصال» یا فرم بالا شروع کنید.</div>
+		<div class="tcas-empty">هنوز محصولی متصل نشده است. از تب «اتصال جفتی» یا فرم بالا شروع کنید.</div>
 	<?php else : ?>
 	<div class="tcas-table-wrap">
 		<table class="widefat striped tcas-table">

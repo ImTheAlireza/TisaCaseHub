@@ -1,0 +1,110 @@
+<?php
+/** اتصال جفتی: فقط محصولات موجود و فقط فیلدهای Stock. */
+define( 'ABSPATH', __DIR__ . '/' );
+class WP_Error { private $code; private $message; public function __construct( $c = '', $m = '' ) { $this->code = $c; $this->message = $m; } public function get_error_code() { return $this->code; } public function get_error_message() { return $this->message; } }
+function is_wp_error( $v ) { return $v instanceof WP_Error; }
+function wp_parse_args( $a, $d ) { return array_merge( $d, (array) $a ); }
+function sanitize_text_field( $v ) { return trim( (string) $v ); }
+function absint( $v ) { return abs( (int) $v ); }
+function get_post_meta( $id, $key, $single = true ) { return isset( $GLOBALS['meta'][ $id ][ $key ] ) ? $GLOBALS['meta'][ $id ][ $key ] : ''; }
+function update_post_meta( $id, $key, $value ) { $GLOBALS['meta'][ $id ][ $key ] = $value; return true; }
+function delete_post_meta( $id, $key ) { unset( $GLOBALS['meta'][ $id ][ $key ] ); return true; }
+function wc_get_product( $id ) { return isset( $GLOBALS['products'][ $id ] ) ? $GLOBALS['products'][ $id ] : null; }
+function wc_delete_product_transients( $id ) {}
+class TCAS_Test_WPDB {
+	public $postmeta = 'wp_postmeta'; public $posts = 'wp_posts';
+	public function prepare( $query, ...$args ) { foreach ( $args as $arg ) { $query = preg_replace( '/%s/', "'" . addslashes( (string) $arg ) . "'", $query, 1 ); $query = preg_replace( '/%d/', (string) (int) $arg, $query, 1 ); } return $query; }
+	public function get_col( $query ) {
+		preg_match( "/pm\.meta_key = '([^']+)'/", $query, $key ); preg_match( "/pm\.meta_value = '([^']*)'/", $query, $value ); $out = array();
+		foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $key[1], $value[1], $meta[ $key[1] ] ) && 0 === strcasecmp( (string) $meta[ $key[1] ], (string) $value[1] ) ) $out[] = $id;
+		sort( $out ); return $out;
+	}
+}
+$GLOBALS['wpdb'] = new TCAS_Test_WPDB(); $GLOBALS['meta'] = array(); $GLOBALS['products'] = array();
+class TCAS_Test_Product {
+	private $id; private $type; private $parent; private $sku; private $name; private $price; private $status; private $description;
+	private $manage = false; private $qty = null; private $stock_status = 'instock'; private $fail_save;
+	public $saved = 0;
+	public function __construct( $id, $sku, $type = 'simple', $parent = 0, $fail_save = false ) { $this->id = $id; $this->sku = $sku; $this->type = $type; $this->parent = $parent; $this->fail_save = $fail_save; $this->name = 'نام اصلی ' . $sku; $this->price = 9000.0; $this->status = 'publish'; $this->description = 'توضیح اصلی'; }
+	public function get_id() { return $this->id; } public function get_parent_id() { return $this->parent; } public function get_type() { return $this->type; }
+	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; }
+	public function get_regular_price() { return $this->price; } public function get_status() { return $this->status; } public function get_description() { return $this->description; }
+	public function get_manage_stock( $context = 'view' ) { return $this->manage; } public function get_stock_quantity( $context = 'view' ) { return $this->qty; } public function get_stock_status( $context = 'view' ) { return $this->stock_status; }
+	public function set_manage_stock( $v ) { $this->manage = (bool) $v; } public function set_stock_quantity( $v ) { $this->qty = (float) $v; } public function set_stock_status( $v ) { $this->stock_status = $v; }
+	public function save() { if ( $this->fail_save ) throw new Exception( 'save failed' ); $this->saved++; return $this->id; }
+	public function __call( $method, $args ) { throw new Exception( 'Forbidden product field method: ' . $method ); }
+}
+class WC_Product_Variable { public static function sync_stock_status( $id, $save = true ) {} }
+class TCAS_Api {
+	public static $responses = array(); public static $calls = array();
+	public static function fetch_product( $code ) { self::$calls[] = $code; return isset( self::$responses[ $code ] ) ? self::$responses[ $code ] : new WP_Error( 'not_found', 'محصول ArioCase پیدا نشد.' ); }
+}
+require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcas-pairing.php';
+$pass = 0; $fail = 0;
+function pair_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
+function local_product( $id, $sku, $type = 'simple', $parent = 0, $fail_save = false ) { $product = new TCAS_Test_Product( $id, $sku, $type, $parent, $fail_save ); $GLOBALS['products'][ $id ] = $product; $GLOBALS['meta'][ $id ]['_sku'] = $sku; return $product; }
+function remote_product( $code, $over = array() ) { return array_merge( array( 'remote_id' => 100, 'parent_remote_id' => 0, 'code' => $code, 'name' => 'نام متفاوت ریموت', 'type' => 'simple', 'price' => 1.0, 'stock' => array( 'quantity' => 4.0, 'status' => 'instock' ), 'variations' => array() ), $over ); }
+function pair_of( $local, $remote ) { return array( 'local_code' => $local, 'remote_code' => $remote, 'error' => '' ); }
+function connect_pair( $local, $remote ) { $preview = TCAS_Pairing::preview( pair_of( $local, $remote ) ); return array( $preview, TCAS_Pairing::connect( $preview ) ); }
+
+$product = local_product( 10, 'AR120' );
+TCAS_Api::$responses['AR22'] = remote_product( 'AR22', array( 'remote_id' => 222 ) );
+list( $preview, $result ) = connect_pair( 'AR120', 'AR22' );
+pair_test( 'جفت دو کد متفاوت Preview و Connect می‌شود', 'connect' === $preview['row']['status'] && is_array( $result ) );
+pair_test( 'هیچ محصولی ساخته یا حذف نمی‌شود', 1 === count( $GLOBALS['products'] ) && 10 === $result['product_id'] );
+pair_test( 'نام، قیمت، SKU، توضیح و انتشار تغییر نمی‌کنند', 'نام اصلی AR120' === $product->get_name() && 9000.0 === $product->get_regular_price() && 'AR120' === $product->get_sku() && 'توضیح اصلی' === $product->get_description() && 'publish' === $product->get_status() );
+pair_test( 'فقط Stock و نگاشت داخلی به‌روز می‌شوند', 4.0 === $product->get_stock_quantity() && $product->get_manage_stock() && 'AR22' === TCAS_Mapping::remote_code( 10 ) && 222 === TCAS_Mapping::remote_identifiers( 10 )['remote_id'] );
+$again = TCAS_Pairing::preview( pair_of( 'AR120', 'AR22' ) );
+pair_test( 'اجرای دوباره همان جفت را Connected نشان می‌دهد', 'connected' === $again['row']['status'] && ! $again['row']['selectable'] );
+
+$before_calls = count( TCAS_Api::$calls ); $before_products = count( $GLOBALS['products'] );
+$missing = TCAS_Pairing::preview( pair_of( 'NO-LOCAL', 'AR22' ) );
+pair_test( 'محصول مفقود تیساکیس خطا است و API/ساخت محصول ندارد', 'error' === $missing['row']['status'] && $before_calls === count( TCAS_Api::$calls ) && $before_products === count( $GLOBALS['products'] ) );
+
+local_product( 11, 'LOCAL-11' );
+$missing_remote = connect_pair( 'LOCAL-11', 'NO-REMOTE' );
+pair_test( 'محصول مفقود ArioCase هیچ نگاشتی نمی‌سازد', is_wp_error( $missing_remote[1] ) && '' === TCAS_Mapping::remote_code( 11 ) );
+
+local_product( 12, 'LOCAL-12' ); local_product( 13, 'LOCAL-13' );
+TCAS_Mapping::map( 12, 'OTHER-REMOTE', true );
+$other = TCAS_Pairing::preview( pair_of( 'LOCAL-12', 'AR22' ) );
+pair_test( 'کد دوم متفاوت با نگاشت قبلی رد می‌شود', 'error' === $other['row']['status'] && 'OTHER-REMOTE' === TCAS_Mapping::remote_code( 12 ) );
+TCAS_Mapping::map( 13, 'USED-REMOTE', true ); local_product( 22, 'LOCAL-22' );
+$used = TCAS_Pairing::preview( pair_of( 'LOCAL-22', 'USED-REMOTE' ) );
+pair_test( 'کد ArioCase نمی‌تواند به دو SKU متصل شود', 'error' === $used['row']['status'] && '' === TCAS_Mapping::remote_code( 22 ) );
+
+local_product( 14, 'lower-case' );
+$case = TCAS_Pairing::preview( pair_of( 'LOWER-CASE', 'AR22' ) );
+pair_test( 'Collation Case-insensitive باعث جفت اشتباه نمی‌شود', 'error' === $case['row']['status'] && '' === TCAS_Mapping::remote_code( 14 ) );
+
+local_product( 15, 'LOCAL-15' ); TCAS_Api::$responses['REMOTE-VARIABLE'] = remote_product( 'REMOTE-VARIABLE', array( 'type' => 'variable' ) );
+$mismatch = connect_pair( 'LOCAL-15', 'REMOTE-VARIABLE' );
+pair_test( 'ساده با والد متغیر جفت نمی‌شود', is_wp_error( $mismatch[1] ) && '' === TCAS_Mapping::remote_code( 15 ) );
+local_product( 16, 'PARENT-16', 'variable' ); $before_calls = count( TCAS_Api::$calls );
+$parent = TCAS_Pairing::preview( pair_of( 'PARENT-16', 'REMOTE-VARIABLE' ) );
+pair_test( 'والد متغیر بدون API رد می‌شود', 'error' === $parent['row']['status'] && $before_calls === count( TCAS_Api::$calls ) );
+
+$variation = local_product( 17, 'LOCAL-VAR', 'variation', 100 );
+TCAS_Api::$responses['REMOTE-VAR'] = remote_product( 'REMOTE-VAR', array( 'remote_id' => 601, 'parent_remote_id' => 600, 'type' => 'variation', 'stock' => array( 'quantity' => 7.0, 'status' => 'instock' ) ) );
+list( $variation_preview, $variation_result ) = connect_pair( 'LOCAL-VAR', 'REMOTE-VAR' );
+$variation_ids = TCAS_Mapping::remote_identifiers( 17 );
+pair_test( 'Variation با Variation و با ID والد جفت می‌شود', is_array( $variation_result ) && 7.0 === $variation->get_stock_quantity() && 601 === $variation_ids['remote_id'] && 600 === $variation_ids['parent_remote_id'] );
+
+local_product( 18, 'LOCAL-18' ); TCAS_Api::$responses['NO-STOCK'] = remote_product( 'NO-STOCK', array( 'stock' => array( 'quantity' => null, 'status' => null ) ) );
+$no_stock = connect_pair( 'LOCAL-18', 'NO-STOCK' );
+pair_test( 'نبود موجودی معتبر یعنی عدم اتصال', is_wp_error( $no_stock[1] ) && '' === TCAS_Mapping::remote_code( 18 ) );
+
+local_product( 19, 'STALE-LOCAL' ); TCAS_Api::$responses['STALE-REMOTE'] = remote_product( 'STALE-REMOTE' );
+$stale_preview = TCAS_Pairing::preview( pair_of( 'STALE-LOCAL', 'STALE-REMOTE' ) );
+unset( $GLOBALS['products'][19], $GLOBALS['meta'][19] ); local_product( 20, 'STALE-LOCAL' );
+$stale_result = TCAS_Pairing::connect( $stale_preview );
+pair_test( 'Preview کهنه به محصول جایگزین وصل نمی‌شود', is_wp_error( $stale_result ) && '' === TCAS_Mapping::remote_code( 20 ) );
+
+local_product( 21, 'FAIL-SAVE', 'simple', 0, true ); TCAS_Api::$responses['FAIL-REMOTE'] = remote_product( 'FAIL-REMOTE' );
+$failed = connect_pair( 'FAIL-SAVE', 'FAIL-REMOTE' );
+pair_test( 'خطای ذخیرهٔ Stock نگاشت تازه را Rollback می‌کند', is_wp_error( $failed[1] ) && '' === TCAS_Mapping::remote_code( 21 ) );
+
+echo "\n{$pass} passed, {$fail} failed\n";
+if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

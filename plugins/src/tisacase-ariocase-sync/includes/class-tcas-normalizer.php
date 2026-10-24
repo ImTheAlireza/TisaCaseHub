@@ -351,6 +351,8 @@ if ( ! class_exists( 'TCAS_Normalizer' ) ) {
 		private static function normalize_item( $source, $requested_code, $settings ) {
 			list( $id_found, $raw_id ) = self::configured_value( $source, $settings, '_no_id_setting', array( 'id' ) );
 			$remote_id = $id_found && is_scalar( $raw_id ) && preg_match( '/^\d+$/', trim( (string) $raw_id ) ) ? (int) $raw_id : 0;
+			list( $parent_found, $raw_parent_id ) = self::configured_value( $source, $settings, '_no_parent_id_setting', array( 'parent_id' ) );
+			$parent_remote_id = $parent_found && is_scalar( $raw_parent_id ) && preg_match( '/^\d+$/', trim( (string) $raw_parent_id ) ) ? (int) $raw_parent_id : 0;
 			$code = self::raw_code( $source, $settings );
 			if ( '' === $code ) {
 				$code = (string) $requested_code;
@@ -364,6 +366,7 @@ if ( ! class_exists( 'TCAS_Normalizer' ) ) {
 			list( $images_found, $raw_images ) = self::configured_value( $source, $settings, 'field_images', array( 'images', 'image', 'image_url', 'thumbnail' ) );
 			return array(
 				'remote_id'   => $remote_id,
+				'parent_remote_id' => $parent_remote_id,
 				'code'        => $code,
 				'name'        => '' !== $name ? $name : $code,
 				'type'        => strtolower( $type ),
@@ -396,7 +399,7 @@ if ( ! class_exists( 'TCAS_Normalizer' ) ) {
 			if ( $found && is_array( $raw_variations ) ) {
 				foreach ( $raw_variations as $raw_variation ) {
 					if ( ! is_array( $raw_variation ) ) {
-						// خروجی ووکامرس گاهی فقط ID تنوع را می‌دهد؛ ID به‌تنهایی برای ایمپورت کافی نیست.
+						// خروجی ووکامرس گاهی فقط ID تنوع را می‌دهد؛ برای بررسی کامل باید جزئیات آن خوانده شود.
 						$product['variations_missing'] = true;
 						continue;
 					}

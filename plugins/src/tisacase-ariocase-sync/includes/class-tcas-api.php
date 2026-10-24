@@ -195,7 +195,7 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 				}
 				if ( 21 === $page ) {
 					// صفحهٔ ۲۱ فقط برای تشخیص بیش از ۲۰۰۰ تنوع خوانده می‌شود.
-					return empty( $payload ) ? $out : self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن ایمپورت است؛ ابتدا آن را دسته‌بندی کنید.' );
+					return empty( $payload ) ? $out : self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن پردازش است؛ ابتدا آن را دسته‌بندی کنید.' );
 				}
 				foreach ( $payload as $raw_variation ) {
 					$variation = TCAS_Normalizer::variation( $raw_variation, TCAS_Core::settings() );
@@ -209,7 +209,7 @@ if ( ! class_exists( 'TCAS_Api' ) ) {
 					return $out;
 				}
 			}
-			return self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن ایمپورت است؛ ابتدا آن را دسته‌بندی کنید.' );
+			return self::error( 'tcas_too_many_variations', 'تعداد تنوع‌ها بیش از سقف امن پردازش است؛ ابتدا آن را دسته‌بندی کنید.' );
 		}
 
 		public static function fetch_product( $code ) {

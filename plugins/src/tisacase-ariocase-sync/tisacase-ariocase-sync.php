@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       TisaCase — اتصال محصول و موجودی ArioCase
+ * Plugin Name:       TisaCase — اتصال جفتی موجودی ArioCase
  * Plugin URI:        https://tisacase.com
- * Description:       ایمپورت کدمحور از ArioCase، اتصال محصولات موجود، خواندن زندهٔ موجودی و کنترل آن در سبد و تسویه‌حساب.
- * Version:           1.1.0
+ * Description:       جفت‌کردن SKU تیساکیس و کد ArioCase برای دو محصول موجود و سینک فقط موجودی؛ بدون تغییر نام، قیمت یا سایر مشخصات.
+ * Version:           1.2.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -14,14 +14,14 @@
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub:      key=ariocase-sync; title="اتصال ArioCase"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="ایمپورت و اتصال محصولات با کد مشخص، خواندن زندهٔ موجودی از ArioCase و کنترل موجودی هنگام خرید."
+ * TisaCase Hub:      key=ariocase-sync; title="جفت موجودی ArioCase"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="اتصال جفتی دو محصول موجود با SKU تیساکیس و کد ArioCase؛ سینک فقط موجودی و کنترل آن هنگام خرید."
  *
  * @package TisaCase_ArioCase_Sync
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCAS_VERSION', '1.1.0' );
+define( 'TCAS_VERSION', '1.2.0' );
 define( 'TCAS_FILE', __FILE__ );
 define( 'TCAS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCAS_URL', plugin_dir_url( __FILE__ ) );
@@ -32,7 +32,7 @@ require_once TCAS_PATH . 'includes/class-tcas-api.php';
 require_once TCAS_PATH . 'includes/class-tcas-mapping.php';
 require_once TCAS_PATH . 'includes/class-tcas-stock.php';
 require_once TCAS_PATH . 'includes/class-tcas-live.php';
-require_once TCAS_PATH . 'includes/class-tcas-importer.php';
+require_once TCAS_PATH . 'includes/class-tcas-pairing.php';
 require_once TCAS_PATH . 'includes/class-tcas-logger.php';
 require_once TCAS_PATH . 'includes/class-tcas-ajax.php';
 require_once TCAS_PATH . 'includes/class-tcas-admin.php';
@@ -49,8 +49,8 @@ add_action( 'before_woocommerce_init', function() {
 add_filter( 'tisacase_hub_items', function( $items ) {
 	if ( is_array( $items ) && ! isset( $items['ariocase-sync'] ) ) {
 		$items['ariocase-sync'] = array(
-			'title' => 'اتصال ArioCase',
-			'desc'  => 'ایمپورت و اتصال محصولات با کد مشخص، خواندن زندهٔ موجودی و کنترل خرید.',
+			'title' => 'جفت موجودی ArioCase',
+			'desc'  => 'جفت‌کردن دو محصول موجود با دو کد و سینک فقط موجودی؛ بدون تغییر سایر مشخصات.',
 			'group' => 'products',
 			'icon'  => 'box',
 			'dir'   => 'tisacase-ariocase-sync',

@@ -53,6 +53,14 @@ function call_build_url( $code, $kind, $settings ) {
 $codes = TCAS_Core::parse_codes( "CH1،CH2\nCH1; CH3, CH4" );
 api_test( 'ورودی کدها یکتا و مرتب می‌شود', array( 'CH1', 'CH2', 'CH3', 'CH4' ) === $codes, json_encode( $codes ) );
 api_test( 'سقف ۵۰ کد اعمال می‌شود', 50 === count( TCAS_Core::parse_codes( range( 1, 80 ) ) ) );
+$pairs = TCAS_Core::parse_pairs( "AR120 - AR22\nLOCAL-A - REMOTE-B\nAR120 - AR22" );
+api_test( 'جفت دو کد با فاصله و خط جدید خوانده و تکراری حذف می‌شود', 2 === count( $pairs ) && 'AR120' === $pairs[0]['local_code'] && 'AR22' === $pairs[0]['remote_code'] && 'LOCAL-A' === $pairs[1]['local_code'] );
+$malformed = TCAS_Core::parse_pairs( 'AR120 - AR22 - EXTRA' );
+api_test( 'خط با بیش از یک جداکننده خطای مشخص دارد', 1 === count( $malformed ) && '' !== $malformed[0]['error'] );
+$local_conflict = TCAS_Core::parse_pairs( "AR120 - AR22\nAR120 - OTHER" );
+api_test( 'یک SKU با دو کد ArioCase در یک دسته رد می‌شود', '' !== $local_conflict[1]['error'] );
+$remote_conflict = TCAS_Core::parse_pairs( "AR120 - AR22\nOTHER - AR22" );
+api_test( 'یک کد ArioCase با دو SKU در یک دسته رد می‌شود', '' !== $remote_conflict[1]['error'] );
 $current = array_merge( TCAS_Core::defaults(), array( 'api_key' => 'old-secret' ) );
 $clean = TCAS_Core::sanitize_settings( array( 'enabled' => '1', 'api_key' => '', 'timeout' => 99, 'auth_type' => 'invalid' ), $current );
 api_test( 'کلید با فیلد خالی حفظ و Timeout محدود می‌شود', 'old-secret' === $clean['api_key'] && 20 === $clean['timeout'] );
@@ -135,6 +143,10 @@ $GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 123,
 $product = TCAS_Api::fetch_product( 'CH100' );
 api_test( 'پاسخ List ووکامرس با SKU و ID نرمال می‌شود', is_array( $product ) && 123 === $product['remote_id'] && 7.0 === $product['stock']['quantity'] );
 api_test( 'جست‌وجوی اولیه فقط همان SKU را درخواست می‌کند', 'https://ariocase.com/wp-json/wc/v3/products?status=publish&per_page=100&sku=CH100' === $GLOBALS['requests'][0][0], $GLOBALS['requests'][0][0] );
+configure( $actual );
+$GLOBALS['responses'][] = response( 200, json_encode( array( array( 'id' => 501, 'parent_id' => 500, 'sku' => 'VAR-1-B', 'type' => 'variation', 'stock_quantity' => 2, 'stock_status' => 'instock' ) ) ) );
+$variation_product = TCAS_Api::fetch_product( 'VAR-1-B' );
+api_test( 'جست‌وجوی SKU تنوع، Parent ID را هم برای جفت حفظ می‌کند', is_array( $variation_product ) && 'variation' === $variation_product['type'] && 501 === $variation_product['remote_id'] && 500 === $variation_product['parent_remote_id'] );
 
 configure( $actual );
 $remote_parent = array( 'id' => 500, 'sku' => 'VAR-1', 'name' => 'Variable', 'type' => 'variable', 'variations' => array( 501, 502 ), 'attributes' => array( array( 'name' => 'Color', 'options' => array( 'Black', 'White' ), 'variation' => true ) ) );

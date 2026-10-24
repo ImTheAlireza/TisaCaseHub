@@ -20,8 +20,8 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 		public static function menu() {
 			add_submenu_page(
 				'woocommerce',
-				'اتصال ArioCase',
-				'اتصال ArioCase',
+				'جفت موجودی ArioCase',
+				'جفت موجودی ArioCase',
 				'manage_woocommerce',
 				TCAS_Core::PAGE,
 				array( __CLASS__, 'render' )
@@ -30,7 +30,7 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 
 		public static function dependency_notice() {
 			if ( ! class_exists( 'WooCommerce' ) ) {
-				echo '<div class="notice notice-error"><p><strong>اتصال ArioCase:</strong> برای استفاده از این افزونه، ووکامرس باید فعال باشد.</p></div>';
+				echo '<div class="notice notice-error"><p><strong>جفت موجودی ArioCase:</strong> برای استفاده از این افزونه، ووکامرس باید فعال باشد.</p></div>';
 			}
 		}
 
@@ -54,11 +54,11 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 				'strings' => array(
 					'working'      => 'در حال انجام…',
 					'preview'      => 'دریافت پیش‌نمایش',
-					'import'       => 'ایمپورت / اتصال انتخابی‌ها',
+					'connect'      => 'اتصال جفت‌های انتخابی',
 					'failed'       => 'ارتباط با سرور سایت ناموفق بود.',
 					'done'         => 'عملیات تمام شد.',
 					'disconnect'   => 'فقط اتصال حذف می‌شود و محصول حذف نمی‌شود. ادامه می‌دهید؟',
-					'selectRows'   => 'حداقل یک ردیف قابل‌اجرا انتخاب کنید.',
+					'selectRows'   => 'حداقل یک جفت قابل‌اتصال انتخاب کنید.',
 					'unknownError' => 'خطای نامشخص',
 				),
 			) );
@@ -84,7 +84,7 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			}
 			$notice = sanitize_key( wp_unslash( $_GET['tcas_notice'] ) ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
 			if ( 'settings_saved' === $notice ) {
-				echo '<div class="notice notice-success is-dismissible"><p>تنظیمات ذخیره شد. قبل از ایمپورت، «تست اتصال» را با یک کد واقعی انجام دهید.</p></div>';
+				echo '<div class="notice notice-success is-dismissible"><p>تنظیمات ذخیره شد. قبل از ساخت جفت، «تست اتصال» را با یک کد واقعی انجام دهید.</p></div>';
 			}
 		}
 
@@ -92,14 +92,17 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			if ( ! TCAS_Core::can() ) {
 				wp_die( 'دسترسی غیرمجاز است.' );
 			}
-			$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'import'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
-			if ( ! in_array( $tab, array( 'import', 'mappings', 'settings', 'logs' ), true ) ) {
-				$tab = 'import';
+			$tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'pairs'; // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+			if ( 'import' === $tab ) {
+				$tab = 'pairs';
+			}
+			if ( ! in_array( $tab, array( 'pairs', 'mappings', 'settings', 'logs' ), true ) ) {
+				$tab = 'pairs';
 			}
 			$settings = TCAS_Core::settings();
 			$base     = admin_url( 'admin.php?page=' . TCAS_Core::PAGE );
 			$tabs     = array(
-				'import'   => 'ایمپورت و اتصال',
+				'pairs'    => 'اتصال جفتی',
 				'mappings' => 'محصولات متصل',
 				'settings' => 'تنظیمات API',
 				'logs'     => 'گزارش عملیات',
@@ -109,8 +112,8 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 				<header class="tcas-hero">
 					<div>
 						<span class="tcas-eyebrow">TisaCase × ArioCase</span>
-						<h1>اتصال محصول و موجودی ArioCase</h1>
-						<p>ایمپورت کدمحور، اتصال بدون تکرار و کنترل زندهٔ موجودی در مسیر خرید.</p>
+						<h1>اتصال جفتی موجودی ArioCase</h1>
+						<p>هر خط: SKU تیساکیس - کد ArioCase؛ فقط موجودی دو محصول موجود به هم متصل می‌شود.</p>
 					</div>
 					<div class="tcas-hero-badges">
 						<span class="tcas-badge <?php echo class_exists( 'WooCommerce' ) ? 'is-ok' : 'is-bad'; ?>">ووکامرس <?php echo class_exists( 'WooCommerce' ) ? 'فعال' : 'غیرفعال'; ?></span>
