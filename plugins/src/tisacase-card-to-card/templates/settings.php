@@ -53,7 +53,15 @@
         </section>
         <section id="tcc-tab-access" class="tcc-tab-panel" data-tcc-panel="access" aria-labelledby="tcc-nav-access">
             <div class="tcc-settings-grid">
-                <div class="tcc-surface"><div class="tcc-section-heading"><h2>مسئولان بررسی</h2></div><label class="tcc-field"><span class="tcc-field-label">شناسه کاربران <small>با کاما جدا کنید</small></span><input name="reviewers" dir="ltr" inputmode="text" value="<?php echo esc_attr( implode( ',', $reviewers ) ); ?>"></label></div>
+                <div class="tcc-surface"><div class="tcc-section-heading"><h2>نقش‌های مجاز بررسی</h2></div>
+                    <input type="hidden" name="reviewer_roles_present" value="1">
+                    <fieldset class="tcc-role-fieldset"><legend class="tcc-sr-only">نقش‌های مجاز بررسی و تأیید رسید</legend><div class="tcc-role-options">
+                        <?php foreach ( $role_options as $slug => $role ) { $protected = 'administrator' === $slug; ?>
+                            <label class="tcc-role-option<?php echo $protected ? ' is-protected' : ''; ?>"><input type="checkbox" name="reviewer_roles[]" value="<?php echo esc_attr( $slug ); ?>" <?php checked( in_array( $slug, $reviewer_roles, true ), true ); ?> <?php if ( $protected ) { echo 'disabled'; } ?>><span><?php echo esc_html( translate_user_role( $role['name'] ) ); ?><?php if ( $protected ) { ?><small>همیشه مجاز</small><?php } elseif ( empty( $role['capabilities']['edit_shop_orders'] ) ) { ?><small>نیازمند مجوز ویرایش سفارش</small><?php } ?></span></label>
+                        <?php } ?>
+                    </div></fieldset>
+                    <details class="tcc-individual-reviewers"><summary>دسترسی اختصاصی افراد</summary><label class="tcc-field"><span class="tcc-field-label">شناسه کاربران <small>با کاما جدا کنید</small></span><input name="reviewers" dir="ltr" inputmode="text" value="<?php echo esc_attr( implode( ',', $reviewers ) ); ?>"></label></details>
+                </div>
                 <div class="tcc-surface"><div class="tcc-section-heading"><h2>پاسخ‌های آماده</h2></div><?php self::field( $s, 'reject_reasons', 'علت رد یا اصلاح', 'textarea', 'هر خط یک مورد' ); ?></div>
             </div>
         </section>

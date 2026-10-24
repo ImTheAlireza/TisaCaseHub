@@ -5,11 +5,12 @@ if ( ! defined( 'ABSPATH' ) ) { define( 'ABSPATH', '/wordpress/' ); }
 define( 'TCC_PATH', dirname( __DIR__ ) . '/' );
 define( 'TCC_URL', 'https://shop.example.test/wp-content/plugins/tisacase-card-to-card/' );
 define( 'TCC_FILE', TCC_PATH . 'tisacase-card-to-card.php' );
-define( 'TCC_VERSION', '1.1.0' );
+define( 'TCC_VERSION', '1.2.0' );
 define( 'TCC_TITLE', 'کارت به کارت تیساکیس' );
 define( 'TCC_GATEWAY', 'tisacase_card_to_card' );
 define( 'HOUR_IN_SECONDS', 3600 ); define( 'DAY_IN_SECONDS', 86400 ); define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['opts'] = array( 'admin_email' => 'admin@example.test' ); $GLOBALS['uid'] = 1; $GLOBALS['review'] = true; $GLOBALS['edit'] = true; $GLOBALS['transients'] = array(); $GLOBALS['hooks'] = array(); $GLOBALS['queue'] = array();
+require_once __DIR__ . '/role-stubs.php';
 function get_option( $key, $default = false ) { return $GLOBALS['opts'][$key] ?? $default; }
 function update_option( $key, $value, $autoload = null ) { $GLOBALS['opts'][$key] = $value; return true; }
 function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, $args ); }
@@ -22,7 +23,7 @@ function absint( $x ) { return abs( (int) $x ); }
 function wp_unslash( $s ) { return $s; }
 function wp_json_encode( $s ) { return json_encode( $s, JSON_UNESCAPED_UNICODE ); }
 function get_current_user_id() { return $GLOBALS['uid']; }
-function current_user_can( $cap, ...$args ) { return 'tcc_review_payments' === $cap ? $GLOBALS['review'] : $GLOBALS['edit']; }
+function current_user_can( $cap, ...$args ) { return ! empty( $GLOBALS['use_role_caps'] ) ? tcc_test_current_user_can( $cap, ...$args ) : ( 'tcc_review_payments' === $cap ? $GLOBALS['review'] : $GLOBALS['edit'] ); }
 function wp_salt( $scheme ) { return 'synthetic-test-salt-not-a-credential'; }
 function wc_format_decimal( $x, $precision = 2, $trim = false ) { $s = number_format( (float) $x, $precision, '.', '' ); return $trim && strpos( $s, '.' ) !== false ? rtrim( rtrim( $s, '0' ), '.' ) : $s; }
 function wc_get_price_decimals() { return 0; }
@@ -51,7 +52,7 @@ function selected( $a, $b, $echo = true ) { $s = $a === $b ? 'selected' : ''; if
 function checked( $a, $b, $echo = true ) { $s = $a === $b ? 'checked' : ''; if ( $echo ) { echo $s; } return $s; }
 function admin_url( $path = '' ) { return 'https://shop.example.test/wp-admin/' . $path; }
 function add_query_arg( $key, $value, $url = null ) { if ( is_array( $key ) ) { $url = $value; $params = $key; } else { $params = array( $key => $value ); } return $url . ( strpos( $url, '?' ) === false ? '?' : '&' ) . http_build_query( $params ); }
-function get_userdata( $id ) { return $id ? (object) array( 'display_name' => 'Test reviewer' ) : false; }
+function get_userdata( $id ) { return tcc_test_user( $id ); }
 function wp_normalize_path( $p ) { return str_replace( '\\', '/', $p ); }
 function wp_upload_dir() { return array( 'basedir' => '/wordpress/wp-content/uploads', 'error' => false ); }
 function home_url( $p ) { return 'https://shop.example.test' . $p; }

@@ -62,6 +62,7 @@ class TCC_Admin {
     public static function render( $s, $status, $reviewers = array() ) {
         $tabs = array( 'cards' => array( 'card', 'کارت‌ها' ), 'payment' => array( 'receipt', 'پرداخت و رسید' ), 'notifications' => array( 'bell', 'اعلان‌ها' ), 'access' => array( 'users', 'دسترسی' ) );
         $active = isset( $_GET['tab'] ) && is_string( $_GET['tab'] ) && isset( $tabs[$_GET['tab']] ) ? $_GET['tab'] : 'cards';
+        $role_options = TCC_Permissions::available_roles(); $reviewer_roles = TCC_Permissions::selected_roles();
         include TCC_PATH . 'templates/settings.php';
     }
     public static function save() {
@@ -71,14 +72,13 @@ class TCC_Admin {
             $input = isset( $_POST['settings'] ) && is_array( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
             $clean = TCC_Settings::sanitize( $input );
             $reviewers = array_values( array_unique( array_filter( array_map( 'absint', preg_split( '/[,\s]+/', TCC_Helpers::post( 'reviewers' ) ) ) ) ) );
-            foreach ( $reviewers as $id ) { if ( ! get_userdata( $id ) ) { throw new InvalidArgumentException( 'یکی از شناسه‌های بازبین معتبر نیست؛ تنظیمات ذخیره نشد.' ); } }
+            $reviewers = TCC_Permissions::validate_users( $reviewers );
+            $roles = TCC_Permissions::requested_roles( wp_unslash( $_POST ) );
             global $wpdb;
-            $audit = $wpdb->insert( TCC_Repository::table( 'events' ), array( 'order_id' => 0, 'action' => 'settings_requested', 'actor' => get_current_user_id(), 'public_reason' => '', 'private_note' => 'درخواست ذخیره تنظیمات و دسترسی‌ها؛ هش تنظیمات: ' . hash( 'sha256', wp_json_encode( $clean ) ) . '؛ بازبین‌ها: ' . implode( ',', $reviewers ), 'created_at' => gmdate( 'Y-m-d H:i:s' ), 'notify_admin' => 1, 'notify_customer' => 1 ) );
+            $audit = $wpdb->insert( TCC_Repository::table( 'events' ), array( 'order_id' => 0, 'action' => 'settings_requested', 'actor' => get_current_user_id(), 'public_reason' => '', 'private_note' => 'درخواست ذخیره تنظیمات و دسترسی‌ها؛ هش تنظیمات: ' . hash( 'sha256', wp_json_encode( $clean ) ) . '؛ نقش‌ها: ' . implode( ',', $roles ) . '؛ بازبین‌ها: ' . implode( ',', $reviewers ), 'created_at' => gmdate( 'Y-m-d H:i:s' ), 'notify_admin' => 1, 'notify_customer' => 1 ) );
             if ( false === $audit ) { throw new RuntimeException( 'ثبت سابقه تنظیمات ممکن نیست؛ تغییری ذخیره نشد.' ); }
             update_option( 'tcc_settings', $clean, false );
-            foreach ( array_diff( (array) get_option( 'tcc_reviewers', array() ), $reviewers ) as $id ) { $user = get_userdata( $id ); if ( $user ) { $user->remove_cap( 'tcc_review_payments' ); } }
-            foreach ( $reviewers as $id ) { get_userdata( $id )->add_cap( 'tcc_review_payments' ); }
-            update_option( 'tcc_reviewers', $reviewers, false );
+            TCC_Permissions::assign( $roles, $reviewers );
         } catch ( Throwable $e ) { wp_die( esc_html( $e->getMessage() ), '', array( 'response' => 400, 'back_link' => true ) ); }
         $tab = TCC_Helpers::post( 'ui_tab' );
         if ( ! in_array( $tab, array( 'cards', 'payment', 'notifications', 'access' ), true ) ) { $tab = 'cards'; }

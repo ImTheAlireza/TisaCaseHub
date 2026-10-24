@@ -63,8 +63,7 @@ class TCC_Repository {
         $ready = true;
         foreach ( array( $a, $s, $e ) as $table ) { $ready = $ready && $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) ) === $table; }
         if ( $ready ) { update_option( 'tcc_db_version', TCC_VERSION, false ); }
-        foreach ( (array) get_option( 'tcc_reviewers', array() ) as $user_id ) { $user = get_userdata( $user_id ); if ( $user ) { $user->add_cap( 'tcc_review_payments' ); } }
-        $role = get_role( 'administrator' ); if ( $role ) { $role->add_cap( 'tcc_review_payments' ); }
+        TCC_Permissions::restore();
         if ( ! wp_next_scheduled( 'tcc_maintenance' ) ) { wp_schedule_event( time() + 300, 'hourly', 'tcc_maintenance' ); }
     }
     public function attempt( $id ) { global $wpdb; return $wpdb->get_row( $wpdb->prepare( 'SELECT * FROM ' . self::table( 'attempts' ) . ' WHERE order_id=%d', $id ), ARRAY_A ); }

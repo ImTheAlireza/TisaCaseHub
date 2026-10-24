@@ -142,3 +142,16 @@ body.woocommerce_page_tisacase-card-to-card { background: var(--tisa-bg, #f4f2ec
 }
 
 .tcc-order-box .tcc-feedback:not(:empty) { padding: 10px 12px; border-radius: 10px; background: #fcf3d7; color: #795413; }
+
+/* Financial-review roles; no user/role management privileges are added. */
+.tcc-role-fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.tcc-role-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-height: 260px; overflow: auto; padding: 3px; }
+.tcc-role-option { display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 46px; padding: 9px 10px; border: 1px solid var(--tcc-border); border-radius: 10px; cursor: pointer; font-size: 12px; }
+.tcc-role-option:has(input:checked) { border-color: #a7ccc1; background: #f2f8f5; }
+.tcc-role-option > span { min-width: 0; overflow-wrap: anywhere; }
+.tcc-role-option small { display: block; margin-block-start: 2px; color: var(--tcc-muted); font-size: 10px; }
+.tcc-role-option.is-protected { cursor: default; }
+.tcc-role-option input[type=checkbox] { margin: 0; width: 16px; height: 16px; }
+.tcc-individual-reviewers { margin-block-start: 12px; padding-block-start: 10px; border-block-start: 1px solid var(--tcc-border); }
+.tcc-individual-reviewers > summary { color: var(--tcc-muted); font-size: 12px; }
+@media (max-width: 400px) { .tcc-role-options { grid-template-columns: minmax(0, 1fr); max-height: 300px; } }

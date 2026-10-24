@@ -7,7 +7,7 @@ define( 'TCC_TEST_LOADING', true );
 $root = dirname( __DIR__ );
 // Stubs need parent class definitions; these have no side effects on inclusion.
 define( 'ABSPATH', '/wordpress/' );
-foreach ( array( 'helpers', 'settings', 'repository', 'storage', 'access', 'service', 'notifications', 'order-list' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
+foreach ( array( 'helpers', 'settings', 'permissions', 'repository', 'storage', 'access', 'service', 'notifications', 'order-list' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
 require_once __DIR__ . '/stubs.php';
 $pass = 0; $fail = 0;
 function t( $label, $ok ) { global $pass, $fail; if ( $ok ) { $pass++; echo "OK $label\n"; } else { $fail++; echo "FAIL $label\n"; } }

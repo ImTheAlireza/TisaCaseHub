@@ -53,7 +53,7 @@ function render(route, shared) {
         const box = doc.querySelector('.tcc-order-box'); const host = doc.createElement('div'); host.className = 'preview-order-host'; box.replaceWith(host); host.append(box);
     }
     const customer = ['/payment', '/correction'].includes(route);
-    const links = [['/', 'تنظیمات'], ['/order', 'داخل سفارش'], ['/payment', 'پرداخت مشتری']].map(([href, label]) => `<a href="${href}${shared ? '?shared=1' : ''}"${route === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+    const links = [['/', 'تنظیمات'], ['/order', 'داخل سفارش'], ['/payment', 'پرداخت مشتری'], ['/checklist', 'چک‌لیست تست']].map(([href, label]) => `<a href="${href}${shared ? '?shared=1' : ''}"${route === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>پیش‌نمایش کارت به کارت تیساکیس</title><style>${previewCSS}</style>${shared ? '<link rel="stylesheet" href="/shared.css">' : ''}<link rel="stylesheet" href="/assets/tcc.css">${customer ? '' : '<link rel="stylesheet" href="/assets/admin.css">'}<script src="/assets/${customer ? 'frontend.js' : 'admin.js'}" defer></script><script src="/preview.js" defer></script></head><body class="${customer ? '' : 'woocommerce_page_tisacase-card-to-card'}${shared ? ' tisa-scope' : ''}"><header class="preview-chrome"><span class="preview-brand" lang="en">TISACASE <span style="font-weight:400;color:#8c9994">/ PAYMENTS</span></span><nav aria-label="صفحه‌های پیش‌نمایش">${links}</nav><span class="preview-label"><b></b>داده آزمایشی؛ بدون ثبت یا پرداخت واقعی</span></header><${doc.querySelector('main') ? 'div' : 'main'} class="preview-content${customer ? ' preview-payment-host' : ''}">${doc.body.innerHTML}</${doc.querySelector('main') ? 'div' : 'main'}></body></html>`;
 }
 export const server = http.createServer((req, res) => {
@@ -65,11 +65,11 @@ export const server = http.createServer((req, res) => {
     if (url.pathname === '/preview-action') { send('application/json; charset=utf-8', JSON.stringify({success: false, data: {message: 'این پیش‌نمایش است؛ هیچ تغییری ثبت نشد.'}}), 400); return; }
     if (url.pathname === '/preview.js') { send('text/javascript', `document.querySelector('#tcc-settings-form')?.addEventListener('submit',e=>{e.preventDefault();document.querySelector('.tcc-settings-feedback').textContent='پیش‌نمایش؛ تغییری ذخیره نشد.'});document.querySelectorAll('.tcc-upload-form').forEach(f=>f.addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();f.querySelector('.tcc-feedback').textContent='پیش‌نمایش؛ هیچ رسیدی ارسال نشد.'},true));`); return; }
     if (url.pathname === '/receipt.svg') { send('image/svg+xml', receipt); return; }
-    const staticFiles = {'/shared.css': path.join(root, 'design/tisacase-ui.css')};
+    const staticFiles = {'/checklist': path.join(root, 'design/preview/card-to-card-checklist.html'), '/shared.css': path.join(root, 'design/tisacase-ui.css')};
     for (const name of ['tcc.css', 'admin.css', 'admin.js', 'frontend.js']) staticFiles['/assets/' + name] = path.join(assets, name);
     for (const weight of [400, 600, 700]) staticFiles['/font/' + weight + '.woff2'] = path.join(root, `node_modules/@fontsource/vazirmatn/files/vazirmatn-arabic-${weight}-normal.woff2`);
     if (staticFiles[url.pathname] && fs.existsSync(staticFiles[url.pathname])) {
-        const ext = path.extname(staticFiles[url.pathname]); send(ext === '.css' ? 'text/css' : ext === '.woff2' ? 'font/woff2' : 'text/javascript', fs.readFileSync(staticFiles[url.pathname])); return;
+        const ext = path.extname(staticFiles[url.pathname]); send(ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css' : ext === '.woff2' ? 'font/woff2' : 'text/javascript', fs.readFileSync(staticFiles[url.pathname])); return;
     }
     if (routes[url.pathname]) { try { send('text/html; charset=utf-8', render(url.pathname, url.searchParams.get('shared') === '1')); } catch (error) { send('text/plain', escape(error.message), 503); } return; }
     send('text/plain', 'Not found', 404);

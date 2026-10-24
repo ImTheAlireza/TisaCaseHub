@@ -5,7 +5,7 @@ error_reporting( E_ALL );
 set_error_handler( function ( $severity, $message, $file, $line ) { if ( error_reporting() & $severity ) { throw new ErrorException( $message, 0, $severity, $file, $line ); } return false; } );
 define( 'ABSPATH', '/wordpress/' );
 $root = dirname( __DIR__ );
-foreach ( array( 'helpers', 'settings', 'repository', 'storage', 'access', 'service', 'notifications', 'frontend', 'order-list', 'order-admin', 'admin' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
+foreach ( array( 'helpers', 'settings', 'permissions', 'repository', 'storage', 'access', 'service', 'notifications', 'frontend', 'order-list', 'order-admin', 'admin' ) as $part ) { require_once $root . '/includes/class-tcc-' . $part . '.php'; }
 require_once __DIR__ . '/stubs.php';
 class TCC_SQLite_WPDB {
     public $prefix = 'wp_'; public $posts = 'wp_posts'; public $insert_id = 0; public $last_error = ''; public $fail_events = false; public $queries = 0; public $pdo; public $lock_result = '1';

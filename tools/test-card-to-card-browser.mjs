@@ -80,6 +80,18 @@ try {
             }
         }
     }
+    await page.setViewportSize({width: 1024, height: 900}); await goto('/');
+    await page.locator('[data-tcc-tab=access]').click();
+    await page.screenshot({path: path.join(out, 'access-roles-1024.png'), fullPage: true});
+    await check('Protected administrator and native role checkbox labels work', async () => {
+        const admin = page.locator('[name="reviewer_roles[]"][value=administrator]'); assert.equal(await admin.isChecked(), true); assert.equal(await admin.isDisabled(), true);
+        await page.getByText('مدیر فروشگاه', {exact: true}).click(); assert.equal(await page.locator('[name="reviewer_roles[]"][value=shop_manager]').isChecked(), true);
+    });
+    await page.locator('[data-tcc-tab=cards]').click();
+    await check('Browser form preserves role selection while access tab is hidden', async () => {
+        const values = await page.locator('#tcc-settings-form').evaluate(form => ({roles: new FormData(form).getAll('reviewer_roles[]'), marker: new FormData(form).get('reviewer_roles_present'), users: new FormData(form).get('reviewers')}));
+        assert.deepEqual(values.roles, ['shop_manager']); assert.equal(values.marker, '1'); assert.equal(values.users, '2,7');
+    });
     await page.setViewportSize({width: 1440, height: 1000}); await goto('/');
     await page.locator('[data-tcc-tab=payment]').click();
     await page.screenshot({path: path.join(out, 'settings-payment-1440.png'), fullPage: true});
@@ -135,6 +147,41 @@ try {
     const fallback = await noJS.newPage(); await fallback.goto(base + '/');
     await check('No-JS browser exposes all settings panels, with one valid form', async () => { assert.equal(await fallback.locator('[data-tcc-panel]:visible').count(), 4); assert.equal(await fallback.locator('form').count(), 1); });
     await noJS.close();
+    await goto('/checklist');
+    await check('Checklist has every Markdown case with a unique ID', async () => {
+        const ids = await page.locator('[data-case]').evaluateAll(nodes => nodes.map(n => n.dataset.case));
+        const markdown = fs.readFileSync('CARD_TO_CARD_TEST_CHECKLIST.md', 'utf8');
+        assert.equal(ids.length, (markdown.match(/^- \[ \]/gm) || []).length); assert.equal(new Set(ids).size, 75); assert.equal(ids.length, 75);
+    });
+    await check('Manual checklist starts with no claimed test passes', async () => { assert.equal(await page.locator('[data-status=pass]').count(), 0); assert.equal(await page.locator('.qa-progress').getAttribute('value'), '0'); });
+    await page.locator('[data-case=A01] .qa-pass').check();
+    await page.locator('[data-case=A01] details summary').click();
+    await page.locator('[data-case=A01] textarea').fill('<img src=x onerror=alert(1)> یادداشت تست');
+    await page.locator('#qa-tester').fill('TEST ONLY'); await page.reload();
+    await check('Checklist pass, notes and tester persist after reload', async () => {
+        assert.equal(await page.locator('[data-case=A01] .qa-pass').isChecked(), true);
+        assert.match(await page.locator('[data-case=A01] textarea').inputValue(), /یادداشت/);
+        assert.equal(await page.locator('#qa-tester').inputValue(), 'TEST ONLY'); assert.equal(await page.locator('img').count(), 0);
+    });
+    await page.locator('[data-case=A01] .qa-fail').click();
+    await check('Marking defect clears pass and updates status', async () => { assert.equal(await page.locator('[data-case=A01]').getAttribute('data-status'), 'fail'); assert.equal(await page.locator('[data-case=A01] .qa-pass').isChecked(), false); });
+    await page.locator('[data-filter=fail]').click();
+    await check('Defects filter shows only the failed case', async () => assert.equal(await page.locator('[data-case]:visible').count(), 1));
+    await page.locator('[data-filter=pending]').click(); await page.locator('[data-filter=all]').click();
+    await page.locator('[data-case=R11] .qa-na').click();
+    await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
+    const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
+    const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.2.0'); assert.equal(Object.keys(data.cases).length, 75); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    for (const width of [390, 320]) {
+        await page.setViewportSize({width, height: 844});
+        await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });
+    }
+    await page.setViewportSize({width: 1024, height: 900});
+    await page.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await page.addScriptTag({content: axe});
+    await check('Expanded checklist automated accessibility audit', async () => { const result = await page.evaluate(async () => window.axe.run('main', {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})); assert.deepEqual(result.violations.map(v => ({id: v.id, targets: v.nodes.map(n => n.target)})), []); });
+    page.once('dialog', dialog => dialog.accept()); await page.locator('#qa-reset').click();
+    await check('Confirmed checklist reset clears only checklist state', async () => { assert.equal(await page.locator('[data-status=pass]').count(), 0); assert.equal(await page.locator('[data-status=fail]').count(), 0); assert.equal(await page.locator('[data-case=A01] textarea').inputValue(), ''); assert.equal(await page.locator('[data-case]').count(), 75); });
     await check('No uncaught browser errors', async () => assert.deepEqual(errors, []));
     console.log(`\nResult: ${count} browser checks passed (Chromium ${browser.version()}, PHP fixtures; NOT WordPress/Woo integration)`);
 } finally { await browser.close(); }

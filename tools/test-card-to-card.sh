@@ -21,8 +21,10 @@ run_php_test() {
 }
 run_php_test "$src/tests/run-tests.php"
 run_php_test "$src/tests/sql-tests.php"
+run_php_test "$src/tests/permissions-tests.php"
 for mode in auto unsafe symlink missing; do run_php_test "$src/tests/storage-tests.php" "$mode"; done
 node "$src/tests/ui-tests.mjs"
+node tools/build-card-to-card-checklist.mjs --check
 lint_output=$("${PHP_CMD[@]}" -r '$n=0; foreach(new RecursiveIteratorIterator(new RecursiveDirectoryIterator("plugins/src/tisacase-card-to-card")) as $f){if($f->getExtension()==="php"){token_get_all(file_get_contents($f->getPathname()),TOKEN_PARSE);$n++;}} echo "PHP ".PHP_VERSION.": $n files parsed\n";')
 printf '%s\n' "$lint_output"
 if ! printf '%s\n' "$lint_output" | grep -Eq '^PHP [0-9].*: [0-9]+ files parsed$'; then exit 1; fi

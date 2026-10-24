@@ -137,6 +137,18 @@ test('Add-card UI enforces twenty-row limit with no index collisions', () => {
     const names = Array.from(sf.querySelectorAll('#tcc-cards [data-card-field=number]')).map(input => input.name);
     assert.equal(names.length, 20); assert.equal(new Set(names).size, 20); assert.equal(add.disabled, true); assert.equal(sf.querySelector('#tcc-card-count').textContent, '20');
 });
+tabs[3].click();
+const adminRole = sf.querySelector('[name="reviewer_roles[]"][value=administrator]');
+const managerRole = sf.querySelector('[name="reviewer_roles[]"][value=shop_manager]');
+test('Access tab shows real WordPress role names, including custom roles', () => { assert.ok(sf.querySelector('[value=finance]')); assert.match(sd.querySelector('.tcc-role-options').textContent, /مدیر فروشگاه/); });
+test('Administrator role is checked and protected from accidental removal', () => { assert.equal(adminRole.checked, true); assert.equal(adminRole.disabled, true); });
+managerRole.checked = true; managerRole.dispatchEvent(new sw.Event('change', {bubbles: true})); tabs[0].click();
+test('Role choices submit from hidden access tab with presence marker', () => { const data = new sw.FormData(sf); assert.deepEqual(data.getAll('reviewer_roles[]'), ['shop_manager']); assert.equal(data.get('reviewer_roles_present'), '1'); });
+tabs[3].click();
+test('Switching tabs keeps pending role selection', () => assert.equal(managerRole.checked, true));
+managerRole.checked = false; managerRole.dispatchEvent(new sw.Event('change', {bubbles: true}));
+test('Unchecking all optional roles still submits an explicit role-update marker', () => { const data = new sw.FormData(sf); assert.deepEqual(data.getAll('reviewer_roles[]'), []); assert.equal(data.get('reviewer_roles_present'), '1'); });
+test('Collapsed individual exceptions remain submitted separately from roles', () => { assert.equal(sf.querySelector('.tcc-individual-reviewers').open, false); assert.equal(new sw.FormData(sf).get('reviewers'), '2,7'); });
 const emptyDom = dom('settings-empty.html'); const ew = emptyDom.window; ew.eval(fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8'));
 test('First-run card editor works without preconfigured destinations', () => { assert.equal(ew.document.querySelector('.tcc-card-row').open, true); ew.document.querySelector('#tcc-add-card').click(); assert.equal(ew.document.querySelectorAll('#tcc-cards > details').length, 2); });
 customer.window.close(); admin.window.close(); settingsDom.window.close(); emptyDom.window.close();
