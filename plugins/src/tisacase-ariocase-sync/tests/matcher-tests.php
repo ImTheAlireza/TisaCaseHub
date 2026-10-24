@@ -11,6 +11,11 @@ matcher_test( 'SKU با فاصله و خط تیره نرمال می‌شود', '
 matcher_test( 'اعداد فارسی و عربی در SKU نرمال می‌شوند', 's25ultra' === TCAS_Matcher::normalize_sku( 'S۲۵ Ultra' ) && 's25ultra' === TCAS_Matcher::normalize_sku( 'S٢٥ Ultra' ) );
 matcher_test( 'برند و فاصلهٔ مدل در Label حذف می‌شود', 's25ultra' === TCAS_Matcher::normalize_label( 'Samsung Galaxy S25 Ultra' ) && 's25ultra' === TCAS_Matcher::normalize_label( 's25ultra' ) );
 matcher_test( 'معادل فارسی مدل و رنگ نرمال می‌شود', 's25ultrablack' === TCAS_Matcher::normalize_label( 'گلکسی S۲۵ اولترا مشکی' ) );
+matcher_test( 'Samsung A56 و A56 دقیقاً هم‌معنی‌اند', 'a56' === TCAS_Matcher::normalize_label( 'Samsung A56' ) && TCAS_Matcher::normalize_label( 'Samsung A56' ) === TCAS_Matcher::normalize_label( 'A56' ) );
+matcher_test( 'برند چسبیده به مدل هم نرمال می‌شود', 'a56' === TCAS_Matcher::normalize_label( 'SamsungA56' ) && '13pro' === TCAS_Matcher::normalize_label( 'iPhone13Pro' ) && 'note14' === TCAS_Matcher::normalize_label( 'RedmiNote14' ) );
+matcher_test( 'Poco و Mi و Redmi بدون تغییر مدل حذف می‌شوند', 'x7' === TCAS_Matcher::normalize_label( 'Poco X7' ) && '11tpro' === TCAS_Matcher::normalize_label( 'Mi 11T Pro' ) && 'note14pro5g' === TCAS_Matcher::normalize_label( 'Redmi Note 14 Pro 5G' ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:56', 'Samsung A56', '' ) ), array( matcher_variation( 'ID:9/56', 'A56', '' ), matcher_variation( 'ID:9/55', 'A55', '' ) ) );
+matcher_test( 'A56 فقط به A56 وصل می‌شود نه A55', array( 'ID:56=ID:9/56' ) === matcher_refs( $result ) && 1 === count( $result['unmatched'] ) );
 
 $local = array(
 	matcher_variation( 'ID:101', 'Samsung Galaxy S25 Ultra', 'SHARED' ),

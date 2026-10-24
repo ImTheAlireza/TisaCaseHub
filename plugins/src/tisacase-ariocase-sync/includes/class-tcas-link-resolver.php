@@ -61,7 +61,8 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			$type       = (string) $product->get_type();
 			$variations = array();
 			if ( 'variable' === $type ) {
-				foreach ( (array) $product->get_children() as $variation_id ) {
+				// فقط Variationهای واقعی؛ نه گزینه‌های Attribute و نه فقط موارد In-stock/Visible.
+				foreach ( (array) $product->get_children( false ) as $variation_id ) {
 					$variation_id = absint( $variation_id );
 					$variation    = $variation_id ? wc_get_product( $variation_id ) : false;
 					if ( ! $variation || ! is_object( $variation ) || 'variation' !== $variation->get_type() ) {

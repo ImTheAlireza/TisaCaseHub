@@ -5,7 +5,8 @@
 	const $ = (id) => document.getElementById(id);
 	const state = {
 		token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [],
-		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0
+		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0,
+		smartLocalCount: 0, smartRemoteCount: 0
 	};
 
 	function text(id, value, isError) {
@@ -217,6 +218,8 @@
 		state.smartSignature = '';
 		state.smartAmbiguous = 0;
 		state.smartUnmatched = 0;
+		state.smartLocalCount = 0;
+		state.smartRemoteCount = 0;
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = true;
 		text('tcas-smart-status', 'موارد مبهم و بدون تطبیق وصل نمی‌شوند.');
@@ -226,6 +229,12 @@
 		const local = $('tcas-smart-local');
 		const remote = $('tcas-smart-remote');
 		return (local ? local.value.trim() : '') + '\n' + (remote ? remote.value.trim() : '');
+	}
+
+	function smartCoverage() {
+		const local = Number(state.smartLocalCount) || 0;
+		const remote = Number(state.smartRemoteCount) || 0;
+		return local || remote ? 'TisaCase: ' + String(local) + ' · ArioCase: ' + String(remote) + ' — ' : '';
 	}
 
 	function fillSmartBatch() {
@@ -268,7 +277,7 @@
 		state.smartOffset = start + batch.length;
 		invalidatePreview();
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
-		let message = String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
+		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق کنار ماند.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
 		text('tcas-smart-status', message);
@@ -295,10 +304,12 @@
 			state.smartMatches = Array.isArray(data.matches) ? data.matches : [];
 			state.smartAmbiguous = Array.isArray(data.ambiguous) ? data.ambiguous.length : 0;
 			state.smartUnmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
+			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
+			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
 			state.smartOffset = 0;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
-				text('tcas-smart-status', 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);
+				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);
 			} else {
 				state.running = false;
 				fillSmartBatch();
@@ -510,7 +521,7 @@
 					select.value = String(state.linkVariations.indexOf(usable[0]));
 					chooseLinkVariation();
 				} else {
-					text('tcas-link-status', usable.length ? 'یک Variation را انتخاب کنید.' : 'Variation با شناسهٔ معتبر پیدا نشد.', !usable.length);
+					text('tcas-link-status', usable.length ? String(usable.length) + ' Variation قابل‌اتصال بارگذاری شد؛ یک مورد را انتخاب کنید.' : 'Variation واقعی با شناسهٔ معتبر پیدا نشد؛ گزینهٔ Attribute کافی نیست.', !usable.length);
 				}
 			} else {
 				const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');

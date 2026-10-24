@@ -146,6 +146,7 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	window.eval(script); window.document.getElementById('tcas-link-input').value = 'https://ariocase.com/product/remote-variable/'; window.document.getElementById('tcas-link-resolve').click();
 	await waitFor(() => window.document.getElementById('tcas-link-variation').options.length === 3);
 	ok('لینک والد، منوی Variation را می‌سازد و کپی والد را قفل می‌کند', !window.document.getElementById('tcas-link-variation-wrap').hidden && window.document.getElementById('tcas-link-sku').value === '' && window.document.getElementById('tcas-link-copy').disabled);
+	ok('تعداد Variationهای واقعی قابل‌اتصال در Status نمایش داده می‌شود', window.document.getElementById('tcas-link-status').textContent.includes('2 Variation'));
 	ok('گزینه، ID عددی و مرجع کامل Variation را نشان می‌دهد', window.document.getElementById('tcas-link-variation').options[1].textContent.includes('#701') && window.document.getElementById('tcas-link-variation').options[1].textContent.includes('ID:700/701'));
 	const select = window.document.getElementById('tcas-link-variation'); select.value = '0'; select.dispatchEvent(new window.Event('change'));
 	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'ID:700/701');
@@ -208,6 +209,7 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	ok('بلافاصله بعد از تطبیق، عنوان هر Variation زیر فیلد خودش دیده می‌شود', entries[0].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'S25 Ultra' && entries[0].querySelector('.tcas-shop-remote .tcas-variation-title').textContent === 's25ultra' && entries[1].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'Blue');
 	ok('تطبیق فقط یک AJAX می‌گیرد و خودکار Preview/Connect نمی‌کند', calls.length === 1 && calls[0].get('action') === 'tcas_match_variations');
 	ok('تعداد موارد مبهم و بدون تطبیق در Status دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('2 مورد'));
+	ok('تعداد Variationهای Load شدهٔ هر دو فروشگاه دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('TisaCase: 3') && window.document.getElementById('tcas-smart-status').textContent.includes('ArioCase: 3'));
 	window.document.getElementById('tcas-preview-start').click();
 	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent.includes('کامل'));
 	const previewStart = calls.find((body) => body.get('action') === 'tcas_preview_start');

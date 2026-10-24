@@ -22,11 +22,12 @@ function url_to_postid( $url ) { $GLOBALS['url_calls'][] = $url; return isset( $
 function wc_get_product( $id ) { return isset( $GLOBALS['products'][ $id ] ) ? $GLOBALS['products'][ $id ] : false; }
 class TCAS_Test_Product {
 	private $sku; private $name; private $type; private $children; private $attributes;
+	public static $children_args = array();
 	public function __construct( $sku, $name = 'Product', $type = 'simple', $children = array(), $attributes = array() ) { $this->sku = $sku; $this->name = $name; $this->type = $type; $this->children = $children; $this->attributes = $attributes; }
 	public function get_sku() { return $this->sku; }
 	public function get_name() { return $this->name; }
 	public function get_type() { return $this->type; }
-	public function get_children() { return $this->children; }
+	public function get_children( $visible_only = null ) { self::$children_args[] = $visible_only; return $this->children; }
 	public function get_attributes() { return $this->attributes; }
 }
 class TCAS_Core { public static function settings() { return array( 'base_url' => 'https://ariocase.com/wp-json/wc/v3' ); } }
@@ -45,6 +46,7 @@ require_once dirname( __DIR__ ) . '/includes/class-tcas-link-resolver.php';
 $pass = 0; $fail = 0;
 function resolver_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
 function reset_resolver_fixtures() {
+	TCAS_Test_Product::$children_args = array();
 	$GLOBALS['products'] = array( 41 => new TCAS_Test_Product( 'TS0100', 'Local case' ), 42 => new TCAS_Test_Product( '', 'No SKU' ) );
 	$GLOBALS['slugs'] = array( 'local-case' => 41 );
 	$GLOBALS['pretty'] = array( 'https://tisacase.com/product/local-case/' => 41 );
@@ -70,7 +72,7 @@ $GLOBALS['products'][44] = new TCAS_Test_Product( 'TS-RED', 'Local variable - Re
 $GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', 'variation', array(), array( 'attribute_color' => 'آبی' ) );
 $GLOBALS['pretty'][ $local_variable_url ] = 43;
 $local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
-resolver_test( 'لینک والد تیساکیس، Variationها را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] );
+resolver_test( 'لینک والد تیساکیس، همهٔ Variationهای واقعی را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] && array( false ) === TCAS_Test_Product::$children_args );
 $local_by_id = TCAS_Link_Resolver::resolve_local_reference( 'ID:43' );
 resolver_test( 'ID والد Local برای تطبیق هوشمند Resolve می‌شود', is_array( $local_by_id ) && 'variable' === $local_by_id['type'] && 2 === count( $local_by_id['variations'] ) );
 $GLOBALS['sku_ids']['TS-PARENT'] = array( 43 );

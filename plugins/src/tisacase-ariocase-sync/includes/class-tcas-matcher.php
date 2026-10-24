@@ -40,11 +40,12 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			}
 			$stopwords = array(
 				'samsung' => true, 'galaxy' => true, 'apple' => true, 'iphone' => true,
-				'xiaomi' => true, 'redmi' => true, 'phone' => true, 'mobile' => true,
+				'xiaomi' => true, 'redmi' => true, 'poco' => true, 'pocophone' => true, 'mi' => true,
+				'phone' => true, 'mobile' => true,
 				'smartphone' => true, 'product' => true, 'model' => true, 'color' => true,
 				'colour' => true, 'size' => true, 'storage' => true, 'memory' => true,
 				'سامسونگ' => true, 'گلکسی' => true, 'اپل' => true, 'ایفون' => true,
-				'شیایومی' => true, 'ردمی' => true, 'گوشی' => true, 'موبایل' => true,
+				'شیایومی' => true, 'ردمی' => true, 'پوکو' => true, 'گوشی' => true, 'موبایل' => true,
 				'محصول' => true, 'مدل' => true, 'رنگ' => true, 'سایز' => true,
 				'اندازه' => true, 'حافظه' => true, 'ظرفیت' => true, 'سری' => true,
 			);
@@ -60,6 +61,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			$out = array();
 			foreach ( preg_split( '/\s+/u', $value ) as $token ) {
 				$token = trim( (string) $token );
+				$token = (string) preg_replace( '/^(?:samsung|apple|iphone|xiaomi|redmi|pocophone|poco)(?=[a-z]*\d)/u', '', $token );
+				$token = (string) preg_replace( '/^mi(?=\d)/u', '', $token );
 				if ( '' === $token || isset( $stopwords[ $token ] ) ) {
 					continue;
 				}
