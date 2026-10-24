@@ -34,6 +34,13 @@ class TCAS_Api {
 	public static $responses = array(); public static $calls = array();
 	public static function fetch_reference( $url ) { self::$calls[] = $url; return isset( self::$responses[ $url ] ) ? self::$responses[ $url ] : new WP_Error( 'not_found', 'Not found' ); }
 }
+class TCAS_Mapping {
+	public static function local_by_sku( $sku ) {
+		$ids = isset( $GLOBALS['sku_ids'][ $sku ] ) ? $GLOBALS['sku_ids'][ $sku ] : array();
+		if ( count( $ids ) > 1 ) return new WP_Error( 'tcas_duplicate_sku', 'Duplicate SKU' );
+		return $ids ? (int) $ids[0] : 0;
+	}
+}
 require_once dirname( __DIR__ ) . '/includes/class-tcas-link-resolver.php';
 $pass = 0; $fail = 0;
 function resolver_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
@@ -41,7 +48,7 @@ function reset_resolver_fixtures() {
 	$GLOBALS['products'] = array( 41 => new TCAS_Test_Product( 'TS0100', 'Local case' ), 42 => new TCAS_Test_Product( '', 'No SKU' ) );
 	$GLOBALS['slugs'] = array( 'local-case' => 41 );
 	$GLOBALS['pretty'] = array( 'https://tisacase.com/product/local-case/' => 41 );
-	$GLOBALS['url_calls'] = array(); $GLOBALS['slug_calls'] = array(); TCAS_Api::$calls = array(); TCAS_Api::$responses = array();
+	$GLOBALS['url_calls'] = array(); $GLOBALS['slug_calls'] = array(); $GLOBALS['sku_ids'] = array( 'TS0100' => array( 41 ) ); TCAS_Api::$calls = array(); TCAS_Api::$responses = array();
 }
 function remote_result( $code = 'AR22' ) { return array( 'code' => $code, 'name' => 'Remote case', 'remote_id' => 222, 'type' => 'simple' ); }
 
@@ -64,6 +71,14 @@ $GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', '
 $GLOBALS['pretty'][ $local_variable_url ] = 43;
 $local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
 resolver_test( 'لینک والد تیساکیس، Variationها را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] );
+$local_by_id = TCAS_Link_Resolver::resolve_local_reference( 'ID:43' );
+resolver_test( 'ID والد Local برای تطبیق هوشمند Resolve می‌شود', is_array( $local_by_id ) && 'variable' === $local_by_id['type'] && 2 === count( $local_by_id['variations'] ) );
+$GLOBALS['sku_ids']['TS-PARENT'] = array( 43 );
+$local_by_sku = TCAS_Link_Resolver::resolve_local_reference( 'TS-PARENT' );
+resolver_test( 'SKU والد Local برای تطبیق هوشمند Resolve می‌شود', is_array( $local_by_sku ) && 'variable' === $local_by_sku['type'] && 43 === $local_by_sku['product_id'] );
+$GLOBALS['sku_ids']['DUP-PARENT'] = array( 43, 43 );
+$duplicate_parent = TCAS_Link_Resolver::resolve_local_reference( 'DUP-PARENT' );
+resolver_test( 'SKU مشترک والد برای تطبیق خودکار رد می‌شود', is_wp_error( $duplicate_parent ) && 'tcas_duplicate_sku' === $duplicate_parent->get_error_code() );
 
 reset_resolver_fixtures();
 $local_duplicate_url = 'https://tisacase.com/product/local-duplicate-skus/';

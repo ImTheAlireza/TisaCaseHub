@@ -15,6 +15,16 @@ $mappings = TCAS_Mapping::all( 6 );
 	</div>
 </section>
 
+<section class="tcas-card tcas-smart-card">
+	<div class="tcas-card-head"><div><span class="tcas-step">⌁</span><h2>تطبیق خودکار Variationها</h2></div><span class="tcas-tag">مرجع دقیق</span></div>
+	<div class="tcas-smart-grid">
+		<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input id="tcas-smart-local" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
+		<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input id="tcas-smart-remote" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
+		<div class="tcas-smart-actions"><button type="button" id="tcas-smart-match" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button><button type="button" id="tcas-smart-next" class="button" hidden>دسته بعد</button></div>
+	</div>
+	<div id="tcas-smart-status" class="tcas-status" role="status" aria-live="polite">موارد مبهم و بدون تطبیق وصل نمی‌شوند.</div>
+</section>
+
 <section class="tcas-card">
 	<div class="tcas-card-head">
 		<div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>

@@ -92,6 +92,31 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			);
 		}
 
+		public static function resolve_local_reference( $reference ) {
+			$reference = trim( (string) $reference );
+			if ( '' === $reference || strlen( $reference ) > 190 ) {
+				return self::error( 'tcas_invalid_local_reference', 'SKU یا ID محصول والد TisaCase معتبر نیست.' );
+			}
+			if ( preg_match( '/^ID:/i', $reference ) ) {
+				$matches = array();
+				if ( ! preg_match( '/^ID:([1-9][0-9]*)$/i', $reference, $matches ) ) {
+					return self::error( 'tcas_invalid_local_reference', 'قالب ID محصول TisaCase معتبر نیست.' );
+				}
+				return self::local_result( absint( $matches[1] ) );
+			}
+			if ( ! class_exists( 'TCAS_Mapping' ) ) {
+				return self::error( 'tcas_local_resolver_missing', 'امکان جست‌وجوی SKU در این نصب وردپرس نیست.' );
+			}
+			$product_id = TCAS_Mapping::local_by_sku( $reference );
+			if ( is_wp_error( $product_id ) ) {
+				return $product_id;
+			}
+			if ( ! $product_id ) {
+				return self::error( 'tcas_local_product_missing', 'محصولی با این SKU در TisaCase پیدا نشد.' );
+			}
+			return self::local_result( $product_id );
+		}
+
 		private static function resolve_local( $url, $parts ) {
 			$query = array();
 			if ( isset( $parts['query'] ) ) {

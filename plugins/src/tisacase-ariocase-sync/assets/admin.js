@@ -3,7 +3,10 @@
 
 	const cfg = window.TCAS_ADMIN || {};
 	const $ = (id) => document.getElementById(id);
-	const state = { token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [] };
+	const state = {
+		token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [],
+		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0
+	};
 
 	function text(id, value, isError) {
 		const node = $(id);
@@ -67,7 +70,43 @@
 		return (quantity !== '' ? quantity + ' · ' : '') + (statuses[stock.status] || 'وضعیت نامشخص');
 	}
 
-	function readonlyShopField(labelText, code, shopClass) {
+	function setVariationTitle(field, value) {
+		if (!field) return;
+		const title = typeof value === 'string' ? value.trim() : '';
+		let small = field.querySelector('.tcas-variation-title');
+		if (!title) {
+			if (small) small.remove();
+			return;
+		}
+		if (!small) {
+			small = node('small', 'tcas-variation-title');
+			small.dir = 'auto';
+			field.appendChild(small);
+		}
+		small.textContent = title;
+		small.title = title;
+	}
+
+	function setPairEntryTitles(entry, localTitle, remoteTitle) {
+		if (!entry) return;
+		setVariationTitle(entry.querySelector('.tcas-shop-local'), localTitle);
+		setVariationTitle(entry.querySelector('.tcas-shop-remote'), remoteTitle);
+	}
+
+	function updatePairEntryTitles(row) {
+		const entries = pairEntries();
+		const sameCodes = (entry) => {
+			if (!entry) return false;
+			const local = entry.querySelector('.tcas-local-code');
+			const remote = entry.querySelector('.tcas-remote-code');
+			return local && remote && local.value.trim() === String(row.local_code || '') && remote.value.trim() === String(row.remote_code || '');
+		};
+		let entry = entries[Number(row.index)];
+		if (!sameCodes(entry)) entry = entries.find(sameCodes);
+		if (entry) setPairEntryTitles(entry, row.local_name, row.remote_name);
+	}
+
+	function readonlyShopField(labelText, code, shopClass, variationTitle) {
 		const label = node('label', 'tcas-shop-field ' + shopClass);
 		label.appendChild(node('span', 'tcas-shop-label', labelText));
 		const input = document.createElement('input');
@@ -77,18 +116,20 @@
 		input.value = code || '—';
 		input.setAttribute('aria-label', labelText);
 		label.appendChild(input);
+		setVariationTitle(label, variationTitle);
 		return label;
 	}
 
-	function pairFields(localCode, remoteCode) {
+	function pairFields(localCode, remoteCode, localTitle, remoteTitle) {
 		const fields = node('div', 'tcas-pair-fields');
-		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local'));
+		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local', localTitle));
 		fields.appendChild(node('span', 'tcas-pair-link', '+'));
-		fields.appendChild(readonlyShopField('آریوکیس · ArioCase', remoteCode, 'tcas-shop-remote'));
+		fields.appendChild(readonlyShopField('آریوکیس · ArioCase', remoteCode, 'tcas-shop-remote', remoteTitle));
 		return fields;
 	}
 
 	function addPreviewRow(row) {
+		updatePairEntryTitles(row);
 		const list = $('tcas-preview-list');
 		if (!list) return;
 		const card = node('article', 'tcas-pair-card tcas-preview-card tcas-result-' + row.status);
@@ -105,9 +146,7 @@
 		head.appendChild(selectLabel);
 		head.appendChild(node('span', 'tcas-stock-pill', stockLabel(row.stock)));
 		card.appendChild(head);
-		card.appendChild(pairFields(row.local_code, row.remote_code));
-		const names = [row.local_name, row.remote_name].filter(Boolean).join(' / ');
-		if (names) card.appendChild(node('div', 'tcas-preview-names', names));
+		card.appendChild(pairFields(row.local_code, row.remote_code, row.local_name, row.remote_name));
 		const message = node('p', 'tcas-preview-message', row.message || '');
 		if (row.status === 'error') message.classList.add('tcas-error-text');
 		card.appendChild(message);
@@ -145,22 +184,131 @@
 			entry.remove();
 			refreshPairEntries();
 			invalidatePreview();
+			resetSmart();
 		});
-		entry.querySelectorAll('input').forEach((input) => input.addEventListener('input', invalidatePreview));
+		entry.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
+			setVariationTitle(input.closest('.tcas-shop-field'), '');
+			invalidatePreview();
+			resetSmart();
+		}));
 	}
 
-	function addPairEntry() {
+	function addPairEntry(localCode, remoteCode, focusInput) {
 		const template = $('tcas-pair-entry-template');
 		const list = $('tcas-pair-entries');
 		const max = Number(cfg.maxPairs) || 50;
 		if (!template || !list || pairEntries().length >= max) return;
 		const entry = template.content.firstElementChild.cloneNode(true);
 		list.appendChild(entry);
+		const local = entry.querySelector('.tcas-local-code');
+		const remote = entry.querySelector('.tcas-remote-code');
+		if (local) local.value = typeof localCode === 'string' ? localCode : '';
+		if (remote) remote.value = typeof remoteCode === 'string' ? remoteCode : '';
 		wirePairEntry(entry);
 		refreshPairEntries();
 		invalidatePreview();
-		const input = entry.querySelector('.tcas-local-code');
-		if (input) input.focus();
+		if (local && focusInput !== false) local.focus();
+		return entry;
+	}
+
+	function resetSmart() {
+		state.smartMatches = [];
+		state.smartOffset = 0;
+		state.smartSignature = '';
+		state.smartAmbiguous = 0;
+		state.smartUnmatched = 0;
+		const next = $('tcas-smart-next');
+		if (next) next.hidden = true;
+		text('tcas-smart-status', 'موارد مبهم و بدون تطبیق وصل نمی‌شوند.');
+	}
+
+	function smartSignature() {
+		const local = $('tcas-smart-local');
+		const remote = $('tcas-smart-remote');
+		return (local ? local.value.trim() : '') + '\n' + (remote ? remote.value.trim() : '');
+	}
+
+	function fillSmartBatch() {
+		if (state.running) return;
+		if (!state.smartSignature || state.smartSignature !== smartSignature()) {
+			resetSmart();
+			text('tcas-smart-status', 'محصول والد تغییر کرده است؛ دوباره تطبیق بدهید.', true);
+			return;
+		}
+		const max = Number(cfg.maxPairs) || 50;
+		const start = state.smartOffset;
+		const batch = state.smartMatches.slice(start, start + max);
+		if (!batch.length) {
+			text('tcas-smart-status', 'جفت دیگری برای این تطبیق نمانده است.');
+			return;
+		}
+		const hasCurrentPairs = pairEntries().some((entry) => {
+			const local = entry.querySelector('.tcas-local-code');
+			const remote = entry.querySelector('.tcas-remote-code');
+			return (local && local.value.trim()) || (remote && remote.value.trim());
+		});
+		if (start === 0 && hasCurrentPairs && !window.confirm('جفت‌های فعلی با نتیجهٔ تطبیق جایگزین شوند؟')) {
+			const next = $('tcas-smart-next');
+			if (next) next.hidden = true;
+			text('tcas-smart-status', 'جایگزینی جفت‌های فعلی انجام نشد.', true);
+			return;
+		}
+		const list = $('tcas-pair-entries');
+		if (!list) return;
+		list.textContent = '';
+		batch.forEach((match) => {
+			const entry = addPairEntry(match.local_code, match.remote_code, false);
+			setPairEntryTitles(entry, match.local_label, match.remote_label);
+		});
+		if (pairEntries().length !== batch.length) {
+			resetSmart();
+			text('tcas-smart-status', 'ساخت کارت‌های جفت کامل نشد؛ دوباره تلاش کنید.', true);
+			return;
+		}
+		state.smartOffset = start + batch.length;
+		invalidatePreview();
+		const excluded = state.smartAmbiguous + state.smartUnmatched;
+		let message = String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
+		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق کنار ماند.';
+		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
+		text('tcas-smart-status', message);
+		const next = $('tcas-smart-next');
+		if (next) next.hidden = state.smartOffset >= state.smartMatches.length;
+	}
+
+	async function matchVariations() {
+		if (state.running) return;
+		const local = $('tcas-smart-local');
+		const remote = $('tcas-smart-remote');
+		if (!local || !remote || !local.value.trim() || !remote.value.trim()) {
+			text('tcas-smart-status', 'مرجع هر دو محصول متغیر را وارد کنید.', true);
+			return;
+		}
+		resetSmart();
+		state.smartSignature = smartSignature();
+		state.running = true;
+		const button = $('tcas-smart-match');
+		busy(button, true, 'در حال تطبیق…');
+		text('tcas-smart-status', 'در حال دریافت Variationها و بررسی تطبیق یک‌به‌یک…');
+		try {
+			const data = await request('match_variations', { local_code: local.value.trim(), remote_code: remote.value.trim() });
+			state.smartMatches = Array.isArray(data.matches) ? data.matches : [];
+			state.smartAmbiguous = Array.isArray(data.ambiguous) ? data.ambiguous.length : 0;
+			state.smartUnmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
+			state.smartOffset = 0;
+			if (!state.smartMatches.length) {
+				const excluded = state.smartAmbiguous + state.smartUnmatched;
+				text('tcas-smart-status', 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);
+			} else {
+				state.running = false;
+				fillSmartBatch();
+			}
+		} catch (error) {
+			resetSmart();
+			text('tcas-smart-status', error.message, true);
+		}
+		state.running = false;
+		busy(button, false);
 	}
 
 	function collectPairs() {
@@ -423,7 +571,17 @@
 	pairEntries().forEach(wirePairEntry);
 	refreshPairEntries();
 	const pairAdd = $('tcas-pair-add');
-	if (pairAdd) pairAdd.addEventListener('click', addPairEntry);
+	if (pairAdd) pairAdd.addEventListener('click', () => { resetSmart(); addPairEntry(); });
+	const smartMatch = $('tcas-smart-match');
+	if (smartMatch) smartMatch.addEventListener('click', matchVariations);
+	const smartNext = $('tcas-smart-next');
+	if (smartNext) smartNext.addEventListener('click', fillSmartBatch);
+	['tcas-smart-local', 'tcas-smart-remote'].forEach((id) => {
+		const input = $(id);
+		if (!input) return;
+		input.addEventListener('input', resetSmart);
+		input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); matchVariations(); } });
+	});
 	const previewButton = $('tcas-preview-start');
 	if (previewButton) previewButton.addEventListener('click', startPreview);
 	const connectButton = $('tcas-connect-start');

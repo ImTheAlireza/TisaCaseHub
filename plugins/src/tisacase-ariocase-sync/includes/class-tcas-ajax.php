@@ -11,7 +11,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 	final class TCAS_Ajax {
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'match_variations', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -167,6 +167,50 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
 			}
 			wp_send_json_success( $result );
+		}
+
+		public static function match_variations() {
+			self::auth();
+			if ( ! TCAS_Core::is_configured() ) {
+				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات API را کامل کنید.' ), 422 );
+			}
+			$local_code  = isset( $_POST['local_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['local_code'] ) ) ) : '';
+			$remote_code = isset( $_POST['remote_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['remote_code'] ) ) ) : '';
+			$local_limit  = preg_match( '#^https?://#i', $local_code ) ? 2048 : 190;
+			$remote_limit = preg_match( '#^https?://#i', $remote_code ) ? 2048 : 190;
+			if ( '' === $local_code || '' === $remote_code || strlen( $local_code ) > $local_limit || strlen( $remote_code ) > $remote_limit ) {
+				wp_send_json_error( array( 'message' => 'لینک یا مرجع هر دو محصول والد را وارد کنید.' ), 422 );
+			}
+			$local = preg_match( '#^https?://#i', $local_code ) ? TCAS_Link_Resolver::resolve( $local_code ) : TCAS_Link_Resolver::resolve_local_reference( $local_code );
+			if ( is_wp_error( $local ) ) {
+				wp_send_json_error( array( 'message' => $local->get_error_message() ), 422 );
+			}
+			if ( empty( $local['shop'] ) || 'tisacase' !== $local['shop'] || empty( $local['type'] ) || 'variable' !== $local['type'] || empty( $local['variations'] ) ) {
+				wp_send_json_error( array( 'message' => 'مرجع TisaCase باید یک محصول متغیر با Variation باشد.' ), 422 );
+			}
+			$remote = TCAS_Api::fetch_reference( $remote_code );
+			if ( is_wp_error( $remote ) ) {
+				wp_send_json_error( array( 'message' => $remote->get_error_message() ), 422 );
+			}
+			if ( empty( $remote['type'] ) || 'variable' !== $remote['type'] || empty( $remote['variations'] ) ) {
+				wp_send_json_error( array( 'message' => 'مرجع ArioCase باید یک محصول متغیر با Variation باشد.' ), 422 );
+			}
+			$remote_variations = $remote['variations'];
+			foreach ( $remote_variations as $index => $variation ) {
+				$parent_id = isset( $variation['parent_id'] ) ? absint( $variation['parent_id'] ) : 0;
+				$remote_id = isset( $variation['product_id'] ) ? absint( $variation['product_id'] ) : 0;
+				if ( $parent_id && $remote_id ) {
+					$remote_variations[ $index ]['reference'] = 'ID:' . $parent_id . '/' . $remote_id;
+				}
+			}
+			$result = TCAS_Matcher::match( $local['variations'], $remote_variations );
+			wp_send_json_success( array(
+				'matches'   => $result['matches'],
+				'ambiguous' => $result['ambiguous'],
+				'unmatched' => $result['unmatched'],
+				'local'     => array( 'name' => $local['name'], 'reference' => $local['reference'], 'count' => count( $local['variations'] ) ),
+				'remote'    => array( 'name' => $remote['name'], 'reference' => $remote['reference'], 'count' => count( $remote['variations'] ) ),
+			) );
 		}
 
 		public static function test_connection() {

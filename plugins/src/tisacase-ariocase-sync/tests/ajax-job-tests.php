@@ -10,20 +10,25 @@ function wp_send_json_success( $data ) { throw new TCAS_JSON_Response( true, $da
 function get_transient( $key ) { return isset( $GLOBALS['transients'][ $key ] ) ? $GLOBALS['transients'][ $key ] : false; }
 function set_transient( $key, $value, $ttl ) { $GLOBALS['transients'][ $key ] = $value; return true; }
 function get_current_user_id() { return 7; } function admin_url( $path = '' ) { return 'https://tisa.test/wp-admin/' . $path; }
-class TCAS_Core { const NONCE = 'tcas_admin_nonce'; public static function can() { return true; } }
+class TCAS_Core { const NONCE = 'tcas_admin_nonce'; public static function can() { return true; } public static function is_configured() { return true; } }
 class TCAS_Logger { public static function add( ...$args ) {} }
 class TCAS_Pairing {
 	public static $preview_calls = 0; public static $received_preview = null;
 	public static function preview( $pair ) { self::$preview_calls++; return array( 'row' => array( 'selectable' => true, 'status' => 'connect', 'local_code' => $pair['local_code'], 'remote_code' => 'RESOLVED-22' ), 'fresh' => 'fresh-' . self::$preview_calls ); }
 	public static function connect( $preview ) { self::$received_preview = $preview; return array( 'message' => 'done', 'product_id' => 91 ); }
 }
-class TCAS_Link_Resolver { public static function resolve( $url ) { return array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple' ); } }
+class TCAS_Link_Resolver {
+	public static $product = null;
+	public static function resolve( $url ) { return self::$product ? self::$product : array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple', 'reference' => 'TS0100' ); }
+	public static function resolve_local_reference( $reference ) { return self::resolve( $reference ); }
+}
 class TCAS_Api {
 	public static $product = null; public static $reference = null;
 	public static function fetch_reference( $reference ) { self::$reference = $reference; return self::$product; }
 }
 class TCAS_Mapping { public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } }
 class TCAS_Live { public static $state = null; public static function refresh( $id ) { return self::$state; } }
+require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
 $pass = 0; $fail = 0;
 function ajax_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
@@ -47,6 +52,28 @@ $_POST['url'] = 'https://tisacase.com/product/local-case/';
 $response = invoke_ajax( 'resolve_link' );
 ajax_test( 'AJAX تبدیل لینک SKU و فروشگاه را برمی‌گرداند', $response && $response->success && 'TS0100' === $response->data['sku'] && 'tisacase' === $response->data['shop'] );
 unset( $_POST['url'] );
+$_POST['local_code'] = 'ID:50'; $_POST['remote_code'] = 'ID:70';
+TCAS_Link_Resolver::$product = array(
+	'shop' => 'tisacase', 'name' => 'Local variable', 'type' => 'variable', 'reference' => 'ID:50',
+	'variations' => array(
+		array( 'reference' => 'ID:51', 'label' => 'Samsung Galaxy S25 Ultra', 'sku' => 'SHARED' ),
+		array( 'reference' => 'ID:52', 'label' => 'S24', 'sku' => 'SHARED' ),
+	),
+);
+TCAS_Api::$product = array(
+	'name' => 'Remote variable', 'type' => 'variable', 'reference' => 'ID:70',
+	'variations' => array(
+		array( 'reference' => 'REMOTE-SKU', 'product_id' => 71, 'parent_id' => 70, 'label' => 's25ultra', 'sku' => 'SHARED' ),
+		array( 'reference' => 'ID:70/72', 'label' => 'S23', 'sku' => 'SHARED' ),
+	),
+);
+$response = invoke_ajax( 'match_variations' );
+ajax_test( 'AJAX تطبیق، مرجع دقیق Variationهای معادل را برمی‌گرداند', $response && $response->success && 1 === count( $response->data['matches'] ) && 'ID:51' === $response->data['matches'][0]['local_code'] && 'ID:70/71' === $response->data['matches'][0]['remote_code'] && 'ID:70' === TCAS_Api::$reference );
+ajax_test( 'تطبیق AJAX مدل نامرتبط را وارد جفت‌ها نمی‌کند', $response && 2 === count( $response->data['ambiguous'] ) + count( $response->data['unmatched'] ) );
+TCAS_Link_Resolver::$product = null; TCAS_Api::$product = null; TCAS_Api::$reference = null;
+$response = invoke_ajax( 'match_variations' );
+ajax_test( 'تطبیق فقط والد متغیر می‌پذیرد و برای Simple ریموت را نمی‌خواند', $response && ! $response->success && 422 === $response->status && null === TCAS_Api::$reference );
+unset( $_POST['local_code'], $_POST['remote_code'] );
 $_POST['code'] = 'ID:658';
 TCAS_Api::$product = array( 'code' => '', 'remote_id' => 658, 'name' => 'ID only', 'type' => 'simple', 'stock' => array( 'quantity' => 5.0, 'status' => 'instock' ), 'variations' => array() );
 $response = invoke_ajax( 'test_connection' );
