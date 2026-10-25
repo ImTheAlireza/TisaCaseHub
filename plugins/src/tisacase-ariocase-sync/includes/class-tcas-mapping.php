@@ -18,6 +18,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		const META_ERROR      = '_tcas_last_error';
 		const META_REMOTE_ID  = '_tcas_remote_product_id';
 		const META_PARENT_ID  = '_tcas_remote_parent_id';
+		const META_REMOTE_NAME = '_tcas_remote_product_name';
 
 		private static function query_ids( $meta_key, $value ) {
 			global $wpdb;
@@ -86,6 +87,9 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			if ( $remote_id ) {
 				update_post_meta( $product_id, self::META_REMOTE_ID, $remote_id );
 			}
+			if ( isset( $remote['name'] ) && is_scalar( $remote['name'] ) && '' !== trim( (string) $remote['name'] ) ) {
+				update_post_meta( $product_id, self::META_REMOTE_NAME, sanitize_text_field( $remote['name'] ) );
+			}
 			$parent_remote_id = absint( $parent_remote_id );
 			if ( $parent_remote_id ) {
 				update_post_meta( $product_id, self::META_PARENT_ID, $parent_remote_id );
@@ -122,7 +126,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 
 		public static function forget( $product_id ) {
 			$product_id = absint( $product_id );
-			foreach ( array( self::META_CODE, self::META_ENABLED, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_REMOTE_ID, self::META_PARENT_ID ) as $key ) {
+			foreach ( array( self::META_CODE, self::META_ENABLED, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_REMOTE_ID, self::META_PARENT_ID, self::META_REMOTE_NAME ) as $key ) {
 				delete_post_meta( $product_id, $key );
 			}
 			return true;
@@ -171,8 +175,11 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 					'name'        => $product->get_name(),
 					'sku'         => $product->get_sku(),
 					'type'        => $product->get_type(),
+					'menu_order' => method_exists( $product, 'get_menu_order' ) ? (int) $product->get_menu_order() : $id,
 					'remote_code' => (string) $row['remote_code'],
 					'remote_id'   => absint( get_post_meta( $id, self::META_REMOTE_ID, true ) ),
+					'remote_parent_id' => absint( get_post_meta( $id, self::META_PARENT_ID, true ) ),
+					'remote_name' => (string) get_post_meta( $id, self::META_REMOTE_NAME, true ),
 					'enabled'     => self::is_enabled( $id ),
 					'quantity'    => get_post_meta( $id, self::META_QTY, true ),
 					'status'      => (string) get_post_meta( $id, self::META_STATUS, true ),
@@ -181,6 +188,47 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 				);
 			}
 			return $out;
+		}
+
+		/** Group connected variations by the same local and remote parent products. */
+		public static function group_rows( $rows ) {
+			$groups = array();
+			foreach ( (array) $rows as $row ) {
+				$id = isset( $row['id'] ) ? absint( $row['id'] ) : 0;
+				if ( ! $id ) {
+					continue;
+				}
+				$local_parent_id = ( isset( $row['type'] ) && 'variation' === $row['type'] && ! empty( $row['parent_id'] ) ) ? absint( $row['parent_id'] ) : $id;
+				$remote_parent_id = isset( $row['remote_parent_id'] ) ? absint( $row['remote_parent_id'] ) : 0;
+				if ( ! $remote_parent_id && ! empty( $row['remote_code'] ) && preg_match( '/^ID:([1-9][0-9]*)\/[1-9][0-9]*$/i', (string) $row['remote_code'], $parts ) ) {
+					$remote_parent_id = absint( $parts[1] );
+				}
+				$remote_group = $remote_parent_id ? 'parent:' . $remote_parent_id : 'item:' . ( ! empty( $row['remote_id'] ) ? absint( $row['remote_id'] ) : (string) $row['remote_code'] );
+				$key = $local_parent_id . '|' . $remote_group;
+				if ( ! isset( $groups[ $key ] ) ) {
+					$local_parent = $local_parent_id !== $id ? wc_get_product( $local_parent_id ) : false;
+					$local_name = $local_parent && is_object( $local_parent ) ? $local_parent->get_name() : ( isset( $row['name'] ) ? (string) $row['name'] : 'محصول تیساکیس' );
+					$remote_name = $remote_parent_id ? 'والد #' . $remote_parent_id : ( ! empty( $row['remote_name'] ) ? (string) $row['remote_name'] : (string) $row['remote_code'] );
+					$groups[ $key ] = array(
+						'local_parent_id'   => $local_parent_id,
+					'local_parent_name' => $local_name,
+					'remote_parent_id'  => $remote_parent_id,
+					'remote_parent_name'=> $remote_name,
+					'rows'              => array(),
+					'count'             => 0,
+				);
+				}
+				$groups[ $key ]['rows'][] = $row;
+				$groups[ $key ]['count']++;
+			}
+			foreach ( $groups as &$group ) {
+				usort( $group['rows'], function( $a, $b ) {
+					$order = (int) ( isset( $a['menu_order'] ) ? $a['menu_order'] : $a['id'] ) <=> (int) ( isset( $b['menu_order'] ) ? $b['menu_order'] : $b['id'] );
+					return 0 !== $order ? $order : ( (int) $a['id'] <=> (int) $b['id'] );
+				} );
+			}
+			unset( $group );
+			return array_values( $groups );
 		}
 	}
 }

@@ -50,6 +50,7 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			wp_enqueue_script( 'tcas-admin', TCAS_URL . 'assets/admin.js', array(), TCAS_VERSION, true );
 			wp_localize_script( 'tcas-admin', 'TCAS_ADMIN', array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'mappingsUrl' => admin_url( 'admin.php?page=' . TCAS_Core::PAGE . '&tab=mappings' ),
 				'nonce'   => wp_create_nonce( TCAS_Core::NONCE ),
 				'maxPairs' => TCAS_Core::MAX_CODES,
 				'strings' => array(

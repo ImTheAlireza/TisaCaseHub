@@ -284,6 +284,34 @@
 .tcas-smart-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:10px; align-items:end; }
 .tcas-smart-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
 .tcas-smart-card .tcas-status { margin-top:9px; }
+.tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
+.tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }
+.tcas-fresh-product-summary::before,.tcas-linked-group-summary::before { content:'＋'; display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; border-radius:50%; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tcas-primary); font-weight:700; }
+.tcas-fresh-product-group[open] > .tcas-fresh-product-summary::before,.tcas-linked-group[open] > .tcas-linked-group-summary::before { content:'−'; }
+.tcas-fresh-product-names,.tcas-linked-group-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; flex:1; }
+.tcas-fresh-product-names strong,.tcas-linked-group-title strong { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
+.tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 10px 10px; }
+.tcas-pair-entries-grouped .tcas-pair-entry { padding:10px; }
+.tcas-linked-groups { display:grid; gap:10px; }
+.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; padding:0 10px 10px; }
+.tcas-linked-variation-card { display:grid; align-content:start; gap:8px; min-width:0; padding:10px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-linked-variation-heading { display:grid; gap:4px; min-width:0; }
+.tcas-linked-variation-heading a { color:var(--tcas-text); font-size:var(--tisa-fs-meta,12.5px); font-weight:700; text-decoration:none; overflow-wrap:anywhere; }
+.tcas-linked-variation-heading a:hover { color:var(--tcas-primary); }
+.tcas-linked-codes { display:grid; gap:6px; min-width:0; }
+.tcas-linked-codes > div { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:4px 7px; min-width:0; }
+.tcas-linked-codes > div > span { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-codes code { min-width:0; overflow-wrap:anywhere; text-align:left; }
+.tcas-linked-codes small { grid-column:2; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-variation-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding-top:7px; border-top:1px solid var(--tcas-border); }
+.tcas-linked-variation-foot > small { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-actions { display:flex; align-items:center; gap:6px; }
+.tcas-linked-actions .button { min-height:27px; padding:1px 8px; }
+.tcas-connected-groups-link { margin-inline-start:6px; color:var(--tcas-primary); font-weight:700; }
 
 .tcas-pair-entries { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:10px; }
 .tcas-pair-entry { position:relative; min-width:0; padding:13px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
@@ -340,6 +368,7 @@
   .tcas-card-head { align-items:flex-start; }
   .tcas-smart-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .tcas-smart-actions { grid-column:1/-1; }
+  .tcas-pair-entries-grouped,.tcas-linked-variation-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media(max-width:600px) {
   .tcas-wrap { margin-top:10px; }
@@ -355,6 +384,7 @@
   .tcas-advanced summary { align-items:flex-start; flex-direction:column; gap:3px; }
   .tcas-converter-result-meta { flex-wrap:wrap; }
   .tcas-pair-entries,.tcas-pair-list { grid-template-columns:minmax(0,1fr); }
+  .tcas-pair-entries-grouped,.tcas-linked-variation-grid { grid-template-columns:minmax(0,1fr); }
   .tcas-smart-grid { grid-template-columns:minmax(0,1fr); }
   .tcas-smart-actions { grid-column:auto; }
 }

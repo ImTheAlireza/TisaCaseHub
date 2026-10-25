@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — اتصال جفتی موجودی ArioCase
  * Plugin URI:        https://tisacase.com
  * Description:       جفت‌کردن SKU تیساکیس با لینک، SKU یا ID محصول ArioCase و سینک فقط موجودی؛ بدون تغییر نام، قیمت یا سایر مشخصات.
- * Version:           1.9.0
+ * Version:           1.11.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -21,7 +21,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCAS_VERSION', '1.9.0' );
+define( 'TCAS_VERSION', '1.11.0' );
 define( 'TCAS_FILE', __FILE__ );
 define( 'TCAS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCAS_URL', plugin_dir_url( __FILE__ ) );

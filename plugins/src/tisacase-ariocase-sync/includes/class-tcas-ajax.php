@@ -27,6 +27,12 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			}
 		}
 
+		/** Read URL references without stripping percent-encoded UTF-8 bytes from Persian slugs. */
+		private static function posted_reference( $key ) {
+			$value = isset( $_POST[ $key ] ) ? trim( (string) wp_unslash( $_POST[ $key ] ) ) : '';
+			return preg_match( '#^https?://#i', $value ) ? $value : trim( sanitize_text_field( $value ) );
+		}
+
 		private static function token() {
 			$token = isset( $_POST['token'] ) ? sanitize_text_field( wp_unslash( $_POST['token'] ) ) : '';
 			return preg_match( '/^[a-zA-Z0-9]{32}$/', $token ) ? $token : '';
@@ -158,14 +164,30 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 		public static function resolve_link() {
 			self::auth();
-			$url = isset( $_POST['url'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['url'] ) ) ) : '';
+			// URL-encoded Persian slugs must remain intact; sanitize_text_field removes %XX octets.
+			$url = self::posted_reference( 'url' );
 			if ( '' === $url ) {
 				wp_send_json_error( array( 'message' => 'لینک محصول را وارد کنید.' ), 400 );
 			}
 			$result = TCAS_Link_Resolver::resolve( $url );
+			$parts  = parse_url( $url );
+			$target = is_array( $parts ) ? ( isset( $parts['host'] ) ? $parts['host'] : '' ) . rawurldecode( isset( $parts['path'] ) ? $parts['path'] : '' ) : '[invalid URL]';
 			if ( is_wp_error( $result ) ) {
+				TCAS_Logger::add( 'link_resolve_error', $target, $result->get_error_message() );
 				wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
 			}
+			$debug = isset( $result['resolution_debug'] ) && is_array( $result['resolution_debug'] ) ? $result['resolution_debug'] : array();
+			$message = sprintf(
+				'Resolved #%d "%s" as %s with %d variations. Path ID=%d; Rewrite ID=%d; source=%s.',
+				absint( isset( $result['product_id'] ) ? $result['product_id'] : 0 ),
+				sanitize_text_field( isset( $result['name'] ) ? $result['name'] : '' ),
+				sanitize_text_field( isset( $result['type'] ) ? $result['type'] : 'unknown' ),
+				count( isset( $result['variations'] ) && is_array( $result['variations'] ) ? $result['variations'] : array() ),
+				absint( isset( $debug['path_product_id'] ) ? $debug['path_product_id'] : 0 ),
+				absint( isset( $debug['rewrite_product_id'] ) ? $debug['rewrite_product_id'] : 0 ),
+				sanitize_text_field( isset( $debug['selected_by'] ) ? $debug['selected_by'] : 'other' )
+			);
+			TCAS_Logger::add( 'link_resolve_ok', $target, $message );
 			wp_send_json_success( $result );
 		}
 
@@ -174,8 +196,8 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			if ( ! TCAS_Core::is_configured() ) {
 				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات API را کامل کنید.' ), 422 );
 			}
-			$local_code  = isset( $_POST['local_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['local_code'] ) ) ) : '';
-			$remote_code = isset( $_POST['remote_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['remote_code'] ) ) ) : '';
+			$local_code  = self::posted_reference( 'local_code' );
+			$remote_code = self::posted_reference( 'remote_code' );
 			$local_limit  = preg_match( '#^https?://#i', $local_code ) ? 2048 : 190;
 			$remote_limit = preg_match( '#^https?://#i', $remote_code ) ? 2048 : 190;
 			if ( '' === $local_code || '' === $remote_code || strlen( $local_code ) > $local_limit || strlen( $remote_code ) > $remote_limit ) {
@@ -215,7 +237,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 		public static function test_connection() {
 			self::auth();
-			$code = isset( $_POST['code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['code'] ) ) ) : '';
+			$code = self::posted_reference( 'code' );
 			if ( '' === $code ) {
 				wp_send_json_error( array( 'message' => 'برای تست، لینک، SKU یا ID محصول ArioCase را وارد کنید.' ), 400 );
 			}

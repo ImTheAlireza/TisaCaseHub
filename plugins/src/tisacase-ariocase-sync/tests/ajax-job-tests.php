@@ -18,8 +18,8 @@ class TCAS_Pairing {
 	public static function connect( $preview ) { self::$received_preview = $preview; return array( 'message' => 'done', 'product_id' => 91 ); }
 }
 class TCAS_Link_Resolver {
-	public static $product = null;
-	public static function resolve( $url ) { return self::$product ? self::$product : array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple', 'reference' => 'TS0100' ); }
+	public static $product = null; public static $last_url = '';
+	public static function resolve( $url ) { self::$last_url = $url; return self::$product ? self::$product : array( 'shop' => 'tisacase', 'shop_label' => 'TisaCase', 'sku' => 'TS0100', 'name' => 'Local case', 'product_id' => 41, 'type' => 'simple', 'reference' => 'TS0100' ); }
 	public static function resolve_local_reference( $reference ) { return self::resolve( $reference ); }
 	public static function resolve_remote_reference( $reference ) { return TCAS_Api::fetch_reference( $reference ); }
 }
@@ -52,6 +52,9 @@ ajax_test( 'Job نامعتبر هیچ اتصال یا APIای اجرا نمی‌
 $_POST['url'] = 'https://tisacase.com/product/local-case/';
 $response = invoke_ajax( 'resolve_link' );
 ajax_test( 'AJAX تبدیل لینک SKU و فروشگاه را برمی‌گرداند', $response && $response->success && 'TS0100' === $response->data['sku'] && 'tisacase' === $response->data['shop'] );
+$_POST['url'] = 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8-%d9%82%d9%84%d8%a8-%d9%86%da%86%d8%b1%d8%a7%d9%84/';
+$response = invoke_ajax( 'resolve_link' );
+ajax_test( 'AJAX حروف %XX نامک فارسی را بدون sanitize_text_field تا Resolver حفظ می‌کند', $response && $response->success && TCAS_Link_Resolver::$last_url === $_POST['url'] );
 unset( $_POST['url'] );
 $_POST['local_code'] = 'ID:50'; $_POST['remote_code'] = 'ID:70';
 TCAS_Link_Resolver::$product = array(

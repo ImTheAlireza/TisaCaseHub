@@ -129,6 +129,14 @@ TCAS_Live::refresh( 1 );
 live_test( 'Refresh دوباره API می‌خواند ولی مقدار تکراری را بازنویسی نمی‌کند', 2 === array_count_values( TCAS_Api::$calls )['REMOTE-1'] && $product1_saved === $GLOBALS['products'][1]->saved );
 live_test( 'درخواست بعدی شناسهٔ عددی ذخیره‌شده را به API می‌دهد', 1001 === TCAS_Api::$identifiers['REMOTE-1']['remote_id'] );
 
+$GLOBALS['products'][40] = new TCAS_Test_Product( 40, 'variable', 0, 'instock' );
+$groups = TCAS_Mapping::group_rows( array(
+	array( 'id' => 41, 'parent_id' => 40, 'type' => 'variation', 'name' => 'مدل A', 'remote_code' => 'ID:900/901', 'remote_parent_id' => 900, 'menu_order' => 2 ),
+	array( 'id' => 42, 'parent_id' => 40, 'type' => 'variation', 'name' => 'مدل B', 'remote_code' => 'ID:900/902', 'remote_parent_id' => 900, 'menu_order' => 1 ),
+	array( 'id' => 43, 'parent_id' => 40, 'type' => 'variation', 'name' => 'مدل C', 'remote_code' => 'ID:901/903', 'remote_parent_id' => 901 ),
+) );
+live_test( 'اتصال‌های Variation بر اساس جفت والد محلی/ریموت در یک گروه قرار می‌گیرند', 2 === count( $groups ) && 2 === $groups[0]['count'] && 'محصول 40' === $groups[0]['local_parent_name'] && 900 === $groups[0]['remote_parent_id'] && array( 42, 41 ) === array_column( $groups[0]['rows'], 'id' ) );
+
 $GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['enabled'] = 'no';
 live_test( 'خاموش‌کردن سینک State جدید نمی‌سازد', null === TCAS_Live::state( 10 ) );
 

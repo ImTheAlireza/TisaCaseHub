@@ -190,11 +190,11 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 		const action = body.get('action');
 		if (action === 'tcas_match_variations') return reply({
 			matches: [
-				{ local_code: 'ID:51', remote_code: 'ID:70/71', local_label: 'S25 Ultra', remote_label: 's25ultra', score: 95 },
-				{ local_code: 'ID:52', remote_code: 'AR-BLUE', local_label: 'Blue', remote_label: 'Blue', score: 100 },
+				{ local_code: 'ID:51', remote_code: 'ID:70/71', local_label: 'S25 Ultra', remote_label: 's25ultra', score: 95, local_index: 0, remote_index: 0 },
+				{ local_code: 'ID:52', remote_code: 'AR-BLUE', local_label: 'Blue', remote_label: 'Blue', score: 100, local_index: 1, remote_index: 1 },
 			],
-			ambiguous: [{ shop: 'tisacase', label: 'Duplicate' }], unmatched: [{ shop: 'ariocase', label: 'S24' }],
-			local: { name: 'Local', reference: 'ID:50', count: 3 }, remote: { name: 'Remote', reference: 'ID:70', count: 3 },
+			ambiguous: [{ shop: 'tisacase', reference: 'ID:53', label: 'Duplicate', index: 2 }], unmatched: [{ shop: 'ariocase', reference: 'ID:70/73', label: 'S24', index: 2 }],
+			local: { name: 'Local product', reference: 'ID:50', count: 3 }, remote: { name: 'Remote product', reference: 'ID:70', count: 3 },
 		});
 		if (action === 'tcas_preview_start') return reply({ token: 'c'.repeat(32), total: 2 });
 		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2 });
@@ -210,6 +210,9 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	ok('تطبیق فقط یک AJAX می‌گیرد و خودکار Preview/Connect نمی‌کند', calls.length === 1 && calls[0].get('action') === 'tcas_match_variations');
 	ok('تعداد موارد مبهم و بدون تطبیق در Status دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('2 مورد'));
 	ok('تعداد Variationهای Load شدهٔ هر دو فروشگاه دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('TisaCase: 3') && window.document.getElementById('tcas-smart-status').textContent.includes('ArioCase: 3'));
+	const group = window.document.querySelector('#tcas-pair-entries details.tcas-fresh-product-group');
+	ok('جفت‌های متغیر زیر یک کارت آکارئونی برای دو محصول والد جمع می‌شوند', Boolean(group) && group.querySelector('summary').textContent.includes('Local product') && group.querySelector('summary').textContent.includes('Remote product'));
+	ok('کارت محصول تازه، کارت‌های Variation را در همان ترتیب سه‌ستونی نگه می‌دارد', Boolean(group) && group.querySelectorAll('.tcas-pair-entry').length === 2 && group.querySelector('.tcas-local-code').value === 'ID:51' && group.querySelector('.tcas-remote-code').value === 'ID:70/71' && group.querySelectorAll('.tcas-pair-entry')[1].querySelector('.tcas-local-code').value === 'ID:52');
 	window.document.getElementById('tcas-preview-start').click();
 	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent.includes('کامل'));
 	const previewStart = calls.find((body) => body.get('action') === 'tcas_preview_start');
@@ -245,8 +248,11 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 
 const uiCss = fs.readFileSync(path.join(root, 'assets/admin.css'), 'utf8');
 const pairsView = fs.readFileSync(path.join(root, 'views/pairs.php'), 'utf8');
+const linkedGroupsView = fs.readFileSync(path.join(root, 'views/linked-groups.php'), 'utf8');
 ok('Checkbox تنظیمات اندازهٔ ثابت دارد و تمام‌عرض نمی‌شود', uiCss.includes('.tcas-check-line input[type=checkbox]') && uiCss.includes('width:16px') && uiCss.includes('justify-self:start'));
 ok('Selector و استایل جمع‌وجور Variation در View واقعی وجود دارد', pairsView.includes('id="tcas-link-variation"') && pairsView.includes('class="tcas-link-variation" hidden') && uiCss.includes('.tcas-link-variation select'));
 ok('چیدمان قدیمی و فلش حذف و نتیجهٔ واقعی پیش‌فرض مخفی است', pairsView.includes('tcas-converter-flow') && pairsView.includes('id="tcas-link-result" class="tcas-converter-result" hidden') && !pairsView.includes('tcas-converter-layout') && !pairsView.includes('tcas-converter-arrow') && !uiCss.includes('.tcas-converter-arrow') && !uiCss.includes('.tcas-input-action'));
 ok('کارت تطبیق و کنترل دستهٔ بعد در View و CSS واقعی وجود دارد', pairsView.includes('id="tcas-smart-local"') && pairsView.includes('id="tcas-smart-remote"') && pairsView.includes('id="tcas-smart-next" class="button" hidden') && uiCss.includes('.tcas-smart-grid'));
+ok('جفت‌های تازه با کارت والد و شبکهٔ Variation سه‌ستونی ساخته می‌شوند', script.includes('tcas-fresh-product-group') && script.includes('tcas-pair-entries-grouped') && uiCss.includes('.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr))'));
+ok('محصولات متصل آکارئونی و کارت‌های Variation سه‌ستونی با موجودی دارند', linkedGroupsView.includes('<details class="tcas-linked-group">') && linkedGroupsView.includes('tcas-linked-variation-card') && linkedGroupsView.includes("$row['quantity']") && uiCss.includes('.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

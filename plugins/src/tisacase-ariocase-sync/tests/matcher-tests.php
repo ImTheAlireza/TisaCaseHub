@@ -11,6 +11,13 @@ matcher_test( 'SKU با فاصله و خط تیره نرمال می‌شود', '
 matcher_test( 'اعداد فارسی و عربی در SKU نرمال می‌شوند', 's25ultra' === TCAS_Matcher::normalize_sku( 'S۲۵ Ultra' ) && 's25ultra' === TCAS_Matcher::normalize_sku( 'S٢٥ Ultra' ) );
 matcher_test( 'برند و فاصلهٔ مدل در Label حذف می‌شود', 's25ultra' === TCAS_Matcher::normalize_label( 'Samsung Galaxy S25 Ultra' ) && 's25ultra' === TCAS_Matcher::normalize_label( 's25ultra' ) );
 matcher_test( 'معادل فارسی مدل و رنگ نرمال می‌شود', 's25ultrablack' === TCAS_Matcher::normalize_label( 'گلکسی S۲۵ اولترا مشکی' ) );
+matcher_test( 'نویسه‌گذاری و فاصلهٔ رنگ‌های فارسی یکسان می‌شود', TCAS_Matcher::normalize_label( 'سرمه ای' ) === TCAS_Matcher::normalize_label( 'Navy' ) && TCAS_Matcher::normalize_label( 'قهوه‌ای' ) === TCAS_Matcher::normalize_label( 'Brown' ) && TCAS_Matcher::normalize_label( 'آبی روشن' ) === TCAS_Matcher::normalize_label( 'Light Blue' ) );
+matcher_test( 'ظرفیت فارسی، واحدهای چسبیده و فاصله‌دار را یکسان می‌کند', TCAS_Matcher::normalize_label( '۱۲۸ گیگابایت' ) === TCAS_Matcher::normalize_label( '128 GB' ) );
+matcher_test( 'مدل‌های دارای صفر پیشرو در دو فروشگاه هم‌ارز می‌شوند', TCAS_Matcher::normalize_label( 'Samsung A04s' ) === TCAS_Matcher::normalize_label( 'A4 S' ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'قاب مناسب گوشی A04s 128 گیگابایت', '' ) ), array( matcher_variation( 'ID:9/1', 'iPhone A4 S 128GB case', '' ) ) );
+matcher_test( 'برچسب تزئینی، ترتیب واژه و واحد ظرفیت مانع تطبیق یکتا نمی‌شوند', array( 'ID:1=ID:9/1' ) === matcher_refs( $result ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A34 4G', '' ) ), array( matcher_variation( 'ID:9/1', 'A34 5G', '' ) ) );
+matcher_test( 'نسل شبکهٔ 4G و 5G با حذف تزئینات اشتباه یکی نمی‌شوند', 0 === count( $result['matches'] ) );
 matcher_test( 'Samsung A56 و A56 دقیقاً هم‌معنی‌اند', 'a56' === TCAS_Matcher::normalize_label( 'Samsung A56' ) && TCAS_Matcher::normalize_label( 'Samsung A56' ) === TCAS_Matcher::normalize_label( 'A56' ) );
 matcher_test( 'برند چسبیده به مدل هم نرمال می‌شود', 'a56' === TCAS_Matcher::normalize_label( 'SamsungA56' ) && '13pro' === TCAS_Matcher::normalize_label( 'iPhone13Pro' ) && 'note14' === TCAS_Matcher::normalize_label( 'RedmiNote14' ) );
 matcher_test( 'Poco و Mi و Redmi بدون تغییر مدل حذف می‌شوند', 'x7' === TCAS_Matcher::normalize_label( 'Poco X7' ) && '11tpro' === TCAS_Matcher::normalize_label( 'Mi 11T Pro' ) && 'note14pro5g' === TCAS_Matcher::normalize_label( 'Redmi Note 14 Pro 5G' ) );

@@ -6,7 +6,8 @@
 	const state = {
 		token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [],
 		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0,
-		smartLocalCount: 0, smartRemoteCount: 0
+		smartLocalCount: 0, smartRemoteCount: 0, smartLocalName: '', smartRemoteName: '',
+		smartLocalReference: '', smartRemoteReference: ''
 	};
 
 	function text(id, value, isError) {
@@ -194,9 +195,9 @@
 		}));
 	}
 
-	function addPairEntry(localCode, remoteCode, focusInput) {
+	function addPairEntry(localCode, remoteCode, focusInput, targetList) {
 		const template = $('tcas-pair-entry-template');
-		const list = $('tcas-pair-entries');
+		const list = targetList || $('tcas-pair-entries');
 		const max = Number(cfg.maxPairs) || 50;
 		if (!template || !list || pairEntries().length >= max) return;
 		const entry = template.content.firstElementChild.cloneNode(true);
@@ -220,6 +221,10 @@
 		state.smartUnmatched = 0;
 		state.smartLocalCount = 0;
 		state.smartRemoteCount = 0;
+		state.smartLocalName = '';
+		state.smartRemoteName = '';
+		state.smartLocalReference = '';
+		state.smartRemoteReference = '';
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = true;
 		text('tcas-smart-status', 'موارد مبهم و بدون تطبیق وصل نمی‌شوند.');
@@ -265,8 +270,20 @@
 		const list = $('tcas-pair-entries');
 		if (!list) return;
 		list.textContent = '';
+		const group = node('details', 'tcas-fresh-product-group');
+		const summary = node('summary', 'tcas-fresh-product-summary');
+		const productNames = node('span', 'tcas-fresh-product-names');
+		productNames.appendChild(node('strong', 'tcas-shop-local-text', 'TisaCase · ' + (state.smartLocalName || state.smartLocalReference || 'محصول')));
+		productNames.appendChild(node('span', 'tcas-pair-link', '↔'));
+		productNames.appendChild(node('strong', 'tcas-shop-remote-text', 'ArioCase · ' + (state.smartRemoteName || state.smartRemoteReference || 'محصول')));
+		summary.appendChild(productNames);
+		summary.appendChild(node('span', 'tcas-fresh-product-count', String(batch.length) + ' Variation'));
+		group.appendChild(summary);
+		const groupEntries = node('div', 'tcas-pair-entries tcas-pair-entries-grouped');
+		group.appendChild(groupEntries);
+		list.appendChild(group);
 		batch.forEach((match) => {
-			const entry = addPairEntry(match.local_code, match.remote_code, false);
+			const entry = addPairEntry(match.local_code, match.remote_code, false, groupEntries);
 			setPairEntryTitles(entry, match.local_label, match.remote_label);
 		});
 		if (pairEntries().length !== batch.length) {
@@ -306,6 +323,10 @@
 			state.smartUnmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
 			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
 			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
+			state.smartLocalName = data.local && data.local.name ? String(data.local.name) : '';
+			state.smartRemoteName = data.remote && data.remote.name ? String(data.remote.name) : '';
+			state.smartLocalReference = data.local && data.local.reference ? String(data.local.reference) : '';
+			state.smartRemoteReference = data.remote && data.remote.reference ? String(data.remote.reference) : '';
 			state.smartOffset = 0;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
@@ -412,7 +433,13 @@
 			progress('tcas-connect', data.processed || 0, data.total || 0);
 			done = Boolean(data.done);
 		}
-		text('tcas-connect-status', 'عملیات جفت‌های انتخابی تمام شد.');
+		text('tcas-connect-status', 'عملیات تمام شد؛ جفت‌های تأییدشده در محصولات متصل گروه‌بندی شدند. ');
+		const status = $('tcas-connect-status');
+		if (status && cfg.mappingsUrl) {
+			const link = node('a', 'tcas-connected-groups-link', 'مشاهدهٔ کارت‌های محصولات متصل');
+			link.href = cfg.mappingsUrl;
+			status.appendChild(link);
+		}
 		busy(button, false);
 		state.running = false;
 	}
@@ -436,6 +463,16 @@
 			busy(button, false);
 			text('tcas-connect-status', error.message, true);
 		}
+	}
+
+	function productDiagnostic(data) {
+		const parts = [data && data.name ? data.name : 'محصول'];
+		if (data && data.product_id) parts.push('ID ' + String(data.product_id));
+		if (data && data.type === 'variable') {
+			const count = Array.isArray(data.variations) ? data.variations.length : 0;
+			parts.push(String(count) + ' Variation');
+		}
+		return parts.join(' · ');
 	}
 
 	function setLinkOutput(reference, shopLabel, productName) {
@@ -469,9 +506,14 @@
 		const data = state.linkProduct;
 		if (!select || !data) return;
 		const variation = '' !== select.value ? state.linkVariations[Number(select.value)] : null;
-		if (!variation || !variation.reference) {
-			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
-			text('tcas-link-status', 'یک Variation با شناسهٔ معتبر انتخاب کنید.', true);
+		if (!variation) {
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
+			text('tcas-link-status', 'برای ادامه، یکی از Variationهای محصول را انتخاب کنید.');
+			return;
+		}
+		if (!variation.reference) {
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
+			text('tcas-link-status', 'این Variation شناسهٔ قابل‌اتصال ندارد؛ یک مورد دیگر را انتخاب کنید.', true);
 			return;
 		}
 		const reference = String(variation.reference);
@@ -515,7 +557,7 @@
 						select.appendChild(option);
 					});
 				}
-				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
 				const usable = state.linkVariations.filter((variation) => Boolean(variation.reference));
 				if (usable.length === 1 && select) {
 					select.value = String(state.linkVariations.indexOf(usable[0]));
@@ -525,7 +567,7 @@
 				}
 			} else {
 				const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
-				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), data.name || '');
+				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), productDiagnostic(data));
 				text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
 			}
 		} catch (error) { text('tcas-link-status', error.message, true); }
