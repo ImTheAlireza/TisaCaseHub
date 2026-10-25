@@ -93,6 +93,11 @@ $encoded_persian_slug = basename( (string) parse_url( $persian_url, PHP_URL_PATH
 $GLOBALS['slugs'][ $encoded_persian_slug ] = 41;
 $encoded_persian = TCAS_Link_Resolver::resolve( $persian_url );
 resolver_test( 'نامک ذخیره‌شده به شکل Encoded هم مستقیم و بدون Decode دوباره Resolve می‌شود', is_array( $encoded_persian ) && 41 === $encoded_persian['product_id'] && array( array( $encoded_persian_slug, 'product' ) ) === $GLOBALS['slug_calls'] );
+reset_resolver_fixtures();
+$GLOBALS['slugs'][ $persian_slug ] = 41;
+$GLOBALS['pretty'][ $persian_url ] = 42; // Rewrite قدیمی به محصول دیگری اشاره می‌کند.
+$conflicting_rewrite = TCAS_Link_Resolver::resolve( $persian_url );
+resolver_test( 'نامک دقیق محصول بر ID اشتباه Rewrite اولویت دارد و محصول دیگری Load نمی‌شود', is_array( $conflicting_rewrite ) && 41 === $conflicting_rewrite['product_id'] && 'TS0100' === $conflicting_rewrite['sku'] );
 $GLOBALS['slug_calls'] = array();
 $wrong_product_path = TCAS_Link_Resolver::resolve( 'https://tisacase.com/category/' . $encoded_persian_slug . '/' );
 resolver_test( 'Fallback نامک فقط مسیر واقعی محصول را می‌پذیرد', is_wp_error( $wrong_product_path ) && 'tcas_local_product_missing' === $wrong_product_path->get_error_code() && 0 === count( $GLOBALS['slug_calls'] ) );

@@ -171,10 +171,11 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			if ( isset( $parts['query'] ) && '' !== (string) $parts['query'] ) {
 				$local_url .= '?' . $parts['query'];
 			}
-			$product_id = absint( url_to_postid( $local_url ) );
-			if ( ! $product_id ) {
-				$product_id = self::local_product_id_from_path( $path );
-			}
+			// url_to_postid ممکن است به‌خاطر Rewrite/کش قدیمی ID محصول دیگری برگرداند؛
+			// اگر مسیر دقیق محصول با نامک خودش پیدا شد، همان منبع معتبرتر است.
+			$rewrite_product_id = absint( url_to_postid( $local_url ) );
+			$path_product_id    = self::local_product_id_from_path( $path );
+			$product_id         = $path_product_id ? $path_product_id : $rewrite_product_id;
 			return $product_id ? self::local_result( $product_id ) : self::error( 'tcas_local_product_missing', 'محصول این لینک در TisaCase پیدا نشد.' );
 		}
 
