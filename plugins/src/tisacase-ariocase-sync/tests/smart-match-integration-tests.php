@@ -44,6 +44,10 @@ class TCAS_Integration_Product {
 	public function get_children( $visible = true ) { $GLOBALS['children_visibility'][] = $visible; return $this->children; }
 }
 function wc_get_product( $id ) { return isset( $GLOBALS['integration_products'][ $id ] ) ? $GLOBALS['integration_products'][ $id ] : false; }
+function get_posts( $args ) {
+	$GLOBALS['integration_post_queries'][] = $args;
+	return isset( $args['post_parent'], $args['post_type'] ) && 'product_variation' === $args['post_type'] && absint( $args['post_parent'] ) === absint( $GLOBALS['local_parent_id'] ) ? $GLOBALS['local_ids'] : array();
+}
 require_once dirname( __DIR__ ) . '/includes/class-tcas-link-resolver.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
@@ -81,6 +85,9 @@ foreach ( $local_labels as $index => $label ) {
 	$local_ids[]  = $variation_id;
 	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, 'SHARED-LOCAL', array( 'Model' => $label ) );
 }
+$GLOBALS['local_ids'] = $local_ids;
+$GLOBALS['children_visibility'] = array();
+$GLOBALS['integration_post_queries'] = array();
 // A56 فقط گزینهٔ Attribute والد است و عمداً Variation واقعی ندارد.
 $GLOBALS['integration_products'][ $local_parent_id ] = new TCAS_Integration_Product(
 	$local_parent_id, 'variable', 'Local parent', 'LOCAL-PARENT',
@@ -102,7 +109,7 @@ TCAS_Api::$product = $raw_remote;
 $_REQUEST['nonce'] = 'valid'; $_POST['local_code'] = $local_reference; $_POST['remote_code'] = $remote_reference;
 try { TCAS_Ajax::match_variations(); $response = null; } catch ( TCAS_JSON_Response $caught ) { $response = $caught; }
 smart_integration_test( 'شکل خام API بدون reference/label در مسیر واقعی AJAX پذیرفته می‌شود', $response && $response->success && ! isset( $raw_remote['variations'][0]['reference'], $raw_remote['variations'][0]['label'] ) );
-smart_integration_test( 'هر ۱۷ Variation محلی و ۳۳ Variation ریموت شمارش می‌شوند', $response && 17 === $response->data['local']['count'] && 33 === $response->data['remote']['count'] && array( false ) === $GLOBALS['children_visibility'], $response ? json_encode( array( $response->data['local'], $response->data['remote'], $GLOBALS['children_visibility'] ), JSON_UNESCAPED_UNICODE ) : 'no response' );
+smart_integration_test( 'هر ۱۷ Variation محلی و ۳۳ Variation ریموت شمارش می‌شوند', $response && 17 === $response->data['local']['count'] && 33 === $response->data['remote']['count'] && 0 === count( $GLOBALS['children_visibility'] ) && 1 === count( $GLOBALS['integration_post_queries'] ), $response ? json_encode( array( $response->data['local'], $response->data['remote'], $GLOBALS['children_visibility'] ), JSON_UNESCAPED_UNICODE ) : 'no response' );
 $matches = $response && $response->success ? $response->data['matches'] : array();
 $expected = array( 'iPhone 13', 'iPhone 13 Pro Max', 'iPhone 16', 'iPhone 16 Pro Max', 'iPhone 17 Pro Max', 'Samsung Galaxy S23 Ultra', 'Samsung Galaxy S24 Ultra', 'Samsung Galaxy S25 Ultra' );
 smart_integration_test( 'هشت معادل یکتای مورد انتظار پیدا می‌شوند', array_column( $matches, 'local_label' ) === $expected, json_encode( array_column( $matches, 'local_label' ), JSON_UNESCAPED_UNICODE ) );

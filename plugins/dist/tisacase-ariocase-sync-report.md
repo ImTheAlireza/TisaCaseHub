@@ -1,10 +1,20 @@
-# گزارش نسخهٔ 1.8.3 — Resolve لینک فارسی TisaCase
+# گزارش نسخهٔ 1.8.4 — Load کامل Variationهای TisaCase
 
 - **تاریخ:** 2026-10-25
 - **ZIP:** `plugins/dist/tisacase-ariocase-sync.zip`
-- **حجم:** 99,634 بایت
-- **SHA-256:** `f11c1268e6c1473eb1afd3de15da891a644601d56f27f863a415a44fca684d19`
+- **حجم:** 100,820 بایت
+- **SHA-256:** `5bdb2e05818e7a7c9d5528c64f392752c27922e5b231514a67d58e060bb4b348`
 - **محتوا:** 32 فایل؛ بدون Importer و بدون Token ارسالی
+
+## خواندن مستقیم همهٔ Variationها در 1.8.4
+
+- مسیر اصلی Load محلی دیگر به Transient فهرست فرزندهای `WC_Product_Variable` یا فیلترهای `woocommerce_variable_children_args` و `woocommerce_get_children` وابسته نیست.
+- Resolver روی همان وردپرس با `get_posts()` و شرط‌های دقیق `post_parent=<parent_id>` و `post_type=product_variation` همهٔ Variationهای والد را می‌خواند؛ `post_status=any` موارد غیرحذف‌شده را پوشش می‌دهد.
+- Query با `posts_per_page=-1` و `nopaging=true` بدون سقف تعداد است. `suppress_filters=true` جلوی محدودشدن فهرست توسط قالب یا افزونهٔ دیگر را می‌گیرد و فیلتر Visibility/Stock هم اعمال نمی‌شود.
+- اگر Query در دسترس نباشد یا نتیجه‌ای برنگرداند، `get_children()` بدون آرگومان Boolean فقط Fallback است؛ فراخوانی Deprecated با `get_children(false)` دیگر در مسیر Production وجود ندارد.
+- رگرسیون با Cache ناقص ۱۲تایی ثابت می‌کند که هر **۷۵ Variation واقعی** با مرجع‌های دقیق `ID:5001` تا `ID:5075` بازگردانده می‌شوند. شناسه‌ها صرفاً Fixture هستند.
+- JavaScript هیچ `slice` یا سقفی روی گزینه‌های Selector ندارد. تعداد واقعی Load در Status نمایش داده می‌شود و فهرست Native قابل اسکرول است.
+- فقط پست‌های واقعی `product_variation` پذیرفته می‌شوند. Attribute optionهای صفحهٔ محصول، حتی اگر تعداد بیشتری داشته باشند، به Variation یا مرجع جعلی تبدیل نمی‌شوند.
 
 ## اصلاح لینک «قاب براش لیلیوم» در 1.8.3
 
@@ -74,7 +84,7 @@
 |---|---:|
 | Normalizer و تطبیق Woo Payload | 22/22 |
 | API، قالب جفت ID و Stock محصول/Variation | 69/69 |
-| Resolver محصول ساده/متغیر، لینک فارسی/Encoded و لینک/SKU/ID والد | 24/24 |
+| Resolver، لینک فارسی و Load مستقیم همهٔ Variationهای Local | 26/26 |
 | Matcher، نرمال‌سازی برند و محافظت یک‌به‌یک | 21/21 |
 | Live Stock و نگهبان خرید | 17/17 |
 | Pairing با SKU/ID و اتصال Variation انتخاب‌شده | 28/28 |
@@ -82,19 +92,19 @@
 | یکپارچهٔ Smart Match با شکل خام API و Fixture ‏17/33 | 7/7 |
 | UI، Selector، شمارش Variation، عنوان و Preview هوشمند | 57/57 |
 | قرارداد Stock-only و نسخهٔ Production | 12/12 |
-| **جمع بررسی‌ها** | **269/269** |
+| **جمع بررسی‌ها** | **271/271** |
 
-- سناریوها شامل لینک ارسالی «قاب براش لیلیوم»، نامک فارسی URL-encoded و Decode‌شده، مسیر غیرمحصول، شکل خام `remote_id`/`variation_attributes`، لینک/SKU/ID والد، `Samsung A56`/`A56`، برند چسبیده، `Poco`/`Mi`/`Redmi`، `S25 Ultra`/`s25ultra`، اعداد فارسی/عربی، SKU مشترک و شمارش Variation واقعی هستند.
-- تست‌های PHP با PHP-WASM 8.3 و Test Double اجرا شدند؛ مجموع PHP برابر 200/200 و همه بدون Warning پاس شدند.
-- 26 فایل PHP با Parser واقعی، 20 کلاس و 277 فراخوانی داخلی بررسی شد؛ خطای Syntax، متغیر تعریف‌نشده یا متد ناموجود دیده نشد.
+- سناریوها شامل Cache ناقص و ۷۵ Variation واقعی، Query مستقیم بدون فیلتر/سقف، لینک ارسالی «قاب براش لیلیوم»، نامک فارسی URL-encoded، مسیر غیرمحصول، شکل خام `remote_id`/`variation_attributes`، لینک/SKU/ID والد، `Samsung A56`/`A56`، برند چسبیده، `Poco`/`Mi`/`Redmi`، SKU مشترک و تفکیک Attribute از Variation هستند.
+- تست‌های PHP با PHP-WASM 8.3 و Test Double اجرا شدند؛ مجموع PHP برابر 202/202 و همه بدون Warning پاس شدند.
+- 26 فایل PHP با Parser واقعی، 20 کلاس و 278 فراخوانی داخلی بررسی شد؛ خطای Syntax، متغیر تعریف‌نشده یا متد ناموجود دیده نشد.
 - JavaScript Syntax و Design-token/UI Audit با خروجی Strict پاس شدند.
 - گیت‌های عمومی بسته‌بندی: 254 سبز، 0 قرمز.
 - هر 32 فایل ZIP بایت‌به‌بایت با سورس یکسان است؛ CRC و سلامت فشرده‌سازی تأیید شد.
-- نسخهٔ 1.8.3 و وجود Fallback نامک فارسی، Resolver/Matcher/AJAX و رگرسیون‌های مربوط داخل ZIP تأیید شدند؛ Credential با الگوی JWT یا فایل Importer وجود ندارد.
+- نسخهٔ 1.8.4 و وجود Query کامل Variation، Fallback نامک فارسی، Resolver/Matcher/AJAX و رگرسیون‌های مربوط داخل ZIP تأیید شدند؛ Credential با الگوی JWT یا فایل Importer وجود ندارد.
 
 ## استفاده
 
-1. ZIP نسخهٔ 1.8.3 را جایگزین نسخهٔ قبلی کنید؛ نگاشت‌ها و تنظیمات حفظ می‌شوند.
+1. ZIP نسخهٔ 1.8.4 را جایگزین نسخهٔ قبلی کنید؛ نگاشت‌ها و تنظیمات حفظ می‌شوند.
 2. در «تطبیق خودکار Variationها»، لینک یا مرجع والد TisaCase و والد متناظر ArioCase را وارد کنید.
 3. «یافتن جفت‌ها» را بزنید و کارت‌های ساخته‌شده و تعداد موارد کنارگذاشته را بررسی کنید.
 4. «بررسی و پیش‌نمایش» و سپس «اتصال انتخاب‌شده‌ها» را اجرا کنید.

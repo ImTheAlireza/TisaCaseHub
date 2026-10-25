@@ -20,6 +20,12 @@ function get_page_by_path( $slug, $output, $post_type ) {
 }
 function url_to_postid( $url ) { $GLOBALS['url_calls'][] = $url; return isset( $GLOBALS['pretty'][ $url ] ) ? $GLOBALS['pretty'][ $url ] : 0; }
 function wc_get_product( $id ) { return isset( $GLOBALS['products'][ $id ] ) ? $GLOBALS['products'][ $id ] : false; }
+function get_posts( $args ) {
+	$GLOBALS['post_calls'][] = $args;
+	$parent = isset( $args['post_parent'] ) ? absint( $args['post_parent'] ) : 0;
+	if ( 'product_variation' !== ( isset( $args['post_type'] ) ? $args['post_type'] : '' ) || ! $parent ) return array();
+	return isset( $GLOBALS['variation_posts'][ $parent ] ) ? $GLOBALS['variation_posts'][ $parent ] : array();
+}
 class TCAS_Test_Product {
 	private $sku; private $name; private $type; private $children; private $attributes;
 	public static $children_args = array();
@@ -50,7 +56,7 @@ function reset_resolver_fixtures() {
 	$GLOBALS['products'] = array( 41 => new TCAS_Test_Product( 'TS0100', 'Local case' ), 42 => new TCAS_Test_Product( '', 'No SKU' ) );
 	$GLOBALS['slugs'] = array( 'local-case' => 41 );
 	$GLOBALS['pretty'] = array( 'https://tisacase.com/product/local-case/' => 41 );
-	$GLOBALS['url_calls'] = array(); $GLOBALS['slug_calls'] = array(); $GLOBALS['sku_ids'] = array( 'TS0100' => array( 41 ) ); TCAS_Api::$calls = array(); TCAS_Api::$responses = array();
+	$GLOBALS['url_calls'] = array(); $GLOBALS['slug_calls'] = array(); $GLOBALS['post_calls'] = array(); $GLOBALS['variation_posts'] = array(); $GLOBALS['sku_ids'] = array( 'TS0100' => array( 41 ) ); TCAS_Api::$calls = array(); TCAS_Api::$responses = array();
 }
 function remote_result( $code = 'AR22' ) { return array( 'code' => $code, 'name' => 'Remote case', 'remote_id' => 222, 'type' => 'simple' ); }
 
@@ -83,12 +89,15 @@ resolver_test( 'Plain Permalink تیساکیس با نامک محصول Resolve 
 
 reset_resolver_fixtures();
 $local_variable_url = 'https://tisacase.com/product/local-variable/';
-$GLOBALS['products'][43] = new TCAS_Test_Product( 'TS-PARENT', 'Local variable', 'variable', array( 44, 45 ) );
+$GLOBALS['products'][43] = new TCAS_Test_Product( 'TS-PARENT', 'Local variable', 'variable', array( 44 ) );
 $GLOBALS['products'][44] = new TCAS_Test_Product( 'TS-RED', 'Local variable - Red', 'variation', array(), array( 'attribute_color' => 'قرمز' ) );
 $GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', 'variation', array(), array( 'attribute_color' => 'آبی' ) );
+$GLOBALS['variation_posts'][43] = array( 44, 45 );
 $GLOBALS['pretty'][ $local_variable_url ] = 43;
 $local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
-resolver_test( 'لینک والد تیساکیس، همهٔ Variationهای واقعی را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] && array( false ) === TCAS_Test_Product::$children_args );
+resolver_test( 'لینک والد تیساکیس، همهٔ Variationهای واقعی را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] && 0 === count( TCAS_Test_Product::$children_args ) );
+$children_query = $GLOBALS['post_calls'] ? $GLOBALS['post_calls'][0] : array();
+resolver_test( 'فهرست Local با Query مستقیم، بدون فیلتر و بدون سقف از همان والد خوانده می‌شود', 43 === ( isset( $children_query['post_parent'] ) ? $children_query['post_parent'] : 0 ) && 'product_variation' === ( isset( $children_query['post_type'] ) ? $children_query['post_type'] : '' ) && 'any' === ( isset( $children_query['post_status'] ) ? $children_query['post_status'] : '' ) && -1 === ( isset( $children_query['posts_per_page'] ) ? $children_query['posts_per_page'] : 0 ) && ! empty( $children_query['nopaging'] ) && ! empty( $children_query['suppress_filters'] ) );
 $local_by_id = TCAS_Link_Resolver::resolve_local_reference( 'ID:43' );
 resolver_test( 'ID والد Local برای تطبیق هوشمند Resolve می‌شود', is_array( $local_by_id ) && 'variable' === $local_by_id['type'] && 2 === count( $local_by_id['variations'] ) );
 $GLOBALS['sku_ids']['TS-PARENT'] = array( 43 );
@@ -97,6 +106,16 @@ resolver_test( 'SKU والد Local برای تطبیق هوشمند Resolve می
 $GLOBALS['sku_ids']['DUP-PARENT'] = array( 43, 43 );
 $duplicate_parent = TCAS_Link_Resolver::resolve_local_reference( 'DUP-PARENT' );
 resolver_test( 'SKU مشترک والد برای تطبیق خودکار رد می‌شود', is_wp_error( $duplicate_parent ) && 'tcas_duplicate_sku' === $duplicate_parent->get_error_code() );
+
+reset_resolver_fixtures();
+$all_variation_ids = range( 5001, 5075 );
+$GLOBALS['products'][49] = new TCAS_Test_Product( 'ALL-PARENT', 'All variations', 'variable', array_slice( $all_variation_ids, 0, 12 ) );
+foreach ( $all_variation_ids as $index => $variation_id ) {
+	$GLOBALS['products'][ $variation_id ] = new TCAS_Test_Product( 'SHARED-LOCAL', 'Variation ' . ( $index + 1 ), 'variation', array(), array( 'attribute_model' => 'Model ' . ( $index + 1 ) ) );
+}
+$GLOBALS['variation_posts'][49] = $all_variation_ids;
+$all_local = TCAS_Link_Resolver::resolve_local_reference( 'ID:49' );
+resolver_test( 'حتی با Cache ناقص، هر ۷۵ Variation واقعی والد بدون محدودیت Load می‌شوند', is_array( $all_local ) && 75 === count( $all_local['variations'] ) && 'ID:5001' === $all_local['variations'][0]['reference'] && 'ID:5075' === $all_local['variations'][74]['reference'] && 0 === count( TCAS_Test_Product::$children_args ) );
 
 reset_resolver_fixtures();
 $local_duplicate_url = 'https://tisacase.com/product/local-duplicate-skus/';
