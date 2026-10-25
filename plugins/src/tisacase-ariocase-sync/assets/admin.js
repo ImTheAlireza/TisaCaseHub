@@ -213,6 +213,8 @@
 	}
 
 	function resetSmart() {
+		const results = $('tcas-smart-results');
+		if (results) results.textContent = '';
 		state.smartMatches = [];
 		state.smartOffset = 0;
 		state.smartSignature = '';
@@ -235,6 +237,63 @@
 		const local = Number(state.smartLocalCount) || 0;
 		const remote = Number(state.smartRemoteCount) || 0;
 		return local || remote ? 'TisaCase: ' + String(local) + ' · ArioCase: ' + String(remote) + ' — ' : '';
+	}
+
+	function renderSmartGroups(data) {
+		const host = $('tcas-smart-results');
+		if (!host) return;
+		host.textContent = '';
+		const matches = Array.isArray(data.matches) ? data.matches : [];
+		const ambiguous = Array.isArray(data.ambiguous) ? data.ambiguous : [];
+		const unmatched = Array.isArray(data.unmatched) ? data.unmatched : [];
+
+		function buildGroup(shop, product, reference, total) {
+			const local = 'tisacase' === shop;
+			const groupMatches = matches.map((match) => local ? {
+				index: Number(match.local_index) || 0, label: match.local_label, reference: match.local_code,
+				status: 'matched', otherLabel: match.remote_label, otherReference: match.remote_code, score: match.score
+			} : {
+				index: Number(match.remote_index) || 0, label: match.remote_label, reference: match.remote_code,
+				status: 'matched', otherLabel: match.local_label, otherReference: match.local_code, score: match.score
+			});
+			const extras = ambiguous.concat(unmatched).filter((item) => item.shop === shop).map((item) => ({
+				index: Number(item.index) || 0, label: item.label || 'Variation', reference: item.reference || '',
+				status: ambiguous.includes(item) ? 'ambiguous' : 'unmatched'
+			}));
+			const items = groupMatches.concat(extras).sort((a, b) => a.index - b.index);
+			const matchedCount = groupMatches.length;
+			const details = node('details', 'tcas-smart-group');
+			const summary = node('summary', 'tcas-smart-group-summary');
+			const heading = node('span', 'tcas-smart-group-heading');
+			heading.appendChild(node('strong', '', (local ? 'TisaCase · ' : 'ArioCase · ') + (product && product.name ? product.name : reference || 'محصول')));
+			heading.appendChild(node('small', '', (local ? 'TisaCase' : 'ArioCase') + ' · ' + String(total || items.length) + ' Variation'));
+			summary.appendChild(heading);
+			summary.appendChild(node('span', 'tcas-smart-group-count', matchedCount + ' جفت'));
+			details.appendChild(summary);
+			const list = node('div', 'tcas-smart-variant-list');
+			items.forEach((item) => {
+				const statusLabel = item.status === 'matched' ? 'جفت یکتا' : (item.status === 'ambiguous' ? 'مبهم' : 'بدون جفت');
+				const card = node('article', 'tcas-smart-variant is-' + item.status);
+				const top = node('div', 'tcas-smart-variant-top');
+				top.appendChild(node('strong', 'tcas-smart-variant-name', item.label || 'Variation'));
+				top.appendChild(node('span', 'tcas-smart-variant-status', statusLabel));
+				card.appendChild(top);
+				if (item.reference) card.appendChild(node('code', 'tcas-smart-variant-reference', item.reference));
+				if (item.otherLabel || item.otherReference) {
+					const other = node('p', 'tcas-smart-variant-other', '↔ ' + (item.otherLabel || 'Variation') + (item.otherReference ? ' · ' + item.otherReference : ''));
+					card.appendChild(other);
+					const confidence = item.score >= 100 ? 'SKU دقیق' : (item.score >= 95 ? 'نام دقیق نرمال‌شده' : 'توکن‌های هم‌معنی');
+					card.appendChild(node('small', 'tcas-smart-variant-confidence', confidence));
+				}
+				list.appendChild(card);
+			});
+			details.appendChild(list);
+			host.appendChild(details);
+		}
+
+		buildGroup('tisacase', data.local || {}, data.local && data.local.reference, data.local && data.local.count);
+		buildGroup('ariocase', data.remote || {}, data.remote && data.remote.reference, data.remote && data.remote.count);
+		host.hidden = !matches.length && !ambiguous.length && !unmatched.length;
 	}
 
 	function fillSmartBatch() {
@@ -307,6 +366,7 @@
 			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
 			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
 			state.smartOffset = 0;
+			renderSmartGroups(data);
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
 				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);

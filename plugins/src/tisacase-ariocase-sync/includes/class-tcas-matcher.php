@@ -23,7 +23,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				'٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
 				'ك' => 'ک', 'ي' => 'ی', 'ى' => 'ی', 'أ' => 'ا', 'إ' => 'ا', 'آ' => 'ا',
 			) );
-			$value = str_replace( array( 'نقره‌ای', 'قهوه‌ای', 'سرمه‌ای', "‌", 'ـ' ), array( 'silver', 'brown', 'navy', ' ', '' ), $value );
+			$value = (string) preg_replace( '/[\x{064B}-\x{065F}\x{0670}]/u', '', $value );
+			$value = str_replace( array( 'سرمه ای', 'سرمه‌ی', 'سرمه‌ای', 'نقره ای', 'نقره‌ی', 'نقره‌ای', 'قهوه ای', 'قهوه‌ی', 'قهوه‌ای', 'ابی روشن', 'ابی تیره', 'نسل پنجم', 'نسل چهارم', 'فیروزه ای', 'فیروزه‌ای', 'شفاف', "‌", 'ـ' ), array( 'navy', 'navy', 'navy', 'silver', 'silver', 'silver', 'brown', 'brown', 'brown', 'lightblue', 'navy', '5g', '4g', 'turquoise', 'turquoise', 'clear', ' ', '' ), $value );
 			return function_exists( 'mb_strtolower' ) ? mb_strtolower( $value, 'UTF-8' ) : strtolower( $value );
 		}
 
@@ -44,10 +45,14 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				'phone' => true, 'mobile' => true,
 				'smartphone' => true, 'product' => true, 'model' => true, 'color' => true,
 				'colour' => true, 'size' => true, 'storage' => true, 'memory' => true,
+				'version' => true, 'edition' => true, 'variant' => true, 'lte' => true, 'gsm' => true,
+				'case' => true, 'cover' => true, 'for' => true, 'compatible' => true, 'with' => true,
 				'سامسونگ' => true, 'گلکسی' => true, 'اپل' => true, 'ایفون' => true,
 				'شیایومی' => true, 'ردمی' => true, 'پوکو' => true, 'گوشی' => true, 'موبایل' => true,
 				'محصول' => true, 'مدل' => true, 'رنگ' => true, 'سایز' => true,
 				'اندازه' => true, 'حافظه' => true, 'ظرفیت' => true, 'سری' => true,
+				'نسخه' => true, 'ورژن' => true, 'مدل' => true, 'تنوع' => true,
+				'قاب' => true, 'مناسب' => true, 'سازگار' => true, 'با' => true,
 			);
 			$aliases = array(
 				'اولترا' => 'ultra', 'پرو' => 'pro', 'مکس' => 'max', 'پلاس' => 'plus',
@@ -63,6 +68,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				$token = trim( (string) $token );
 				$token = (string) preg_replace( '/^(?:samsung|apple|iphone|xiaomi|redmi|pocophone|poco)(?=[a-z]*\d)/u', '', $token );
 				$token = (string) preg_replace( '/^mi(?=\d)/u', '', $token );
+				// Keep phone-family model names stable when one catalog pads the number (A04s/A4s).
+				$token = (string) preg_replace( '/^([a-z]+)0+([0-9]+[a-z]*)$/u', '$1$2', $token );
 				if ( '' === $token || isset( $stopwords[ $token ] ) ) {
 					continue;
 				}
@@ -222,6 +229,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 					'local_label'  => self::label( $local, '#' . ( $local_id + 1 ) ),
 					'remote_label' => self::label( $remote, '#' . ( $remote_id + 1 ) ),
 					'score'        => (int) $edge['score'],
+					'local_index'  => (int) $local_id,
+					'remote_index' => (int) $remote_id,
 					'_local_index' => (int) $local_id,
 				);
 				$matched_local[ $local_id ]   = true;
@@ -241,7 +250,12 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_local[ $index ] ) ) {
 					continue;
 				}
-				$item = array( 'shop' => 'tisacase', 'label' => self::label( $variation, '#' . ( $index + 1 ) ) );
+				$item = array(
+					'shop'      => 'tisacase',
+					'index'     => (int) $index,
+					'reference' => isset( $variation['reference'] ) ? (string) $variation['reference'] : '',
+					'label'     => self::label( $variation, '#' . ( $index + 1 ) ),
+				);
 				if ( isset( $duplicate_local[ $index ] ) || isset( $possible_local[ $index ] ) ) {
 					$ambiguous[] = $item;
 				} else {
@@ -252,7 +266,12 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_remote[ $index ] ) ) {
 					continue;
 				}
-				$item = array( 'shop' => 'ariocase', 'label' => self::label( $variation, '#' . ( $index + 1 ) ) );
+				$item = array(
+					'shop'      => 'ariocase',
+					'index'     => (int) $index,
+					'reference' => isset( $variation['reference'] ) ? (string) $variation['reference'] : '',
+					'label'     => self::label( $variation, '#' . ( $index + 1 ) ),
+				);
 				if ( isset( $duplicate_remote[ $index ] ) || isset( $possible_remote[ $index ] ) ) {
 					$ambiguous[] = $item;
 				} else {

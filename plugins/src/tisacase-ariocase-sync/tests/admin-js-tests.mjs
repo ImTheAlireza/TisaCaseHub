@@ -14,7 +14,7 @@ function entryMarkup() {
 function makeDom() {
 	const dom = new JSDOM(`<!doctype html><html><body>
 		<div class="tcas-converter-flow"><label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button></span></label><div id="tcas-link-result" class="tcas-converter-result" hidden><div class="tcas-converter-result-meta"><span id="tcas-link-shop"></span><small id="tcas-link-product"></small></div><label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><select id="tcas-link-variation"></select></label><span class="tcas-converter-reference"><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button></span></div><span id="tcas-link-status"></span></div>
-		<input id="tcas-smart-local"><input id="tcas-smart-remote"><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span>
+		<input id="tcas-smart-local"><input id="tcas-smart-remote"><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span><div id="tcas-smart-results" hidden></div>
 		<div id="tcas-pair-entries">${entryMarkup()}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template><button id="tcas-pair-add">افزودن</button>
 		<button id="tcas-preview-start">بررسی</button><span id="tcas-preview-status"></span>
 		<div id="tcas-preview-progress" hidden><progress max="100" value="0"><span></span></div>
@@ -190,11 +190,11 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 		const action = body.get('action');
 		if (action === 'tcas_match_variations') return reply({
 			matches: [
-				{ local_code: 'ID:51', remote_code: 'ID:70/71', local_label: 'S25 Ultra', remote_label: 's25ultra', score: 95 },
-				{ local_code: 'ID:52', remote_code: 'AR-BLUE', local_label: 'Blue', remote_label: 'Blue', score: 100 },
+				{ local_code: 'ID:51', remote_code: 'ID:70/71', local_label: 'S25 Ultra', remote_label: 's25ultra', score: 95, local_index: 0, remote_index: 0 },
+				{ local_code: 'ID:52', remote_code: 'AR-BLUE', local_label: 'Blue', remote_label: 'Blue', score: 100, local_index: 1, remote_index: 1 },
 			],
-			ambiguous: [{ shop: 'tisacase', label: 'Duplicate' }], unmatched: [{ shop: 'ariocase', label: 'S24' }],
-			local: { name: 'Local', reference: 'ID:50', count: 3 }, remote: { name: 'Remote', reference: 'ID:70', count: 3 },
+			ambiguous: [{ shop: 'tisacase', reference: 'ID:53', label: 'Duplicate', index: 2 }], unmatched: [{ shop: 'ariocase', reference: 'ID:70/73', label: 'S24', index: 2 }],
+			local: { name: 'Local product', reference: 'ID:50', count: 3 }, remote: { name: 'Remote product', reference: 'ID:70', count: 3 },
 		});
 		if (action === 'tcas_preview_start') return reply({ token: 'c'.repeat(32), total: 2 });
 		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2 });
@@ -210,6 +210,9 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	ok('تطبیق فقط یک AJAX می‌گیرد و خودکار Preview/Connect نمی‌کند', calls.length === 1 && calls[0].get('action') === 'tcas_match_variations');
 	ok('تعداد موارد مبهم و بدون تطبیق در Status دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('2 مورد'));
 	ok('تعداد Variationهای Load شدهٔ هر دو فروشگاه دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('TisaCase: 3') && window.document.getElementById('tcas-smart-status').textContent.includes('ArioCase: 3'));
+	const groups = window.document.querySelectorAll('#tcas-smart-results details.tcas-smart-group');
+	ok('Variationها زیر کارت آکارئونی محصول والد همان فروشگاه گروه‌بندی می‌شوند', groups.length === 2 && groups[0].querySelector('summary').textContent.includes('Local product') && groups[1].querySelector('summary').textContent.includes('Remote product'));
+	ok('با بازکردن کارت محصول، کارت‌های Variation و جفت متناظر دیده می‌شوند', groups[0].querySelectorAll('.tcas-smart-variant').length === 3 && groups[0].querySelector('.tcas-smart-variant-other').textContent.includes('s25ultra') && groups[1].querySelectorAll('.tcas-smart-variant').length === 3);
 	window.document.getElementById('tcas-preview-start').click();
 	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent.includes('کامل'));
 	const previewStart = calls.find((body) => body.get('action') === 'tcas_preview_start');

@@ -23,6 +23,7 @@ $mappings = TCAS_Mapping::all( 6 );
 		<div class="tcas-smart-actions"><button type="button" id="tcas-smart-match" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button><button type="button" id="tcas-smart-next" class="button" hidden>دسته بعد</button></div>
 	</div>
 	<div id="tcas-smart-status" class="tcas-status" role="status" aria-live="polite">موارد مبهم و بدون تطبیق وصل نمی‌شوند.</div>
+	<div id="tcas-smart-results" class="tcas-smart-results" hidden></div>
 </section>
 
 <section class="tcas-card">
