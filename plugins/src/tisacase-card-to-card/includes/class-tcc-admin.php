@@ -38,12 +38,29 @@ class TCC_Admin {
     private static function check( $s, $key, $label, $hint = '' ) {
         echo '<label class="tcc-switch"><input type="checkbox" name="settings[' . esc_attr( $key ) . ']" value="yes" ' . checked( $s[$key], 'yes', false ) . '><span class="tcc-switch-track" aria-hidden="true"></span><span>' . esc_html( $label ) . ( $hint ? '<small>' . esc_html( $hint ) . '</small>' : '' ) . '</span></label>';
     }
+    private static function bank_field( $card, $prefix ) {
+        $current = isset( $card['bank'] ) && is_string( $card['bank'] ) ? $card['bank'] : '';
+        $selected_key = TCC_Helpers::bank_key( $current ); $logo = TCC_Helpers::bank_logo( $current );
+        echo '<label class="tcc-field tcc-bank-field"><span>بانک</span><span class="tcc-bank-picker"><span class="tcc-bank-preview" aria-hidden="true"><img data-tcc-bank-logo alt="" width="24" height="24"' . ( $logo ? ' src="' . esc_url( TCC_URL . 'assets/banks/' . $logo ) . '"' : ' hidden' ) . '><span data-tcc-bank-fallback' . ( $logo ? ' hidden' : '' ) . '>' . self::icon( 'card' ) . '</span></span><select data-card-field="bank" name="' . esc_attr( $prefix . '[bank]' ) . '"><option value=""' . selected( $current, '', false ) . '>انتخاب بانک</option>';
+        if ( '' !== $current && '' === $selected_key ) { echo '<option value="' . esc_attr( $current ) . '" selected>' . esc_html( $current . ' (نام فعلی)' ) . '</option>'; }
+        foreach ( array( 'banks' => 'بانک‌ها و مؤسسات', 'digital' => 'برندهای بانکی', 'legacy' => 'نام‌های قدیمی' ) as $group => $label ) {
+            echo '<optgroup label="' . esc_attr( $label ) . '">';
+            foreach ( TCC_Helpers::bank_catalog() as $key => $bank ) {
+                if ( $group !== $bank['group'] ) { continue; }
+                $value = $selected_key === $key ? $current : $bank['name'];
+                echo '<option value="' . esc_attr( $value ) . '" data-bank-logo="' . esc_url( TCC_URL . 'assets/banks/' . $key . '.svg' ) . '"' . selected( $selected_key, $key, false ) . '>' . esc_html( $bank['name'] ) . '</option>';
+            }
+            echo '</optgroup>';
+        }
+        echo '</select></span></label>';
+    }
     public static function card_row( $card, $index ) {
         $prefix = 'settings[cards][' . $index . ']';
         $number = isset( $card['number'] ) ? $card['number'] : '';
         $title = ! empty( $card['label'] ) ? $card['label'] : ( ! empty( $card['bank'] ) ? $card['bank'] : 'کارت جدید' );
         echo '<details class="tcc-card-row"' . ( ! $number ? ' open' : '' ) . '><summary><span class="tcc-card-symbol">' . self::icon( 'card' ) . '</span><strong class="tcc-card-title">' . esc_html( $title ) . '</strong><bdi class="tcc-card-last4">' . ( $number ? '•••• ' . esc_html( substr( $number, -4 ) ) : '—' ) . '</bdi><span class="tcc-card-state tcc-badge' . ( ! empty( $card['active'] ) ? ' tcc-approved' : '' ) . '">' . ( ! empty( $card['active'] ) ? 'فعال' : 'غیرفعال' ) . '</span>' . self::icon( 'chevron' ) . '</summary><div class="tcc-card-editor"><div class="tcc-fields">';
         foreach ( array( 'number' => 'شماره کارت', 'holder' => 'صاحب کارت', 'bank' => 'بانک', 'label' => 'عنوان داخلی' ) as $key => $label ) {
+            if ( 'bank' === $key ) { self::bank_field( $card, $prefix ); continue; }
             echo '<label class="tcc-field"><span>' . esc_html( $label ) . '</span><input data-card-field="' . esc_attr( $key ) . '" name="' . esc_attr( $prefix . '[' . $key . ']' ) . '" value="' . esc_attr( isset( $card[$key] ) ? $card[$key] : '' ) . '"' . ( 'number' === $key ? ' dir="ltr" inputmode="numeric" maxlength="24" autocomplete="off" placeholder="0000 0000 0000 0000"' : '' ) . '></label>';
         }
         echo '</div><div class="tcc-card-footer"><label class="tcc-switch"><input data-card-field="active" type="checkbox" name="' . esc_attr( $prefix . '[active]' ) . '" value="1" ' . checked( ! empty( $card['active'] ), true, false ) . '><span class="tcc-switch-track" aria-hidden="true"></span><span>فعال</span></label><label class="tcc-check tcc-remove"><input data-card-field="remove" type="checkbox" name="' . esc_attr( $prefix . '[remove]' ) . '" value="1"> حذف کارت</label></div></div></details>';

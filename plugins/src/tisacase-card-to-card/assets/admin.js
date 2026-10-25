@@ -94,6 +94,16 @@
         };
         const updateCard = row => {
             const value = key => row.querySelector('[data-card-field="' + key + '"]');
+            const bank = value('bank');
+            const logo = row.querySelector('[data-tcc-bank-logo]');
+            const fallback = row.querySelector('[data-tcc-bank-fallback]');
+            const src = bank.selectedOptions?.[0]?.dataset.bankLogo || '';
+            if (logo && fallback) {
+                if (src && logo.getAttribute('src') !== src) logo.setAttribute('src', src);
+                if (!src) logo.removeAttribute('src');
+                logo.hidden = !src; fallback.hidden = Boolean(src);
+                logo.onerror = () => { logo.hidden = true; fallback.hidden = false; };
+            }
             const removed = value('remove').checked;
             const active = value('active').checked;
             row.classList.toggle('is-removing', removed);
@@ -107,7 +117,7 @@
             const option = settings.querySelector('[name="settings[default_card]"]').options[row.dataset.optionIndex];
             if (option) option.textContent = row.querySelector('.tcc-card-title').textContent + ' · ' + number.slice(-4);
         };
-        Array.from(cards.children).forEach((row, index) => { row.dataset.optionIndex = String(index + 1); });
+        Array.from(cards.children).forEach((row, index) => { row.dataset.optionIndex = String(index + 1); updateCard(row); });
         ['input', 'change'].forEach(type => cards.addEventListener(type, event => {
             const row = event.target.closest('.tcc-card-row'); if (row) updateCard(row);
         }));
@@ -117,7 +127,7 @@
             const wrapper = document.createElement('div');
             wrapper.innerHTML = template.innerHTML.replaceAll('__INDEX__', String(cards.children.length));
             const row = wrapper.firstElementChild;
-            cards.append(row); updateCount(); markSettingsDirty();
+            cards.append(row); updateCard(row); updateCount(); markSettingsDirty();
             row.querySelector('[data-card-field=number]').focus();
         });
         updateCount();

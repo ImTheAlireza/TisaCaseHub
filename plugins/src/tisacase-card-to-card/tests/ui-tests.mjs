@@ -145,6 +145,14 @@ hours.dispatchEvent(new sw.Event('input', {bubbles: true}));
 test('Settings show a concise accessible unsaved-changes indicator', () => assert.match(sf.querySelector('[role=status]').textContent, /ذخیره‌نشده/));
 tabs[0].click();
 const row = sf.querySelector('.tcc-card-row'); const bank = row.querySelector('[data-card-field=bank]'), label = row.querySelector('[data-card-field=label]');
+test('Bank name is a native dropdown with 37 catalog choices, not free text', () => { assert.equal(bank.tagName, 'SELECT'); assert.equal(bank.querySelectorAll('option[data-bank-logo]').length, 37); });
+test('Existing unknown bank remains an explicit selected legacy option', () => { assert.equal(bank.value, 'بانک آزمایشی'); assert.match(bank.selectedOptions[0].textContent, /نام فعلی/); });
+bank.value = 'گردشگری'; bank.dispatchEvent(new sw.Event('change', {bubbles: true}));
+test('Changing bank previews only its local logo and marks settings unsaved', () => { assert.match(row.querySelector('[data-tcc-bank-logo]').src, /assets\/banks\/gardeshgari\.svg$/); assert.equal(row.querySelector('[data-tcc-bank-logo]').hidden, false); assert.match(sf.querySelector('[role=status]').textContent, /ذخیره‌نشده/); });
+row.querySelector('[data-tcc-bank-logo]').dispatchEvent(new sw.Event('error'));
+test('Unavailable bank preview falls back to the generic icon', () => { assert.equal(row.querySelector('[data-tcc-bank-logo]').hidden, true); assert.equal(row.querySelector('[data-tcc-bank-fallback]').hidden, false); });
+bank.value = ''; bank.dispatchEvent(new sw.Event('change', {bubbles: true}));
+test('Clearing the optional bank removes stale logo without a blank-src request', () => { assert.equal(row.querySelector('[data-tcc-bank-logo]').hasAttribute('src'), false); assert.equal(row.querySelector('[data-tcc-bank-fallback]').hidden, false); });
 label.value = '<img src=x onerror=alert(1)>'; label.dispatchEvent(new sw.Event('input', {bubbles: true}));
 test('Live card summary uses text, never HTML from user input', () => { assert.equal(row.querySelector('.tcc-card-title').textContent, label.value); assert.equal(row.querySelector('.tcc-card-title img'), null); });
 row.querySelector('[data-card-field=number]').value = '۶۰۳۷ ۹۹۰۰ ۰۰۰۰ ۸۷۶۵'; row.querySelector('[data-card-field=number]').dispatchEvent(new sw.Event('input', {bubbles: true}));
@@ -156,6 +164,7 @@ const add = sf.querySelector('#tcc-add-card'); add.click();
 test('New card opens with unique field indexes and focuses its number', () => {
     const rows = sf.querySelectorAll('#tcc-cards > .tcc-card-row'); assert.equal(rows.length, 3); assert.equal(rows[2].open, true);
     assert.equal(sd.activeElement.name, 'settings[cards][2][number]');
+    assert.equal(rows[2].querySelector('[data-card-field=bank]').tagName, 'SELECT'); assert.equal(rows[2].querySelectorAll('option[data-bank-logo]').length, 37);
 });
 for (let i = 0; i < 25; i++) add.click();
 test('Add-card UI enforces twenty-row limit with no index collisions', () => {

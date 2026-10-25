@@ -175,3 +175,11 @@ body.woocommerce_page_tisacase-card-to-card { background: var(--tisa-bg, #f4f2ec
 @media (max-width: 782px) { .tcc-actions .tcc-review-choice { flex: 1 1 45%; } .tcc-actions .tcc-review-choice > span { width: 100%; min-height: 44px; } }
 
 .tcc-order-box .tcc-nojs-clear { min-height: 44px; width: fit-content; }
+
+/* Native bank picker; keep the administration palette green. */
+.tcc-settings .tcc-bank-picker { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 8px; align-items: center; min-width: 0; }
+.tcc-settings .tcc-bank-preview { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #c9dcd7; border-radius: 10px; background: var(--tcc-soft); color: var(--tcc-brand); }
+.tcc-settings .tcc-bank-preview img { display: block; width: 24px; height: 24px; max-width: 24px; object-fit: contain; }
+@media (max-width: 600px) {
+    .tcc-settings .tcc-bank-field, .tcc-settings .tcc-card-editor .tcc-fields > .tcc-field:last-child { grid-column: 1 / -1; }
+}

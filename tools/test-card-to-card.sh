@@ -23,6 +23,8 @@ run_php_test "$src/tests/run-tests.php"
 run_php_test "$src/tests/sql-tests.php"
 run_php_test "$src/tests/permissions-tests.php"
 run_php_test "$src/tests/presentation-tests.php"
+run_php_test "$src/tests/bank-tests.php"
+run_php_test "$src/tests/asset-tests.php"
 for mode in auto unsafe symlink missing; do run_php_test "$src/tests/storage-tests.php" "$mode"; done
 node "$src/tests/ui-tests.mjs"
 node tools/build-card-to-card-checklist.mjs --check
