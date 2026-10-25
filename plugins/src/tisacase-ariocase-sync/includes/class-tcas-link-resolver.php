@@ -144,7 +144,12 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 					continue;
 				}
 				$post = get_page_by_path( $candidate, OBJECT, 'product' );
-				if ( is_object( $post ) && ! empty( $post->ID ) ) {
+				if ( ! is_object( $post ) || empty( $post->ID ) || empty( $post->post_name ) ) {
+					continue;
+				}
+				// WordPress can return a stale/colliding path lookup. Never trust the ID
+				// unless the returned post_name is exactly the requested URL slug.
+				if ( rawurldecode( (string) $post->post_name ) === rawurldecode( $candidate ) ) {
 					return absint( $post->ID );
 				}
 			}

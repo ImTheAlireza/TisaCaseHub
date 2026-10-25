@@ -16,7 +16,9 @@ function site_url( $path = '' ) { return 'https://tisacase.com' . $path; }
 function get_page_by_path( $slug, $output, $post_type ) {
 	$GLOBALS['slug_calls'][] = array( $slug, $post_type );
 	if ( 'product' !== $post_type || empty( $GLOBALS['slugs'][ $slug ] ) ) return null;
-	return (object) array( 'ID' => $GLOBALS['slugs'][ $slug ] );
+	$id = absint( $GLOBALS['slugs'][ $slug ] );
+	$post_name = isset( $GLOBALS['slug_names'][ $id ] ) ? $GLOBALS['slug_names'][ $id ] : $slug;
+	return (object) array( 'ID' => $id, 'post_name' => $post_name );
 }
 function url_to_postid( $url ) { $GLOBALS['url_calls'][] = $url; return isset( $GLOBALS['pretty'][ $url ] ) ? $GLOBALS['pretty'][ $url ] : 0; }
 function wc_get_product( $id ) { return isset( $GLOBALS['products'][ $id ] ) ? $GLOBALS['products'][ $id ] : false; }
@@ -93,6 +95,15 @@ $encoded_persian_slug = basename( (string) parse_url( $persian_url, PHP_URL_PATH
 $GLOBALS['slugs'][ $encoded_persian_slug ] = 41;
 $encoded_persian = TCAS_Link_Resolver::resolve( $persian_url );
 resolver_test( 'نامک ذخیره‌شده به شکل Encoded هم مستقیم و بدون Decode دوباره Resolve می‌شود', is_array( $encoded_persian ) && 41 === $encoded_persian['product_id'] && array( array( $encoded_persian_slug, 'product' ) ) === $GLOBALS['slug_calls'] );
+
+reset_resolver_fixtures();
+$GLOBALS['slugs'][ $encoded_persian_slug ] = 42; // شبیه پاسخ اشتباه get_page_by_path برای slug رمزگذاری‌شده.
+$GLOBALS['slugs'][ $persian_slug ] = 41;
+$GLOBALS['slug_names'][42] = 'teddy-baby';
+$GLOBALS['slug_names'][41] = $persian_slug;
+$GLOBALS['pretty'][ $persian_url ] = 0;
+$colliding_slug = TCAS_Link_Resolver::resolve( $persian_url );
+resolver_test( 'پاسخ اشتباه lookup رمزگذاری‌شده با post_name اعتبارسنجی و رد می‌شود', is_array( $colliding_slug ) && 41 === $colliding_slug['product_id'] && 'TS0100' === $colliding_slug['sku'] );
 reset_resolver_fixtures();
 $GLOBALS['slugs'][ $persian_slug ] = 41;
 $GLOBALS['pretty'][ $persian_url ] = 42; // Rewrite قدیمی به محصول دیگری اشاره می‌کند.
