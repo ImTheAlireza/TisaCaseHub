@@ -60,6 +60,22 @@ resolver_test( 'لینک Pretty تیساکیس با www به SKU محلی تبد
 resolver_test( 'Rewrite محلی با Host canonical و بدون Fetch خارجی اجرا می‌شود', array( 'https://tisacase.com/product/local-case/' ) === $GLOBALS['url_calls'] && 0 === count( TCAS_Api::$calls ) );
 
 reset_resolver_fixtures();
+$persian_url = 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8-%d8%a8%d8%b1%d8%a7%d8%b4-%d9%84%db%8c%d9%84%db%8c%d9%88%d9%85/';
+$persian_slug = 'قاب-براش-لیلیوم';
+$GLOBALS['slugs'][ $persian_slug ] = 41;
+$persian = TCAS_Link_Resolver::resolve( $persian_url );
+resolver_test( 'نامک فارسی URL-encoded هنگام شکست Rewrite با نامک دقیق محصول Resolve می‌شود', is_array( $persian ) && 'TS0100' === $persian['sku'] && 41 === $persian['product_id'] && array( $persian_url ) === $GLOBALS['url_calls'] && array( $persian_slug, 'product' ) === end( $GLOBALS['slug_calls'] ) && 0 === count( TCAS_Api::$calls ) );
+
+reset_resolver_fixtures();
+$encoded_persian_slug = basename( (string) parse_url( $persian_url, PHP_URL_PATH ) );
+$GLOBALS['slugs'][ $encoded_persian_slug ] = 41;
+$encoded_persian = TCAS_Link_Resolver::resolve( $persian_url );
+resolver_test( 'نامک ذخیره‌شده به شکل Encoded هم مستقیم و بدون Decode دوباره Resolve می‌شود', is_array( $encoded_persian ) && 41 === $encoded_persian['product_id'] && array( array( $encoded_persian_slug, 'product' ) ) === $GLOBALS['slug_calls'] );
+$GLOBALS['slug_calls'] = array();
+$wrong_product_path = TCAS_Link_Resolver::resolve( 'https://tisacase.com/category/' . $encoded_persian_slug . '/' );
+resolver_test( 'Fallback نامک فقط مسیر واقعی محصول را می‌پذیرد', is_wp_error( $wrong_product_path ) && 'tcas_local_product_missing' === $wrong_product_path->get_error_code() && 0 === count( $GLOBALS['slug_calls'] ) );
+
+reset_resolver_fixtures();
 $short = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?p=41' );
 resolver_test( 'لینک کوتاه تیساکیس مستقیم با Product ID خوانده می‌شود', is_array( $short ) && 'TS0100' === $short['sku'] && 0 === count( $GLOBALS['url_calls'] ) );
 $plain = TCAS_Link_Resolver::resolve( 'https://tisacase.com/?product=local-case' );

@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, ariocase
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.8.2
+Stable tag: 1.8.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,7 +64,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == TisaCase link resolver ==
 
-لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink با Rewrite خود وردپرس به Product ID تبدیل می‌شود. برای محصول متغیر، Variationهای واقعی همان وردپرس با مرجع `ID:<variation_id>` بازگردانده می‌شوند و SKU در برچسب گزینه باقی می‌ماند؛ بنابراین SKU مشترک هم قابل‌استفاده است. SKU خالی در محصول ساده، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
+لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink ابتدا با Rewrite خود وردپرس به Product ID تبدیل می‌شود. اگر Rewrite نامک فارسی یا URL-encoded را نشناسد، نامک دقیق فقط در مسیر محصول و با `post_type=product` بررسی می‌شود؛ مسیر غیرمحصول پذیرفته نمی‌شود. برای محصول متغیر، Variationهای واقعی همان وردپرس با مرجع `ID:<variation_id>` بازگردانده می‌شوند و SKU در برچسب گزینه باقی می‌ماند؛ بنابراین SKU مشترک هم قابل‌استفاده است. SKU خالی در محصول ساده، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
 
 == Security and stock behavior ==
 
@@ -111,6 +111,11 @@ SKU یا Label تکراری، چند کاندیدای هم‌امتیاز، اس
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.8.3 =
+* اصلاح Resolve لینک Pretty Permalink فارسی و URL-encoded تیساکیس وقتی `url_to_postid()` محصول را برنمی‌گرداند.
+* Fallback دقیق نامک محصول در هر دو شکل ذخیرهٔ Encoded و Decode‌شده، محدود به مسیر محصول و بدون پذیرش لینک دسته‌بندی یا ساخت مرجع جعلی.
+* رگرسیون با لینک «قاب براش لیلیوم» و حفظ Load واقعی Variationها، Smart Match و رفتار Stock-only.
 
 = 1.8.2 =
 * اصلاح Smart Match برای عبور پاسخ خام ArioCase از همان Resolver تبدیل‌کننده؛ ساخت `reference`، `label` و ID تنوع پیش از Matcher.

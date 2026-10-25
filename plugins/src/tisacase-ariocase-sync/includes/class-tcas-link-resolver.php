@@ -118,6 +118,39 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			return self::local_result( $product_id );
 		}
 
+		private static function local_product_id_from_path( $path ) {
+			if ( ! function_exists( 'get_page_by_path' ) ) {
+				return 0;
+			}
+			$path = trim( (string) $path, '/' );
+			$base = 'product';
+			if ( function_exists( 'get_option' ) ) {
+				$permalinks = get_option( 'woocommerce_permalinks' );
+				if ( is_array( $permalinks ) && isset( $permalinks['product_base'] ) && is_scalar( $permalinks['product_base'] ) && '' !== trim( (string) $permalinks['product_base'] ) ) {
+					$base = (string) $permalinks['product_base'];
+				}
+			}
+			$base = trim( $base, '/' );
+			if ( '' === $base || false !== strpos( $base, '%' ) || 0 !== strpos( $path, $base . '/' ) ) {
+				return 0;
+			}
+			$slug = substr( $path, strlen( $base ) + 1 );
+			if ( '' === $slug || false !== strpos( $slug, '/' ) ) {
+				return 0;
+			}
+			// Rewrite ممکن است نامک فارسی/Encoded را نشناسد؛ هر دو شکل ذخیرهٔ رایج post_name دقیق بررسی می‌شوند.
+			foreach ( array_unique( array( $slug, rawurldecode( $slug ) ) ) as $candidate ) {
+				if ( '' === $candidate || false !== strpos( $candidate, '/' ) || false !== strpos( $candidate, "\0" ) ) {
+					continue;
+				}
+				$post = get_page_by_path( $candidate, OBJECT, 'product' );
+				if ( is_object( $post ) && ! empty( $post->ID ) ) {
+					return absint( $post->ID );
+				}
+			}
+			return 0;
+		}
+
 		private static function resolve_local( $url, $parts ) {
 			$query = array();
 			if ( isset( $parts['query'] ) ) {
@@ -139,6 +172,9 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 				$local_url .= '?' . $parts['query'];
 			}
 			$product_id = absint( url_to_postid( $local_url ) );
+			if ( ! $product_id ) {
+				$product_id = self::local_product_id_from_path( $path );
+			}
 			return $product_id ? self::local_result( $product_id ) : self::error( 'tcas_local_product_missing', 'محصول این لینک در TisaCase پیدا نشد.' );
 		}
 
