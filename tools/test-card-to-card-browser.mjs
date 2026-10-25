@@ -110,6 +110,32 @@ try {
                 await check('No page/control overflow: ' + label, async () => {
                     const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); assert.deepEqual(result.offenders, []);
                 });
+                if (['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route)) {
+                    await check('Three visible payment stages are centered inside their card: ' + label, async () => {
+                        const positions = await page.locator('.tcc-steps').evaluate(el => {
+                            const spans = Array.from(el.querySelectorAll('li > span'), span => span.getBoundingClientRect());
+                            const card = el.closest('.tcc-payment').getBoundingClientRect();
+                            const ticks = Array.from(el.querySelectorAll('.tcc-step-number'), span => { const r = span.getBoundingClientRect(); return r.top + r.height / 2; });
+                            return {left: Math.min(...spans.map(r => r.left)), right: Math.max(...spans.map(r => r.right)), cardCenter: card.left + card.width / 2, ticks};
+                        });
+                        assert.ok(Math.abs((positions.left + positions.right) / 2 - positions.cardCenter) <= 1, JSON.stringify(positions));
+                        assert.equal(positions.ticks.length, 3); assert.ok(Math.max(...positions.ticks) - Math.min(...positions.ticks) <= 1, JSON.stringify(positions));
+                    });
+                }
+                if (['/payment', '/saman'].includes(route)) {
+                    await check('Readable cardholder name and safe long-name wrapping: ' + label, async () => {
+                        const holder = page.locator('.tcc-holder > span');
+                        const metrics = await holder.evaluate(el => ({size: parseFloat(getComputedStyle(el).fontSize), weight: Number(getComputedStyle(el).fontWeight), labelSize: parseFloat(getComputedStyle(el.previousElementSibling).fontSize), direction: getComputedStyle(el).direction, align: getComputedStyle(el).textAlign}));
+                        assert.equal(metrics.size, 18); assert.ok(metrics.weight >= 600); assert.equal(metrics.labelSize, 10); assert.equal(metrics.direction, 'rtl'); assert.equal(metrics.align, 'right');
+                        const original = await holder.textContent();
+                        try {
+                            await holder.evaluate(el => { el.textContent = 'شرکت آزمایشی خدمات بازرگانی و توسعه فناوری نمونه'; });
+                            const bounds = await holder.evaluate(el => { const r = el.getBoundingClientRect(), card = el.closest('.tcc-bank').getBoundingClientRect(); return {left: r.left, right: r.right, cardLeft: card.left, cardRight: card.right, scroll: el.scrollWidth, width: r.width}; });
+                            assert.ok(bounds.left >= bounds.cardLeft && bounds.right <= bounds.cardRight && bounds.scroll <= bounds.width + 1, JSON.stringify(bounds));
+                            const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); assert.deepEqual(result.offenders, []);
+                        } finally { await holder.evaluate((el, text) => { el.textContent = text; }, original); }
+                    });
+                }
                 await page.addScriptTag({content: axe});
                 await check('WCAG A/AA automated audit: ' + label, async () => {
                     const result = await page.evaluate(async () => window.axe.run('.tcc-panel', {runOnly: {type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21aa']}}));
@@ -233,6 +259,12 @@ try {
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.locator('[data-tcc-kind=amount]').click();
     await check('Browser clipboard contains exact rials with no unit or separators', async () => { assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '4850000'); assert.match(await page.locator('.tcc-copy-feedback').innerText(), /مبلغ ریالی کپی شد/); assert.match(await page.locator('[data-tcc-kind=amount]').innerText(), /کپی شد/); });
+    await goto('/correction');
+    await check('Correction keeps its public reason and neutral resubmission guidance', async () => {
+        const status = page.locator('.tcc-status-card');
+        assert.equal(await status.locator('small').innerText(), 'لطفاً موارد اعلام‌شده را اصلاح کنید و مجدداً برای بررسی ثبت کنید.');
+        assert.ok((await status.locator('p').innerText()).trim()); assert.doesNotMatch(await status.innerText(), /دوباره واریز نکنید/);
+    });
     await goto('/pending');
     await check('Pending page has one clear status, not repeated review paragraphs', async () => { assert.equal(await page.locator('.tcc-status-card').count(), 1); assert.match(await page.locator('.tcc-status-copy h3').innerText(), /رسید ثبت شد/); assert.match(await page.locator('.tcc-status-copy p').innerText(), /پرداخت هنوز تأیید نشده/); assert.equal(await page.locator('.tcc-payment-meta').count(), 0); });
     await check('Pending receipt has a direct protected image action and optional corrections', async () => { assert.equal(await page.getByRole('link', {name: 'مشاهده تصویر رسید'}).isVisible(), true); assert.equal(await page.locator('.tcc-upload').getAttribute('open'), null); assert.equal(await page.locator('.tcc-transfer-details').getAttribute('open'), null); });
@@ -283,7 +315,7 @@ try {
     await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
     const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
     const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
-    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.0'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.1'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
     for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});
         await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });

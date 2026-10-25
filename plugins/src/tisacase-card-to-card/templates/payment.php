@@ -12,6 +12,7 @@ $step = $paid || $waiting || $approving ? 3 : ( $latest ? 2 : 1 );
 $receipt_id = 'tcc-sent-' . $id;
 $file_help = 'tcc-file-help-' . $id;
 $file_name = 'tcc-file-name-' . $id;
+$resubmit_message = 'لطفاً موارد اعلام‌شده را اصلاح کنید و مجدداً برای بررسی ثبت کنید.';
 ?>
 <section class="tcc-panel tcc-payment" dir="rtl" aria-label="پرداخت کارت به کارت" data-state="<?php echo esc_attr( $a['status'] ); ?>">
     <header class="tcc-heading"><div><span class="tcc-eyebrow"><?php echo TCC_Helpers::ui_icon( 'card' ); ?> کارت به کارت تیساکیس</span><h2>پرداخت سفارش <bdi><?php echo esc_html( $order->get_order_number() ); ?></bdi></h2></div><?php echo TCC_Helpers::display_badge( $order, $a ); ?></header>
@@ -30,7 +31,7 @@ $file_name = 'tcc-file-name-' . $id;
                 <?php } elseif ( $paid ) { ?><h3>پرداخت سفارش ثبت شد</h3><p>ارسال رسید یا واریز دوباره لازم نیست.</p>
                 <?php } elseif ( $waiting ) { ?><h3>رسید ثبت شد؛ در انتظار بررسی</h3><p>پرداخت هنوز تأیید نشده است. دوباره واریز نکنید.</p><?php if ( $settings['review_text'] && $settings['review_text'] !== TCC_Settings::defaults()['review_text'] ) { ?><small><?php echo esc_html( $settings['review_text'] ); ?></small><?php } ?>
                 <?php } elseif ( $approving ) { ?><h3>پرداخت در حال تطبیق است</h3><p>فروشگاه نتیجه را بررسی می‌کند؛ دوباره واریز نکنید.</p>
-                <?php } else { ?><h3><?php echo 'reconcile' === $a['status'] ? 'پرداخت نیاز به تطبیق دارد' : 'رسید نیاز به اصلاح دارد'; ?></h3><p><?php echo esc_html( $reason ?: 'اطلاعات رسید را بررسی و اصلاح کنید؛ دوباره واریز نکنید.' ); ?></p><?php if ( $reason ) { ?><small>برای اصلاح رسید، دوباره واریز نکنید.</small><?php } ?><?php } ?>
+                <?php } else { ?><h3><?php echo 'reconcile' === $a['status'] ? 'پرداخت نیاز به تطبیق دارد' : 'رسید نیاز به اصلاح دارد'; ?></h3><p><?php echo esc_html( $reason ?: $resubmit_message ); ?></p><?php if ( $reason ) { ?><small><?php echo esc_html( $resubmit_message ); ?></small><?php } ?><?php } ?>
             </div>
             <?php if ( $waiting || $approving ) { ?><button type="button" class="tcc-status-refresh" data-tcc-refresh><?php echo TCC_Helpers::ui_icon( 'refresh' ); ?><span>تازه‌سازی وضعیت</span></button><?php } ?>
         </div>

@@ -183,9 +183,12 @@ t( 'Customer review summary explicitly distinguishes receipt from paid money', 1
 t( 'Pending transfer and replacement are secondary collapsed details', false !== strpos( $rendered, '<details class="tcc-transfer-details">' ) && 1 === preg_match( '/<details class="tcc-upload[^"]*"\s*>/', $rendered ) && false !== strpos( $rendered, 'مشاهده تصویر رسید' ) );
 $rendered = customer_markup( $root, $order, $repo, 'under_review', '', array( 'review_text' => 'زمان بررسی سفارشی <b>TEST</b>' ) );
 t( 'Custom store review text remains available but escaped', false !== strpos( $rendered, 'زمان بررسی سفارشی &lt;b&gt;TEST&lt;/b&gt;' ) && false === strpos( $rendered, '<b>TEST</b>' ) );
-foreach ( array( 'rejected', 'correction', 'reconcile' ) as $state ) {
-    $rendered = customer_markup( $root, $order, $repo, $state, 'علت آزمایشی' );
-    t( 'Customer ' . $state . ' keeps public reason and no-repeat-payment warning', false !== strpos( $rendered, 'علت آزمایشی' ) && false !== strpos( $rendered, 'دوباره واریز نکنید' ) );
+$resubmit_copy = 'لطفاً موارد اعلام‌شده را اصلاح کنید و مجدداً برای بررسی ثبت کنید.';
+foreach ( array( 'rejected' => 'مبلغ واریز با سفارش تطبیق ندارد', 'correction' => 'تصویر رسید خوانا نیست', 'reconcile' => 'اطلاعات تراکنش نیازمند بررسی بیشتر است' ) as $state => $public_reason ) {
+    $rendered = customer_markup( $root, $order, $repo, $state, $public_reason );
+    t( 'Customer ' . $state . ' preserves reason with neutral correction guidance', false !== strpos( $rendered, $public_reason ) && 1 === substr_count( $rendered, $resubmit_copy ) && false === strpos( $rendered, 'دوباره واریز نکنید' ) );
+    $without_reason = customer_markup( $root, $order, $repo, $state );
+    t( 'Customer ' . $state . ' missing-reason fallback is neutral and not duplicated', 1 === substr_count( $without_reason, $resubmit_copy ) && false === strpos( $without_reason, 'دوباره واریز نکنید' ) );
 }
 foreach ( array( 'cancelled', 'failed', 'refunded' ) as $closed_status ) {
     $order->status = $closed_status; $order->paid = true;

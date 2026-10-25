@@ -79,9 +79,9 @@
 .tcc-payment .tcc-eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tcc-muted); }
 .tcc-payment .tcc-eyebrow .tcc-icon { width: 17px; height: 17px; color: var(--tcc-brand); }
 .tcc-payment .tcc-badge { padding: 5px 11px; font-size: 11px; }
-.tcc-panel.tcc-payment .tcc-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0 0 26px; gap: 6px; }
-.tcc-payment .tcc-steps li { display: flex; align-items: center; gap: 8px; position: relative; min-width: 0; padding: 9px 0; font-size: 12px; color: var(--tcc-muted); }
-.tcc-payment .tcc-steps li:not(:last-child)::after { content: ''; flex: 1; min-width: 6px; height: 1px; background: var(--tcc-border); margin-inline: 6px 4px; }
+.tcc-panel.tcc-payment .tcc-steps { display: flex; justify-content: center; list-style: none; padding: 0; margin: 0 0 26px; gap: clamp(6px, 1.2vw, 12px); }
+.tcc-payment .tcc-steps li { display: flex; flex: 0 1 auto; align-items: center; gap: 8px; position: relative; min-width: 0; padding: 9px 0; font-size: 12px; color: var(--tcc-muted); }
+.tcc-payment .tcc-steps li:not(:last-child)::after { content: ''; flex: 0 1 clamp(18px, 5vw, 72px); width: clamp(18px, 5vw, 72px); min-width: 6px; height: 1px; background: var(--tcc-border); margin-inline: 6px 4px; }
 .tcc-step-number { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--tcc-border); border-radius: 50%; background: #fafaf8; font-size: 12px; }
 .tcc-step-number .tcc-icon { width: 15px; height: 15px; }
 .tcc-steps .is-current { color: var(--tcc-deep); font-weight: 700; }
@@ -110,6 +110,7 @@
 .tcc-panel.tcc-payment .tcc-card-number { display: block; width: 100%; padding-block: 8px; font-size: clamp(19px, 2.6vw, 25px); font-weight: 600; letter-spacing: .055em; line-height: 1.6; white-space: nowrap; direction: ltr; text-align: center; color: #173d33; }
 .tcc-holder { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 12px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
 .tcc-holder small { font-size: 10px; color: #526a5f; }
+.tcc-panel.tcc-payment .tcc-holder > span { font-size: 18px; font-weight: 600; line-height: 1.7; color: var(--tcc-deep); }
 .tcc-bank .tcc-btn { flex-shrink: 0; min-height: 36px; padding: 7px 9px; font-size: 11px; border-color: #c9dfd5; background: #ffffffb8; }
 .tcc-bank .tcc-btn .tcc-icon, .tcc-money .tcc-btn .tcc-icon { width: 15px; height: 15px; }
 .tcc-payment .tcc-btn.is-copied { background: #e3f1e9; color: #1c6045; border-color: #b4d1bf; }
@@ -173,9 +174,9 @@
     .tcc-payment .tcc-money { padding-block: 18px; gap: 10px; }
     .tcc-payment .tcc-bank { padding: 18px; gap: 14px; }
     .tcc-panel.tcc-payment .tcc-card-number { font-size: clamp(18px, 5.2vw, 23px); letter-spacing: .03em; }
-    .tcc-payment .tcc-steps { gap: 5px; margin-block-end: 22px; }
+    .tcc-panel.tcc-payment .tcc-steps { gap: 6px; margin-block-end: 22px; }
     .tcc-payment .tcc-steps li { gap: 5px; font-size: 10px; }
-    .tcc-payment .tcc-steps li::after { display: none; }
+    .tcc-payment .tcc-steps li:not(:last-child)::after { display: none; }
     .tcc-step-number { width: 24px; height: 24px; font-size: 11px; }
     .tcc-payment .tcc-upload { padding-inline: 14px; }
     .tcc-panel.tcc-payment .tcc-field :is(input, textarea) { font-size: 16px; }
