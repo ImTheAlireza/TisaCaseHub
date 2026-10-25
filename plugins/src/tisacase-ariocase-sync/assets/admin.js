@@ -469,9 +469,14 @@
 		const data = state.linkProduct;
 		if (!select || !data) return;
 		const variation = '' !== select.value ? state.linkVariations[Number(select.value)] : null;
-		if (!variation || !variation.reference) {
+		if (!variation) {
 			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
-			text('tcas-link-status', 'یک Variation با شناسهٔ معتبر انتخاب کنید.', true);
+			text('tcas-link-status', 'برای ادامه، یکی از Variationهای محصول را انتخاب کنید.');
+			return;
+		}
+		if (!variation.reference) {
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+			text('tcas-link-status', 'این Variation شناسهٔ قابل‌اتصال ندارد؛ یک مورد دیگر را انتخاب کنید.', true);
 			return;
 		}
 		const reference = String(variation.reference);

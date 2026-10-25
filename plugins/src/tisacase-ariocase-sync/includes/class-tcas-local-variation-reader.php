@@ -29,13 +29,25 @@ if ( ! class_exists( 'TCAS_Local_Variation_Reader' ) ) {
 			if ( ! $product_id ) {
 				return array();
 			}
-			$ids = self::database_ids( $product_id );
-			// فقط نبود لایهٔ دیتابیس مجاز به Fallback است؛ نتیجهٔ صفر دیتابیس با Cache پر نمی‌شود.
-			if ( null === $ids && is_object( $product ) && method_exists( $product, 'get_children' ) ) {
-				$ids = $product->get_children();
+
+			// اول از API خود ووکامرس بخوان؛ false یعنی Variationهای غیرقابل‌نمایش/ناموجود هم حذف نشوند.
+			$ids = array();
+			if ( is_object( $product ) && method_exists( $product, 'get_children' ) ) {
+				try {
+					$ids = (array) $product->get_children( false );
+				} catch ( Throwable $error ) {
+					$ids = array();
+				}
 			}
+
+			// دیتابیس را با API ووکامرس ادغام می‌کنیم تا کش ناقص/قدیمی، Variation واقعی را جا نیندازد.
+			$database_ids = self::database_ids( $product_id );
+			if ( is_array( $database_ids ) ) {
+				$ids = array_merge( $ids, $database_ids );
+			}
+
 			$out = array();
-			foreach ( (array) $ids as $variation_id ) {
+			foreach ( $ids as $variation_id ) {
 				$variation_id = absint( $variation_id );
 				if ( $variation_id ) {
 					$out[ $variation_id ] = $variation_id;

@@ -111,7 +111,7 @@ $GLOBALS['products'][45] = new TCAS_Test_Product( '', 'Local variable - Blue', '
 $GLOBALS['variation_posts'][43] = array( 44, 45 );
 $GLOBALS['pretty'][ $local_variable_url ] = 43;
 $local_variable = TCAS_Link_Resolver::resolve( $local_variable_url );
-resolver_test( 'لینک والد تیساکیس، همهٔ Variationهای واقعی را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] && 0 === count( TCAS_Test_Product::$children_args ) );
+resolver_test( 'لینک والد تیساکیس، همهٔ Variationهای واقعی را با ID یکتا می‌آورد', is_array( $local_variable ) && 'variable' === $local_variable['type'] && 2 === count( $local_variable['variations'] ) && 'ID:44' === $local_variable['variations'][0]['reference'] && 'قرمز' === $local_variable['variations'][0]['label'] && 'ID:45' === $local_variable['variations'][1]['reference'] && array( false ) === TCAS_Test_Product::$children_args );
 $children_query = $GLOBALS['wpdb']->queries ? $GLOBALS['wpdb']->queries[0] : array( '', 0 );
 resolver_test( 'Reader جدید مستقیم از wp_posts، بدون get_posts و LIMIT، همان والد را می‌خواند', 43 === $children_query[1] && false !== strpos( $children_query[0], "post_type = 'product_variation'" ) && false !== strpos( $children_query[0], "post_status NOT IN ('trash', 'auto-draft')" ) && false === stripos( $children_query[0], 'LIMIT' ) && 0 === count( $GLOBALS['post_calls'] ) );
 $local_by_id = TCAS_Link_Resolver::resolve_local_reference( 'ID:43' );
@@ -139,7 +139,7 @@ foreach ( $all_variation_ids as $index => $variation_id ) {
 }
 $GLOBALS['variation_posts'][49] = $all_variation_ids;
 $all_local = TCAS_Link_Resolver::resolve_local_reference( 'ID:49' );
-resolver_test( 'حتی با Cache ناقص، هر ۷۵ Variation واقعی والد بدون محدودیت Load می‌شوند', is_array( $all_local ) && 75 === count( $all_local['variations'] ) && 'ID:5001' === $all_local['variations'][0]['reference'] && 'ID:5075' === $all_local['variations'][74]['reference'] && 0 === count( TCAS_Test_Product::$children_args ) );
+resolver_test( 'حتی با Cache ناقص، هر ۷۵ Variation واقعی والد بدون محدودیت Load می‌شوند', is_array( $all_local ) && 75 === count( $all_local['variations'] ) && 'ID:5001' === $all_local['variations'][0]['reference'] && 'ID:5075' === $all_local['variations'][74]['reference'] && array( false ) === TCAS_Test_Product::$children_args );
 
 reset_resolver_fixtures();
 $GLOBALS['products'][60] = new TCAS_Test_Product( 'VALIDATE-PARENT', 'Validation parent', 'variable', array( 64 ) );
@@ -150,15 +150,15 @@ $GLOBALS['products'][64] = new TCAS_Test_Product( 'CACHE-ONLY', 'Cached only var
 $GLOBALS['variation_posts'][60] = array( 61, 61, 62, 63 );
 $validated_ids = TCAS_Local_Variation_Reader::ids( $GLOBALS['products'][60], 60 );
 $validated_local = TCAS_Link_Resolver::resolve_local_reference( 'ID:60' );
-resolver_test( 'Reader شناسه‌های تکراری را حذف و ترتیب نتیجهٔ SQL را حفظ می‌کند', array( 61, 62, 63 ) === $validated_ids );
-resolver_test( 'Resolver نوع Variation والد دقیق را دوباره اعتبارسنجی و Cache اضافه را حذف می‌کند', is_array( $validated_local ) && 1 === count( $validated_local['variations'] ) && array( 61 ) === array_column( $validated_local['variations'], 'product_id' ) && 0 === count( TCAS_Test_Product::$children_args ) );
+resolver_test( 'Reader شناسه‌های ووکامرس و SQL را ادغام، تکراری‌ها را حذف و ترتیب API را حفظ می‌کند', array( 64, 61, 62, 63 ) === $validated_ids );
+resolver_test( 'Resolver همهٔ Variationهای ووکامرس را نگه می‌دارد و نوع/والد را اعتبارسنجی می‌کند', is_array( $validated_local ) && 2 === count( $validated_local['variations'] ) && array( 64, 61 ) === array_column( $validated_local['variations'], 'product_id' ) && array( false, false ) === TCAS_Test_Product::$children_args );
 
 reset_resolver_fixtures();
 $GLOBALS['products'][65] = new TCAS_Test_Product( 'EMPTY-PARENT', 'Empty database parent', 'variable', array( 66 ) );
 $GLOBALS['products'][66] = new TCAS_Test_Product( 'CACHE-ONLY', 'Must not return', 'variation', array(), array( 'attribute_model' => 'Cached' ), 65 );
 $GLOBALS['variation_posts'][65] = array();
 $empty_local = TCAS_Link_Resolver::resolve_local_reference( 'ID:65' );
-resolver_test( 'نتیجهٔ صفر دیتابیس معتبر است و با Cached Children جایگزین نمی‌شود', is_array( $empty_local ) && array() === $empty_local['variations'] && 0 === count( TCAS_Test_Product::$children_args ) && 1 === count( $GLOBALS['wpdb']->queries ) );
+resolver_test( 'Variation ووکامرس حتی با نتیجهٔ خالی Query مستقیم شناسایی می‌شود', is_array( $empty_local ) && 1 === count( $empty_local['variations'] ) && 66 === $empty_local['variations'][0]['product_id'] && array( false ) === TCAS_Test_Product::$children_args && 1 === count( $GLOBALS['wpdb']->queries ) );
 
 reset_resolver_fixtures();
 $GLOBALS['products'][67] = new TCAS_Test_Product( 'FALLBACK-PARENT', 'Fallback parent', 'variable', array( 68 ) );
