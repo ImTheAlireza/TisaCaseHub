@@ -5,10 +5,10 @@ if ( ! defined( 'ABSPATH' ) ) { define( 'ABSPATH', '/wordpress/' ); }
 define( 'TCC_PATH', dirname( __DIR__ ) . '/' );
 define( 'TCC_URL', 'https://shop.example.test/wp-content/plugins/tisacase-card-to-card/' );
 define( 'TCC_FILE', TCC_PATH . 'tisacase-card-to-card.php' );
-define( 'TCC_VERSION', '1.2.0' );
+define( 'TCC_VERSION', '1.3.0' );
 define( 'TCC_TITLE', 'کارت به کارت تیساکیس' );
 define( 'TCC_GATEWAY', 'tisacase_card_to_card' );
-define( 'HOUR_IN_SECONDS', 3600 ); define( 'DAY_IN_SECONDS', 86400 ); define( 'ARRAY_A', 'ARRAY_A' );
+define( 'MINUTE_IN_SECONDS', 60 ); define( 'HOUR_IN_SECONDS', 3600 ); define( 'DAY_IN_SECONDS', 86400 ); define( 'ARRAY_A', 'ARRAY_A' );
 $GLOBALS['opts'] = array( 'admin_email' => 'admin@example.test' ); $GLOBALS['uid'] = 1; $GLOBALS['review'] = true; $GLOBALS['edit'] = true; $GLOBALS['transients'] = array(); $GLOBALS['hooks'] = array(); $GLOBALS['queue'] = array();
 require_once __DIR__ . '/role-stubs.php';
 function get_option( $key, $default = false ) { return $GLOBALS['opts'][$key] ?? $default; }

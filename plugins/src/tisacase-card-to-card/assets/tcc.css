@@ -71,39 +71,125 @@
 .tcc-history[open] > summary { margin-block-end: 12px; }
 .tcc-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
-/* Customer copy must not inherit a storefront's LTR form/label rules.
- * Keep bank/amount cards centered and explicit LTR field values independent. */
+/* Customer copy is independent of storefront direction/label rules. */
 .tcc-panel.tcc-payment :is(h1, h2, h3, p, form, label, small, details, summary) { direction: rtl; text-align: right; }
-
-/* Customer page: keep 44px touch targets even when admin controls are compact. */
-.tcc-payment { max-width: 840px; margin: 24px auto; padding: clamp(18px, 3vw, 28px); border: 1px solid var(--tcc-border); border-radius: 20px; background: var(--tcc-surface); box-shadow: 0 6px 24px #1f2a2e06; }
-.tcc-payment .tcc-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.tcc-payment .tcc-heading h2 { font-size: 21px; margin-block: 4px; }
-.tcc-eyebrow { font-size: 11px; letter-spacing: .06em; color: var(--tcc-muted); }
-.tcc-steps { display: flex; flex-wrap: wrap; gap: 8px; list-style: none !important; padding: 0 !important; margin: 18px 0 !important; }
-.tcc-steps li { padding: 5px 12px; border: 1px solid var(--tcc-border); border-radius: 999px; font-size: 12px; color: var(--tcc-muted); }
-.tcc-transfer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 14px; margin-block: 18px; }
-.tcc-money, .tcc-bank { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-width: 0; border: 1px solid var(--tcc-border); border-radius: 16px; padding: 20px 14px; text-align: center; background: #fafaf8; }
-.tcc-bank { background: linear-gradient(130deg, #f2fbf8, #e8f0ee); border-color: #c9dcd7; }
-.tcc-money strong { font-size: 25px; font-weight: 700; }
-.tcc-card-number { font-size: clamp(18px, 2.6vw, 24px); font-weight: 600; letter-spacing: .025em; white-space: nowrap; }
-.tcc-payment-meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; color: var(--tcc-muted); font-size: 12px; }
-.tcc-upload { border-block-start: 1px solid var(--tcc-border); margin-block-start: 18px; padding-block-start: 14px; }
-.tcc-upload-form { display: grid; gap: 14px; margin-block-start: 12px; }
-.tcc-upload-form > .tcc-btn { justify-self: start; }
-.tcc-upload-form > small { color: var(--tcc-muted); font-size: 12px; }
-.tcc-panel .tcc-field input[type=file] { padding: 14px; background: #fafaf8; border: 1px dashed #b7cac2; }
-.tcc-panel .tcc-field input[type=file]::file-selector-button { padding: 6px 10px; border: 0; border-radius: 6px; background: var(--tcc-soft); color: var(--tcc-deep); font: inherit; margin-inline-end: 12px; cursor: pointer; }
-.tcc-preview { max-width: 100%; max-height: 280px; object-fit: contain; border-radius: 10px; }
-.tcc-progress { width: 100%; height: 10px; accent-color: var(--tcc-brand); }
-.tcc-support { border-block-start: 1px solid var(--tcc-border); padding-block-start: 14px; font-size: 13px; }
+.tcc-panel.tcc-payment { max-width: 880px; margin: 24px auto; padding: clamp(20px, 3vw, 32px); border: 1px solid var(--tcc-border); border-radius: 24px; background: #fff; box-shadow: 0 10px 38px #1f2a2e08; animation: tcc-arrive 260ms ease-out both; }
+.tcc-payment .tcc-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-block-end: 26px; }
+.tcc-payment .tcc-heading h2 { margin: 6px 0 0; font-size: 23px; font-weight: 700; letter-spacing: -.025em; }
+.tcc-payment .tcc-eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--tcc-muted); }
+.tcc-payment .tcc-eyebrow .tcc-icon { width: 17px; height: 17px; color: var(--tcc-brand); }
+.tcc-payment .tcc-badge { padding: 5px 11px; font-size: 11px; }
+.tcc-panel.tcc-payment .tcc-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); list-style: none; padding: 0; margin: 0 0 26px; gap: 6px; }
+.tcc-payment .tcc-steps li { display: flex; align-items: center; gap: 8px; position: relative; min-width: 0; padding: 9px 0; font-size: 12px; color: var(--tcc-muted); }
+.tcc-payment .tcc-steps li:not(:last-child)::after { content: ''; flex: 1; min-width: 6px; height: 1px; background: var(--tcc-border); margin-inline: 6px 4px; }
+.tcc-step-number { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; border: 1px solid var(--tcc-border); border-radius: 50%; background: #fafaf8; font-size: 12px; }
+.tcc-step-number .tcc-icon { width: 15px; height: 15px; }
+.tcc-steps .is-current { color: var(--tcc-deep); font-weight: 700; }
+.tcc-steps .is-current .tcc-step-number { border-color: var(--tcc-brand); background: var(--tcc-brand); color: #fff; box-shadow: 0 0 0 4px var(--tcc-soft); }
+.tcc-steps .is-done .tcc-step-number { background: var(--tcc-soft); border-color: var(--tcc-soft); color: var(--tcc-brand); }
+.tcc-payment .tcc-intro { font-size: 13px; color: #53645f; margin: 0 0 18px; }
+.tcc-payment .tcc-transfer { display: grid; grid-template-columns: minmax(0, .95fr) minmax(0, 1.2fr); gap: 14px; margin-block: 16px; }
+.tcc-payment .tcc-money, .tcc-payment .tcc-bank { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; min-width: 0; border: 1px solid var(--tcc-border); border-radius: 18px; padding: 24px 20px; text-align: center; }
+.tcc-payment .tcc-money { background: #fafaf8; }
+.tcc-amount-label { font-size: 12px; color: var(--tcc-muted); }
+.tcc-amount { display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 7px; max-width: 100%; }
+.tcc-payment .tcc-rial-value { font-size: clamp(22px, 3.1vw, 32px); font-weight: 700; line-height: 1.6; letter-spacing: -.025em; overflow-wrap: anywhere; }
+.tcc-currency { font-size: 13px; color: var(--tcc-muted); }
+.tcc-payment .tcc-money .tcc-btn { border-color: transparent; background: transparent; min-height: 38px; font-size: 12px; padding: 7px 10px; }
+.tcc-payment .tcc-money .tcc-btn:hover { background: var(--tcc-soft); }
+.tcc-payment .tcc-bank { position: relative; overflow: hidden; background: linear-gradient(125deg, #e9f5f0, #f7fcfa 66%); border-color: #cce0d8; transition: box-shadow 180ms, transform 180ms; animation: tcc-arrive 300ms 50ms ease-out both; }
+.tcc-bank::before, .tcc-bank::after { content: ''; position: absolute; z-index: 0; pointer-events: none; width: 190px; height: 190px; border: 1px solid #0e7c6b0d; border-radius: 50%; inset-inline-end: -100px; top: -100px; }
+.tcc-bank::after { width: 240px; height: 240px; inset-inline-end: -125px; top: -125px; }
+.tcc-bank > * { position: relative; z-index: 1; }
+.tcc-bank-top, .tcc-bank-bottom { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; }
+.tcc-bank-brand { display: inline-flex; align-items: center; gap: 9px; min-width: 0; font-size: 13px; font-weight: 600; }
+.tcc-bank-brand > span:last-child { overflow-wrap: anywhere; }
+.tcc-bank-logo { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid #fff; border-radius: 13px; background: #ffffffd9; color: var(--tcc-brand); box-shadow: 0 2px 8px #064e4605; }
+.tcc-panel.tcc-payment .tcc-bank-logo img { display: block; width: 32px; height: 32px; max-width: 32px; object-fit: contain; border: 0; border-radius: 0; margin: 0; padding: 0; }
+.tcc-card-caption { color: #526a5f; font-size: 11px; white-space: nowrap; }
+.tcc-panel.tcc-payment .tcc-card-number { display: block; width: 100%; padding-block: 8px; font-size: clamp(19px, 2.6vw, 25px); font-weight: 600; letter-spacing: .055em; line-height: 1.6; white-space: nowrap; direction: ltr; text-align: center; color: #173d33; }
+.tcc-holder { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; font-size: 12px; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.tcc-holder small { font-size: 10px; color: #526a5f; }
+.tcc-bank .tcc-btn { flex-shrink: 0; min-height: 36px; padding: 7px 9px; font-size: 11px; border-color: #c9dfd5; background: #ffffffb8; }
+.tcc-bank .tcc-btn .tcc-icon, .tcc-money .tcc-btn .tcc-icon { width: 15px; height: 15px; }
+.tcc-payment .tcc-btn.is-copied { background: #e3f1e9; color: #1c6045; border-color: #b4d1bf; }
+.tcc-payment-meta { display: flex; align-items: center; gap: 7px; padding-block: 0 6px; font-size: 12px; color: var(--tcc-muted); }
+.tcc-payment-meta .tcc-icon { width: 15px; height: 15px; }
+.tcc-payment .tcc-upload, .tcc-transfer-details { border: 1px solid var(--tcc-border); border-radius: 14px; padding: 0 18px; margin-block: 20px 0; }
+.tcc-payment .tcc-upload > summary, .tcc-payment .tcc-transfer-details > summary, .tcc-payment .tcc-sent-note > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; list-style: none; padding-block: 14px; font-size: 13px; }
+.tcc-payment summary::-webkit-details-marker { display: none; }
+.tcc-payment summary > span { display: inline-flex; align-items: center; gap: 8px; }
+.tcc-payment summary > .tcc-icon:last-child { width: 16px; height: 16px; color: var(--tcc-muted); transition: transform 160ms; }
+.tcc-payment details[open] > summary > .tcc-icon:last-child { transform: rotate(180deg); }
+.tcc-payment .tcc-upload[open] > summary { border-block-end: 1px solid #eeeee8; }
+.tcc-payment .tcc-upload.is-secondary { background: #fdfdfb; margin-block-start: 12px; }
+.tcc-panel.tcc-payment .tcc-upload-form { display: grid; align-content: start; grid-auto-rows: max-content; gap: 16px; margin: 0; padding: 18px 0; }
+.tcc-panel.tcc-payment .tcc-field { margin: 0; gap: 8px; font-size: 13px; line-height: 1.7; }
+.tcc-panel.tcc-payment .tcc-field :is(input, textarea) { font-size: 14px; }
+.tcc-panel.tcc-payment .tcc-fields { gap: 14px; margin: 0; }
+.tcc-file-picker { position: relative; display: flex; align-items: center; gap: 12px; min-height: 74px; padding: 12px; border: 1px dashed #b7cdc1; border-radius: 12px; background: #f8fbf8; transition: background 160ms, border-color 160ms; }
+.tcc-panel.tcc-payment .tcc-file-picker input[type=file] { position: absolute; inset: 0; z-index: 2; width: 100%; height: 100%; min-height: 0; margin: 0; padding: 0; border: 0; opacity: 0; cursor: pointer; direction: rtl; }
+.tcc-file-picker:focus-within { outline: 3px solid var(--tcc-brand); outline-offset: 3px; }
+.tcc-file-picker:hover { background: #edf5ef; border-color: var(--tcc-brand); }
+.tcc-file-action { display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 10px; border: 1px solid #c4d9cd; border-radius: 8px; background: #fff; color: var(--tcc-deep); flex-shrink: 0; font-size: 12px; font-weight: 600; }
+.tcc-file-action .tcc-icon { width: 17px; height: 17px; }
+.tcc-file-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--tcc-muted); }
+.tcc-panel.tcc-payment .tcc-file-help { font-size: 11px; color: var(--tcc-muted); margin: -6px 0 0; line-height: 1.9; }
+.tcc-upload-form > .tcc-btn { justify-self: start; min-width: 190px; }
+.tcc-preview { max-width: 100%; max-height: 260px; object-fit: contain; border: 1px solid var(--tcc-border); border-radius: 12px; animation: tcc-arrive 180ms ease-out both; }
+.tcc-progress { width: 100%; height: 8px; accent-color: var(--tcc-brand); }
+.tcc-status-card { display: flex; align-items: flex-start; gap: 12px; padding: 18px; border: 1px solid #d7e4dc; border-radius: 16px; background: #f3f8f5; margin-block: 0 16px; }
+.tcc-status-icon { display: grid; place-items: center; flex-shrink: 0; width: 40px; height: 40px; border-radius: 12px; background: #e3efe7; color: #396954; }
+.tcc-status-copy { flex: 1; min-width: 0; }
+.tcc-payment .tcc-status-copy h3 { font-size: 14px; font-weight: 700; margin-block: 0 5px; }
+.tcc-payment .tcc-status-copy p { font-size: 12px; color: #53675b; margin: 0; overflow-wrap: anywhere; }
+.tcc-payment .tcc-status-copy small { display: block; margin-block-start: 5px; font-size: 12px; color: #53675b; }
+.tcc-status-card.needs-attention { border-color: #e9d8c3; background: #fcf7ee; }
+.tcc-status-card.needs-attention .tcc-status-icon { color: #80592b; background: #f1e7d4; }
+.tcc-panel.tcc-payment .tcc-status-refresh { display: inline-flex; align-items: center; gap: 4px; margin: 0; padding: 8px 0; min-height: 36px; border: 0; background: transparent; color: #3d6655; font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.tcc-status-refresh .tcc-icon { width: 15px; height: 15px; }
+.tcc-sent-receipt { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px; border: 1px solid var(--tcc-border); border-radius: 14px; background: #fff; }
+.tcc-receipt-mark { display: grid; place-items: center; flex-shrink: 0; width: 38px; height: 44px; background: #f4f3ee; border-radius: 10px; color: #68766d; }
+.tcc-sent-info { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 110px; }
+.tcc-sent-info strong { font-size: 13px; }
+.tcc-sent-info > span { font-size: 12px; color: var(--tcc-muted); overflow-wrap: anywhere; }
+.tcc-sent-info bdi { font-family: inherit; font-variant-numeric: tabular-nums; }
+.tcc-sent-receipt .tcc-btn { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+.tcc-sent-note { flex-basis: 100%; border-block-start: 1px solid #efeee8; }
+.tcc-payment .tcc-sent-note > summary { padding-block: 10px 0; font-size: 12px; color: var(--tcc-muted); }
+.tcc-payment .tcc-sent-note p { margin: 8px 0 0; font-size: 12px; overflow-wrap: anywhere; }
+.tcc-payment .tcc-transfer-details { margin-block-start: 16px; }
+.tcc-payment .tcc-transfer-details > summary { color: var(--tcc-muted); font-size: 12px; }
+.tcc-payment .tcc-transfer-details .tcc-transfer { margin-block-start: 0; }
+.tcc-payment .tcc-support { border-block-start: 1px solid var(--tcc-border); padding-block-start: 16px; margin-block: 20px 0; color: var(--tcc-muted); font-size: 12px; }
+.tcc-payment .tcc-copy-feedback { font-size: 12px; color: #396954; margin-block-end: 0; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) { .tcc-payment .tcc-bank:hover { transform: translateY(-2px); box-shadow: 0 8px 20px #064e4609; } }
 @media (max-width: 600px) {
-    .tcc-transfer, .tcc-fields { grid-template-columns: minmax(0, 1fr); }
-    .tcc-payment { margin-block: 12px; padding: 18px; border-radius: 16px; }
-    .tcc-payment .tcc-heading h2 { font-size: 19px; }
-    .tcc-card-number { font-size: 22px; }
-    .tcc-steps { gap: 5px; }
-    .tcc-steps li { padding: 5px 9px; font-size: 11px; }
-    .tcc-upload-form > .tcc-btn { width: 100%; }
+    .tcc-panel.tcc-payment { padding: 20px 16px; border-radius: 18px; margin-block: 12px; }
+    .tcc-payment .tcc-heading { gap: 10px; margin-block-end: 22px; }
+    .tcc-payment .tcc-heading h2 { font-size: 20px; }
+    .tcc-payment .tcc-eyebrow { font-size: 11px; }
+    .tcc-payment .tcc-transfer, .tcc-payment .tcc-fields { grid-template-columns: minmax(0, 1fr); }
+    .tcc-payment .tcc-money { padding-block: 18px; gap: 10px; }
+    .tcc-payment .tcc-bank { padding: 18px; gap: 14px; }
+    .tcc-panel.tcc-payment .tcc-card-number { font-size: clamp(18px, 5.2vw, 23px); letter-spacing: .03em; }
+    .tcc-payment .tcc-steps { gap: 5px; margin-block-end: 22px; }
+    .tcc-payment .tcc-steps li { gap: 5px; font-size: 10px; }
+    .tcc-payment .tcc-steps li::after { display: none; }
+    .tcc-step-number { width: 24px; height: 24px; font-size: 11px; }
+    .tcc-payment .tcc-upload { padding-inline: 14px; }
+    .tcc-panel.tcc-payment .tcc-field :is(input, textarea) { font-size: 16px; }
+    .tcc-status-card { flex-wrap: wrap; gap: 10px; padding: 14px; }
+    .tcc-status-copy { flex-basis: calc(100% - 52px); }
+    .tcc-status-refresh { margin-inline-start: 50px; }
+    .tcc-bank-bottom { flex-wrap: wrap; }
+    .tcc-file-picker { gap: 8px; padding: 10px; }
+    .tcc-file-action { padding: 8px; }
+    .tcc-file-name { font-size: 10px; }
+    .tcc-upload-form > .tcc-btn { width: 100%; min-width: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .tcc-panel *, .tcc-panel *::before, .tcc-panel *::after { transition: none !important; scroll-behavior: auto !important; } }
+@keyframes tcc-arrive { from { transform: translateY(5px); } to { transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) { .tcc-panel, .tcc-panel *, .tcc-panel *::before, .tcc-panel *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.tcc-file-picker.has-file { border-style: solid; border-color: #93bca4; }
+@media (max-width: 600px) { .tcc-panel.tcc-payment .tcc-btn, .tcc-panel.tcc-payment .tcc-status-refresh { min-height: 44px; } }

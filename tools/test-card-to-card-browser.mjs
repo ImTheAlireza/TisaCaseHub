@@ -104,7 +104,7 @@ try {
     for (const shared of [false, true]) {
         for (const width of [1440, 1024, 768, 390, 320]) {
             await page.setViewportSize({width, height: 1000});
-            for (const route of ['/', '/order', '/payment', '/correction', '/first-run']) {
+            for (const route of ['/', '/order', '/payment', '/correction', '/first-run', '/pending', '/saman', '/approved', '/order-hpos']) {
                 const label = `${route} ${width}px ${shared ? 'Hub tokens' : 'standalone'}`;
                 await goto(route + (shared ? '?shared=1' : ''));
                 await check('No page/control overflow: ' + label, async () => {
@@ -175,72 +175,94 @@ try {
     await page.locator('[name="settings[cards][0][label]"]').fill('کارت فروشگاه با عنوان طولانی برای بررسی چیدمان موبایل '.repeat(4));
     await page.setViewportSize({width: 320, height: 844});
     await check('Long destination label does not break mobile layout', async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1); assert.deepEqual(result.offenders, []); });
-    await page.setViewportSize({width: 1024, height: 900}); await goto('/order');
-    let reviews = [];
-    page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/preview-action')) reviews.push(request.postData()); });
-    await page.locator('[value=approve]').click();
-    await check('Actual approve button blocks unconfirmed bank credit', async () => { assert.match(await page.locator('.tcc-feedback').innerText(), /ورود وجه/); assert.equal(reviews.length, 0); });
-    await page.locator('[value=reject]').click();
-    await check('Actual reject button requires customer reason', async () => { assert.match(await page.locator('.tcc-feedback').innerText(), /علت/); assert.equal(reviews.length, 0); });
-    await page.locator('[name=confirmed]').check();
-    await page.locator('[value=approve]').click();
-    await page.locator('.tcc-feedback').filter({hasText: 'هیچ تغییری ثبت نشد'}).waitFor();
-    await check('Browser external form posts revision, nonce and bank confirmation', async () => {
-        assert.equal(reviews.length, 1); assert.match(reviews[0], /name="confirmed"\r\n\r\nyes/); assert.match(reviews[0], /name="revision"\r\n\r\n2/); assert.match(reviews[0], /name="_wpnonce"/);
-    });
-    await page.locator('.preview-order-header summary').click(); await page.locator('[name=order_total]').fill('900'); await page.locator('[value=approve]').click();
-    await check('Native Woo-like form edits block another review request', async () => { assert.equal(reviews.length, 1); assert.match(await page.locator('.tcc-feedback').innerText(), /ذخیره/); });
-    await page.locator('.tcc-rotate').click();
-    await check('Real receipt rotation preserves image source', async () => { const image = page.locator('.tcc-admin-image img'); assert.match(await image.getAttribute('style'), /rotate\(90deg\)/); assert.equal(await image.getAttribute('src'), '/receipt.svg'); });
-    await goto('/payment');
-    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7N8AAAAASUVORK5CYII=', 'base64');
-    await page.locator('input[type=file]').setInputFiles({name: 'test.png', mimeType: 'image/png', buffer: png});
-    await check('Real browser previews selected PNG locally', async () => { const image = page.locator('.tcc-preview'); assert.equal(await image.isVisible(), true); assert.match(await image.getAttribute('src'), /^blob:/); });
-    await page.locator('.tcc-upload-form [type=submit]').click();
-    await check('Preview upload is non-operational: no HTTP receipt submission', async () => { assert.equal(reviews.length, 1); assert.match(await page.locator('.tcc-upload-form .tcc-feedback').innerText(), /پیش‌نمایش/); });
-    await goto('/order');
+    await page.setViewportSize({width: 1024, height: 1000}); await goto('/order');
+    const financeRequests = [];
+    page.on('request', request => { if (request.method() === 'POST' && request.url().endsWith('/preview-action')) financeRequests.push(request); });
     await page.evaluate(() => {
         const form = document.querySelector('#post');
         form.querySelector('[name=order_total]').dispatchEvent(new Event('change', {bubbles: true}));
-        const search = document.createElement('input'); search.name = 'select2_search'; search.className = 'select2-search__field'; search.value = 'customer lookup'; form.append(search); search.dispatchEvent(new Event('input', {bubbles: true}));
-        const blank = document.createElement('input'); blank.name = 'meta_value[999]'; form.append(blank); blank.dispatchEvent(new Event('change', {bubbles: true}));
-        form.append(form.querySelector('[name=order_total]'));
+        const widget = document.createElement('input'); widget.name = 'woo_widget'; widget.value = 'automatic initialization'; form.append(widget); widget.dispatchEvent(new Event('change', {bubbles: true}));
     });
-    await page.locator('[name=confirmed]').check();
-    await page.locator('[name=reason]').fill('دلیل آزمایشی برای بررسی دکمه‌ها');
     for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
-        await check('Review button works after harmless Woo UI updates: ' + decision, async () => {
-            const [request] = await Promise.all([
-                page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/preview-action')),
-                page.locator('[name=decision][value=' + decision + ']').click()
-            ]);
-            await page.locator('.tcc-feedback').filter({hasText: 'هیچ تغییری ثبت نشد'}).waitFor();
-            assert.match(request.postData(), new RegExp('name="decision"\\r\\n\\r\\n' + decision));
-            for (const name of ['revision', 'fingerprint', '_wpnonce']) assert.ok(request.postData().includes('name="' + name + '"'));
+        await page.locator('[data-tcc-decision][value=' + decision + ']').check();
+        await check('Native decision selection does not auto-save/pay: ' + decision, async () => {
+            assert.equal(await page.locator('[data-tcc-decision]:checked').inputValue(), decision);
+            assert.match(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /به‌روزرسانی سفارش/);
+            assert.doesNotMatch(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /تغییرات ذخیره‌نشده/);
+            assert.equal(financeRequests.length, 0);
         });
     }
-    const posted = reviews.length;
-    await page.locator('[name=order_total]').fill('600000');
-    await check('Real unsaved amount blocks every review decision', async () => {
-        for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
-            await page.locator('[name=decision][value=' + decision + ']').click();
-            assert.match(await page.locator('.tcc-feedback').innerText(), /به‌روزرسانی/); assert.equal(reviews.length, posted);
-        }
+    await page.locator('[data-tcc-decision][value=approve]').check(); await page.locator('#publish').click();
+    await check('Native Update requires explicit confirmation before approval', async () => { assert.match(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /ورود وجه/); assert.equal(financeRequests.length, 0); });
+    await page.locator('[data-tcc-confirmed]').check(); await page.locator('#publish').click();
+    await check('Only native Update carries the financial intent and original Woo action', async () => {
+        const data = await page.evaluate(() => window.tccPreviewSave);
+        assert.equal(data['tcc_review[decision]'], 'approve'); assert.equal(data['tcc_review[confirmed]'], 'yes'); assert.equal(data.action, 'editpost');
+        for (const key of ['order_id', 'revision', 'fingerprint', 'nonce']) assert.ok(data['tcc_review[' + key + ']']);
+        assert.match(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /پیش‌نمایش/); assert.equal(financeRequests.length, 0);
     });
-    await page.locator('[name=order_total]').fill('485000');
-    await check('Restoring the original order value makes review usable again', async () => {
-        await Promise.all([page.waitForRequest(request => request.method() === 'POST' && request.url().endsWith('/preview-action')), page.locator('[name=decision][value=approve]').click()]);
-        await page.locator('.tcc-feedback').filter({hasText: 'هیچ تغییری ثبت نشد'}).waitFor(); assert.equal(reviews.length, posted + 1);
-    });
+    for (const decision of ['reject', 'correct', 'reconcile']) {
+        await page.locator('[data-tcc-reason]').fill(''); await page.locator('[data-tcc-decision][value=' + decision + ']').check(); await page.locator('#publish').click();
+        await check('Native Update validates the public reason: ' + decision, async () => assert.match(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /پیام/));
+        await page.locator('[data-tcc-reason]').fill('تصویر رسید خوانا نیست'); await page.locator('#publish').click();
+        await check('Native Update submits the selected receipt decision: ' + decision, async () => {
+            const data = await page.evaluate(() => window.tccPreviewSave); assert.equal(data['tcc_review[decision]'], decision); assert.equal(data['tcc_review[reason]'], 'تصویر رسید خوانا نیست'); assert.equal(financeRequests.length, 0);
+        });
+    }
+    await page.locator('.preview-order-header summary').click(); await page.locator('[name=order_total]').fill('900'); await page.locator('#publish').click();
+    await check('Edited Woo fields travel with the intent for authoritative server validation', async () => { const data = await page.evaluate(() => window.tccPreviewSave); assert.equal(data.order_total, '900'); assert.equal(data['tcc_review[decision]'], 'reconcile'); assert.ok(data['tcc_review[fingerprint]']); });
+    await page.locator('[data-tcc-clear]').click(); await page.locator('#publish').click();
+    await check('Cancelling selection leaves ordinary Woo Update without a financial decision', async () => { const data = await page.evaluate(() => window.tccPreviewSave); assert.equal(data['tcc_review[decision]'], undefined); assert.equal(await page.locator('[data-tcc-decision]:checked').count(), 0); assert.equal(financeRequests.length, 0); });
+    await goto('/order-hpos');
+    await page.locator('[data-tcc-decision][value=reject]').check();
+    await check('HPOS fixture stages without request or native action replacement', async () => { assert.equal(financeRequests.length, 0); assert.match(await page.locator('.tcc-order-box .tcc-feedback').innerText(), /به‌روزرسانی سفارش/); assert.equal(await page.locator('form#order').count(), 1); });
+    await page.locator('[data-tcc-reason]').fill('رسید نیازمند اصلاح است'); await page.locator('#publish').click();
+    await check('HPOS fixture submits decision inside its own native Update', async () => { const data = await page.evaluate(() => window.tccPreviewSave); assert.equal(data.action, 'edit_order'); assert.equal(data['tcc_review[decision]'], 'reject'); assert.equal(data['tcc_review[reason]'], 'رسید نیازمند اصلاح است'); assert.equal(financeRequests.length, 0); });
+    await page.locator('.tcc-rotate').click();
+    await check('Receipt rotation remains presentation-only', async () => { const image = page.locator('.tcc-admin-image img'); assert.match(await image.getAttribute('style'), /rotate\(90deg\)/); assert.equal(await image.getAttribute('src'), '/receipt.svg'); });
+    await goto('/payment');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a7N8AAAAASUVORK5CYII=', 'base64');
+    const fileEvent = page.waitForEvent('filechooser'); await page.getByLabel('انتخاب تصویر رسید', {exact: true}).click(); const chooser = await fileEvent;
+    await chooser.setFiles({name: 'رسید آزمایشی.png', mimeType: 'image/png', buffer: png});
+    await check('Persian file picker opens the native chooser and shows a Persian filename', async () => { assert.equal(await page.locator('[data-tcc-file-name]').innerText(), 'رسید آزمایشی.png'); assert.match(await page.locator('.tcc-file-action').innerText(), /انتخاب تصویر/); assert.doesNotMatch(await page.locator('.tcc-file-picker').innerText(), /Choose File|No file chosen/i); });
+    await check('Selected PNG previews locally without uploading', async () => { const image = page.locator('.tcc-preview'); assert.equal(await image.isVisible(), true); assert.match(await image.getAttribute('src'), /^blob:/); assert.equal(financeRequests.length, 0); });
+    await page.locator('.tcc-upload-form [type=submit]').click();
+    await check('Preview upload is explicitly non-operational', async () => { assert.equal(financeRequests.length, 0); assert.match(await page.locator('.tcc-upload-form .tcc-feedback').innerText(), /پیش‌نمایش/); });
+    await page.locator('input[type=file]').setInputFiles([]);
+    await check('Cancelling the file resets its Persian status and stale preview', async () => { assert.equal(await page.locator('[data-tcc-file-name]').innerText(), 'تصویری انتخاب نشده'); assert.equal(await page.locator('.tcc-preview').isVisible(), false); assert.equal(await page.locator('.tcc-preview').getAttribute('src'), null); });
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.locator('[data-tcc-kind=amount]').click();
+    await check('Browser clipboard contains exact rials with no unit or separators', async () => { assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '4850000'); assert.match(await page.locator('.tcc-copy-feedback').innerText(), /مبلغ ریالی کپی شد/); assert.match(await page.locator('[data-tcc-kind=amount]').innerText(), /کپی شد/); });
+    await goto('/pending');
+    await check('Pending page has one clear status, not repeated review paragraphs', async () => { assert.equal(await page.locator('.tcc-status-card').count(), 1); assert.match(await page.locator('.tcc-status-copy h3').innerText(), /رسید ثبت شد/); assert.match(await page.locator('.tcc-status-copy p').innerText(), /پرداخت هنوز تأیید نشده/); assert.equal(await page.locator('.tcc-payment-meta').count(), 0); });
+    await check('Pending receipt has a direct protected image action and optional corrections', async () => { assert.equal(await page.getByRole('link', {name: 'مشاهده تصویر رسید'}).isVisible(), true); assert.equal(await page.locator('.tcc-upload').getAttribute('open'), null); assert.equal(await page.locator('.tcc-transfer-details').getAttribute('open'), null); });
+    await page.locator('.tcc-upload > summary').click(); await page.locator('[name=reference]').fill('000456');
+    await check('Pending correction is available only when explicitly expanded', async () => { assert.equal(await page.locator('.tcc-upload-form').isVisible(), true); assert.equal(await page.locator('[name=reference]').inputValue(), '000456'); });
+    await goto('/saman');
+    await check('Recognized bank logo is served locally with no third-party page requests', async () => { const img = page.locator('.tcc-bank-logo img'); assert.equal(await img.getAttribute('src'), '/banks/saman.svg'); assert.equal(await img.evaluate(el => el.complete && el.naturalWidth > 0), true); });
+    await page.emulateMedia({reducedMotion: 'reduce'});
+    await check('Reduced motion disables all decorative customer animations', async () => { assert.deepEqual(await page.locator('.tcc-payment, .tcc-bank').evaluateAll(nodes => nodes.map(el => getComputedStyle(el).animationName)), ['none', 'none']); });
+    await page.emulateMedia({reducedMotion: 'no-preference'});
+    await goto('/approved');
+    await check('Paid page never offers another transfer or receipt upload', async () => { assert.equal(await page.locator('.tcc-upload-form').count(), 0); assert.equal(await page.locator('[data-tcc-copy]').count(), 0); assert.match(await page.locator('.tcc-status-copy h3').innerText(), /پرداخت سفارش ثبت شد/); });
     const noJS = await browser.newContext({javaScriptEnabled: false, viewport: {width: 390, height: 844}});
     const fallback = await noJS.newPage(); await fallback.goto(base + '/');
     await check('No-JS browser exposes all settings panels, with one valid form', async () => { assert.equal(await fallback.locator('[data-tcc-panel]:visible').count(), 4); assert.equal(await fallback.locator('form').count(), 1); });
+    for (const [route, id, action] of [['/order', 'post', 'editpost'], ['/order-hpos', 'order', 'edit_order']]) {
+        await fallback.goto(base + route); await fallback.locator('[data-tcc-decision][value=reject]').check(); await fallback.locator('[data-tcc-reason]').fill('تصویر خوانا نیست');
+        await check('No-JS staged choice uses the native order form: ' + id, async () => { const data = await fallback.locator('form').evaluate(form => ({id: form.id, values: Object.fromEntries(new FormData(form))})); assert.equal(await fallback.locator('form').count(), 1); assert.equal(data.id, id); assert.equal(data.values.action, action); assert.equal(data.values['tcc_review[decision]'], 'reject'); assert.ok(data.values['tcc_review[nonce]']); });
+        await fallback.locator('input[type=radio][name="tcc_review[decision]"][value=""]').check();
+        await check('No-JS user can cancel only the financial choice: ' + id, async () => { const data = await fallback.locator('form').evaluate(form => Object.fromEntries(new FormData(form))); assert.equal(data['tcc_review[decision]'], ''); assert.equal(data['tcc_review[reason]'], 'تصویر خوانا نیست'); assert.equal(data.action, action); });
+    }
+    await fallback.goto(base + '/payment');
+    const noJSFile = fallback.waitForEvent('filechooser'); await fallback.getByLabel('انتخاب تصویر رسید', {exact: true}).click(); await (await noJSFile).setFiles({name: 'رسید.png', mimeType: 'image/png', buffer: png});
+    await check('No-JS Persian picker retains the real multipart file input', async () => { assert.equal(await fallback.locator('form').getAttribute('enctype'), 'multipart/form-data'); assert.equal(await fallback.locator('input[type=file]').evaluate(input => input.files[0].name), 'رسید.png'); assert.match(await fallback.locator('.tcc-file-action').innerText(), /انتخاب تصویر/); });
     await noJS.close();
     await goto('/checklist');
     await check('Checklist has every Markdown case with a unique ID', async () => {
         const ids = await page.locator('[data-case]').evaluateAll(nodes => nodes.map(n => n.dataset.case));
         const markdown = fs.readFileSync('CARD_TO_CARD_TEST_CHECKLIST.md', 'utf8');
-        assert.equal(ids.length, (markdown.match(/^- \[ \]/gm) || []).length); assert.equal(new Set(ids).size, 75); assert.equal(ids.length, 75);
+        assert.equal(ids.length, (markdown.match(/^- \[ \]/gm) || []).length); assert.equal(new Set(ids).size, 80); assert.equal(ids.length, 80);
     });
     await check('Manual checklist starts with no claimed test passes', async () => { assert.equal(await page.locator('[data-status=pass]').count(), 0); assert.equal(await page.locator('.qa-progress').getAttribute('value'), '0'); });
     await page.locator('[data-case=A01] .qa-pass').check();
@@ -261,7 +283,7 @@ try {
     await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
     const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
     const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
-    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.2.1'); assert.equal(Object.keys(data.cases).length, 75); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.0'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
     for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});
         await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });
@@ -270,7 +292,7 @@ try {
     await page.evaluate(() => document.querySelectorAll('details').forEach(d => { d.open = true; })); await page.addScriptTag({content: axe});
     await check('Expanded checklist automated accessibility audit', async () => { const result = await page.evaluate(async () => window.axe.run('main', {runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa']}})); assert.deepEqual(result.violations.map(v => ({id: v.id, targets: v.nodes.map(n => n.target)})), []); });
     page.once('dialog', dialog => dialog.accept()); await page.locator('#qa-reset').click();
-    await check('Confirmed checklist reset clears only checklist state', async () => { assert.equal(await page.locator('[data-status=pass]').count(), 0); assert.equal(await page.locator('[data-status=fail]').count(), 0); assert.equal(await page.locator('[data-case=A01] textarea').inputValue(), ''); assert.equal(await page.locator('[data-case]').count(), 75); });
+    await check('Confirmed checklist reset clears only checklist state', async () => { assert.equal(await page.locator('[data-status=pass]').count(), 0); assert.equal(await page.locator('[data-status=fail]').count(), 0); assert.equal(await page.locator('[data-case=A01] textarea').inputValue(), ''); assert.equal(await page.locator('[data-case]').count(), 80); });
     await check('No uncaught browser errors', async () => assert.deepEqual(errors, []));
     console.log(`\nResult: ${count} browser checks passed (Chromium ${browser.version()}, PHP fixtures; NOT WordPress/Woo integration)`);
 } finally { await browser.close(); }

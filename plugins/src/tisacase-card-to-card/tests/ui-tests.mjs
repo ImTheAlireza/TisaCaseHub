@@ -25,8 +25,8 @@ w.XMLHttpRequest = XHR;
 w.eval(fs.readFileSync(path.join(root, 'assets/frontend.js'), 'utf8'));
 const panel = w.document.querySelector('.tcc-payment'), form = panel.querySelector('form');
 const submit = () => form.dispatchEvent(new w.SubmitEvent('submit', {bubbles: true, cancelable: true, submitter: form.querySelector('button[type=submit]')}));
-panel.querySelector('[data-tcc-copy="485000"]').click(); await pause();
-test('Copy uses exact ASCII amount, not formatted/rounded text', () => assert.equal(copied, '485000'));
+panel.querySelector('[data-tcc-copy="4850000"]').click(); await pause();
+test('Copy converts IRT to exact ASCII rials, not formatted/rounded text', () => assert.equal(copied, '4850000'));
 test('Copy feedback is accessible', () => assert.match(panel.querySelector('.tcc-copy-feedback').textContent, /کپی شد/));
 panel.querySelector('.tcc-bank [data-tcc-copy]').click(); await pause();
 test('Copy card removes visual spaces', () => assert.match(copied, /^\d{16}$/));
@@ -37,10 +37,14 @@ const input = form.querySelector('[type=file]');
 Object.defineProperty(input, 'files', {configurable: true, value: [new w.File(['PNG'], 'receipt.png', {type: 'image/png'})]});
 input.dispatchEvent(new w.Event('change'));
 test('Selected image previews without uploading', () => assert.equal(form.querySelector('.tcc-preview').hidden, false));
+test('Persian picker displays selected filename as text', () => assert.equal(form.querySelector('[data-tcc-file-name]').textContent, 'receipt.png'));
+test('Persian picker has a localized accessible name', () => assert.equal(input.getAttribute('aria-label'), 'انتخاب تصویر رسید'));
+test('File chooser is localized independently of browser language', () => assert.match(form.querySelector('.tcc-file-action').textContent, /انتخاب تصویر/));
 Object.defineProperty(input, 'files', {configurable: true, value: [new w.File(['PDF'], 'receipt.pdf', {type: 'application/pdf'})]});
 input.dispatchEvent(new w.Event('change'));
 test('Unsupported file gets clear message', () => assert.match(form.querySelector('.tcc-feedback').textContent, /JPG/));
-Object.defineProperty(input, 'files', {configurable: true, value: []});
+Object.defineProperty(input, 'files', {configurable: true, value: []}); input.dispatchEvent(new w.Event('change'));
+test('Clearing a file resets the Persian filename and removes stale preview', () => { assert.equal(form.querySelector('[data-tcc-file-name]').textContent, 'تصویری انتخاب نشده'); assert.equal(form.querySelector('.tcc-preview').hasAttribute('src'), false); });
 const requestKey = form.elements.request_key.value;
 submit();
 test('Upload targets same-origin admin endpoint', () => { assert.equal(calls[0].method, 'POST'); assert.equal(new URL(calls[0].url).origin, w.location.origin); });
@@ -57,86 +61,53 @@ test('Non-JSON proxy response gives usable fallback', () => assert.match(form.qu
 submit(); calls[3].ontimeout();
 test('Timeout allows retry with no new order/key', () => { assert.equal(form.elements.request_key.value, requestKey); assert.equal(form.querySelector('[type=submit]').disabled, false); });
 
-const admin = dom('admin.html'); const a = admin.window; const doc = a.document; let fetched = [];
-a.fetch = async (url, options) => { fetched.push({url, options}); return {ok: false, json: async () => ({success: false, data: {message: 'وضعیت تغییر کرده است'}})}; };
+const admin = dom('admin.html'); const a = admin.window; const doc = a.document;
+let financialRequests = 0; a.fetch = async () => { financialRequests++; throw new Error('Financial AJAX must not run'); };
 a.eval(fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8'));
-const af = doc.querySelector('.tcc-review-form'), box = doc.querySelector('.tcc-order-box');
-function decide(value) { af.dispatchEvent(new a.SubmitEvent('submit', {bubbles: true, cancelable: true, submitter: box.querySelector('button[value="' + value + '"]')})); }
-test('No nested forms in actual PHP render', () => { assert.equal(doc.querySelectorAll('form form').length, 0); assert.equal(doc.querySelectorAll('form').length, 2); });
-test('External review form owns all decision controls', () => { for (const control of box.querySelectorAll('[form]')) assert.equal(control.form, af); });
-test('Method name visible in order box', () => assert.match(box.textContent, /کارت به کارت تیساکیس/));
-decide('approve'); await pause();
-test('Approve blocked before explicit bank confirmation', () => { assert.equal(fetched.length, 0); assert.match(box.querySelector('.tcc-feedback').textContent, /ورود وجه/); });
-decide('reject'); await pause();
-test('Reject requires a public reason', () => { assert.equal(fetched.length, 0); assert.match(box.querySelector('.tcc-feedback').textContent, /علت/); });
-const preset = box.querySelector('.tcc-reason-preset'); preset.selectedIndex = 1; preset.dispatchEvent(new a.Event('change', {bubbles: true}));
-test('Reason preset fills public reason only', () => { assert.ok(box.querySelector('[name=reason]').value); assert.equal(box.querySelector('[name=private_note]').value, ''); });
-box.querySelector('[name=private_note]').value = 'INTERNAL'; decide('reject'); await pause();
-test('Reject posts same order with revision and correct decision', () => { const data = fetched[0].options.body; assert.equal(data.get('decision'), 'reject'); assert.equal(data.get('order_id'), '101'); assert.equal(data.get('revision'), '2'); assert.equal(data.get('private_note'), 'INTERNAL'); assert.ok(data.get('_wpnonce')); });
-test('Server conflict visible; buttons re-enabled', () => { assert.match(box.querySelector('.tcc-feedback').textContent, /تغییر کرده/); assert.equal(box.querySelector('[value=approve]').disabled, false); });
-box.querySelector('[name=confirmed]').checked = true; decide('approve'); await pause();
-test('Approval includes explicit confirmation', () => assert.equal(fetched[1].options.body.get('confirmed'), 'yes'));
-const silent = doc.querySelector('[name=order_total]'); silent.value = '999'; const silentBefore = fetched.length; decide('approve'); await pause();
-test('Silent/select-widget edits detected even without native change event', () => assert.equal(fetched.length, silentBefore)); silent.value = '485000';
-const dirty = doc.querySelector('[name=order_total]'); dirty.value = '100'; dirty.dispatchEvent(new a.Event('input', {bubbles: true})); const before = fetched.length;
-decide('approve'); await pause();
-test('Unsaved Woo order edits block financial decisions', () => { assert.equal(fetched.length, before); assert.match(box.querySelector('.tcc-feedback').textContent, /ذخیره/); });
-const image = box.querySelector('.tcc-admin-image img'); box.querySelector('.tcc-rotate').click();
-test('Rotation changes presentation, not receipt source', () => { assert.equal(image.style.transform, 'rotate(90deg)'); assert.ok(image.src.includes('action=tcc_receipt')); });
-// Real order values, not UI events or widget bookkeeping, determine dirtiness.
-function reviewFixture(id = 'post') {
-    const fixture = dom('admin.html'), win = fixture.window, document = win.document;
-    const main = document.querySelector('#post'); main.id = id;
-    const extra = document.createElement('input'); extra.name = 'billing_company'; extra.value = 'TEST'; main.append(extra);
-    const checked = document.createElement('input'); checked.type = 'checkbox'; checked.name = 'billing_opt_in'; checked.value = ''; main.append(checked);
-    const multiple = document.createElement('select'); multiple.name = 'custom_choices[]'; multiple.multiple = true; multiple.innerHTML = '<option value="a" selected>A</option><option value="b">B</option>'; main.append(multiple);
-    const requests = [];
-    win.fetch = async (url, options) => { requests.push(options.body); return {ok: false, json: async () => ({success: false, data: {message: 'TEST ONLY: no financial action'}})}; };
-    win.eval(fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8'));
-    document.querySelector('[name=confirmed]').checked = true;
-    return {win, document, main, extra, checked, multiple, requests, decide: async (decision = 'approve') => {
-        const button = document.querySelector('[value="' + decision + '"][name=decision]');
-        document.querySelector('.tcc-review-form').dispatchEvent(new win.SubmitEvent('submit', {bubbles: true, cancelable: true, submitter: button})); await pause();
-    }};
-}
-for (const id of ['post', 'order', 'woocommerce-order']) {
-    const fixture = reviewFixture(id);
-    fixture.main.querySelector('[name=order_total]').dispatchEvent(new fixture.win.Event('change', {bubbles: true}));
-    await fixture.decide();
-    test('Unchanged Woo initialization events do not block review: #' + id, () => assert.equal(fixture.requests.length, 1));
-    fixture.extra.value = 'EDITED'; fixture.extra.dispatchEvent(new fixture.win.Event('input', {bubbles: true})); await fixture.decide();
-    test('Real order edits still block review: #' + id, () => assert.equal(fixture.requests.length, 1));
-    fixture.extra.value = 'TEST'; fixture.extra.dispatchEvent(new fixture.win.Event('input', {bubbles: true})); await fixture.decide();
-    test('Reverting actual edits restores a clean order: #' + id, () => assert.equal(fixture.requests.length, 2));
-    fixture.win.close();
-}
-const widgets = reviewFixture();
-const search = widgets.document.createElement('input'); search.name = 'select2_search'; search.className = 'select2-search__field'; widgets.main.append(search); search.value = 'customer search'; search.dispatchEvent(new widgets.win.Event('input', {bubbles: true}));
-await widgets.decide();
-test('SelectWoo/Select2 search text is not an unsaved order edit', () => assert.equal(widgets.requests.length, 1));
-const blankMeta = widgets.document.createElement('input'); blankMeta.name = 'meta_value[999]'; widgets.main.append(blankMeta); blankMeta.dispatchEvent(new widgets.win.Event('change', {bubbles: true}));
-await widgets.decide();
-test('Dynamic empty metadata rows do not block review', () => assert.equal(widgets.requests.length, 2));
-widgets.main.prepend(widgets.extra); await widgets.decide();
-test('Metabox/control reordering does not change order data', () => assert.equal(widgets.requests.length, 3));
-const foreign = widgets.document.createElement('input'); foreign.name = 'other_action'; foreign.setAttribute('form', 'tcc-review-101'); widgets.main.append(foreign); foreign.value = 'separate form'; foreign.dispatchEvent(new widgets.win.Event('change', {bubbles: true}));
-await widgets.decide();
-test('Controls owned by another form do not dirty the Woo order', () => assert.equal(widgets.requests.length, 4));
-blankMeta.value = 'ACTUAL NEW METADATA'; await widgets.decide();
-test('Populating new order metadata silently still blocks review', () => assert.equal(widgets.requests.length, 4)); blankMeta.value = '';
-widgets.checked.checked = true; await widgets.decide();
-test('Silent changes to real order checkboxes remain protected', () => assert.equal(widgets.requests.length, 4)); widgets.checked.checked = false;
-widgets.multiple.options[1].selected = true; await widgets.decide();
-test('Silent changes to multiple selections remain protected', () => assert.equal(widgets.requests.length, 4)); widgets.multiple.options[1].selected = false;
-widgets.extra.value = ''; await widgets.decide();
-test('Clearing previously saved order text still blocks review', () => assert.equal(widgets.requests.length, 4)); widgets.extra.value = 'TEST';
+const main = doc.querySelector('#post'), box = doc.querySelector('.tcc-order-box');
+const reason = box.querySelector('[data-tcc-reason]'), confirmed = box.querySelector('[data-tcc-confirmed]');
+const stage = value => box.querySelector('[data-tcc-decision][value="' + value + '"]').click();
+const updateOrder = () => { const event = new a.SubmitEvent('submit', {bubbles: true, cancelable: true, submitter: doc.querySelector('#publish')}); main.dispatchEvent(event); return !event.defaultPrevented; };
+test('One native Woo form, without nested or external review forms', () => { assert.equal(doc.querySelectorAll('form').length, 1); assert.equal(doc.querySelectorAll('form form').length, 0); });
+test('Native form owns every prefixed decision field', () => { for (const control of box.querySelectorAll('[name^="tcc_review["]')) assert.equal(control.form, main); });
+test('No financial action is preselected', () => assert.equal(box.querySelector('[data-tcc-decision]:checked'), null));
+test('Method name remains visible inside the same order', () => assert.match(box.textContent, /کارت به کارت تیساکیس/));
 for (const decision of ['approve', 'reject', 'correct', 'reconcile']) {
-    widgets.document.querySelector('[name=reason]').value = 'دلیل آزمایشی مشتری';
-    widgets.document.querySelector('[name=reason]').dispatchEvent(new widgets.win.Event('input', {bubbles: true}));
-    const countBefore = widgets.requests.length; await widgets.decide(decision);
-    test('Decision remains usable after harmless UI updates: ' + decision, () => { assert.equal(widgets.requests.length, countBefore + 1); assert.equal(widgets.requests.at(-1).get('decision'), decision); assert.ok(widgets.requests.at(-1).get('fingerprint')); });
+    stage(decision);
+    test('Selecting ' + decision + ' stages only, without an HTTP request', () => { assert.equal(new a.FormData(main).get('tcc_review[decision]'), decision); assert.equal(financialRequests, 0); assert.match(box.querySelector('.tcc-feedback').textContent, /به‌روزرسانی سفارش/); });
 }
-widgets.win.close();
+reason.value = ''; stage('reject');
+test('Update blocks rejection without a customer-facing reason', () => { assert.equal(updateOrder(), false); assert.match(box.querySelector('.tcc-feedback').textContent, /پیام/); });
+const preset = box.querySelector('.tcc-reason-preset'); preset.selectedIndex = 1; preset.dispatchEvent(new a.Event('change', {bubbles: true}));
+test('Preset fills customer reason but not private note', () => { assert.ok(reason.value); assert.equal(box.querySelector('[name="tcc_review[private_note]"]').value, ''); });
+box.querySelector('[name="tcc_review[private_note]"]').value = 'INTERNAL';
+test('Native Update carries decision, reason, revision, fingerprint and separate CSRF', () => {
+    assert.equal(updateOrder(), true); const data = new a.FormData(main);
+    for (const key of ['order_id', 'revision', 'fingerprint', 'nonce', 'reason']) assert.ok(data.get('tcc_review[' + key + ']'), key);
+    assert.equal(data.get('tcc_review[decision]'), 'reject'); assert.equal(data.get('tcc_review[revision]'), '2'); assert.equal(data.get('tcc_review[private_note]'), 'INTERNAL');
+});
+stage('approve');
+test('Approval still requires explicit bank confirmation at Update', () => { assert.equal(updateOrder(), false); assert.match(box.querySelector('.tcc-feedback').textContent, /ورود وجه/); });
+confirmed.checked = true; confirmed.dispatchEvent(new a.Event('change', {bubbles: true}));
+test('Confirmed approval travels in native Update, not AJAX', () => { assert.equal(updateOrder(), true); assert.equal(new a.FormData(main).get('tcc_review[confirmed]'), 'yes'); assert.equal(financialRequests, 0); });
+main.querySelector('[name=order_total]').value = '900'; main.querySelector('[name=order_total]').dispatchEvent(new a.Event('change', {bubbles: true}));
+test('Real Woo edits are saved with the intent for server-side revalidation', () => { assert.equal(updateOrder(), true); assert.equal(new a.FormData(main).get('order_total'), '900'); assert.equal(new a.FormData(main).get('tcc_review[decision]'), 'approve'); });
+box.querySelector('[data-tcc-clear]').click();
+test('Cancel selection restores ordinary order save without a decision', () => { assert.equal(new a.FormData(main).get('tcc_review[decision]'), null); assert.equal(confirmed.required, false); assert.equal(reason.required, false); assert.equal(updateOrder(), true); });
+for (const id of ['post', 'order', 'woocommerce-order']) {
+    const fixture = dom(id === 'order' ? 'admin-hpos.html' : 'admin.html'), w = fixture.window, d = w.document; d.querySelector('form').id = id;
+    let requests = 0; w.fetch = async () => { requests++; };
+    w.eval(fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8'));
+    const orderForm = d.getElementById(id); const ui = d.createElement('input'); ui.name = 'select2_search'; ui.value = 'widget initialization'; orderForm.append(ui); ui.dispatchEvent(new w.Event('change', {bubbles: true}));
+    d.querySelector('[data-tcc-decision][value=reject]').click();
+    test('Automatic Woo widget edits never prevent selection in #' + id, () => { assert.equal(new w.FormData(orderForm).get('tcc_review[decision]'), 'reject'); assert.equal(requests, 0); assert.doesNotMatch(d.querySelector('.tcc-feedback').textContent, /تغییرات ذخیره‌نشده/); });
+    d.querySelector('[data-tcc-reason]').value = 'تصویر خوانا نیست'; d.querySelector('[data-tcc-reason]').dispatchEvent(new w.Event('input', {bubbles: true}));
+    const event = new w.SubmitEvent('submit', {bubbles: true, cancelable: true}); orderForm.dispatchEvent(event);
+    test('Native Update submits the intent from #' + id, () => { assert.equal(event.defaultPrevented, false); assert.equal(new w.FormData(orderForm).get('tcc_review[decision]'), 'reject'); assert.equal(new w.FormData(orderForm).get('action'), id === 'order' ? 'edit_order' : 'editpost'); assert.equal(requests, 0); });
+    fixture.window.close();
+}
+const image = box.querySelector('.tcc-admin-image img'); box.querySelector('.tcc-rotate').click();
+test('Receipt rotation remains presentation-only', () => { assert.equal(image.style.transform, 'rotate(90deg)'); assert.ok(image.src.includes('action=tcc_receipt')); });
 const settingsDom = dom('settings.html'); const sw = settingsDom.window, sd = sw.document;
 const sf = sd.querySelector('#tcc-settings-form');
 test('No-JS settings keep all panels visible and submittable', () => {

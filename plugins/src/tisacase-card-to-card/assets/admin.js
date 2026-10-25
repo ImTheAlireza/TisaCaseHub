@@ -1,51 +1,46 @@
 (function () {
     'use strict';
-    const orderForm = document.querySelector('form#post, form#order, form#woocommerce-order');
-    // A Woo/SelectWoo initialization event is not an edit. Compare actual named
-    // order values instead; never reset this baseline after user interaction.
-    const orderValues = () => {
-        if (!orderForm) return '';
-        const values = new Map();
-        Array.from(orderForm.elements).forEach(field => {
-            if (!field.matches('input,select,textarea') || !field.name || field.form !== orderForm ||
-                field.closest('.tcc-panel, .select2-container, .select2-dropdown') || field.matches('.select2-search__field') ||
-                ['hidden', 'submit', 'button', 'reset'].includes(field.type)) return;
-            const checkable = ['checkbox', 'radio'].includes(field.type);
-            if (checkable && !field.checked) return;
-            const value = field.tagName === 'SELECT' && field.multiple ? Array.from(field.selectedOptions, option => option.value).filter(Boolean) : field.value;
-            // Empty dynamic metadata/search rows do not represent pending data.
-            if (!checkable && (value === '' || (Array.isArray(value) && !value.length))) return;
-            if (!values.has(field.name)) values.set(field.name, []);
-            values.get(field.name).push(value);
-        });
-        // Moving metaboxes is cosmetic; preserve ordering within array fields.
-        return JSON.stringify(Array.from(values).sort(([a], [b]) => a.localeCompare(b)));
-    };
-    const initialOrderValues = orderValues();
-    document.querySelectorAll('.tcc-reason-preset').forEach(select => select.addEventListener('change', () => { if (select.value) select.closest('.tcc-panel').querySelector('[name=reason]').value = select.value; }));
-    document.querySelectorAll('.tcc-rotate').forEach(button => button.addEventListener('click', () => { const image = button.closest('.tcc-admin-image').querySelector('img'); const rotation = (Number(image.dataset.rotation || 0) + 90) % 360; image.dataset.rotation = rotation; image.style.transform = 'rotate(' + rotation + 'deg)'; }));
-    document.querySelectorAll('.tcc-review-form').forEach(form => form.addEventListener('submit', async event => {
-        if (!window.fetch || !window.FormData) return;
-        event.preventDefault();
-        const panel = document.querySelector('[data-tcc-order="' + form.elements.order_id.value + '"]');
+    document.querySelectorAll('[data-tcc-order]').forEach(panel => {
+        const form = document.querySelector('form#post, form#order, form#woocommerce-order');
         const feedback = panel.querySelector('.tcc-feedback');
-        if (orderValues() !== initialOrderValues) { feedback.textContent = 'تغییرات ذخیره‌نشده در سفارش دارید. ابتدا دکمه «به‌روزرسانی» سفارش را بزنید، سپس پرداخت را بررسی کنید.'; return; }
-        const decision = event.submitter && event.submitter.value;
-        if (!decision) { feedback.textContent = 'یک اقدام مشخص انتخاب کنید.'; return; }
-        const data = new FormData(form); data.set('decision', decision);
-        if (decision === 'approve' && data.get('confirmed') !== 'yes' && panel.querySelector('[name=confirmed]')) { feedback.textContent = 'ابتدا بررسی ورود وجه به حساب را تأیید کنید.'; return; }
-        if (['reject', 'correct', 'reconcile'].includes(decision) && !String(data.get('reason') || '').trim()) { feedback.textContent = 'علت قابل‌نمایش به مشتری الزامی است.'; return; }
-        const buttons = document.querySelectorAll('button[form="' + form.id + '"]');
-        buttons.forEach(button => { button.disabled = true; }); feedback.textContent = 'در حال ثبت تصمیم؛ صفحه را نبندید…';
-        const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 90000);
-        try {
-            const response = await fetch(form.dataset.ajax, {method: 'POST', body: data, credentials: 'same-origin', signal: controller.signal});
-            const result = await response.json();
-            if (!response.ok || !result.success) throw new Error(result.data && result.data.message ? result.data.message : 'ثبت تصمیم ناموفق بود.');
-            feedback.textContent = result.data.message; window.location.reload();
-        } catch (error) { feedback.textContent = error.name === 'AbortError' || error instanceof TypeError ? 'پاسخ مشخص نیست؛ قبل از تکرار تأیید، سفارش را دوباره باز کنید و وضعیت/سابقه را بررسی کنید.' : error.message; }
-        finally { clearTimeout(timer); buttons.forEach(button => { button.disabled = false; }); }
-    }));
+        const choices = Array.from(panel.querySelectorAll('[data-tcc-decision]'));
+        const reason = panel.querySelector('[data-tcc-reason]'), confirmed = panel.querySelector('[data-tcc-confirmed]');
+        const clear = panel.querySelector('[data-tcc-clear]');
+        if (!form) { feedback.textContent = 'برای ثبت تصمیم، صفحه ویرایش سفارش ووکامرس را باز کنید.'; choices.forEach(choice => { choice.disabled = true; }); return; }
+        panel.querySelectorAll('[name^="tcc_review["]').forEach(control => { if (control.form !== form) control.setAttribute('form', form.id); });
+        const selected = () => choices.find(choice => choice.checked);
+        const validity = () => {
+            const choice = selected(), decision = choice ? choice.value : '';
+            const needsReason = ['reject', 'correct', 'reconcile'].includes(decision);
+            if (reason) { reason.required = needsReason; reason.setCustomValidity(needsReason && !reason.value.trim() ? 'پیام قابل‌نمایش به مشتری را بنویسید.' : ''); }
+            if (confirmed) { confirmed.required = decision === 'approve'; confirmed.setCustomValidity(decision === 'approve' && !confirmed.checked ? 'بررسی ورود وجه به حساب مقصد را تأیید کنید.' : ''); }
+        };
+        const update = () => {
+            validity(); const choice = selected();
+            feedback.textContent = choice ? '«' + choice.nextElementSibling.textContent.trim() + '» انتخاب شد؛ برای ثبت، «به‌روزرسانی سفارش» را بزنید.' : 'تصمیم را انتخاب کنید؛ با «به‌روزرسانی سفارش» ثبت می‌شود.';
+            clear.hidden = !choice; panel.classList.toggle('has-pending-decision', Boolean(choice));
+        };
+        choices.forEach(choice => choice.addEventListener('change', update));
+        [reason, confirmed].filter(Boolean).forEach(control => { control.addEventListener('input', validity); control.addEventListener('change', validity); });
+        clear.addEventListener('click', () => { choices.forEach(choice => { choice.checked = false; }); update(); });
+        panel.querySelectorAll('.tcc-reason-preset').forEach(select => select.addEventListener('change', () => { if (select.value && reason) { reason.value = select.value; validity(); } }));
+        panel.querySelectorAll('.tcc-rotate').forEach(button => button.addEventListener('click', () => { const image = button.closest('.tcc-admin-image').querySelector('img'); const rotation = (Number(image.dataset.rotation || 0) + 90) % 360; image.dataset.rotation = rotation; image.style.transform = 'rotate(' + rotation + 'deg)'; }));
+        form.addEventListener('invalid', event => {
+            if (!panel.contains(event.target)) return;
+            feedback.textContent = event.target.validationMessage;
+            const details = event.target.closest('details'); if (details) details.open = true;
+        }, true);
+        form.addEventListener('submit', event => {
+            if (!selected()) return;
+            validity();
+            const invalid = [reason, confirmed].filter(Boolean).find(control => !control.checkValidity());
+            if (invalid) { event.preventDefault(); feedback.textContent = invalid.validationMessage; invalid.focus(); return; }
+            feedback.textContent = 'سفارش و تصمیم انتخاب‌شده در حال ذخیره‌اند…';
+            // No fetch, hidden auto-submit or browser fingerprint. The native Woo
+            // Update request carries the selection; the server verifies saved data.
+        });
+        update();
+    });
     const settings = document.querySelector('#tcc-settings-form');
     if (settings) {
         const tabs = Array.from(settings.querySelectorAll('[data-tcc-tab]'));

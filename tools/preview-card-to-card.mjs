@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureDir = path.resolve(root, '.cache/tcc-tests');
 const assets = path.join(root, 'plugins/src/tisacase-card-to-card/assets');
 const port = Number(process.env.PORT || 4173);
-const routes = {'/': 'settings.html', '/order': 'admin.html', '/payment': 'payment-new.html', '/correction': 'customer.html', '/first-run': 'settings-empty.html'};
+const routes = {'/': 'settings.html', '/order': 'admin.html', '/order-hpos': 'admin-hpos.html', '/payment': 'payment-new.html', '/correction': 'customer.html', '/first-run': 'settings-empty.html', '/pending': 'payment-pending.html', '/saman': 'payment-saman.html', '/approved': 'payment-paid.html'};
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const previewCSS = `
 @font-face{font-family:Vazirmatn;src:url('/font/400.woff2') format('woff2');font-weight:400;font-display:swap}
@@ -25,7 +25,7 @@ html,body{margin:0;min-height:100%;background:#f4f2ec;color:#1f2a2e;font-family:
 .preview-order-header{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:24px 0 16px}.preview-order-header h1{margin:0;font-size:20px}
 .preview-order-header details{font-size:11px;color:#65746f}.preview-order-header input{max-width:110px;padding:6px;border:1px solid #ddd;border-radius:6px}
 .preview-order-host{padding:20px;border:1px solid #e3e1da;border-radius:16px;background:#fff}
-.preview-payment-host{max-width:900px;margin:auto}
+.preview-payment-host{max-width:940px;margin:auto}.preview-update{font:inherit;font-size:12px;background:#0e7c6b;color:white;border:0;border-radius:8px;padding:10px 14px;cursor:pointer}
 @media(max-width:600px){.preview-chrome{padding:12px 16px;gap:8px}.preview-label{width:100%}.preview-content{padding-inline:12px}.preview-order-host{padding:12px}.preview-order-header{flex-wrap:wrap}.preview-chrome a{padding-inline:8px}}
 `;
 const receipt = `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="480" viewBox="0 0 320 480"><rect x="1" y="1" width="318" height="478" rx="12" fill="white" stroke="#e3e1da"/><circle cx="160" cy="67" r="24" fill="#e8f0ee"/><path d="m148 66 8 8 16-18" fill="none" stroke="#0e7c6b" stroke-width="3" stroke-linecap="round"/><g font-family="Tahoma,Arial" text-anchor="middle"><text x="160" y="125" font-size="20" fill="#064e46">TEST RECEIPT</text><text x="160" y="153" font-size="12" fill="#65746f">DEMO ONLY / NOT A BANK DOCUMENT</text><text x="160" y="220" font-size="30" fill="#1f2a2e">485,000</text><text x="160" y="246" font-size="13" fill="#65746f">IRT</text><text x="160" y="310" font-size="14" fill="#1f2a2e">Reference: 000123</text><text x="160" y="343" font-size="14" fill="#65746f">Order #101</text><text x="160" y="424" font-size="11" fill="#65746f">TISACASE / INTERFACE PREVIEW</text></g><path d="M28 274h264M28 382h264" stroke="#e3e1da" stroke-dasharray="4 5"/></svg>`;
@@ -38,7 +38,7 @@ function render(route, shared) {
     const walker = doc.createTreeWalker(doc.body, doc.defaultView.NodeFilter.SHOW_TEXT);
     while (walker.nextNode()) walker.currentNode.textContent = clean(walker.currentNode.textContent);
     doc.querySelectorAll('input[value]').forEach(input => input.setAttribute('value', clean(input.value)));
-    doc.querySelectorAll('img').forEach(image => { if (image.src.includes('tcc_receipt')) image.setAttribute('src', '/receipt.svg'); });
+    doc.querySelectorAll('img').forEach(image => { if (image.src.includes('tcc_receipt')) image.setAttribute('src', '/receipt.svg'); else if (image.src.includes('/assets/banks/')) image.setAttribute('src', '/banks/' + path.basename(image.src)); });
     doc.querySelectorAll('a').forEach(link => {
         if (link.href.includes('tcc_receipt')) link.setAttribute('href', '/receipt.svg');
         else if (link.href.includes('tcc_method=')) link.setAttribute('href', '/order');
@@ -49,11 +49,11 @@ function render(route, shared) {
     if (input) {
         const wrapper = doc.createElement('header'); wrapper.className = 'preview-order-header';
         wrapper.innerHTML = '<h1>بررسی پرداخت سفارش #۱۰۱</h1><details><summary>نمونه فرم سفارش</summary><label>مبلغ سفارش </label></details>';
-        input.replaceWith(wrapper); wrapper.querySelector('label').append(input);
+        input.replaceWith(wrapper); wrapper.querySelector('label').append(input); wrapper.append(doc.querySelector('#publish')); doc.querySelector('#publish').className = 'preview-update';
         const box = doc.querySelector('.tcc-order-box'); const host = doc.createElement('div'); host.className = 'preview-order-host'; box.replaceWith(host); host.append(box);
     }
-    const customer = ['/payment', '/correction'].includes(route);
-    const links = [['/', 'تنظیمات'], ['/order', 'داخل سفارش'], ['/payment', 'پرداخت مشتری'], ['/checklist', 'چک‌لیست تست']].map(([href, label]) => `<a href="${href}${shared ? '?shared=1' : ''}"${route === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
+    const customer = ['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route);
+    const links = [['/', 'تنظیمات'], ['/order', 'داخل سفارش'], ['/payment', 'پرداخت مشتری'], ['/pending', 'در حال بررسی'], ['/checklist', 'چک‌لیست تست']].map(([href, label]) => `<a href="${href}${shared ? '?shared=1' : ''}"${route === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>پیش‌نمایش کارت به کارت تیساکیس</title><style>${previewCSS}</style>${shared ? '<link rel="stylesheet" href="/shared.css">' : ''}<link rel="stylesheet" href="/assets/tcc.css">${customer ? '' : '<link rel="stylesheet" href="/assets/admin.css">'}<script src="/assets/${customer ? 'frontend.js' : 'admin.js'}" defer></script><script src="/preview.js" defer></script></head><body class="${customer ? '' : 'woocommerce_page_tisacase-card-to-card'}${shared ? ' tisa-scope' : ''}"><header class="preview-chrome"><span class="preview-brand" lang="en">TISACASE <span style="font-weight:400;color:#8c9994">/ PAYMENTS</span></span><nav aria-label="صفحه‌های پیش‌نمایش">${links}</nav><span class="preview-label"><b></b>داده آزمایشی؛ بدون ثبت یا پرداخت واقعی</span></header><${doc.querySelector('main') ? 'div' : 'main'} class="preview-content${customer ? ' preview-payment-host' : ''}">${doc.body.innerHTML}</${doc.querySelector('main') ? 'div' : 'main'}></body></html>`;
 }
 export const server = http.createServer((req, res) => {
@@ -63,13 +63,14 @@ export const server = http.createServer((req, res) => {
     const send = (type, body, code = 200) => { res.writeHead(code, {'Content-Type': type}); res.end(body); };
     if (url.pathname === '/favicon.ico') { res.writeHead(204); res.end(); return; }
     if (url.pathname === '/preview-action') { send('application/json; charset=utf-8', JSON.stringify({success: false, data: {message: 'این پیش‌نمایش است؛ هیچ تغییری ثبت نشد.'}}), 400); return; }
-    if (url.pathname === '/preview.js') { send('text/javascript', `document.querySelector('#tcc-settings-form')?.addEventListener('submit',e=>{e.preventDefault();document.querySelector('.tcc-settings-feedback').textContent='پیش‌نمایش؛ تغییری ذخیره نشد.'});document.querySelectorAll('.tcc-upload-form').forEach(f=>f.addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();f.querySelector('.tcc-feedback').textContent='پیش‌نمایش؛ هیچ رسیدی ارسال نشد.'},true));`); return; }
+    if (url.pathname === '/preview.js') { send('text/javascript', `document.querySelector('#tcc-settings-form')?.addEventListener('submit',e=>{e.preventDefault();document.querySelector('.tcc-settings-feedback').textContent='پیش‌نمایش؛ تغییری ذخیره نشد.'});document.querySelector('form#post,form#order,form#woocommerce-order')?.addEventListener('submit',e=>{if(e.defaultPrevented)return;e.preventDefault();window.tccPreviewSave=Object.fromEntries(new FormData(e.currentTarget));document.querySelector('.tcc-order-box .tcc-feedback').textContent='پیش‌نمایش؛ سفارش و تصمیم ذخیره نشد.'});document.querySelectorAll('.tcc-upload-form').forEach(f=>f.addEventListener('submit',e=>{e.preventDefault();e.stopImmediatePropagation();f.querySelector('.tcc-feedback').textContent='پیش‌نمایش؛ هیچ رسیدی ارسال نشد.'},true));`); return; }
     if (url.pathname === '/receipt.svg') { send('image/svg+xml', receipt); return; }
     const staticFiles = {'/checklist': path.join(root, 'design/preview/card-to-card-checklist.html'), '/shared.css': path.join(root, 'design/tisacase-ui.css')};
     for (const name of ['tcc.css', 'admin.css', 'admin.js', 'frontend.js']) staticFiles['/assets/' + name] = path.join(assets, name);
+    for (const file of fs.readdirSync(path.join(assets, 'banks')).filter(name => /^[a-z]+\.svg$/.test(name))) staticFiles['/banks/' + file] = path.join(assets, 'banks', file);
     for (const weight of [400, 600, 700]) staticFiles['/font/' + weight + '.woff2'] = path.join(root, `node_modules/@fontsource/vazirmatn/files/vazirmatn-arabic-${weight}-normal.woff2`);
     if (staticFiles[url.pathname] && fs.existsSync(staticFiles[url.pathname])) {
-        const ext = path.extname(staticFiles[url.pathname]); send(ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css' : ext === '.woff2' ? 'font/woff2' : 'text/javascript', fs.readFileSync(staticFiles[url.pathname])); return;
+        const ext = path.extname(staticFiles[url.pathname]); send(ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css' : ext === '.woff2' ? 'font/woff2' : ext === '.svg' ? 'image/svg+xml' : 'text/javascript', fs.readFileSync(staticFiles[url.pathname])); return;
     }
     if (routes[url.pathname]) { try { send('text/html; charset=utf-8', render(url.pathname, url.searchParams.get('shared') === '1')); } catch (error) { send('text/plain', escape(error.message), 503); } return; }
     send('text/plain', 'Not found', 404);
