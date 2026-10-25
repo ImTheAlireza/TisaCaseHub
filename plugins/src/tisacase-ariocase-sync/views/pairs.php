@@ -1,6 +1,8 @@
 <?php
 defined( 'ABSPATH' ) || exit;
-$mappings = TCAS_Mapping::all( 6 );
+$all_mappings = TCAS_Mapping::all( 1000 );
+$connected_groups = TCAS_Mapping::group_rows( $all_mappings );
+$recent_groups = array_slice( $connected_groups, 0, 4 );
 ?>
 <section class="tcas-card tcas-converter-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">↗</span><h2>تبدیل لینک به شناسه</h2></div><span class="tcas-tag">TisaCase + ArioCase</span></div>
@@ -23,7 +25,6 @@ $mappings = TCAS_Mapping::all( 6 );
 		<div class="tcas-smart-actions"><button type="button" id="tcas-smart-match" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button><button type="button" id="tcas-smart-next" class="button" hidden>دسته بعد</button></div>
 	</div>
 	<div id="tcas-smart-status" class="tcas-status" role="status" aria-live="polite">موارد مبهم و بدون تطبیق وصل نمی‌شوند.</div>
-	<div id="tcas-smart-results" class="tcas-smart-results" hidden></div>
 </section>
 
 <section class="tcas-card">
@@ -76,25 +77,5 @@ $mappings = TCAS_Mapping::all( 6 );
 <section class="tcas-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">↻</span><h2>اتصال‌های اخیر</h2></div><a class="tcas-card-link" href="<?php echo esc_url( admin_url( 'admin.php?page=' . TCAS_Core::PAGE . '&tab=mappings' ) ); ?>">مشاهده همه</a></div>
 	<div id="tcas-sync-status" class="tcas-status" role="status" aria-live="polite"></div>
-	<?php if ( ! $mappings ) : ?>
-		<div class="tcas-empty">هنوز اتصالی ساخته نشده است.</div>
-	<?php else : ?>
-		<div class="tcas-pair-list">
-			<?php foreach ( $mappings as $row ) : ?>
-				<article class="tcas-pair-card">
-					<div class="tcas-pair-fields">
-						<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس</span><input type="text" dir="ltr" value="<?php echo esc_attr( $row['sku'] ); ?>" readonly></label>
-						<span class="tcas-pair-link" aria-hidden="true">+</span>
-						<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس</span><input type="text" dir="ltr" value="<?php echo esc_attr( $row['remote_code'] ); ?>" readonly></label>
-					</div>
-					<div class="tcas-pair-card-foot">
-						<span class="tcas-stock-pill"><?php echo '' !== (string) $row['quantity'] ? esc_html( $row['quantity'] ) : '—'; ?> · <?php echo esc_html( TCAS_Stock::status_label( $row['status'] ) ); ?></span>
-						<span class="tcas-pair-card-actions"><?php if ( $row['enabled'] ) : ?><button type="button" class="button tcas-sync-one" data-product-id="<?php echo (int) $row['id']; ?>">سینک</button><?php endif; ?><button type="button" class="tcas-disconnect" data-product-id="<?php echo (int) $row['id']; ?>">قطع اتصال</button></span>
-					</div>
-					<a class="tcas-pair-product" href="<?php echo esc_url( admin_url( 'post.php?post=' . $row['id'] . '&action=edit' ) ); ?>">#<?php echo (int) $row['id']; ?> · <?php echo esc_html( $row['name'] ); ?></a>
-					<?php if ( $row['error'] ) : ?><small class="tcas-error-text"><?php echo esc_html( $row['error'] ); ?></small><?php endif; ?>
-				</article>
-			<?php endforeach; ?>
-		</div>
-	<?php endif; ?>
+	<?php $groups = $recent_groups; require TCAS_PATH . 'views/linked-groups.php'; ?>
 </section>

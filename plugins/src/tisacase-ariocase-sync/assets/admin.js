@@ -6,7 +6,8 @@
 	const state = {
 		token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [],
 		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0,
-		smartLocalCount: 0, smartRemoteCount: 0
+		smartLocalCount: 0, smartRemoteCount: 0, smartLocalName: '', smartRemoteName: '',
+		smartLocalReference: '', smartRemoteReference: ''
 	};
 
 	function text(id, value, isError) {
@@ -194,9 +195,9 @@
 		}));
 	}
 
-	function addPairEntry(localCode, remoteCode, focusInput) {
+	function addPairEntry(localCode, remoteCode, focusInput, targetList) {
 		const template = $('tcas-pair-entry-template');
-		const list = $('tcas-pair-entries');
+		const list = targetList || $('tcas-pair-entries');
 		const max = Number(cfg.maxPairs) || 50;
 		if (!template || !list || pairEntries().length >= max) return;
 		const entry = template.content.firstElementChild.cloneNode(true);
@@ -213,8 +214,6 @@
 	}
 
 	function resetSmart() {
-		const results = $('tcas-smart-results');
-		if (results) results.textContent = '';
 		state.smartMatches = [];
 		state.smartOffset = 0;
 		state.smartSignature = '';
@@ -222,6 +221,10 @@
 		state.smartUnmatched = 0;
 		state.smartLocalCount = 0;
 		state.smartRemoteCount = 0;
+		state.smartLocalName = '';
+		state.smartRemoteName = '';
+		state.smartLocalReference = '';
+		state.smartRemoteReference = '';
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = true;
 		text('tcas-smart-status', 'موارد مبهم و بدون تطبیق وصل نمی‌شوند.');
@@ -237,63 +240,6 @@
 		const local = Number(state.smartLocalCount) || 0;
 		const remote = Number(state.smartRemoteCount) || 0;
 		return local || remote ? 'TisaCase: ' + String(local) + ' · ArioCase: ' + String(remote) + ' — ' : '';
-	}
-
-	function renderSmartGroups(data) {
-		const host = $('tcas-smart-results');
-		if (!host) return;
-		host.textContent = '';
-		const matches = Array.isArray(data.matches) ? data.matches : [];
-		const ambiguous = Array.isArray(data.ambiguous) ? data.ambiguous : [];
-		const unmatched = Array.isArray(data.unmatched) ? data.unmatched : [];
-
-		function buildGroup(shop, product, reference, total) {
-			const local = 'tisacase' === shop;
-			const groupMatches = matches.map((match) => local ? {
-				index: Number(match.local_index) || 0, label: match.local_label, reference: match.local_code,
-				status: 'matched', otherLabel: match.remote_label, otherReference: match.remote_code, score: match.score
-			} : {
-				index: Number(match.remote_index) || 0, label: match.remote_label, reference: match.remote_code,
-				status: 'matched', otherLabel: match.local_label, otherReference: match.local_code, score: match.score
-			});
-			const extras = ambiguous.concat(unmatched).filter((item) => item.shop === shop).map((item) => ({
-				index: Number(item.index) || 0, label: item.label || 'Variation', reference: item.reference || '',
-				status: ambiguous.includes(item) ? 'ambiguous' : 'unmatched'
-			}));
-			const items = groupMatches.concat(extras).sort((a, b) => a.index - b.index);
-			const matchedCount = groupMatches.length;
-			const details = node('details', 'tcas-smart-group');
-			const summary = node('summary', 'tcas-smart-group-summary');
-			const heading = node('span', 'tcas-smart-group-heading');
-			heading.appendChild(node('strong', '', (local ? 'TisaCase · ' : 'ArioCase · ') + (product && product.name ? product.name : reference || 'محصول')));
-			heading.appendChild(node('small', '', (local ? 'TisaCase' : 'ArioCase') + ' · ' + String(total || items.length) + ' Variation'));
-			summary.appendChild(heading);
-			summary.appendChild(node('span', 'tcas-smart-group-count', matchedCount + ' جفت'));
-			details.appendChild(summary);
-			const list = node('div', 'tcas-smart-variant-list');
-			items.forEach((item) => {
-				const statusLabel = item.status === 'matched' ? 'جفت یکتا' : (item.status === 'ambiguous' ? 'مبهم' : 'بدون جفت');
-				const card = node('article', 'tcas-smart-variant is-' + item.status);
-				const top = node('div', 'tcas-smart-variant-top');
-				top.appendChild(node('strong', 'tcas-smart-variant-name', item.label || 'Variation'));
-				top.appendChild(node('span', 'tcas-smart-variant-status', statusLabel));
-				card.appendChild(top);
-				if (item.reference) card.appendChild(node('code', 'tcas-smart-variant-reference', item.reference));
-				if (item.otherLabel || item.otherReference) {
-					const other = node('p', 'tcas-smart-variant-other', '↔ ' + (item.otherLabel || 'Variation') + (item.otherReference ? ' · ' + item.otherReference : ''));
-					card.appendChild(other);
-					const confidence = item.score >= 100 ? 'SKU دقیق' : (item.score >= 95 ? 'نام دقیق نرمال‌شده' : 'توکن‌های هم‌معنی');
-					card.appendChild(node('small', 'tcas-smart-variant-confidence', confidence));
-				}
-				list.appendChild(card);
-			});
-			details.appendChild(list);
-			host.appendChild(details);
-		}
-
-		buildGroup('tisacase', data.local || {}, data.local && data.local.reference, data.local && data.local.count);
-		buildGroup('ariocase', data.remote || {}, data.remote && data.remote.reference, data.remote && data.remote.count);
-		host.hidden = !matches.length && !ambiguous.length && !unmatched.length;
 	}
 
 	function fillSmartBatch() {
@@ -324,8 +270,20 @@
 		const list = $('tcas-pair-entries');
 		if (!list) return;
 		list.textContent = '';
+		const group = node('details', 'tcas-fresh-product-group');
+		const summary = node('summary', 'tcas-fresh-product-summary');
+		const productNames = node('span', 'tcas-fresh-product-names');
+		productNames.appendChild(node('strong', 'tcas-shop-local-text', 'TisaCase · ' + (state.smartLocalName || state.smartLocalReference || 'محصول')));
+		productNames.appendChild(node('span', 'tcas-pair-link', '↔'));
+		productNames.appendChild(node('strong', 'tcas-shop-remote-text', 'ArioCase · ' + (state.smartRemoteName || state.smartRemoteReference || 'محصول')));
+		summary.appendChild(productNames);
+		summary.appendChild(node('span', 'tcas-fresh-product-count', String(batch.length) + ' Variation'));
+		group.appendChild(summary);
+		const groupEntries = node('div', 'tcas-pair-entries tcas-pair-entries-grouped');
+		group.appendChild(groupEntries);
+		list.appendChild(group);
 		batch.forEach((match) => {
-			const entry = addPairEntry(match.local_code, match.remote_code, false);
+			const entry = addPairEntry(match.local_code, match.remote_code, false, groupEntries);
 			setPairEntryTitles(entry, match.local_label, match.remote_label);
 		});
 		if (pairEntries().length !== batch.length) {
@@ -365,8 +323,11 @@
 			state.smartUnmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
 			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
 			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
+			state.smartLocalName = data.local && data.local.name ? String(data.local.name) : '';
+			state.smartRemoteName = data.remote && data.remote.name ? String(data.remote.name) : '';
+			state.smartLocalReference = data.local && data.local.reference ? String(data.local.reference) : '';
+			state.smartRemoteReference = data.remote && data.remote.reference ? String(data.remote.reference) : '';
 			state.smartOffset = 0;
-			renderSmartGroups(data);
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
 				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);
@@ -472,7 +433,13 @@
 			progress('tcas-connect', data.processed || 0, data.total || 0);
 			done = Boolean(data.done);
 		}
-		text('tcas-connect-status', 'عملیات جفت‌های انتخابی تمام شد.');
+		text('tcas-connect-status', 'عملیات تمام شد؛ جفت‌های تأییدشده در محصولات متصل گروه‌بندی شدند. ');
+		const status = $('tcas-connect-status');
+		if (status && cfg.mappingsUrl) {
+			const link = node('a', 'tcas-connected-groups-link', 'مشاهدهٔ کارت‌های محصولات متصل');
+			link.href = cfg.mappingsUrl;
+			status.appendChild(link);
+		}
 		busy(button, false);
 		state.running = false;
 	}
