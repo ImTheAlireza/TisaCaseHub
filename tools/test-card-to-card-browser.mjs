@@ -180,6 +180,51 @@ try {
         });
         assert.deepEqual(result, {before:'#0e7c6b',after:'#0e7c6b',blue:'#2874fc'});
     });
+    for (const shared of [false,true]) for (const width of [320,390]) {
+        await page.setViewportSize({width,height:1000}); await goto('/' + (shared ? '?shared=1' : '')); await page.locator('.tcc-card-row').first().locator('summary').click();
+        await check(`All 37 selected bank names fit the mobile dropdown ${width}px ${shared?'Hub':'standalone'}`, async()=> {
+            const dimensions = await page.locator('[data-card-field=bank]').first().evaluate(el=>{const s=getComputedStyle(el), c=document.createElement('canvas').getContext('2d');c.font=s.font;return {available:el.clientWidth-parseFloat(s.paddingLeft)-parseFloat(s.paddingRight),longest:Math.max(...Array.from(el.querySelectorAll('option[data-bank-logo]'),o=>c.measureText(o.textContent).width))};});
+            assert.ok(dimensions.longest+4<=dimensions.available,JSON.stringify(dimensions));
+        });
+    }
+    const banks = Object.entries(JSON.parse(fs.readFileSync('.cache/tcc-tests/banks.json', 'utf8')));
+    await page.setViewportSize({width: 1024, height: 1000}); await goto('/');
+    const bankRow = page.locator('#tcc-cards > .tcc-card-row').first(); await bankRow.locator('summary').click();
+    const bankSelect = bankRow.locator('[data-card-field=bank]');
+    await check('Bank picker is native, has all 37 choices and preserves unknown existing labels', async () => {
+        assert.equal(await bankSelect.evaluate(el => el.tagName), 'SELECT'); assert.equal(await bankSelect.locator('option[data-bank-logo]').count(), 37);
+        assert.equal(await bankSelect.inputValue(), 'بانک آزمایشی'); assert.match(await bankSelect.locator('option:checked').textContent(), /نام فعلی/);
+    });
+    const bankRequests = []; const trackBankRequest = request => { if (request.method() !== 'GET') bankRequests.push(request.url()); }; page.on('request', trackBankRequest);
+    for (const [key, bank] of banks) {
+        await bankSelect.selectOption({label: bank.name});
+        await check('Native bank selection previews the correct bundled logo: ' + key, async () => {
+            await page.waitForFunction(key => { const img = document.querySelector('#tcc-cards [data-tcc-bank-logo]'); return img.complete && img.naturalWidth > 0 && img.getAttribute('src') === '/banks/' + key + '.svg'; }, key);
+            assert.equal(await bankRow.locator('[data-tcc-bank-logo]').isVisible(), true);
+            assert.equal(await bankSelect.evaluate(el => new FormData(el.form).get(el.name)), bank.name);
+        });
+    }
+    page.off('request', trackBankRequest);
+    await check('Changing banks neither saves settings nor sends financial requests', async () => assert.deepEqual(bankRequests, []));
+    await page.locator('#tcc-add-card').click();
+    await check('Dynamically added cards use the same catalog without free text', async () => { const select = page.locator('#tcc-cards > .tcc-card-row').last().locator('[data-card-field=bank]'); assert.equal(await select.evaluate(el => el.tagName), 'SELECT'); assert.equal(await select.locator('option[data-bank-logo]').count(), 37); assert.equal(await select.inputValue(), ''); });
+    await page.addScriptTag({content: axe});
+    await check('Expanded native bank picker automated accessibility audit', async () => { const result = await page.evaluate(async () => window.axe.run('.tcc-panel', {runOnly:{type:'tag', values:['wcag2a','wcag2aa','wcag21aa']}})); assert.deepEqual(result.violations.map(v => ({id:v.id,targets:v.nodes.map(n=>n.target)})), []); });
+    for (const [key, bank] of banks) {
+        await page.setViewportSize({width: 320, height: 1000}); await goto('/bank/' + key);
+        await check('Real PHP customer template selects a visible local logo safely at 320px: ' + key, async () => {
+            const img = page.locator('.tcc-bank-logo img'); await img.waitFor();
+            await img.evaluate(el => el.decode()); assert.equal(await img.getAttribute('src'), '/banks/' + key + '.svg');
+            assert.equal(await img.evaluate(el => el.complete && el.naturalWidth > 0), true);
+            assert.equal(await page.locator('.tcc-bank-brand > span:last-child').textContent(), bank.name);
+            assert.equal(await page.locator('.tcc-payment').evaluate(el=>getComputedStyle(el).getPropertyValue('--tcc-brand').trim()), '#2874fc');
+            const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); assert.deepEqual(result.offenders, []);
+        });
+    }
+    await goto('/settings-bank-alias');
+    await check('JS enhancement preserves the exact saved bank alias in submitted data', async () => { const select = page.locator('#tcc-cards [data-card-field=bank]').first(); assert.equal(await select.inputValue(), 'بانك ملي ايران'); assert.equal(await select.evaluate(el => new FormData(el.form).get(el.name)), 'بانك ملي ايران'); assert.equal(await page.locator('#tcc-cards [data-tcc-bank-logo]').first().getAttribute('src'), '/banks/melli.svg'); });
+    const bankNoJS = await browser.newContext({javaScriptEnabled:false, viewport:{width:390,height:900}}); const bankNoJSPage = await bankNoJS.newPage();
+    try { await bankNoJSPage.goto(base+'/first-run'); const select = bankNoJSPage.locator('[data-card-field=bank]'); await select.selectOption({label:'کارآفرین'}); await check('Bank dropdown is usable and submits the choice without JavaScript', async()=> { assert.equal(await select.inputValue(), 'کارآفرین'); assert.equal(await select.evaluate(el=>new FormData(el.form).get(el.name)), 'کارآفرین'); assert.equal(await select.locator('option[data-bank-logo]').count(),37); }); } finally { await bankNoJS.close(); }
     await page.setViewportSize({width: 1024, height: 900}); await goto('/');
     await page.locator('[data-tcc-tab=access]').click();
     await page.screenshot({path: path.join(out, 'access-roles-1024.png'), fullPage: true});
@@ -334,7 +379,7 @@ try {
     await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
     const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
     const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
-    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.2'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.4.0'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
     for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});
         await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });

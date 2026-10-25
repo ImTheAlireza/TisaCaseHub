@@ -24,8 +24,17 @@ class TCC_Settings {
             if ( '' === $number && '' === TCC_Helpers::input( $row, 'holder' ) ) { continue; }
             $number = TCC_Helpers::card( $number );
             if ( ! $number || ! TCC_Helpers::input( $row, 'holder' ) ) { throw new InvalidArgumentException( 'شماره کارت ۱۶رقمی معتبر و نام صاحب کارت برای هر ردیف لازم است؛ تنظیمات ذخیره نشد.' ); }
+            if ( isset( $row['bank'] ) && ! is_scalar( $row['bank'] ) ) { throw new InvalidArgumentException( 'بانک را از فهرست انتخاب کنید؛ تنظیمات ذخیره نشد.' ); }
+            $bank = TCC_Helpers::input( $row, 'bank' ); $bank_key = TCC_Helpers::bank_key( $bank ); $unchanged = false;
+            // Keep an old label verbatim only on the same existing destination.
+            // Never rewrite order snapshots or silently assign a bank by card BIN.
+            foreach ( (array) $old['cards'] as $previous ) {
+                if ( is_array( $previous ) && isset( $previous['number'] ) && $number === TCC_Helpers::card( $previous['number'] ) && $bank === TCC_Helpers::input( $previous, 'bank' ) ) { $unchanged = true; break; }
+            }
+            if ( '' !== $bank && '' === $bank_key && ! $unchanged ) { throw new InvalidArgumentException( 'بانک را از فهرست انتخاب کنید؛ تنظیمات ذخیره نشد.' ); }
+            if ( '' !== $bank_key && ! $unchanged ) { $bank = TCC_Helpers::bank_catalog()[$bank_key]['name']; }
             $id = substr( hash( 'sha256', $number ), 0, 20 );
-            $out['cards'][$id] = array( 'id' => $id, 'number' => $number, 'holder' => TCC_Helpers::input( $row, 'holder' ), 'bank' => TCC_Helpers::input( $row, 'bank' ), 'label' => TCC_Helpers::input( $row, 'label' ), 'active' => ! empty( $row['active'] ) );
+            $out['cards'][$id] = array( 'id' => $id, 'number' => $number, 'holder' => TCC_Helpers::input( $row, 'holder' ), 'bank' => $bank, 'label' => TCC_Helpers::input( $row, 'label' ), 'active' => ! empty( $row['active'] ) );
         }
         $out['cards'] = array_values( $out['cards'] );
         $out['default_card'] = TCC_Helpers::input( $input, 'default_card' );

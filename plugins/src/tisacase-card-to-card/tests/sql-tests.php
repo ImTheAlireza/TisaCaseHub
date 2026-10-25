@@ -150,6 +150,9 @@ if ( getenv( 'TCC_TEST_OUTPUT' ) ) {
     $dir = getenv( 'TCC_TEST_OUTPUT' ); if ( ! is_dir( $dir ) ) { mkdir( $dir, 0755, true ); }
     file_put_contents( $dir . '/settings.html', '<!doctype html><html lang="fa" dir="rtl"><body class="woocommerce_page_tisacase-card-to-card">' . $settings_html . '</body></html>' );
     file_put_contents( $dir . '/settings-empty.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $empty_settings . '</body></html>' );
+    $alias_settings = $ui_settings; $alias_settings['cards'][0]['bank'] = 'بانك ملي ايران';
+    ob_start(); TCC_Admin::render( $alias_settings, $ui_status ); $alias_html = ob_get_clean();
+    file_put_contents( $dir . '/settings-bank-alias.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $alias_html . '</body></html>' );
     $latest = null; $reason = ''; $a['status'] = 'awaiting';
     ob_start(); include $root . '/templates/payment.php'; $new_payment = ob_get_clean();
     file_put_contents( $dir . '/payment-new.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $new_payment . '</body></html>' );
@@ -163,6 +166,13 @@ if ( getenv( 'TCC_TEST_OUTPUT' ) ) {
     ob_start(); include $root . '/templates/payment.php'; $paid_html = ob_get_clean();
     file_put_contents( $dir . '/payment-paid.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $paid_html . '</body></html>' );
     $order->paid = false;
+    $saved_card = $card; $latest = null; $a['status'] = 'awaiting';
+    foreach ( TCC_Helpers::bank_catalog() as $bank_key => $bank_meta ) {
+        $card['bank'] = $bank_meta['name'];
+        ob_start(); include $root . '/templates/payment.php'; $bank_html = ob_get_clean();
+        file_put_contents( $dir . '/bank-' . $bank_key . '.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $bank_html . '</body></html>' );
+    }
+    $card = $saved_card;
     file_put_contents( $dir . '/customer.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $customer . '</body></html>' );
     $admin_fixture = '<!doctype html><html lang="fa" dir="rtl"><body><form id="post" method="post"><input type="hidden" name="action" value="editpost"><input name="order_total" value="485000"><button type="submit" id="publish" name="save" value="update">به‌روزرسانی سفارش</button>' . $box . '</form></body></html>';
     file_put_contents( $dir . '/admin.html', $admin_fixture );

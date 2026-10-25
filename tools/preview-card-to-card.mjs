@@ -8,7 +8,9 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const fixtureDir = path.resolve(root, '.cache/tcc-tests');
 const assets = path.join(root, 'plugins/src/tisacase-card-to-card/assets');
 const port = Number(process.env.PORT || 4173);
-const routes = {'/': 'settings.html', '/order': 'admin.html', '/order-hpos': 'admin-hpos.html', '/payment': 'payment-new.html', '/correction': 'customer.html', '/first-run': 'settings-empty.html', '/pending': 'payment-pending.html', '/saman': 'payment-saman.html', '/approved': 'payment-paid.html'};
+const routes = {'/': 'settings.html', '/order': 'admin.html', '/order-hpos': 'admin-hpos.html', '/settings-bank-alias': 'settings-bank-alias.html', '/payment': 'payment-new.html', '/correction': 'customer.html', '/first-run': 'settings-empty.html', '/pending': 'payment-pending.html', '/saman': 'payment-saman.html', '/approved': 'payment-paid.html'};
+const bankCatalog = JSON.parse(fs.readFileSync(path.join(fixtureDir, 'banks.json'), 'utf8'));
+for (const key of Object.keys(bankCatalog)) routes['/bank/' + key] = 'bank-' + key + '.html';
 const escape = value => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
 const previewCSS = `
 body.preview-customer{background:#fafafa;color:#16181c}.preview-customer .preview-brand{color:#16181c}.preview-customer .preview-chrome a[aria-current=page]{background:#edf3ff;color:#1d4ed8}
@@ -41,6 +43,7 @@ function render(route, shared) {
     while (walker.nextNode()) walker.currentNode.textContent = clean(walker.currentNode.textContent);
     doc.querySelectorAll('input[value]').forEach(input => input.setAttribute('value', clean(input.value)));
     doc.querySelectorAll('img').forEach(image => { if (image.src.includes('tcc_receipt')) image.setAttribute('src', '/receipt.svg'); else if (image.src.includes('/assets/banks/')) image.setAttribute('src', '/banks/' + path.basename(image.src)); });
+    doc.querySelectorAll('option[data-bank-logo]').forEach(option => { option.dataset.bankLogo = '/banks/' + path.basename(option.dataset.bankLogo); });
     doc.querySelectorAll('a').forEach(link => {
         if (link.href.includes('tcc_receipt')) link.setAttribute('href', '/receipt.svg');
         else if (link.href.includes('tcc_method=')) link.setAttribute('href', '/order');
@@ -54,7 +57,7 @@ function render(route, shared) {
         input.replaceWith(wrapper); wrapper.querySelector('label').append(input); wrapper.append(doc.querySelector('#publish')); doc.querySelector('#publish').className = 'preview-update';
         const box = doc.querySelector('.tcc-order-box'); const host = doc.createElement('div'); host.className = 'preview-order-host'; box.replaceWith(host); host.append(box);
     }
-    const customer = ['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route);
+    const customer = ['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route) || route.startsWith('/bank/');
     const links = [['/', 'تنظیمات'], ['/order', 'داخل سفارش'], ['/payment', 'پرداخت مشتری'], ['/pending', 'در حال بررسی'], ['/checklist', 'چک‌لیست تست']].map(([href, label]) => `<a href="${href}${shared ? '?shared=1' : ''}"${route === href ? ' aria-current="page"' : ''}>${label}</a>`).join('');
     return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>پیش‌نمایش کارت به کارت تیساکیس</title><style>${previewCSS}</style>${shared ? '<link rel="stylesheet" href="/shared.css">' : ''}<link rel="stylesheet" href="/assets/tcc.css">${customer ? '<link rel="stylesheet" href="/assets/customer.css">' : '<link rel="stylesheet" href="/assets/admin.css">'}<script src="/assets/${customer ? 'frontend.js' : 'admin.js'}" defer></script><script src="/preview.js" defer></script></head><body class="${customer ? 'preview-customer' : 'woocommerce_page_tisacase-card-to-card'}${shared ? ' tisa-scope' : ''}"><header class="preview-chrome"><span class="preview-brand" lang="en">TISACASE <span style="font-weight:400;color:#8c9994">/ PAYMENTS</span></span><nav aria-label="صفحه‌های پیش‌نمایش">${links}</nav><span class="preview-label"><b></b>داده آزمایشی؛ بدون ثبت یا پرداخت واقعی</span></header><${doc.querySelector('main') ? 'div' : 'main'} class="preview-content${customer ? ' preview-payment-host' : ''}">${doc.body.innerHTML}</${doc.querySelector('main') ? 'div' : 'main'}></body></html>`;
 }
@@ -69,7 +72,7 @@ export const server = http.createServer((req, res) => {
     if (url.pathname === '/receipt.svg') { send('image/svg+xml', receipt); return; }
     const staticFiles = {'/checklist': path.join(root, 'design/preview/card-to-card-checklist.html'), '/shared.css': path.join(root, 'design/tisacase-ui.css')};
     for (const name of ['tcc.css', 'customer.css', 'admin.css', 'admin.js', 'frontend.js']) staticFiles['/assets/' + name] = path.join(assets, name);
-    for (const file of fs.readdirSync(path.join(assets, 'banks')).filter(name => /^[a-z]+\.svg$/.test(name))) staticFiles['/banks/' + file] = path.join(assets, 'banks', file);
+    for (const file of fs.readdirSync(path.join(assets, 'banks')).filter(name => /^[a-z]+(?:-[a-z]+)*\.svg$/.test(name))) staticFiles['/banks/' + file] = path.join(assets, 'banks', file);
     for (const weight of [400, 600, 700]) staticFiles['/font/' + weight + '.woff2'] = path.join(root, `node_modules/@fontsource/vazirmatn/files/vazirmatn-arabic-${weight}-normal.woff2`);
     if (staticFiles[url.pathname] && fs.existsSync(staticFiles[url.pathname])) {
         const ext = path.extname(staticFiles[url.pathname]); send(ext === '.html' ? 'text/html; charset=utf-8' : ext === '.css' ? 'text/css' : ext === '.woff2' ? 'font/woff2' : ext === '.svg' ? 'image/svg+xml' : 'text/javascript', fs.readFileSync(staticFiles[url.pathname])); return;

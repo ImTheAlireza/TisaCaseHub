@@ -21,12 +21,72 @@ class TCC_Helpers {
         if ( isset( $parts[1] ) ) { $text .= '٫' . $parts[1]; }
         return strtr( $text, array_combine( str_split( '0123456789' ), preg_split( '//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY ) ) );
     }
+    /** Identification catalog, not a bank licence register or a BIN lookup. */
+    public static function bank_catalog() {
+        return array(
+            'eghtesad' => array( 'name' => 'اقتصاد نوین', 'group' => 'banks', 'aliases' => array(  ) ),
+            'iranzamin' => array( 'name' => 'ایران زمین', 'group' => 'banks', 'aliases' => array(  ) ),
+            'iran-venezuela' => array( 'name' => 'ایران و ونزوئلا', 'group' => 'banks', 'aliases' => array( 'ایران ونزوئلا', 'ایران-ونزوئلا', 'مشترک ایران و ونزوئلا', 'مشترک ایران ونزوئلا' ) ),
+            'parsian' => array( 'name' => 'پارسیان', 'group' => 'banks', 'aliases' => array(  ) ),
+            'pasargad' => array( 'name' => 'پاسارگاد', 'group' => 'banks', 'aliases' => array(  ) ),
+            'post' => array( 'name' => 'پست بانک', 'group' => 'banks', 'aliases' => array( 'پست', 'پست ایران', 'پست بانک ایران' ) ),
+            'tejarat' => array( 'name' => 'تجارت', 'group' => 'banks', 'aliases' => array(  ) ),
+            'tosetaavon' => array( 'name' => 'توسعه تعاون', 'group' => 'banks', 'aliases' => array(  ) ),
+            'tosesaderat' => array( 'name' => 'توسعه صادرات', 'group' => 'banks', 'aliases' => array( 'توسعه صادرات ایران' ) ),
+            'khavarmianeh' => array( 'name' => 'خاورمیانه', 'group' => 'banks', 'aliases' => array(  ) ),
+            'day' => array( 'name' => 'دی', 'group' => 'banks', 'aliases' => array(  ) ),
+            'refahkargaran' => array( 'name' => 'رفاه کارگران', 'group' => 'banks', 'aliases' => array( 'رفاه' ) ),
+            'resalat' => array( 'name' => 'رسالت', 'group' => 'banks', 'aliases' => array( 'قرض الحسنه رسالت' ) ),
+            'saman' => array( 'name' => 'سامان', 'group' => 'banks', 'aliases' => array(  ) ),
+            'sarmaye' => array( 'name' => 'سرمایه', 'group' => 'banks', 'aliases' => array(  ) ),
+            'sepah' => array( 'name' => 'سپه', 'group' => 'banks', 'aliases' => array(  ) ),
+            'sina' => array( 'name' => 'سینا', 'group' => 'banks', 'aliases' => array(  ) ),
+            'shahr' => array( 'name' => 'شهر', 'group' => 'banks', 'aliases' => array(  ) ),
+            'sanatmadan' => array( 'name' => 'صنعت و معدن', 'group' => 'banks', 'aliases' => array( 'صنعت معدن' ) ),
+            'saderat' => array( 'name' => 'صادرات ایران', 'group' => 'banks', 'aliases' => array( 'صادرات' ) ),
+            'karafarin' => array( 'name' => 'کارآفرین', 'group' => 'banks', 'aliases' => array(  ) ),
+            'keshavarzi' => array( 'name' => 'کشاورزی', 'group' => 'banks', 'aliases' => array(  ) ),
+            'gardeshgari' => array( 'name' => 'گردشگری', 'group' => 'banks', 'aliases' => array(  ) ),
+            'maskan' => array( 'name' => 'مسکن', 'group' => 'banks', 'aliases' => array(  ) ),
+            'mellat' => array( 'name' => 'ملت', 'group' => 'banks', 'aliases' => array(  ) ),
+            'melal' => array( 'name' => 'ملل', 'group' => 'banks', 'aliases' => array( 'مؤسسه اعتباری ملل', 'موسسه اعتباری ملل' ) ),
+            'melli' => array( 'name' => 'ملی ایران', 'group' => 'banks', 'aliases' => array( 'ملی' ) ),
+            'mehriran' => array( 'name' => 'مهر ایران', 'group' => 'banks', 'aliases' => array( 'مهر ایرانیان', 'قرض الحسنه مهر ایران' ) ),
+            'blu' => array( 'name' => 'بلوبانک', 'group' => 'digital', 'aliases' => array( 'بلو', 'بلو بانک', 'blu bank', 'blubank' ) ),
+            'ayande' => array( 'name' => 'آینده', 'group' => 'legacy', 'aliases' => array( 'اینده' ) ),
+            'ansar' => array( 'name' => 'انصار', 'group' => 'legacy', 'aliases' => array(  ) ),
+            'tose' => array( 'name' => 'توسعه', 'group' => 'legacy', 'aliases' => array( 'مؤسسه اعتباری توسعه', 'موسسه اعتباری توسعه' ) ),
+            'hekmat' => array( 'name' => 'حکمت ایرانیان', 'group' => 'legacy', 'aliases' => array( 'حکمت' ) ),
+            'ghavvamin' => array( 'name' => 'قوامین', 'group' => 'legacy', 'aliases' => array( 'ghavamin' ) ),
+            'kosar' => array( 'name' => 'کوثر', 'group' => 'legacy', 'aliases' => array( 'مؤسسه اعتباری کوثر', 'موسسه اعتباری کوثر' ) ),
+            'mehreghtesad' => array( 'name' => 'مهر اقتصاد', 'group' => 'legacy', 'aliases' => array(  ) ),
+            'noor' => array( 'name' => 'نور', 'group' => 'legacy', 'aliases' => array( 'مؤسسه اعتباری نور', 'موسسه اعتباری نور' ) ),
+        );
+    }
+    private static function bank_token( $name ) {
+        $name = str_replace( array( 'ي', 'ى', 'ك' ), array( 'ی', 'ی', 'ک' ), $name );
+        $name = preg_replace( '/[\s\p{Z}\p{Cf}\p{M}\x{0640}]+/u', '', $name );
+        return is_string( $name ) ? strtolower( $name ) : '';
+    }
+    public static function bank_key( $name ) {
+        if ( ! is_string( $name ) || strlen( $name ) > 512 ) { return ''; }
+        static $aliases = null;
+        if ( null === $aliases ) {
+            $aliases = array();
+            foreach ( self::bank_catalog() as $key => $bank ) {
+                foreach ( array_merge( array( $key, $bank['name'] ), $bank['aliases'] ) as $alias ) {
+                    $aliases[self::bank_token( $alias )] = $key;
+                    $aliases[self::bank_token( 'بانک' . $alias )] = $key;
+                }
+            }
+        }
+        $token = self::bank_token( $name );
+        return isset( $aliases[$token] ) ? $aliases[$token] : '';
+    }
     /** Fixed local assets only; never turn a merchant-provided name into a path. */
     public static function bank_logo( $name ) {
-        $name = str_replace( array( 'ي', 'ك' ), array( 'ی', 'ک' ), (string) $name );
-        $name = str_replace( 'بانک', '', preg_replace( '/[\s\x{200c}\x{200d}\x{200e}\x{200f}]+/u', '', $name ) );
-        $banks = array( 'سامان' => 'saman', 'ملی' => 'melli', 'ملیایران' => 'melli', 'ملت' => 'mellat', 'تجارت' => 'tejarat', 'سپه' => 'sepah', 'پارسیان' => 'parsian', 'پاسارگاد' => 'pasargad', 'صادرات' => 'saderat', 'صادراتایران' => 'saderat', 'مسکن' => 'maskan', 'رفاه' => 'refahkargaran', 'رفاهکارگران' => 'refahkargaran', 'کشاورزی' => 'keshavarzi', 'اقتصادنوین' => 'eghtesad', 'شهر' => 'shahr', 'سینا' => 'sina', 'مهرایران' => 'mehriran', 'مهرایرانیان' => 'mehriran', 'قرضالحسنهمهرایران' => 'mehriran', 'رسالت' => 'resalat', 'قرضالحسنهرسالت' => 'resalat', 'پست' => 'post', 'پستایران' => 'post', 'دی' => 'day', 'آینده' => 'ayande', 'بلو' => 'blu' );
-        return isset( $banks[$name] ) ? $banks[$name] . '.svg' : '';
+        $key = self::bank_key( $name );
+        return '' !== $key ? $key . '.svg' : '';
     }
     public static function ui_icon( $name ) {
         $paths = array(
