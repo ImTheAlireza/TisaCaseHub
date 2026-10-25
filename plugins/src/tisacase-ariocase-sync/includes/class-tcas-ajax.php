@@ -163,9 +163,24 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'لینک محصول را وارد کنید.' ), 400 );
 			}
 			$result = TCAS_Link_Resolver::resolve( $url );
+			$parts  = parse_url( $url );
+			$target = is_array( $parts ) ? ( isset( $parts['host'] ) ? $parts['host'] : '' ) . ( isset( $parts['path'] ) ? $parts['path'] : '' ) : '[invalid URL]';
 			if ( is_wp_error( $result ) ) {
+				TCAS_Logger::add( 'link_resolve_error', $target, $result->get_error_message() );
 				wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
 			}
+			$debug = isset( $result['resolution_debug'] ) && is_array( $result['resolution_debug'] ) ? $result['resolution_debug'] : array();
+			$message = sprintf(
+				'Resolved #%d "%s" as %s with %d variations. Path ID=%d; Rewrite ID=%d; source=%s.',
+				absint( isset( $result['product_id'] ) ? $result['product_id'] : 0 ),
+				sanitize_text_field( isset( $result['name'] ) ? $result['name'] : '' ),
+				sanitize_text_field( isset( $result['type'] ) ? $result['type'] : 'unknown' ),
+				count( isset( $result['variations'] ) && is_array( $result['variations'] ) ? $result['variations'] : array() ),
+				absint( isset( $debug['path_product_id'] ) ? $debug['path_product_id'] : 0 ),
+				absint( isset( $debug['rewrite_product_id'] ) ? $debug['rewrite_product_id'] : 0 ),
+				sanitize_text_field( isset( $debug['selected_by'] ) ? $debug['selected_by'] : 'other' )
+			);
+			TCAS_Logger::add( 'link_resolve_ok', $target, $message );
 			wp_send_json_success( $result );
 		}
 

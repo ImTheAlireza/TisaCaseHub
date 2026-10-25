@@ -438,6 +438,16 @@
 		}
 	}
 
+	function productDiagnostic(data) {
+		const parts = [data && data.name ? data.name : 'محصول'];
+		if (data && data.product_id) parts.push('ID ' + String(data.product_id));
+		if (data && data.type === 'variable') {
+			const count = Array.isArray(data.variations) ? data.variations.length : 0;
+			parts.push(String(count) + ' Variation');
+		}
+		return parts.join(' · ');
+	}
+
 	function setLinkOutput(reference, shopLabel, productName) {
 		const sku = $('tcas-link-sku');
 		if (sku) sku.value = reference || '';
@@ -470,12 +480,12 @@
 		if (!select || !data) return;
 		const variation = '' !== select.value ? state.linkVariations[Number(select.value)] : null;
 		if (!variation) {
-			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
 			text('tcas-link-status', 'برای ادامه، یکی از Variationهای محصول را انتخاب کنید.');
 			return;
 		}
 		if (!variation.reference) {
-			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
 			text('tcas-link-status', 'این Variation شناسهٔ قابل‌اتصال ندارد؛ یک مورد دیگر را انتخاب کنید.', true);
 			return;
 		}
@@ -520,7 +530,7 @@
 						select.appendChild(option);
 					});
 				}
-				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', data.name || '');
+				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
 				const usable = state.linkVariations.filter((variation) => Boolean(variation.reference));
 				if (usable.length === 1 && select) {
 					select.value = String(state.linkVariations.indexOf(usable[0]));
@@ -530,7 +540,7 @@
 				}
 			} else {
 				const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
-				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), data.name || '');
+				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), productDiagnostic(data));
 				text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
 			}
 		} catch (error) { text('tcas-link-status', error.message, true); }

@@ -175,8 +175,20 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			// اگر مسیر دقیق محصول با نامک خودش پیدا شد، همان منبع معتبرتر است.
 			$rewrite_product_id = absint( url_to_postid( $local_url ) );
 			$path_product_id    = self::local_product_id_from_path( $path );
-			$product_id         = $path_product_id ? $path_product_id : $rewrite_product_id;
-			return $product_id ? self::local_result( $product_id ) : self::error( 'tcas_local_product_missing', 'محصول این لینک در TisaCase پیدا نشد.' );
+			$product_id = $path_product_id ? $path_product_id : $rewrite_product_id;
+			if ( ! $product_id ) {
+				return self::error( 'tcas_local_product_missing', 'محصول این لینک در TisaCase پیدا نشد.' );
+			}
+			$result = self::local_result( $product_id );
+			if ( is_array( $result ) ) {
+				$result['resolution_debug'] = array(
+					'path'              => $path,
+					'path_product_id'   => $path_product_id,
+					'rewrite_product_id'=> $rewrite_product_id,
+					'selected_by'       => $path_product_id ? 'exact_path' : 'wordpress_rewrite',
+				);
+			}
+			return $result;
 		}
 
 		private static function remote_result( $product ) {
