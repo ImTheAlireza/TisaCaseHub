@@ -69,11 +69,11 @@ t( 'Review link stays on same order, not settings', strpos( $column, '#tcc-order
 t( 'List cell does not expose receipt/token or image', strpos( $column, 'tcc_token' ) === false && strpos( $column, '<img' ) === false && strpos( $column, 'file_key' ) === false );
 TCC_Order_List::render( 'unused', 0 ); ob_start(); TCC_Order_List::render( 'tcc_payment', 101 ); ob_end_clean(); t( 'List attempt cache reads page batch only once', 1 === $wpdb->queries - $before );
 $order->method = 'bacs'; $order->title = 'انتقال بانکی اصلی'; ob_start(); TCC_Order_List::render( 'tcc_payment', $order ); $other_column = ob_get_clean(); t( 'Other gateways keep actual method, no review action', strpos( $other_column, 'انتقال بانکی اصلی' ) !== false && strpos( $other_column, 'بررسی پرداخت' ) === false ); $order->method = TCC_GATEWAY;
-ob_start(); TCC_Order_Admin::box( $order ); $box = ob_get_clean(); ob_start(); TCC_Order_Admin::forms(); $forms = ob_get_clean();
+ob_start(); TCC_Order_Admin::box( $order ); $box = ob_get_clean();
 t( 'Order box has receipt, approve and reject controls', strpos( $box, 'value="approve"' ) !== false && strpos( $box, 'value="reject"' ) !== false && strpos( $box, '<img' ) !== false );
 t( 'Order box escapes user-supplied note and owner', strpos( $box, '<script>hello' ) === false && strpos( $box, '<script>owner' ) === false );
-t( 'Form rendered externally, never nested in Woo form', strpos( $box, '<form' ) === false && strpos( $forms, '<form id="tcc-review-101"' ) !== false && strpos( $box, 'form="tcc-review-101"' ) !== false );
-t( 'Revision/fingerprint/CSRF carried with order decision', strpos( $forms, 'name="revision"' ) !== false && strpos( $forms, 'name="fingerprint"' ) !== false && strpos( $forms, 'name="_wpnonce"' ) !== false );
+t( 'Decisions belong to native Woo form without a nested/standalone review form', strpos( $box, '<form' ) === false && strpos( $box, 'name="tcc_review[decision]"' ) !== false && strpos( $box, 'type="radio"' ) !== false );
+t( 'Native order form carries revision/fingerprint/separate CSRF without changing Woo action', strpos( $box, 'name="tcc_review[revision]"' ) !== false && strpos( $box, 'name="tcc_review[fingerprint]"' ) !== false && strpos( $box, 'name="tcc_review[nonce]"' ) !== false && strpos( $box, 'name="action"' ) === false );
 t( 'Matching payment snapshot does not repeat the same amount', strpos( $box, 'مبلغ ثبت‌شده پرداخت' ) === false );
 $order->amount = '485001'; ob_start(); TCC_Order_Admin::box( $order ); $mismatch_box = ob_get_clean(); $order->amount = '485000';
 t( 'Changed amount retains historical amount and visible approval warning', strpos( $mismatch_box, 'مبلغ ثبت‌شده پرداخت' ) !== false && strpos( $mismatch_box, 'تأیید تا تطبیق مالی مسدود است' ) !== false );
@@ -97,7 +97,7 @@ class TCC_Test_HTTP extends RuntimeException {
     public $payload; public $status;
     public function __construct( $payload, $status ) { parent::__construct( 'http-result' ); $this->payload = $payload; $this->status = $status; }
 }
-function wp_verify_nonce( $value, $action ) { return hash_equals( wp_create_nonce( $action ), (string) $value ); }
+function wp_verify_nonce( $value, $action ) { return empty( $GLOBALS['native_expired_nonce'] ) && hash_equals( wp_create_nonce( $action ), (string) $value ); }
 function wp_doing_ajax() { return true; }
 function wp_send_json_error( $data, $status = 200 ) { throw new TCC_Test_HTTP( array( 'success' => false, 'data' => $data ), $status ); }
 function wp_send_json_success( $data ) { throw new TCC_Test_HTTP( array( 'success' => true, 'data' => $data ), 200 ); }
@@ -153,7 +153,134 @@ if ( getenv( 'TCC_TEST_OUTPUT' ) ) {
     $latest = null; $reason = ''; $a['status'] = 'awaiting';
     ob_start(); include $root . '/templates/payment.php'; $new_payment = ob_get_clean();
     file_put_contents( $dir . '/payment-new.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $new_payment . '</body></html>' );
+    $latest = $repo->submission( 1 ); $a['status'] = 'under_review';
+    ob_start(); include $root . '/templates/payment.php'; $pending_html = ob_get_clean();
+    file_put_contents( $dir . '/payment-pending.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $pending_html . '</body></html>' );
+    $latest = null; $a['status'] = 'awaiting'; $card['bank'] = 'سامان'; $card['number'] = '6219860000000002'; $card['holder'] = 'فروشگاه آزمایشی';
+    ob_start(); include $root . '/templates/payment.php'; $saman_html = ob_get_clean();
+    file_put_contents( $dir . '/payment-saman.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $saman_html . '</body></html>' );
+    $order->paid = true; $a['status'] = 'approved'; $latest = $repo->submission( 1 ); $editable = false;
+    ob_start(); include $root . '/templates/payment.php'; $paid_html = ob_get_clean();
+    file_put_contents( $dir . '/payment-paid.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $paid_html . '</body></html>' );
+    $order->paid = false;
     file_put_contents( $dir . '/customer.html', '<!doctype html><html lang="fa" dir="rtl"><body>' . $customer . '</body></html>' );
-    file_put_contents( $dir . '/admin.html', '<!doctype html><html lang="fa" dir="rtl"><body><form id="post"><input name="order_total" value="485000">' . $box . '</form><footer>' . $forms . '</footer></body></html>' );
+    $admin_fixture = '<!doctype html><html lang="fa" dir="rtl"><body><form id="post" method="post"><input type="hidden" name="action" value="editpost"><input name="order_total" value="485000"><button type="submit" id="publish" name="save" value="update">به‌روزرسانی سفارش</button>' . $box . '</form></body></html>';
+    file_put_contents( $dir . '/admin.html', $admin_fixture );
+    file_put_contents( $dir . '/admin-hpos.html', str_replace( array( 'id="post"', 'value="editpost"' ), array( 'id="order"', 'value="edit_order"' ), $admin_fixture ) );
 }
+
+// Customer state regressions use the real template; never modify order money.
+function customer_markup( $root, $order, $repo, $state, $reason = '', $overrides = array() ) {
+    $id = $order->get_id(); $a = $repo->attempt( $id ); $a['status'] = $state;
+    $settings = array_merge( TCC_Settings::get(), $overrides ); $card = json_decode( $a['card'], true );
+    $latest = 'awaiting' === $state ? null : $repo->submission( 1 ); $editable = true; $flash = null;
+    ob_start(); include $root . '/templates/payment.php'; return ob_get_clean();
+}
+$rendered = customer_markup( $root, $order, $repo, 'awaiting' );
+t( 'Customer displays/copies exact rials without changing stored IRT', false !== strpos( $rendered, 'data-tcc-copy="4850000"' ) && false !== strpos( $rendered, '۴٬۸۵۰٬۰۰۰' ) && '485000' === $order->get_total() && 'IRT' === $order->get_currency() );
+$rendered = customer_markup( $root, $order, $repo, 'under_review' );
+t( 'Customer review summary explicitly distinguishes receipt from paid money', 1 === substr_count( $rendered, 'class="tcc-status-card' ) && false !== strpos( $rendered, 'پرداخت هنوز تأیید نشده است' ) && false !== strpos( $rendered, 'دوباره واریز نکنید' ) );
+t( 'Pending transfer and replacement are secondary collapsed details', false !== strpos( $rendered, '<details class="tcc-transfer-details">' ) && 1 === preg_match( '/<details class="tcc-upload[^"]*"\s*>/', $rendered ) && false !== strpos( $rendered, 'مشاهده تصویر رسید' ) );
+$rendered = customer_markup( $root, $order, $repo, 'under_review', '', array( 'review_text' => 'زمان بررسی سفارشی <b>TEST</b>' ) );
+t( 'Custom store review text remains available but escaped', false !== strpos( $rendered, 'زمان بررسی سفارشی &lt;b&gt;TEST&lt;/b&gt;' ) && false === strpos( $rendered, '<b>TEST</b>' ) );
+$resubmit_copy = 'لطفاً موارد اعلام‌شده را اصلاح کنید و مجدداً برای بررسی ثبت کنید.';
+foreach ( array( 'rejected' => 'مبلغ واریز با سفارش تطبیق ندارد', 'correction' => 'تصویر رسید خوانا نیست', 'reconcile' => 'اطلاعات تراکنش نیازمند بررسی بیشتر است' ) as $state => $public_reason ) {
+    $rendered = customer_markup( $root, $order, $repo, $state, $public_reason );
+    t( 'Customer ' . $state . ' preserves reason with neutral correction guidance', false !== strpos( $rendered, $public_reason ) && 1 === substr_count( $rendered, $resubmit_copy ) && false === strpos( $rendered, 'دوباره واریز نکنید' ) );
+    $without_reason = customer_markup( $root, $order, $repo, $state );
+    t( 'Customer ' . $state . ' missing-reason fallback is neutral and not duplicated', 1 === substr_count( $without_reason, $resubmit_copy ) && false === strpos( $without_reason, 'دوباره واریز نکنید' ) );
+}
+foreach ( array( 'cancelled', 'failed', 'refunded' ) as $closed_status ) {
+    $order->status = $closed_status; $order->paid = true;
+    $rendered = customer_markup( $root, $order, $repo, 'approved' );
+    t( 'Closed customer order takes precedence over historical paid flag: ' . $closed_status, false !== strpos( $rendered, 'این سفارش بسته شده است' ) && false === strpos( $rendered, 'پرداخت سفارش ثبت شد' ) && false === strpos( $rendered, 'tcc-upload-form' ) && false === strpos( $rendered, 'data-tcc-copy=' ) );
+}
+$order->status = 'processing'; $rendered = customer_markup( $root, $order, $repo, 'approved' );
+t( 'Paid customer never gets another transfer/upload invitation', false !== strpos( $rendered, 'پرداخت سفارش ثبت شد' ) && false === strpos( $rendered, 'tcc-upload-form' ) && false === strpos( $rendered, 'data-tcc-copy=' ) );
+$order->status = 'on-hold'; $order->paid = false;
+
+// Native Woo Update bridge: real repository/service, simulated Woo save hooks.
+class WC_Admin_Meta_Boxes { public static $meta_box_errors = array(); }
+function native_fixture( $decision = 'reject' ) {
+    static $next = 1000; $id = ++$next;
+    $GLOBALS['uid'] = 1; $GLOBALS['review'] = true; $GLOBALS['edit'] = true; $_SERVER['REQUEST_METHOD'] = 'POST';
+    $order = new WC_Order( $id ); $order->status = 'on-hold'; $GLOBALS['orders'][$id] = $order;
+    $repo = new TCC_Repository();
+    $row = array_merge( TCC_Access::credentials( $order ), array( 'order_id' => $id, 'revision' => 1, 'status' => 'awaiting', 'amount' => '485000.00000000', 'currency' => 'IRT', 'card' => wp_json_encode( array( 'bank' => 'TEST', 'holder' => 'TEST', 'number' => '6037990000000001' ) ), 'latest_id' => 0, 'expires_at' => gmdate( 'Y-m-d H:i:s', time() + 3600 ), 'reminded' => 0, 'updated_at' => gmdate( 'Y-m-d H:i:s' ) ) );
+    $repo->create( $row );
+    $submission = array( 'order_id' => $id, 'request_key' => substr( hash( 'sha256', 'native-' . $id ), 0, 32 ), 'file_key' => str_repeat( 'a', 48 ) . '.png', 'mime' => 'image/png', 'file_hash' => hash( 'sha256', 'test' ), 'file_bytes' => 100, 'reference' => '000123', 'last4' => '1234', 'customer_note' => 'TEST', 'created_at' => gmdate( 'Y-m-d H:i:s' ) );
+    $repo->change( $row, array( 'status' => 'under_review' ), 'under_review', '', '', $submission );
+    $_POST = array( 'action' => 'editpost', 'tcc_review' => array( 'order_id' => (string) $id, 'nonce' => wp_create_nonce( 'tcc_review_' . $id ), 'revision' => '2', 'fingerprint' => TCC_Helpers::fingerprint( $order ), 'decision' => $decision, 'reason' => 'تصویر خوانا نیست', 'private_note' => 'INTERNAL', 'confirmed' => 'yes' ) );
+    return array( $id, $order, $repo, 'https://shop.example.test/wp-admin/post.php?post=' . $id );
+}
+foreach ( array( 'reject' => 'rejected', 'correct' => 'correction', 'reconcile' => 'reconcile' ) as $decision => $state ) {
+    list( $id, $o, $r, $url ) = native_fixture( $decision ); $_POST['automatic_woo_widget'] = 'changed by Woo initialization';
+    TCC_Order_Admin::capture_native( $id, $o );
+    t( 'Selecting/capturing ' . $decision . ' has no financial side effects', 'under_review' === $r->attempt( $id )['status'] && 0 === $o->payment_calls );
+    $location = TCC_Order_Admin::finalize_native( $url, $id );
+    t( 'Native Update persists ' . $decision . ' after Woo save', $state === $r->attempt( $id )['status'] && $url === $location && 3 === (int) $r->attempt( $id )['revision'] );
+    t( 'Native ' . $decision . ' does not cancel/pay the order or leak private reason', 'on-hold' === $o->status && ! $o->paid && 0 === $o->payment_calls && 'تصویر خوانا نیست' === $r->history( $id )[0]['public_reason'] );
+    $notice = get_transient( 'tcc_native_notice_1_' . $id ); t( 'Native ' . $decision . ' reports success to same actor/order', false === $notice['error'] );
+}
+list( $id, $o, $r, $url ) = native_fixture( 'approve' );
+TCC_Order_Admin::capture_native( $id, $o ); t( 'Approval intent waits for the completed Woo save', ! $o->paid && 'under_review' === $r->attempt( $id )['status'] );
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native confirmed approval uses standard Woo payment flow once', $o->paid && 1 === $o->payment_calls && 'approved' === $r->attempt( $id )['status'] );
+TCC_Order_Admin::capture_native( $id, $o ); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Recursive/repeated hooks cannot replay approval in the same request', 1 === $o->payment_calls && 4 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $_POST['tcc_review']['nonce'] = 'invalid';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native CSRF rejects before ledger mutation', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $_POST['tcc_review']['order_id'] = '101';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native posted order ID cannot target a different saved order', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $GLOBALS['review'] = false;
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native ordinary order edit rights do not grant financial review', 2 === (int) $r->attempt( $id )['revision'] ); $GLOBALS['review'] = true;
+list( $id, $o, $r, $url ) = native_fixture(); $GLOBALS['edit'] = false;
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native review still requires same-order edit permission', 2 === (int) $r->attempt( $id )['revision'] ); $GLOBALS['edit'] = true;
+list( $id, $o, $r, $url ) = native_fixture(); $_POST['tcc_review']['decision'] = '';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Ordinary Update without a selected decision does not review payment', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $_SERVER['REQUEST_METHOD'] = 'GET';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'GET cannot stage native review', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); TCC_Order_Admin::capture_native( $id ); $o->amount = '600000';
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Finalization re-reads changed saved amount and refuses approval', ! $o->paid && 0 === $o->payment_calls && 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); TCC_Order_Admin::capture_native( $id ); $o->currency = 'IRR';
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Finalization revalidates saved currency', ! $o->paid && 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); $_POST['tcc_review']['confirmed'] = '';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native server rejects approval without bank confirmation', ! $o->paid && 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $_POST['tcc_review']['reason'] = '';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native server rejects missing public reason', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); $_POST['tcc_review']['revision'] = '1';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native server rejects stale receipt revision', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); TCC_Order_Admin::capture_native( $id ); $GLOBALS['review'] = false;
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Role revoked between Woo save and redirect blocks the decision', 2 === (int) $r->attempt( $id )['revision'] ); $GLOBALS['review'] = true;
+list( $id, $o, $r, $url ) = native_fixture(); TCC_Order_Admin::capture_native( $id ); WC_Admin_Meta_Boxes::$meta_box_errors = array( 'Simulated failed Woo save' );
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Woo save errors prevent all financial finalization', 2 === (int) $r->attempt( $id )['revision'] ); WC_Admin_Meta_Boxes::$meta_box_errors = array();
+list( $id, $o, $r, $url ) = native_fixture(); TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::unfinished_native(); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Aborted/no-redirect save does not become a deferred financial job', 2 === (int) $r->attempt( $id )['revision'] && get_transient( 'tcc_native_notice_1_' . $id )['error'] );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); $o->payment_error = 'before';
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Uncertain native approval keeps durable intent without blind retry', ! $o->paid && 1 === $o->payment_calls && 'approving' === $r->attempt( $id )['status'] );
+TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id ); t( 'Uncertain native approval is not repeated on another redirect', 1 === $o->payment_calls );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); TCC_Order_Admin::capture_native( $id ); $o->method = 'bacs';
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Finalization revalidates freshly saved payment method', ! $o->paid && 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); TCC_Order_Admin::capture_native( $id ); $GLOBALS['native_expired_nonce'] = true;
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Nonce expiry between native save and redirect blocks finance', ! $o->paid && 2 === (int) $r->attempt( $id )['revision'] ); $GLOBALS['native_expired_nonce'] = false;
+list( $id, $o, $r, $url ) = native_fixture( 'approve' ); TCC_Order_Admin::capture_native( $id ); $wpdb->lock_result = '0';
+TCC_Order_Admin::finalize_native( $url, $id ); t( 'Native Update still fails closed on financial lock contention', ! $o->paid && 2 === (int) $r->attempt( $id )['revision'] ); $wpdb->lock_result = '1';
+list( $id, $o, $r, $url ) = native_fixture( 'delete' ); TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Unknown native decision cannot mutate ledger', 2 === (int) $r->attempt( $id )['revision'] );
+list( $id, $o, $r, $url ) = native_fixture(); TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id );
+$notice_key = 'tcc_native_notice_1_' . $id; $marker = get_transient( $notice_key )['message']; $GLOBALS['uid'] = 2; ob_start(); TCC_Order_Admin::box( $o ); $another_actor = ob_get_clean(); $GLOBALS['uid'] = 1;
+t( 'Native result notice is not shown to a different reviewer', false === strpos( $another_actor, esc_html( $marker ) ) && false !== get_transient( $notice_key ) );
+ob_start(); TCC_Order_Admin::box( $o ); $own_result = ob_get_clean();
+t( 'Native result notice is consumed only on its same-order actor view', false !== strpos( $own_result, esc_html( $marker ) ) && false === get_transient( $notice_key ) );
+foreach ( array( 'approve', 'reject' ) as $legacy_decision ) {
+    list( $id, $o, $r, $url ) = native_fixture( $legacy_decision );
+    $payload = $_POST['tcc_review']; $_POST = $payload; $_POST['_wpnonce'] = $payload['nonce'];
+    $retired = response( array( 'TCC_Order_Admin', 'review' ) );
+    t( 'Valid old ' . $legacy_decision . ' endpoint cannot bypass native Update', ! $retired->payload['success'] && false !== strpos( $retired->payload['data']['message'], 'به‌روزرسانی سفارش' ) && ! $o->paid && 0 === $o->payment_calls && 2 === (int) $r->attempt( $id )['revision'] );
+}
+list( $id, $o, $r, $url ) = native_fixture( 'renew' ); $before_link = $r->attempt( $id )['access_seed']; TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Guest link renewal also commits only with native Update', $before_link !== $r->attempt( $id )['access_seed'] && ! $o->paid );
+list( $id, $o, $r, $url ) = native_fixture(); define( 'DOING_AUTOSAVE', true ); TCC_Order_Admin::capture_native( $id ); TCC_Order_Admin::finalize_native( $url, $id );
+t( 'Autosave cannot stage or execute a financial decision', 2 === (int) $r->attempt( $id )['revision'] );
+$_POST = array(); $_SERVER['REQUEST_METHOD'] = 'POST';
 echo "\nResult: $pass passed, $fail failed (SQLite adapter, NOT MySQL/Woo integration)\n"; exit( $fail ? 1 : 0 );

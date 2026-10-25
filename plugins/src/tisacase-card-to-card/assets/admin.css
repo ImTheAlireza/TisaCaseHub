@@ -155,3 +155,23 @@ body.woocommerce_page_tisacase-card-to-card { background: var(--tisa-bg, #f4f2ec
 .tcc-individual-reviewers { margin-block-start: 12px; padding-block-start: 10px; border-block-start: 1px solid var(--tcc-border); }
 .tcc-individual-reviewers > summary { color: var(--tcc-muted); font-size: 12px; }
 @media (max-width: 400px) { .tcc-role-options { grid-template-columns: minmax(0, 1fr); max-height: 300px; } }
+
+/* Receipt decisions are selections; only Woo's native Update commits them. */
+.tcc-review-choice { position: relative; display: inline-flex; margin: 0; cursor: pointer; }
+.tcc-review-choice > input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.tcc-review-choice > span { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 6px 12px; border: 1px solid var(--tcc-border); border-radius: 10px; background: #fff; font-size: 12px; font-weight: 600; color: var(--tcc-deep); }
+.tcc-review-choice.is-danger > span { color: #9b3028; border-color: #edcec9; }
+.tcc-review-choice > input:checked + span { background: var(--tcc-brand); border-color: var(--tcc-brand); color: #fff; box-shadow: 0 0 0 3px var(--tcc-soft); }
+.tcc-review-choice.is-danger > input:checked + span { background: #9b3028; border-color: #9b3028; }
+.tcc-review-choice > input:focus-visible + span { outline: 3px solid var(--tcc-brand); outline-offset: 3px; }
+.tcc-review-choice > input:disabled + span { opacity: .5; cursor: not-allowed; }
+.tcc-native-pending { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-block: 12px; }
+.tcc-native-pending .tcc-feedback { margin: 0; font-size: 12px; color: var(--tcc-muted); }
+.has-pending-decision .tcc-native-pending { border-inline-start: 3px solid var(--tcc-brand); padding: 10px 12px; background: var(--tcc-soft); border-radius: 8px; }
+.has-pending-decision .tcc-native-pending .tcc-feedback { color: var(--tcc-deep); }
+
+.tcc-order-box .tcc-native-pending .tcc-feedback { padding: 0; background: transparent; border-radius: 0; color: var(--tcc-muted); }
+.tcc-order-box.has-pending-decision .tcc-native-pending .tcc-feedback { color: var(--tcc-deep); }
+@media (max-width: 782px) { .tcc-actions .tcc-review-choice { flex: 1 1 45%; } .tcc-actions .tcc-review-choice > span { width: 100%; min-height: 44px; } }
+
+.tcc-order-box .tcc-nojs-clear { min-height: 44px; width: fit-content; }

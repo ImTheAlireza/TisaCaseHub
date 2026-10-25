@@ -125,7 +125,7 @@ $s->decide( 101, decision( $r, $o, 'reconcile' ) ); t( 'Amount mismatch can stil
 // Real template rendering with escaped user content; no mocked HTML string.
 list( $order, $repo, $lock, $files, $service ) = fixture(); $order->customer = 1; $a = $repo->attempt( 101 ); $id = 101; $settings = TCC_Settings::get(); $card = json_decode( $a['card'], true ); $latest = null; $reason = ''; $editable = true; $flash = array( 'error' => true, 'message' => '<script>bad()</script>' );
 ob_start(); include $root . '/templates/payment.php'; $html = ob_get_clean();
-t( 'Actual payment template has copy and upload controls', strpos( $html, 'data-tcc-copy="485000"' ) !== false && strpos( $html, 'enctype="multipart/form-data"' ) !== false );
+t( 'Actual payment template has copy and upload controls', strpos( $html, 'data-tcc-copy="4850000"' ) !== false && strpos( $html, 'enctype="multipart/form-data"' ) !== false );
 t( 'Customer-facing HTML escapes flash and card owner', strpos( $html, '<script>bad()' ) === false && strpos( $html, '&lt;script&gt;' ) !== false );
 t( 'Form has scoped token, CSRF and idempotency key', strpos( $html, 'name="tcc_token"' ) !== false && strpos( $html, 'name="_wpnonce"' ) !== false && strpos( $html, 'name="request_key"' ) !== false );
 $editable = false; $order->paid = true; $order->status = 'processing'; $a['status'] = 'approved'; ob_start(); include $root . '/templates/payment.php'; $paid_html = ob_get_clean();

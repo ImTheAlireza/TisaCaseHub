@@ -381,7 +381,9 @@
 
 
 
-## افزونه جدید: کارت به کارت تیساکیس — 1.2.0
+## افزونه جدید: کارت به کارت تیساکیس — 1.3.1
+
+- اصلاح ۱٫۳٫۱: نام صاحب کارت ۱۸پیکسلی/نیمه‌بولد؛ راهنمای زیر علت رد، خنثی و مناسب اصلاح/ثبت دوباره است. داده کارت و منطق مالی تغییر نکرده‌اند.
 
 - سورس: `plugins/src/tisacase-card-to-card/`؛ درگاه: `tisacase_card_to_card`؛ عنوان ذخیره‌شده سفارش: «کارت به کارت تیساکیس».
 - روش/وضعیت در لیست سفارش‌ها؛ رسید، تأیید، رد با علت و تاریخچه داخل ویرایش همان سفارش (اتصال HPOS و قدیمی).
@@ -390,7 +392,9 @@
 - فایل مالی بیرون webroot با `TCC_PRIVATE_DIR` اختیاری؛ هیچ attachment عمومی یا مسیر داخل uploads ساخته نمی‌شود. حذف افزونه، داده مالی را خودکار پاک نمی‌کند.
 - تست و بسته‌بندی: `tools/test-card-to-card.sh` و `tools/build-plugin-zip.sh tisacase-card-to-card`؛ آزمون‌ها از ZIP حذف می‌شوند.
 - رابط ۱٫۱: تنظیمات چهار تب در یک فرم (`templates/settings.php`)، بررسی فشرده داخل سفارش (`templates/order-review.php`)، CSS مستقل مدیریت (`assets/admin.css`) و قالب مشتری؛ بدون تغییر منطق مالی/مجوزها.
+- گردش ۱٫۳٫۰: انتخاب موقت تأیید/رد/اصلاح/تطبیق؛ ثبت فقط با Update اصلی Woo، پس از آخرین ذخیره native/HPOS و بازبینی سرویس. dirty-form و AJAX مالی رابط حذف شده‌اند؛ endpoint قدیمی نیز اجرا نمی‌کند. حفظ nonce/revision/snapshot/مجوز/قفل و بدون retry مالی. ذخیره Woo و مالی اتمیک مشترک نیستند.
+- مشتری ۱٫۳: نمایش/کپی دقیق ریال (IRT×۱۰ فقط در نمایش؛ IRR بدون تغییر)، کنترل فایل فارسی/بدون JS، خلاصه روشن بررسی، SVG محلی بانک با مجوز MIT، حرکت ملایم و reduced-motion؛ RTL و اعداد LTR حفظ‌اند.
 - نقش‌ها: `includes/class-tcc-permissions.php` فقط capability مالی را روی نقش‌های انتخابی و استثنای فردی مدیریت می‌کند؛ مدیر محافظت‌شده و مجوز همان سفارش همچنان الزامی است.
-- چک‌لیست: ۷۵ سناریوی staging در `CARD_TO_CARD_TEST_CHECKLIST.md` و HTML تیک‌زدنی `design/preview/card-to-card-checklist.html`، مستقل از محیط افزونه.
-- تست: ۲۴۷ بررسی اصلی روی PHP 7.4/8.5 و ۱۸۹ بررسی واقعی Chromium روی fixture/چک‌لیست؛ پیش‌نمایش غیرعملیاتی با `tools/preview-card-to-card.mjs` و آزمون `tools/test-card-to-card-browser.mjs`.
+- چک‌لیست: ۸۰ سناریوی staging در `CARD_TO_CARD_TEST_CHECKLIST.md` و HTML تیک‌زدنی `design/preview/card-to-card-checklist.html`، مستقل از محیط افزونه.
+- تست: ۳۸۰ بررسی اصلی روی PHP 7.4/8.5 و ۴۰۲ بررسی Chromium (۱۲۱ اجرای axe) روی fixture/چک‌لیست؛ پیش‌نمایش غیرعملیاتی با `tools/preview-card-to-card.mjs` و آزمون `tools/test-card-to-card-browser.mjs`.
 - وضعیت انتشار: بسته staging؛ تأیید WordPress/MySQL/WooCommerce روی هاست و قالب واقعی هنوز لازم است. جزئیات: `CARD_TO_CARD_REPORT.md`.

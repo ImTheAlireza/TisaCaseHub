@@ -4,6 +4,44 @@ class TCC_Helpers {
     public static function digits( $value ) {
         return strtr( (string) $value, array_combine( preg_split( '//u', '۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩', -1, PREG_SPLIT_NO_EMPTY ), str_split( '01234567890123456789' ) ) );
     }
+    /** Presentation only: never changes the stored order/snapshot currency. No floats. */
+    public static function rial_amount( $amount, $currency ) {
+        if ( ! is_scalar( $amount ) || ! in_array( $currency, array( 'IRR', 'IRT' ), true ) ) { return ''; }
+        $amount = self::digits( (string) $amount );
+        if ( ! preg_match( '/^([0-9]{1,18})(?:\.([0-9]{1,8}))?$/D', $amount, $parts ) ) { return ''; }
+        $whole = ltrim( $parts[1], '0' ); $fraction = isset( $parts[2] ) ? $parts[2] : '';
+        if ( 'IRT' === $currency ) { $whole .= '' !== $fraction ? $fraction[0] : '0'; $fraction = substr( $fraction, 1 ); }
+        $whole = ltrim( $whole, '0' ); $fraction = rtrim( $fraction, '0' );
+        return ( '' === $whole ? '0' : $whole ) . ( '' !== $fraction ? '.' . $fraction : '' );
+    }
+    public static function persian_number( $amount ) {
+        if ( ! is_string( $amount ) || ! preg_match( '/^[0-9]+(?:\.[0-9]+)?$/D', $amount ) ) { return ''; }
+        $parts = explode( '.', $amount, 2 );
+        $text = preg_replace( '/\B(?=(?:[0-9]{3})+(?![0-9]))/', '٬', $parts[0] );
+        if ( isset( $parts[1] ) ) { $text .= '٫' . $parts[1]; }
+        return strtr( $text, array_combine( str_split( '0123456789' ), preg_split( '//u', '۰۱۲۳۴۵۶۷۸۹', -1, PREG_SPLIT_NO_EMPTY ) ) );
+    }
+    /** Fixed local assets only; never turn a merchant-provided name into a path. */
+    public static function bank_logo( $name ) {
+        $name = str_replace( array( 'ي', 'ك' ), array( 'ی', 'ک' ), (string) $name );
+        $name = str_replace( 'بانک', '', preg_replace( '/[\s\x{200c}\x{200d}\x{200e}\x{200f}]+/u', '', $name ) );
+        $banks = array( 'سامان' => 'saman', 'ملی' => 'melli', 'ملیایران' => 'melli', 'ملت' => 'mellat', 'تجارت' => 'tejarat', 'سپه' => 'sepah', 'پارسیان' => 'parsian', 'پاسارگاد' => 'pasargad', 'صادرات' => 'saderat', 'صادراتایران' => 'saderat', 'مسکن' => 'maskan', 'رفاه' => 'refahkargaran', 'رفاهکارگران' => 'refahkargaran', 'کشاورزی' => 'keshavarzi', 'اقتصادنوین' => 'eghtesad', 'شهر' => 'shahr', 'سینا' => 'sina', 'مهرایران' => 'mehriran', 'مهرایرانیان' => 'mehriran', 'قرضالحسنهمهرایران' => 'mehriran', 'رسالت' => 'resalat', 'قرضالحسنهرسالت' => 'resalat', 'پست' => 'post', 'پستایران' => 'post', 'دی' => 'day', 'آینده' => 'ayande', 'بلو' => 'blu' );
+        return isset( $banks[$name] ) ? $banks[$name] . '.svg' : '';
+    }
+    public static function ui_icon( $name ) {
+        $paths = array(
+            'card' => '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h3"/>',
+            'copy' => '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+            'check' => '<path d="m5 12 4 4L19 6"/>',
+            'clock' => '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+            'upload' => '<path d="M12 16V4m-4 4 4-4 4 4M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
+            'receipt' => '<path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 7h6M9 11h6M9 15h3"/>',
+            'chevron' => '<path d="m6 9 6 6 6-6"/>',
+            'refresh' => '<path d="M20 7v5h-5M4 17v-5h5M6 6a8 8 0 0 1 13 2M5 16a8 8 0 0 0 13 2"/>',
+            'info' => '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7v.1"/>',
+        );
+        return '<svg class="tcc-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' . ( isset( $paths[$name] ) ? $paths[$name] : $paths['card'] ) . '</svg>';
+    }
     public static function card( $number ) {
         $number = preg_replace( '/[\s-]+/u', '', self::digits( $number ) );
         if ( ! preg_match( '/^[0-9]{16}$/D', $number ) || preg_match( '/^(.)\1{15}$/', $number ) ) { return ''; }
