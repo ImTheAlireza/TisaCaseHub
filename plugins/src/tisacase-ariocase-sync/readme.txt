@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, ariocase
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.8.4
+Stable tag: 1.9.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -64,7 +64,7 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
 == TisaCase link resolver ==
 
-لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink ابتدا با Rewrite خود وردپرس به Product ID تبدیل می‌شود. اگر Rewrite نامک فارسی یا URL-encoded را نشناسد، نامک دقیق فقط در مسیر محصول و با `post_type=product` بررسی می‌شود؛ مسیر غیرمحصول پذیرفته نمی‌شود. برای محصول متغیر، همهٔ Variationهای واقعی همان والد با Query مستقیم روی `product_variation`، وضعیت `any` و بدون سقف تعداد از دیتابیس همان وردپرس خوانده می‌شوند؛ Transient فهرست فرزندها و فیلترهای قالب/افزونه مسیر اصلی را محدود نمی‌کنند. هر Variation با مرجع `ID:<variation_id>` بازگردانده می‌شود و SKU در برچسب گزینه باقی می‌ماند؛ بنابراین SKU مشترک هم قابل‌استفاده است. SKU خالی در محصول ساده، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
+لینک TisaCase با Host سایت جاری تشخیص داده و بدون HTTP Request خارجی Resolve می‌شود. لینک کوتاه با Product ID و لینک `?product=slug` با محصول همان نامک خوانده می‌شود؛ Pretty Permalink ابتدا با Rewrite خود وردپرس به Product ID تبدیل می‌شود. اگر Rewrite نامک فارسی یا URL-encoded را نشناسد، نامک دقیق فقط در مسیر محصول و با `post_type=product` بررسی می‌شود؛ مسیر غیرمحصول پذیرفته نمی‌شود. برای محصول متغیر، Reader مستقیم و بدون `LIMIT` از جدول پست‌های همان وردپرس فقط `product_variation`های غیرحذف‌شده با `post_parent` دقیق همان والد را می‌خواند. نتیجهٔ خالی دیتابیس با Cache پر نمی‌شود؛ نوع و Parent ID هر Variation دوباره کنترل می‌شود و برچسب Taxonomy از Term واقعی خوانده می‌شود. هر Variation با مرجع `ID:<variation_id>` بازگردانده می‌شود و SKU در برچسب گزینه باقی می‌ماند؛ بنابراین SKU مشترک هم قابل‌استفاده است. SKU خالی در محصول ساده، لینک غیرمحصول و دامنهٔ ناشناس رد می‌شود.
 
 == Security and stock behavior ==
 
@@ -111,6 +111,11 @@ SKU یا Label تکراری، چند کاندیدای هم‌امتیاز، اس
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.9.0 =
+* بازنویسی کامل موتور کشف Variationهای TisaCase در کلاس مستقل Reader با Query مستقیم `$wpdb` روی `post_parent` و `product_variation`، بدون `get_posts()`، Transient یا `LIMIT`.
+* کنترل مجدد نوع و Parent ID، حذف ID تکراری، خواندن برچسب Term برای Taxonomy و ممنوعیت جایگزینی نتیجهٔ صفر دیتابیس با Cached Children.
+* رگرسیون SQL مستقیم، ۷۵ Variation، والد/نوع نامعتبر، Taxonomy و Fallback فقط هنگام نبود لایهٔ دیتابیس؛ حفظ Smart Match و قرارداد Stock-only.
 
 = 1.8.4 =
 * خواندن همهٔ Variationهای TisaCase مستقیم از دیتابیس وردپرس با `post_parent` والد، `post_type=product_variation` و `post_status=any`.

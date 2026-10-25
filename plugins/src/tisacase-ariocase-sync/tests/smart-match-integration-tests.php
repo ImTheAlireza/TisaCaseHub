@@ -33,13 +33,14 @@ class TCAS_Api {
 	public static function fetch_reference( $reference ) { self::$reference = $reference; return self::$product; }
 }
 class TCAS_Integration_Product {
-	private $id; private $type; private $name; private $sku; private $attributes; private $children;
-	public function __construct( $id, $type, $name, $sku, $attributes = array(), $children = array() ) {
-		$this->id = $id; $this->type = $type; $this->name = $name; $this->sku = $sku; $this->attributes = $attributes; $this->children = $children;
+	private $id; private $type; private $name; private $sku; private $attributes; private $children; private $parent_id;
+	public function __construct( $id, $type, $name, $sku, $attributes = array(), $children = array(), $parent_id = 0 ) {
+		$this->id = $id; $this->type = $type; $this->name = $name; $this->sku = $sku; $this->attributes = $attributes; $this->children = $children; $this->parent_id = $parent_id;
 	}
 	public function get_type() { return $this->type; }
 	public function get_name() { return $this->name; }
 	public function get_sku() { return $this->sku; }
+	public function get_parent_id() { return $this->parent_id; }
 	public function get_attributes() { return $this->attributes; }
 	public function get_children( $visible = true ) { $GLOBALS['children_visibility'][] = $visible; return $this->children; }
 }
@@ -48,6 +49,15 @@ function get_posts( $args ) {
 	$GLOBALS['integration_post_queries'][] = $args;
 	return isset( $args['post_parent'], $args['post_type'] ) && 'product_variation' === $args['post_type'] && absint( $args['post_parent'] ) === absint( $GLOBALS['local_parent_id'] ) ? $GLOBALS['local_ids'] : array();
 }
+class TCAS_Integration_WPDB {
+	public $posts = 'wp_posts'; public $queries = array();
+	public function prepare( $query, $parent ) { return array( $query, absint( $parent ) ); }
+	public function get_col( $prepared ) {
+		$this->queries[] = $prepared;
+		return absint( $prepared[1] ) === absint( $GLOBALS['local_parent_id'] ) ? $GLOBALS['local_ids'] : array();
+	}
+}
+require_once dirname( __DIR__ ) . '/includes/class-tcas-local-variation-reader.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-link-resolver.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
@@ -83,11 +93,12 @@ $local_ids = array();
 foreach ( $local_labels as $index => $label ) {
 	$variation_id = $local_parent_id + $index + 1;
 	$local_ids[]  = $variation_id;
-	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, 'SHARED-LOCAL', array( 'Model' => $label ) );
+	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, 'SHARED-LOCAL', array( 'Model' => $label ), array(), $local_parent_id );
 }
 $GLOBALS['local_ids'] = $local_ids;
 $GLOBALS['children_visibility'] = array();
 $GLOBALS['integration_post_queries'] = array();
+$GLOBALS['wpdb'] = new TCAS_Integration_WPDB();
 // A56 فقط گزینهٔ Attribute والد است و عمداً Variation واقعی ندارد.
 $GLOBALS['integration_products'][ $local_parent_id ] = new TCAS_Integration_Product(
 	$local_parent_id, 'variable', 'Local parent', 'LOCAL-PARENT',
@@ -109,7 +120,7 @@ TCAS_Api::$product = $raw_remote;
 $_REQUEST['nonce'] = 'valid'; $_POST['local_code'] = $local_reference; $_POST['remote_code'] = $remote_reference;
 try { TCAS_Ajax::match_variations(); $response = null; } catch ( TCAS_JSON_Response $caught ) { $response = $caught; }
 smart_integration_test( 'شکل خام API بدون reference/label در مسیر واقعی AJAX پذیرفته می‌شود', $response && $response->success && ! isset( $raw_remote['variations'][0]['reference'], $raw_remote['variations'][0]['label'] ) );
-smart_integration_test( 'هر ۱۷ Variation محلی و ۳۳ Variation ریموت شمارش می‌شوند', $response && 17 === $response->data['local']['count'] && 33 === $response->data['remote']['count'] && 0 === count( $GLOBALS['children_visibility'] ) && 1 === count( $GLOBALS['integration_post_queries'] ), $response ? json_encode( array( $response->data['local'], $response->data['remote'], $GLOBALS['children_visibility'] ), JSON_UNESCAPED_UNICODE ) : 'no response' );
+smart_integration_test( 'Reader مستقیم هر ۱۷ Variation محلی و ۳۳ Variation ریموت را می‌شمارد', $response && 17 === $response->data['local']['count'] && 33 === $response->data['remote']['count'] && 0 === count( $GLOBALS['children_visibility'] ) && 0 === count( $GLOBALS['integration_post_queries'] ) && 1 === count( $GLOBALS['wpdb']->queries ), $response ? json_encode( array( $response->data['local'], $response->data['remote'], $GLOBALS['children_visibility'], $GLOBALS['wpdb']->queries ), JSON_UNESCAPED_UNICODE ) : 'no response' );
 $matches = $response && $response->success ? $response->data['matches'] : array();
 $expected = array( 'iPhone 13', 'iPhone 13 Pro Max', 'iPhone 16', 'iPhone 16 Pro Max', 'iPhone 17 Pro Max', 'Samsung Galaxy S23 Ultra', 'Samsung Galaxy S24 Ultra', 'Samsung Galaxy S25 Ultra' );
 smart_integration_test( 'هشت معادل یکتای مورد انتظار پیدا می‌شوند', array_column( $matches, 'local_label' ) === $expected, json_encode( array_column( $matches, 'local_label' ), JSON_UNESCAPED_UNICODE ) );

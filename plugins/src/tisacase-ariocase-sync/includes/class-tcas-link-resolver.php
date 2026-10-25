@@ -51,35 +51,6 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			return $values ? implode( ' / ', $values ) : trim( (string) $fallback );
 		}
 
-		private static function local_variation_ids( $product, $product_id ) {
-			$ids = array();
-			if ( function_exists( 'get_posts' ) ) {
-				// مستقیم از دیتابیس همان وردپرس؛ بدون Transient، فیلتر قالب/افزونه، Visibility یا سقف تعداد.
-				$ids = get_posts( array(
-					'post_parent'      => $product_id,
-					'post_type'        => 'product_variation',
-					'post_status'      => 'any',
-					'fields'           => 'ids',
-					'posts_per_page'   => -1,
-					'nopaging'         => true,
-					'no_found_rows'    => true,
-					'orderby'          => array( 'menu_order' => 'ASC', 'ID' => 'ASC' ),
-					'suppress_filters' => true,
-				) );
-			}
-			if ( ! $ids && is_object( $product ) && method_exists( $product, 'get_children' ) ) {
-				$ids = $product->get_children();
-			}
-			$out = array();
-			foreach ( (array) $ids as $variation_id ) {
-				$variation_id = absint( $variation_id );
-				if ( $variation_id ) {
-					$out[ $variation_id ] = $variation_id;
-				}
-			}
-			return array_values( $out );
-		}
-
 		private static function local_result( $product_id ) {
 			$product_id = absint( $product_id );
 			$product    = $product_id && function_exists( 'wc_get_product' ) ? wc_get_product( $product_id ) : false;
@@ -91,10 +62,10 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			$variations = array();
 			if ( 'variable' === $type ) {
 				// فقط Variationهای واقعی همان والد؛ Attribute option ساخته نمی‌شود و In-stock/Visible فیلتر نیست.
-				foreach ( self::local_variation_ids( $product, $product_id ) as $variation_id ) {
+				foreach ( TCAS_Local_Variation_Reader::ids( $product, $product_id ) as $variation_id ) {
 					$variation_id = absint( $variation_id );
 					$variation    = $variation_id ? wc_get_product( $variation_id ) : false;
-					if ( ! $variation || ! is_object( $variation ) || 'variation' !== $variation->get_type() ) {
+					if ( ! TCAS_Local_Variation_Reader::belongs_to( $variation, $product_id ) ) {
 						continue;
 					}
 					$variation_sku = trim( (string) $variation->get_sku() );
@@ -103,7 +74,7 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 						'parent_id'  => $product_id,
 						'sku'        => $variation_sku,
 						'reference'  => 'ID:' . $variation_id,
-						'label'      => self::variation_label( $variation->get_attributes(), $variation->get_name() ),
+						'label'      => self::variation_label( TCAS_Local_Variation_Reader::attributes( $variation ), $variation->get_name() ),
 					);
 				}
 			}

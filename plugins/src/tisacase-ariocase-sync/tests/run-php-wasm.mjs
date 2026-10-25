@@ -11,12 +11,12 @@ const plugin = path.resolve(here, '..');
 const suites = [
 	{ file: 'tests/normalizer-tests.php', sources: ['includes/class-tcas-core.php', 'includes/class-tcas-normalizer.php'] },
 	{ file: 'tests/core-api-tests.php', sources: ['includes/class-tcas-core.php', 'includes/class-tcas-normalizer.php', 'includes/class-tcas-api.php'] },
-	{ file: 'tests/link-resolver-tests.php', sources: ['includes/class-tcas-link-resolver.php'] },
+	{ file: 'tests/link-resolver-tests.php', sources: ['includes/class-tcas-local-variation-reader.php', 'includes/class-tcas-link-resolver.php'] },
 	{ file: 'tests/matcher-tests.php', sources: ['includes/class-tcas-matcher.php'] },
 	{ file: 'tests/stock-live-tests.php', sources: ['includes/class-tcas-core.php', 'includes/class-tcas-mapping.php', 'includes/class-tcas-stock.php', 'includes/class-tcas-live.php'] },
 	{ file: 'tests/pairing-tests.php', sources: ['includes/class-tcas-mapping.php', 'includes/class-tcas-stock.php', 'includes/class-tcas-pairing.php'] },
 	{ file: 'tests/ajax-job-tests.php', sources: ['includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
-	{ file: 'tests/smart-match-integration-tests.php', sources: ['includes/class-tcas-link-resolver.php', 'includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
+	{ file: 'tests/smart-match-integration-tests.php', sources: ['includes/class-tcas-local-variation-reader.php', 'includes/class-tcas-link-resolver.php', 'includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
 ];
 let failed = false;
 let pid = 740;
