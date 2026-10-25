@@ -1,0 +1,55 @@
+/* Storefront only. Keep the shared/admin palette and the bank marks unchanged. */
+.tcc-panel.tcc-payment {
+    --tcc-brand: #2874fc;
+    --tcc-deep: #1d4ed8;
+    --tcc-soft: #edf3ff;
+    --tcc-bg: #fafafa;
+    --tcc-surface: #fff;
+    --tcc-ink: #16181c;
+    --tcc-muted: #606978;
+    --tcc-border: #e1e5ec;
+    /* Closely related blue with AA contrast for small white button text. */
+    --tcc-customer-action: #256eef;
+    background: #fff;
+    box-shadow: 0 10px 38px #00000006;
+}
+.tcc-panel.tcc-payment a { color: var(--tcc-deep); }
+.tcc-panel.tcc-payment .tcc-btn { border-color: #cbd9f4; color: var(--tcc-deep); }
+.tcc-panel.tcc-payment .tcc-btn:hover { background: var(--tcc-soft); border-color: var(--tcc-brand); }
+.tcc-panel.tcc-payment .tcc-btn.tcc-primary { background: var(--tcc-customer-action); border-color: var(--tcc-customer-action); color: #fff; }
+.tcc-panel.tcc-payment .tcc-btn.tcc-primary:hover { background: var(--tcc-deep); border-color: var(--tcc-deep); color: #fff; }
+.tcc-panel.tcc-payment .tcc-field :is(input, textarea, select) { border-color: #8793a6; }
+.tcc-panel.tcc-payment .tcc-message:not(.tcc-error) { background: #eff4ff; border-color: #d4e0fb; color: #204b9a; }
+.tcc-panel.tcc-payment .tcc-approved { background: #eaf1ff; color: #244ba0; }
+.tcc-panel.tcc-payment .tcc-correction, .tcc-panel.tcc-payment .tcc-reconcile { background: #edf3ff; color: #244ba0; }
+.tcc-panel.tcc-payment .tcc-awaiting, .tcc-panel.tcc-payment .tcc-paid_external { background: #f0f2f5; color: #4b5563; }
+.tcc-panel.tcc-payment .tcc-step-number { background: #fafbfe; }
+.tcc-panel.tcc-payment .tcc-steps .is-current .tcc-step-number { background: var(--tcc-customer-action); border-color: var(--tcc-customer-action); }
+.tcc-panel.tcc-payment .tcc-steps .is-done .tcc-step-number { background: var(--tcc-soft); border-color: var(--tcc-soft); }
+.tcc-panel.tcc-payment .tcc-intro { color: #515b6a; }
+.tcc-panel.tcc-payment .tcc-money { background: #fafafa; }
+.tcc-panel.tcc-payment .tcc-bank { background: linear-gradient(125deg, #eaf1ff, #fafcff 66%); border-color: #cddbf7; }
+.tcc-panel.tcc-payment .tcc-bank::before, .tcc-panel.tcc-payment .tcc-bank::after { border-color: #2874fc0d; }
+.tcc-panel.tcc-payment .tcc-bank-logo { box-shadow: 0 2px 8px #00000005; }
+.tcc-panel.tcc-payment .tcc-card-caption, .tcc-panel.tcc-payment .tcc-holder small { color: var(--tcc-muted); }
+.tcc-panel.tcc-payment .tcc-card-number { color: var(--tcc-ink); }
+.tcc-panel.tcc-payment .tcc-bank .tcc-btn { border-color: #cbd9f4; }
+.tcc-panel.tcc-payment .tcc-btn.is-copied { background: #e7efff; color: #244ba0; border-color: #acc4f7; }
+.tcc-panel.tcc-payment .tcc-upload[open] > summary { border-color: #e9edf3; }
+.tcc-panel.tcc-payment .tcc-upload.is-secondary { background: #fcfcfd; }
+.tcc-panel.tcc-payment .tcc-file-picker { background: #fafbff; border-color: #a7bce8; }
+.tcc-panel.tcc-payment .tcc-file-picker:hover { background: #edf3ff; border-color: var(--tcc-brand); }
+.tcc-panel.tcc-payment .tcc-file-picker.has-file { border-color: var(--tcc-brand); }
+.tcc-panel.tcc-payment .tcc-file-action { border-color: #cbd9f4; }
+.tcc-panel.tcc-payment .tcc-status-card { background: #f4f7ff; border-color: #dbe5fb; }
+.tcc-panel.tcc-payment .tcc-status-icon { background: #e7efff; color: #2456b2; }
+.tcc-panel.tcc-payment .tcc-status-copy p, .tcc-panel.tcc-payment .tcc-status-copy small { color: #515b6a; }
+.tcc-panel.tcc-payment .tcc-status-card.needs-attention { background: #fcf7ee; border-color: #e9d8c3; }
+.tcc-panel.tcc-payment .tcc-status-card.needs-attention .tcc-status-icon { background: #f1e7d4; color: #80592b; }
+.tcc-panel.tcc-payment .tcc-status-refresh { color: var(--tcc-deep); }
+.tcc-panel.tcc-payment .tcc-receipt-mark { background: #f2f4f8; color: #606978; }
+.tcc-panel.tcc-payment .tcc-sent-note { border-color: #e9edf3; }
+.tcc-panel.tcc-payment .tcc-copy-feedback { color: #2456b2; }
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+    .tcc-panel.tcc-payment .tcc-bank:hover { box-shadow: 0 8px 20px #2874fc0b; }
+}

@@ -110,6 +110,13 @@ try {
                 await check('No page/control overflow: ' + label, async () => {
                     const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); assert.deepEqual(result.offenders, []);
                 });
+                await check('Blue customer palette / unchanged green admin: ' + label, async () => {
+                    const customer = ['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route);
+                    const colors = await page.locator('.tcc-panel').first().evaluate(el => ({brand: getComputedStyle(el).getPropertyValue('--tcc-brand').trim().toLowerCase(), ink: getComputedStyle(el).color, sheets: Array.from(document.querySelectorAll('link[rel=stylesheet]'), el => new URL(el.href).pathname)}));
+                    assert.equal(colors.brand, customer ? '#2874fc' : '#0e7c6b');
+                    assert.equal(colors.sheets.includes('/assets/customer.css'), customer);
+                    if (customer) assert.equal(colors.ink, 'rgb(22, 24, 28)');
+                });
                 if (['/payment', '/correction', '/pending', '/saman', '/approved'].includes(route)) {
                     await check('Three visible payment stages are centered inside their card: ' + label, async () => {
                         const positions = await page.locator('.tcc-steps').evaluate(el => {
@@ -161,6 +168,18 @@ try {
             }
         }
     }
+    await goto('/?shared=1');
+    await page.addStyleTag({path: 'plugins/src/tisacase-card-to-card/assets/customer.css'});
+    await check('Customer CSS cannot turn admin blue even if accidentally co-loaded', async () => {
+        assert.equal(await page.locator('.tcc-settings').evaluate(el => getComputedStyle(el).getPropertyValue('--tcc-brand').trim().toLowerCase()), '#0e7c6b');
+        const result = await page.evaluate(() => {
+            const admin = document.querySelector('.tcc-settings'); const before = getComputedStyle(admin).getPropertyValue('--tcc-brand');
+            const probe = document.createElement('section'); probe.className = 'tcc-panel tcc-payment'; document.body.append(probe);
+            const blue = getComputedStyle(probe).getPropertyValue('--tcc-brand').trim(); probe.remove();
+            return {before: before.trim().toLowerCase(), after: getComputedStyle(admin).getPropertyValue('--tcc-brand').trim().toLowerCase(), blue};
+        });
+        assert.deepEqual(result, {before:'#0e7c6b',after:'#0e7c6b',blue:'#2874fc'});
+    });
     await page.setViewportSize({width: 1024, height: 900}); await goto('/');
     await page.locator('[data-tcc-tab=access]').click();
     await page.screenshot({path: path.join(out, 'access-roles-1024.png'), fullPage: true});
@@ -315,7 +334,7 @@ try {
     await check('Only optional tests offer N/A without marking them passed', async () => { assert.equal(await page.locator('[data-case=R11]').getAttribute('data-status'), 'na'); assert.equal(await page.locator('[data-case=A01] .qa-na').count(), 0); });
     const downloadEvent = page.waitForEvent('download'); await page.locator('#qa-export').click(); const download = await downloadEvent;
     const exportPath = path.join(out, 'checklist-export.json'); await download.saveAs(exportPath);
-    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.1'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
+    await check('Checklist exports all statuses and notes as JSON', async () => { const data = JSON.parse(fs.readFileSync(exportPath, 'utf8')); assert.equal(data.version, '1.3.2'); assert.equal(Object.keys(data.cases).length, 80); assert.equal(data.cases.A01.status, 'fail'); assert.equal(data.cases.R11.status, 'na'); assert.equal(data.tester, 'TEST ONLY'); });
     for (const width of [390, 320]) {
         await page.setViewportSize({width, height: 844});
         await check('Checklist mobile layout ' + width, async () => { const result = await geometry(); assert.ok(result.scroll <= result.width + 1, JSON.stringify(result)); });

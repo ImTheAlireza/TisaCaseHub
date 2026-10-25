@@ -5,7 +5,7 @@ if ( ! defined( 'ABSPATH' ) ) { define( 'ABSPATH', '/wordpress/' ); }
 define( 'TCC_PATH', dirname( __DIR__ ) . '/' );
 define( 'TCC_URL', 'https://shop.example.test/wp-content/plugins/tisacase-card-to-card/' );
 define( 'TCC_FILE', TCC_PATH . 'tisacase-card-to-card.php' );
-define( 'TCC_VERSION', '1.3.1' );
+define( 'TCC_VERSION', '1.3.2' );
 define( 'TCC_TITLE', 'کارت به کارت تیساکیس' );
 define( 'TCC_GATEWAY', 'tisacase_card_to_card' );
 define( 'MINUTE_IN_SECONDS', 60 ); define( 'HOUR_IN_SECONDS', 3600 ); define( 'DAY_IN_SECONDS', 86400 ); define( 'ARRAY_A', 'ARRAY_A' );

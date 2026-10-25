@@ -12,6 +12,7 @@ class TCC_Frontend {
         add_action( 'wp_enqueue_scripts', function () {
             if ( is_checkout() || is_account_page() ) {
                 wp_enqueue_style( 'tcc', TCC_URL . 'assets/tcc.css', array(), TCC_VERSION );
+                wp_enqueue_style( 'tcc-customer', TCC_URL . 'assets/customer.css', array( 'tcc' ), TCC_VERSION );
                 wp_enqueue_script( 'tcc-frontend', TCC_URL . 'assets/frontend.js', array(), TCC_VERSION, true );
             }
         } );
