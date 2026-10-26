@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — گروه‌بندی متغیرها بر اساس برند
  * Plugin URI:        https://tisacase.com
  * Description:       دسته‌بندی گزینه‌های متغیر (مثلاً «مدل») بر اساس برند در صفحهٔ محصول — آیفون، جداکننده، سامسونگ، جداکننده، شیائومی — به‌همراه پنل جستجوپذیر، رنگ برند و سواچ رنگ. حالت تست: اول فقط روی محصول‌های انتخاب‌شده. فقط نمایش در سمت کاربر؛ هیچ محصول، متغیر یا ویژگی‌ای نوشته/تغییر نمی‌شود.
- * Version:           1.5.3
+ * Version:           1.5.4
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 5.0
@@ -22,7 +22,7 @@ defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'TCBV_VERSION' ) ) {
 	$tcbv_header = get_file_data( __FILE__, array( 'Version' => 'Version' ) );
-	define( 'TCBV_VERSION', ! empty( $tcbv_header['Version'] ) ? $tcbv_header['Version'] : '1.5.3' );
+	define( 'TCBV_VERSION', ! empty( $tcbv_header['Version'] ) ? $tcbv_header['Version'] : '1.5.4' );
 }
 define( 'TCBV_FILE', __FILE__ );
 define( 'TCBV_PATH', plugin_dir_path( __FILE__ ) );
