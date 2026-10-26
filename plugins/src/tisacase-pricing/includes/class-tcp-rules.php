@@ -16,8 +16,9 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		const CACHE_VERSION           = 'tcp_rules_cache_version';
 		const PRIORITY                = 99999;
 		const FINAL_ACTIVE_PRICE_HOOK = 'tisacase_pricing_final_active_price';
-		const WHOLESALE_ROLE          = 'tisacase_partner';
-		const WHOLESALE_CAP            = 'tisacase_view_wholesale_prices';
+		const WHOLESALE_ROLE           = 'tisacase_partner';
+		const WHOLESALE_CAP             = 'tisacase_view_wholesale_prices';
+		const PREFIX_QUERY_BATCH_SIZE   = 100;
 
 		const ACTION_SAVE   = 'tcp_rules_save';
 		const ACTION_SYNC   = 'tcp_rules_sync_all';
@@ -25,11 +26,15 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		const AJAX_CATS     = 'tcp_rules_search_categories';
 		const SEARCH_NONCE  = 'tcp_rules_search';
 
-		private static $settings_cache = null;
-		private static $rule_cache     = array();
-		private static $category_ids   = array();
-		private static $wholesale      = array();
-		private static $prefix_ids     = array();
+		private static $settings_cache              = null;
+		private static $rule_cache                  = array();
+		private static $category_ids                = array();
+		private static $wholesale                   = array();
+		private static $prefix_ids                  = array();
+		private static $prefix_rule_map             = array();
+		private static $live_rules_day              = '';
+		private static $live_prefix_rules_cache     = null;
+		private static $live_category_rules_cache   = null;
 
 		/* -----------------------------------------------------------------
 		 * راه‌اندازی
@@ -230,10 +235,14 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			update_option( self::OPTION, $settings, false );
 			$version = (int) get_option( self::CACHE_VERSION, 1 );
 			update_option( self::CACHE_VERSION, max( 1, $version + 1 ), false );
-			self::$settings_cache = null;
-			self::$rule_cache     = array();
-			self::$category_ids   = array();
-			self::$prefix_ids     = array();
+			self::$settings_cache            = null;
+			self::$rule_cache                = array();
+			self::$category_ids              = array();
+			self::$prefix_ids                = array();
+			self::$prefix_rule_map           = array();
+			self::$live_rules_day            = '';
+			self::$live_prefix_rules_cache   = null;
+			self::$live_category_rules_cache = null;
 		}
 
 		/* -----------------------------------------------------------------
@@ -249,8 +258,23 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 
 		private static function product_category_ids( $product_id ) {
 			if ( ! array_key_exists( $product_id, self::$category_ids ) ) {
-				$ids                                = wp_get_post_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) );
-				self::$category_ids[ $product_id ] = is_wp_error( $ids ) ? array() : array_map( 'absint', $ids );
+				$ids = array();
+				if ( function_exists( 'get_the_terms' ) ) {
+					// get_the_terms() reuses WP_Query's primed relationship cache on shop archives.
+					$terms = get_the_terms( $product_id, 'product_cat' );
+					if ( ! is_wp_error( $terms ) && is_array( $terms ) ) {
+						foreach ( $terms as $term ) {
+							$id = is_object( $term ) && isset( $term->term_id ) ? absint( $term->term_id ) : absint( $term );
+							if ( $id ) {
+								$ids[] = $id;
+							}
+						}
+					}
+				} else {
+					$terms = wp_get_post_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) );
+					$ids   = is_wp_error( $terms ) ? array() : array_map( 'absint', (array) $terms );
+				}
+				self::$category_ids[ $product_id ] = array_values( array_unique( $ids ) );
 			}
 			return self::$category_ids[ $product_id ];
 		}
@@ -273,7 +297,7 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		/**
 		 * مجموعهٔ شناسهٔ محصولاتی (والد) که SKUی با یکی از پیشوندهای استثنا دارند.
 		 * SKU خود محصول یا SKU هر واریشنش ملاک است (واریشن‌ها معمولاً SKU جدا دارند).
-		 * یک کوئری در هر درخواست؛ نتیجه کش می‌شود.
+		 * هر مجموعهٔ ورودی در یک کوئری خوانده می‌شود و نتیجهٔ همان مجموعه در درخواست کش می‌شود.
 		 *
 		 * @param string[] $prefixes پیشوندهای نرمال‌شده.
 		 * @return array<int,int> شناسه => شناسه.
@@ -316,6 +340,93 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 			return count( self::prefix_product_ids( array( $prefix ) ) );
 		}
 
+		/** قوانین فعال روز جاری را یک‌بار برای همهٔ محصولات همین درخواست آماده می‌کند. */
+		private static function live_rule_groups() {
+			$day = current_time( 'Y-m-d' );
+			if ( self::$live_rules_day === $day && is_array( self::$live_prefix_rules_cache ) && is_array( self::$live_category_rules_cache ) ) {
+				return;
+			}
+
+			$settings   = self::settings();
+			$prefixes   = array_filter( $settings['prefixes'], array( __CLASS__, 'rule_live' ) );
+			$categories = array_filter( $settings['categories'], array( __CLASS__, 'rule_live' ) );
+			$positions  = array_flip( array_keys( $prefixes ) );
+			uksort(
+				$prefixes,
+				static function ( $a, $b ) use ( $positions ) {
+					$length = strlen( $b ) - strlen( $a );
+					return 0 !== $length ? $length : ( $positions[ $a ] <=> $positions[ $b ] );
+				}
+			);
+
+			self::$live_rules_day            = $day;
+			self::$live_prefix_rules_cache   = $prefixes;
+			self::$live_category_rules_cache = $categories;
+		}
+
+		/**
+		 * شناسهٔ محصول/واریشن → بالاترین قانون پیشوندیِ منطبق.
+		 * همهٔ پیشوندها در Queryهای دسته‌ای بررسی می‌شوند؛ به‌جای کوئری کامل کاتالوگ برای هر قانون.
+		 *
+		 * @param string[] $prefixes پیشوندهای فعال و مرتب‌شده از بلندترین.
+		 * @return array<int,string> شناسهٔ والد محصول => پیشوند برنده.
+		 */
+		private static function prefix_rule_map( $prefixes ) {
+			// فراخواننده فهرست قوانین فعال را بر اساس اولویت مرتب کرده است.
+			$prefixes = array_values( self::normalize_prefixes( $prefixes ) );
+			if ( empty( $prefixes ) ) {
+				return array();
+			}
+
+			$cache_key = implode( '|', $prefixes );
+			if ( array_key_exists( $cache_key, self::$prefix_rule_map ) ) {
+				return self::$prefix_rule_map[ $cache_key ];
+			}
+
+			$matches = array();
+			global $wpdb;
+			if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || ! method_exists( $wpdb, 'get_results' ) || ! method_exists( $wpdb, 'esc_like' ) ) {
+				self::$prefix_rule_map[ $cache_key ] = $matches;
+				return $matches;
+			}
+
+			$priority = array_flip( $prefixes );
+			foreach ( array_chunk( $prefixes, self::PREFIX_QUERY_BATCH_SIZE ) as $chunk ) {
+				$conditions = array();
+				$params     = array();
+				foreach ( $chunk as $prefix ) {
+					$conditions[] = 'pm.meta_value LIKE %s';
+					$params[]     = $wpdb->esc_like( $prefix ) . '%';
+				}
+				$sql = "SELECT DISTINCT CASE WHEN p.post_type = 'product_variation' THEN p.post_parent ELSE p.ID END AS pid, pm.meta_value AS sku"
+					. " FROM {$wpdb->posts} p"
+					. " INNER JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID AND pm.meta_key = '_sku'"
+					. " WHERE p.post_type IN ('product','product_variation') AND p.post_status <> 'trash'"
+					. ' AND (' . implode( ' OR ', $conditions ) . ')';
+				$query = $wpdb->prepare( $sql, ...$params );
+				foreach ( (array) $wpdb->get_results( $query ) as $row ) {
+					$row        = is_object( $row ) ? get_object_vars( $row ) : (array) $row;
+					$product_id = isset( $row['pid'] ) ? absint( $row['pid'] ) : 0;
+					$sku        = isset( $row['sku'] ) ? self::upper( (string) $row['sku'] ) : '';
+					if ( ! $product_id || '' === $sku ) {
+						continue;
+					}
+					foreach ( $chunk as $prefix ) {
+						if ( 0 !== strpos( $sku, $prefix ) ) {
+							continue;
+						}
+						if ( ! isset( $matches[ $product_id ] ) || $priority[ $prefix ] < $priority[ $matches[ $product_id ] ] ) {
+							$matches[ $product_id ] = $prefix;
+						}
+						break;
+					}
+				}
+			}
+
+			self::$prefix_rule_map[ $cache_key ] = $matches;
+			return $matches;
+		}
+
 		private static function resolve_rule( $product ) {
 			$scope_id = self::scope_product_id( $product );
 			if ( ! $scope_id ) {
@@ -335,33 +446,24 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 				$decided = true;
 			}
 			// ۲) قانون/استثنای شناسه (پیشوند SKU): بلندترین پیشوند منطبق برنده است.
-			if ( ! $decided && ! empty( $s['prefixes'] ) ) {
-				$live = array_filter(
-					$s['prefixes'],
-					static function ( $pr ) {
-						return self::rule_live( $pr );
-					}
-				);
-				uksort(
-					$live,
-					static function ( $a, $b ) {
-						return strlen( $b ) - strlen( $a );
-					}
-				);
-				foreach ( $live as $prefix => $pr ) {
-					$ids = self::prefix_product_ids( array( (string) $prefix ) );
-					if ( isset( $ids[ $scope_id ] ) ) {
+			if ( ! $decided ) {
+				self::live_rule_groups();
+				if ( ! empty( self::$live_prefix_rules_cache ) ) {
+					$matches = self::prefix_rule_map( array_keys( self::$live_prefix_rules_cache ) );
+					if ( isset( $matches[ $scope_id ] ) ) {
+						$prefix  = $matches[ $scope_id ];
+						$pr      = self::$live_prefix_rules_cache[ $prefix ];
 						$rule    = ! empty( $pr['exclude'] ) ? false : $pr;
 						$decided = true;
-						break;
 					}
 				}
 			}
 			// ۳) اولین دستهٔ منطبق (استثنا یعنی هیچ قانونی، حتی سراسری).
 			if ( ! $decided ) {
+				self::live_rule_groups();
 				$cats = self::product_category_ids( $scope_id );
-				foreach ( $s['categories'] as $category_id => $cat_rule ) {
-					if ( self::rule_live( $cat_rule ) && self::category_matches( $category_id, $cats ) ) {
+				foreach ( self::$live_category_rules_cache as $category_id => $cat_rule ) {
+					if ( self::category_matches( $category_id, $cats ) ) {
 						$rule    = ! empty( $cat_rule['exclude'] ) ? false : $cat_rule;
 						$decided = true;
 						break;

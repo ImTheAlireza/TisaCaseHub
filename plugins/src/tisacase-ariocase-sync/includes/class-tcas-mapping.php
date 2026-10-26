@@ -139,11 +139,11 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			$old_qty    = get_post_meta( $product_id, self::META_QTY, true );
 			$old_status = (string) get_post_meta( $product_id, self::META_STATUS, true );
 			$qty_text   = null === $quantity ? '' : (string) $quantity;
-			if ( (string) $old_qty === $qty_text && $old_status === $status && '' !== get_post_meta( $product_id, self::META_FETCHED_AT, true ) ) {
-				return;
+			if ( (string) $old_qty !== $qty_text || $old_status !== $status ) {
+				update_post_meta( $product_id, self::META_QTY, $qty_text );
+				update_post_meta( $product_id, self::META_STATUS, $status );
 			}
-			update_post_meta( $product_id, self::META_QTY, $qty_text );
-			update_post_meta( $product_id, self::META_STATUS, $status );
+			// Refresh the age of a successful snapshot even when quantity/status did not change.
 			update_post_meta( $product_id, self::META_FETCHED_AT, time() );
 			delete_post_meta( $product_id, self::META_ERROR );
 		}

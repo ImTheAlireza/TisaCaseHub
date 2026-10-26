@@ -1,6 +1,6 @@
 <?php
 /**
- * تست فرم پیگیری سفارش (احراز با شماره سفارش + موبایل ثبت‌شده) بدون وردپرس.
+ * تست فرم پیگیری و پردازش دسته‌ای CSV (Job، checkpoint و AJAX) بدون وردپرس.
  * اجرا:  php tests/run-tests.php
  *
  * @package Bulk_Tracking_Upload
@@ -13,6 +13,31 @@ ini_set('display_errors', '1');
 
 define('ABSPATH', __DIR__ . '/');
 define('MINUTE_IN_SECONDS', 60);
+define('HOUR_IN_SECONDS', 3600);
+define('DAY_IN_SECONDS', 86400);
+
+class BWT_Test_Response extends Exception {
+    public $success;
+    public $payload;
+    public $status;
+    public function __construct($success, $payload, $status = 200) { $this->success = $success; $this->payload = $payload; $this->status = $status; }
+}
+function current_user_can($cap) { return true; }
+$GLOBALS['bwt_test_user_id'] = 7;
+function get_current_user_id() { return $GLOBALS['bwt_test_user_id']; }
+function get_option($key) { return $key === 'siteurl' ? 'https://store.example.test' : false; }
+function get_temp_dir() { return sys_get_temp_dir(); }
+function wp_generate_uuid4() { return '12345678-1234-4abc-8def-1234567890ab'; }
+function wp_next_scheduled($hook) { return false; }
+function wp_schedule_event($timestamp, $recurrence, $hook) { return true; }
+function check_ajax_referer($action, $query_arg = '_ajax_nonce') {
+    if ($action !== 'bwt_upload_batch' || !isset($_POST[$query_arg]) || $_POST[$query_arg] !== 'test-nonce') {
+        throw new RuntimeException('Invalid test nonce.');
+    }
+    return 1;
+}
+function wp_send_json_success($data = null, $status_code = 200) { throw new BWT_Test_Response(true, $data, $status_code); }
+function wp_send_json_error($data = null, $status_code = 400) { throw new BWT_Test_Response(false, $data, $status_code); }
 
 function add_action(...$a) {}
 function add_shortcode(...$a) {}
@@ -42,12 +67,20 @@ class BWT_Fake_Order {
     public function get_billing_state() { return $this->d['state']; }
     public function get_billing_postcode() { return $this->d['postcode']; }
     public function get_meta($k) { return isset($this->d['meta'][$k]) ? $this->d['meta'][$k] : ''; }
+    public function get_type() { return 'shop_order'; }
+    public function update_meta_data($k, $value) { $this->d['meta'][$k] = $value; }
+    public function delete_meta_data($k) { unset($this->d['meta'][$k]); }
+    public function save() { $GLOBALS['bwt_order_saves']++; return true; }
     public function get_date_created() { return null; }
 }
 
 $GLOBALS['bwt_orders'] = [];
 function wc_get_order($id) { return isset($GLOBALS['bwt_orders'][$id]) ? $GLOBALS['bwt_orders'][$id] : false; }
-function get_post_meta($id, $k, $single = false) { return ''; } // مسیر $order->get_meta تست شود
+$GLOBALS['bwt_post_meta'] = [];
+$GLOBALS['bwt_order_saves'] = 0;
+function get_post_meta($id, $k, $single = false) { return isset($GLOBALS['bwt_post_meta'][$id][$k]) ? $GLOBALS['bwt_post_meta'][$id][$k] : ''; }
+function update_post_meta($id, $k, $value) { $GLOBALS['bwt_post_meta'][$id][$k] = $value; return true; }
+function delete_post_meta($id, $k) { unset($GLOBALS['bwt_post_meta'][$id][$k]); return true; }
 
 require_once dirname(__DIR__) . '/bulk-tracking-upload.php';
 
@@ -131,6 +164,59 @@ echo "--- 4) خودِ فرم ---\n";
 $html = bwt_tracking_search_form();
 t('فیلد موبایل اجباری در فرم هست', strpos($html, 'name="billing_phone"') !== false && strpos($html, 'bwt_billing_phone') !== false);
 t('فیلد شماره سفارش همچنان هست', strpos($html, 'name="order_id"') !== false);
+
+echo "--- 5) پردازش دسته‌ای و ادامه از checkpoint ---\n";
+$csv_handle = tmpfile();
+fwrite($csv_handle, "order_id,tracking_code\n101,TRACK-NEW\nnot-a-number,TRACK-BAD\n102,\n");
+fflush($csv_handle);
+$batch_one = bwt_process_csv_batch_handle($csv_handle, 0, 0, false, 2, 10);
+$batch_two = bwt_process_csv_batch_handle($csv_handle, $batch_one['offset'], $batch_one['row_num'], $batch_one['has_header'], 2, 10);
+t('دستهٔ اول هدر را رد می‌کند و یک سفارش را ذخیره می‌کند', $batch_one['updated'] === 1 && $batch_one['errors'] === 0 && $batch_one['row_num'] === 2 && !$batch_one['done']);
+t('دستهٔ دوم از offset ادامه می‌دهد و خطای ردیف ۳ را گزارش می‌کند', $batch_two['updated'] === 1 && $batch_two['errors'] === 1 && $batch_two['details'][0]['row'] === 3 && $batch_two['done']);
+t('نوشتن کد جدید و حذف کد با WooCommerce CRUD انجام می‌شود', $GLOBALS['bwt_post_meta'][101]['_tracking_code'] === 'TRACK-NEW' && $GLOBALS['bwt_order_saves'] === 2);
+$batch_eof = bwt_process_csv_batch_handle($csv_handle, $batch_two['offset'], $batch_two['row_num'], $batch_two['has_header'], 2, 10);
+t('درخواست ادامه پس از EOF بدون بازپردازش تمام‌شده برمی‌گردد', $batch_eof['done'] && $batch_eof['updated'] === 0 && $batch_eof['errors'] === 0);
+t('پیش‌نمایش مقادیر ردیف خطا برای محدودماندن حافظه کوتاه می‌شود', bwt_csv_error_excerpt(str_repeat('X', 250)) === str_repeat('X', 200) . '…');
+fclose($csv_handle);
+$persian_csv = tmpfile();
+fwrite($persian_csv, "۱۰۱,FA-TRACK\n");
+fflush($persian_csv);
+$persian_first_row = bwt_process_csv_batch_handle($persian_csv, 0, 0, false, 1, 10);
+t('ردیف اول بدون هدر با رقم فارسی به‌عنوان داده تشخیص داده می‌شود', $persian_first_row['updated'] === 1 && !$persian_first_row['has_header'] && $GLOBALS['bwt_post_meta'][101]['_tracking_code'] === 'FA-TRACK');
+fclose($persian_csv);
+$large_csv = tmpfile();
+$large_rows = '';
+for ($i = 0; $i < 52; $i++) {
+    $large_rows .= '101,BATCH-' . $i . "\n";
+}
+fwrite($large_csv, $large_rows);
+fflush($large_csv);
+$limited_batch = bwt_process_csv_batch_handle($large_csv, 0, 0, false, BWT_UPLOAD_BATCH_SIZE, 10);
+$last_batch = bwt_process_csv_batch_handle($large_csv, $limited_batch['offset'], $limited_batch['row_num'], false, BWT_UPLOAD_BATCH_SIZE, 10);
+t('حد دسته رعایت می‌شود و ۵۲ ردیف در دو درخواست ۵۰+۲تایی کامل می‌شوند', $limited_batch['updated'] === 50 && !$limited_batch['done'] && $last_batch['updated'] === 2 && $last_batch['done']);
+fclose($large_csv);
+
+$job_source = tempnam(sys_get_temp_dir(), 'bwt-source-');
+file_put_contents($job_source, "order_id,tracking_code\n101,JOB-TRACK\n");
+$created_job = bwt_create_upload_job($job_source);
+@unlink($job_source);
+t('آپلود یک Job با فایل موقت خصوصی و شناسهٔ ۳۲رقمی می‌سازد', !empty($created_job['job_id']) && strlen($created_job['job_id']) === 32, var_export($created_job, true));
+t('پیشوند فایل موقت به سایت جاری محدود است', strpos(basename(get_transient(bwt_upload_job_key($created_job['job_id']))['file_path']), bwt_upload_temp_prefix()) === 0);
+$_POST = array('nonce' => 'test-nonce', 'job_id' => $created_job['job_id']);
+$GLOBALS['bwt_test_user_id'] = 8;
+$other_user_response = null;
+try { bwt_ajax_upload_status(); } catch (BWT_Test_Response $response) { $other_user_response = $response; }
+t('کاربر دیگری نمی‌تواند Job را بخواند یا اجرا کند', $other_user_response instanceof BWT_Test_Response && !$other_user_response->success && $other_user_response->status === 404);
+$GLOBALS['bwt_test_user_id'] = 7;
+$status_response = null;
+try { bwt_ajax_upload_status(); } catch (BWT_Test_Response $response) { $status_response = $response; }
+t('مالک Job با nonce معتبر وضعیت را می‌خواند', $status_response instanceof BWT_Test_Response && $status_response->success && !$status_response->payload['done']);
+$batch_response = null;
+try { bwt_ajax_upload_batch(); } catch (BWT_Test_Response $response) { $batch_response = $response; }
+t('اندپوینت AJAX دسته را اجرا و نتیجهٔ تکمیل را برمی‌گرداند', $batch_response instanceof BWT_Test_Response && $batch_response->success && $batch_response->payload['done'] && $batch_response->payload['updated'] === 1 && $batch_response->payload['errors'] === 0);
+$completed_job_state = !empty($created_job['job_id']) ? get_transient(bwt_upload_job_key($created_job['job_id'])) : false;
+t('Job تکمیل‌شده file data موقت را حذف و برای بازیابی نتیجه نگه می‌دارد', $GLOBALS['bwt_post_meta'][101]['_tracking_code'] === 'JOB-TRACK' && is_array($completed_job_state) && isset($completed_job_state['file_path']) && $completed_job_state['file_path'] === '');
+$_POST = array();
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit($fail === 0 ? 0 : 1);

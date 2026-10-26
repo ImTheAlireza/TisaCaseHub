@@ -28,6 +28,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		/** شمارندهٔ تغییرات فهرست قرنطینه/پشتیبان (برای باطل‌کردن کش خلاصه). */
 		private static $summary_rev = 0;
 
+		/** جلوگیری از اجرای دوبارهٔ مهاجرت legacy در یک درخواست. */
+		private static $legacy_originals_migration_checked = false;
+
 		/**
 		 * باطل‌کردن کش «خلاصهٔ خزانه» پس از هر تغییر در فهرست‌ها.
 		 *
@@ -37,13 +40,15 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			++self::$summary_rev;
 		}
 
-		const DIR_NAME           = 'tisa-opt-vault';
-		const SUB_QUARANTINE     = 'quarantine';
-		const SUB_ORIGINALS      = 'originals';
-		const SUB_INDEX          = 'index';
-		const OPTION_QUARANTINE  = 'tisacase_optimizer_quarantine_items';
-		const OPTION_ORIG_INDEX  = 'tisacase_optimizer_original_backups';
-		const CRON_PURGE_HOOK    = 'tisacase_optimizer_daily_vault_purge';
+		const DIR_NAME                 = 'tisa-opt-vault';
+		const SUB_QUARANTINE           = 'quarantine';
+		const SUB_ORIGINALS            = 'originals';
+		const SUB_INDEX                = 'index';
+		const OPTION_QUARANTINE        = 'tisacase_optimizer_quarantine_items';
+		const OPTION_ORIG_INDEX        = 'tisacase_optimizer_original_backups'; // مهاجرت از نسخه‌های قدیمی.
+		const OPTION_ORIG_PREFIX       = 'tisacase_optimizer_original_backup_';
+		const OPTION_ORIG_SUMMARY      = 'tisacase_optimizer_original_backup_summary';
+		const CRON_PURGE_HOOK          = 'tisacase_optimizer_daily_vault_purge';
 
 		/**
 		 * نام فارسی «علت حذف» برای هر بستهٔ قرنطینه.
@@ -663,8 +668,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			if ( $attachment_id <= 0 ) {
 				return false;
 			}
-			$orig_index = self::list_original_backups();
-			if ( isset( $orig_index[ $attachment_id ] ) ) {
+
+			// مهاجرت یک‌بارهٔ نسخه‌های قدیمی؛ پس از آن برای تشخیص وجود پشتیبان
+			// فقط یک آپشن کوچکِ همین پیوست خوانده می‌شود، نه کل فهرست تصاویر.
+			self::migrate_legacy_original_backups();
+			$backup_option = self::original_backup_option_name( $attachment_id );
+			if ( is_array( get_option( $backup_option, null ) ) || self::legacy_original_backup_exists( $attachment_id ) ) {
 				// پشتیبان دست‌نخوردهٔ اولیه از قبل موجود است؛ روی آن بازنویسی نمی‌کنیم!
 				return true;
 			}
@@ -692,7 +701,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 				return false;
 			}
 
-			$orig_index[ $attachment_id ] = array(
+			$entry = array(
 				'attachment_id' => $attachment_id,
 				'rel_path'      => ltrim( wp_normalize_path( $rel_main ), '/' ),
 				'backup_file'   => basename( $src ),
@@ -701,8 +710,19 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 				'bytes'         => max( 0, (int) @filesize( $dest_file ) ),
 				'created_at'    => current_time( 'mysql' ),
 			);
-			update_option( self::OPTION_ORIG_INDEX, $orig_index, false );
-			self::invalidate_summary();
+
+			// هر تصویر یک ردیف غیر-autoload مستقل دارد. نسخهٔ قدیمی، بعد از هر
+			// تصویر کل فهرست + متادیتای همهٔ تصاویر را دوباره سریال‌سازی می‌کرد
+			// (O(n²) نوشتن روی دیسک در بهینه‌سازی انبوه).
+			if ( ! add_option( $backup_option, $entry, '', false ) ) {
+				// درخواست هم‌زمان ممکن است زودتر همین پشتیبان را ثبت کرده باشد.
+				if ( ! is_array( get_option( $backup_option, null ) ) ) {
+					return false;
+				}
+				return true;
+			}
+
+			self::adjust_original_backup_summary( 1, (int) $entry['bytes'] );
 			return true;
 		}
 
@@ -714,12 +734,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 */
 		public static function restore_original_backup( $attachment_id ) {
 			$attachment_id = absint( $attachment_id );
-			$orig_index    = self::list_original_backups();
-			if ( ! isset( $orig_index[ $attachment_id ] ) ) {
+			if ( $attachment_id <= 0 ) {
+				return new WP_Error( 'no_backup', __( 'پشتیبان اولیه برای این تصویر ثبت نشده است.', 'tisacase-optimizer' ) );
+			}
+			self::migrate_legacy_original_backups();
+			$entry = self::get_original_backup_entry( $attachment_id );
+			if ( ! is_array( $entry ) ) {
 				return new WP_Error( 'no_backup', __( 'پشتیبان اولیه برای این تصویر ثبت نشده است.', 'tisacase-optimizer' ) );
 			}
 
-			$entry      = $orig_index[ $attachment_id ];
+			$entry['attachment_id'] = $attachment_id;
 			$vault_root = self::base_dir();
 			$src        = $vault_root . '/' . self::SUB_ORIGINALS . '/' . $attachment_id . '/' . $entry['backup_file'];
 			if ( ! is_file( $src ) ) {
@@ -754,8 +778,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 
 			delete_post_meta( $attachment_id, '_tco_optimized' );
 			self::remove_dir_recursive( $vault_root . '/' . self::SUB_ORIGINALS . '/' . $attachment_id );
-			unset( $orig_index[ $attachment_id ] );
-			update_option( self::OPTION_ORIG_INDEX, $orig_index, false );
+			$removed = delete_option( self::original_backup_option_name( $attachment_id ) );
+			$removed = self::remove_legacy_original_backup( $attachment_id ) || $removed;
+			if ( $removed ) {
+				self::adjust_original_backup_summary( -1, -max( 0, (int) $entry['bytes'] ) );
+			}
 			self::invalidate_summary();
 
 			return true;
@@ -767,6 +794,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 * @return array{count:int,bytes:int}
 		 */
 		public static function purge_original_backups() {
+			self::migrate_legacy_original_backups();
 			$vault_root = self::base_dir();
 			$orig_dir   = $vault_root . '/' . self::SUB_ORIGINALS;
 			$orig_index = self::list_original_backups();
@@ -776,7 +804,16 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 			self::remove_dir_recursive( $orig_dir );
 			wp_mkdir_p( $orig_dir );
 			self::ensure_protected( $vault_root );
-			update_option( self::OPTION_ORIG_INDEX, array(), false );
+			self::delete_all_original_backup_options( array_keys( $orig_index ) );
+			delete_option( self::OPTION_ORIG_INDEX );
+			update_option(
+				self::OPTION_ORIG_SUMMARY,
+				array(
+					'count' => 0,
+					'bytes' => 0,
+				),
+				false
+			);
 			self::invalidate_summary();
 
 			return array(
@@ -828,13 +865,288 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		}
 
 		/**
+		 * نام آپشن مستقل پشتیبان یک پیوست.
+		 *
+		 * @param int $attachment_id شناسهٔ پیوست.
+		 * @return string
+		 */
+		private static function original_backup_option_name( $attachment_id ) {
+			return self::OPTION_ORIG_PREFIX . absint( $attachment_id );
+		}
+
+		/**
+		 * خواندن یک پشتیبان بر اساس شناسه، بدون بازکردن کل فهرست پشتیبان‌ها.
+		 *
+		 * @param int $attachment_id شناسهٔ پیوست.
+		 * @return array<string,mixed>|null
+		 */
+		private static function get_original_backup_entry( $attachment_id ) {
+			$attachment_id = absint( $attachment_id );
+			if ( $attachment_id <= 0 ) {
+				return null;
+			}
+			$entry = get_option( self::original_backup_option_name( $attachment_id ), null );
+			if ( is_array( $entry ) ) {
+				return $entry;
+			}
+			$legacy = get_option( self::OPTION_ORIG_INDEX, array() );
+			return is_array( $legacy ) && isset( $legacy[ $attachment_id ] ) && is_array( $legacy[ $attachment_id ] )
+				? $legacy[ $attachment_id ]
+				: null;
+		}
+
+		/**
+		 * آیا پشتیبان این پیوست هنوز در فهرست نسخهٔ قدیمی ثبت است؟
+		 *
+		 * @param int $attachment_id شناسهٔ پیوست.
+		 * @return bool
+		 */
+		private static function legacy_original_backup_exists( $attachment_id ) {
+			$legacy = get_option( self::OPTION_ORIG_INDEX, array() );
+			return is_array( $legacy ) && isset( $legacy[ absint( $attachment_id ) ] ) && is_array( $legacy[ absint( $attachment_id ) ] );
+		}
+
+		/**
+		 * انتقال یک‌بارهٔ فهرست یکپارچهٔ نسخه‌های قبلی به آپشن‌های مستقل.
+		 * دادهٔ قدیمی تا وقتی همهٔ رکوردهای معتبر ثبت نشده‌اند پاک نمی‌شود.
+		 *
+		 * @return void
+		 */
+		private static function migrate_legacy_original_backups() {
+			if ( self::$legacy_originals_migration_checked ) {
+				return;
+			}
+			self::$legacy_originals_migration_checked = true;
+			$legacy = get_option( self::OPTION_ORIG_INDEX, null );
+			if ( ! is_array( $legacy ) ) {
+				return;
+			}
+			if ( empty( $legacy ) ) {
+				delete_option( self::OPTION_ORIG_INDEX );
+				return;
+			}
+
+			global $wpdb;
+			if ( ! isset( $wpdb ) || empty( $wpdb->options ) ) {
+				return;
+			}
+			$complete = true;
+			$valid    = array();
+			foreach ( $legacy as $raw_id => $entry ) {
+				$attachment_id = absint( $raw_id );
+				if ( $attachment_id <= 0 || ! is_array( $entry ) ) {
+					$complete = false;
+					continue;
+				}
+				$valid[ $attachment_id ] = $entry;
+			}
+
+			// چندصد INSERT تک‌ردیفی در اولین درخواست ارتقا، خودشان یک وقفهٔ
+			// محسوس می‌ساختند؛ در بسته‌های کوچک، هر دو رکورد مستقل و بررسی وجود
+			// آن‌ها با چند کوئری انجام می‌شود. INSERT IGNORE مهاجرت را تکرارپذیر
+			// می‌کند و اگر رکوردی از قبل باشد، آن را بازنویسی نمی‌کند.
+			foreach ( array_chunk( $valid, 100, true ) as $chunk ) {
+				$tuples = array();
+				$args   = array();
+				$names  = array();
+				foreach ( $chunk as $attachment_id => $entry ) {
+					$name     = self::original_backup_option_name( $attachment_id );
+					$tuples[] = '(%s, %s, %s)';
+					$args[]   = $name;
+					$args[]   = maybe_serialize( $entry );
+					$args[]   = 'no';
+					$names[]  = $name;
+				}
+				$sql = "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES " . implode( ', ', $tuples );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$written = $wpdb->query( $wpdb->prepare( $sql, $args ) );
+				if ( false === $written ) {
+					$complete = false;
+					continue;
+				}
+
+				$placeholders = implode( ', ', array_fill( 0, count( $names ), '%s' ) );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+				$stored = $wpdb->get_col(
+					$wpdb->prepare(
+						"SELECT option_name FROM {$wpdb->options} WHERE option_name IN ({$placeholders})",
+						$names
+					)
+				);
+				if ( count( (array) $stored ) !== count( $names ) ) {
+					$complete = false;
+				}
+				if ( function_exists( 'wp_cache_delete' ) ) {
+					wp_cache_delete( 'notoptions', 'options' );
+					foreach ( $names as $name ) {
+						wp_cache_delete( $name, 'options' );
+					}
+				}
+			}
+
+			if ( $complete ) {
+				delete_option( self::OPTION_ORIG_INDEX );
+				// هر خلاصهٔ قبلی ممکن است فقط بخشی از مهاجرت را شامل شده باشد.
+				delete_option( self::OPTION_ORIG_SUMMARY );
+				self::invalidate_summary();
+			}
+		}
+
+		/**
+		 * خواندن رکوردهای مستقل؛ option_name با پیشوند عددی index شده است.
+		 *
+		 * @return array<int,array<string,mixed>>
+		 */
+		private static function read_original_backup_options() {
+			global $wpdb;
+			if ( ! isset( $wpdb ) || empty( $wpdb->options ) ) {
+				return array();
+			}
+
+			$like = $wpdb->esc_like( self::OPTION_ORIG_PREFIX ) . '%';
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$rows = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id ASC",
+					$like
+				),
+				ARRAY_A
+			);
+
+			$items = array();
+			foreach ( (array) $rows as $row ) {
+				$name = isset( $row['option_name'] ) ? (string) $row['option_name'] : '';
+				$id_s = substr( $name, strlen( self::OPTION_ORIG_PREFIX ) );
+				if ( '' === $id_s || ! preg_match( '/^[0-9]+$/D', $id_s ) ) {
+					continue;
+				}
+				$attachment_id = absint( $id_s );
+				$entry         = isset( $row['option_value'] ) ? maybe_unserialize( $row['option_value'] ) : null;
+				if ( $attachment_id <= 0 || ! is_array( $entry ) ) {
+					continue;
+				}
+				if ( empty( $entry['attachment_id'] ) ) {
+					$entry['attachment_id'] = $attachment_id;
+				}
+				$items[ $attachment_id ] = $entry;
+			}
+			return $items;
+		}
+
+		/**
+		 * حذف تمام آپشن‌های پشتیبان (بدون وابستگی به باقی‌ماندن رکورد attachment).
+		 *
+		 * @param array<int,mixed> $attachment_ids شناسه‌ها؛ در صورت خالی، فهرست خوانده می‌شود.
+		 * @return void
+		 */
+		private static function delete_all_original_backup_options( array $attachment_ids = array() ) {
+			if ( empty( $attachment_ids ) ) {
+				$attachment_ids = array_keys( self::read_original_backup_options() );
+			}
+			foreach ( $attachment_ids as $attachment_id ) {
+				$attachment_id = absint( $attachment_id );
+				if ( $attachment_id > 0 ) {
+					delete_option( self::original_backup_option_name( $attachment_id ) );
+				}
+			}
+		}
+
+		/**
+		 * محاسبهٔ خلاصهٔ سبک از رکوردها.
+		 *
+		 * @param array<int,array<string,mixed>> $items پشتیبان‌ها.
+		 * @return array{count:int,bytes:int}
+		 */
+		private static function calculate_original_backup_summary( array $items ) {
+			$bytes = 0;
+			foreach ( $items as $entry ) {
+				$bytes += isset( $entry['bytes'] ) ? max( 0, (int) $entry['bytes'] ) : 0;
+			}
+			return array(
+				'count' => count( $items ),
+				'bytes' => $bytes,
+			);
+		}
+
+		/**
+		 * خلاصهٔ کوچکِ کش‌شده؛ داشبورد دیگر متادیتای همهٔ پشتیبان‌ها را باز نمی‌کند.
+		 *
+		 * @return array{count:int,bytes:int}
+		 */
+		private static function original_backup_summary() {
+			self::migrate_legacy_original_backups();
+			$summary = get_option( self::OPTION_ORIG_SUMMARY, null );
+			if ( ! is_array( $summary ) || ! isset( $summary['count'], $summary['bytes'] ) ) {
+				$summary = self::calculate_original_backup_summary( self::list_original_backups() );
+				update_option( self::OPTION_ORIG_SUMMARY, $summary, false );
+			}
+			return array(
+				'count' => max( 0, (int) $summary['count'] ),
+				'bytes' => max( 0, (int) $summary['bytes'] ),
+			);
+		}
+
+		/**
+		 * نگه‌داشتن شمارندهٔ سبک با هر افزودن/حذف یک پشتیبان.
+		 *
+		 * @param int $count_delta تغییر تعداد.
+		 * @param int $bytes_delta تغییر بایت.
+		 * @return void
+		 */
+		private static function adjust_original_backup_summary( $count_delta, $bytes_delta ) {
+			$summary = get_option( self::OPTION_ORIG_SUMMARY, null );
+			if ( ! is_array( $summary ) || ! isset( $summary['count'], $summary['bytes'] ) ) {
+				// نخستین اجرا پس از ارتقا: محاسبهٔ یک‌باره شامل همین تغییر.
+				$summary = self::calculate_original_backup_summary( self::list_original_backups() );
+			} else {
+				$summary['count'] = max( 0, (int) $summary['count'] + (int) $count_delta );
+				$summary['bytes'] = max( 0, (int) $summary['bytes'] + (int) $bytes_delta );
+			}
+			update_option( self::OPTION_ORIG_SUMMARY, $summary, false );
+			self::invalidate_summary();
+		}
+
+		/**
+		 * حذف رکورد legacy یک پشتیبان؛ فقط برای مهاجرت ناقص/خرابی دیتابیس لازم می‌شود.
+		 *
+		 * @param int $attachment_id شناسهٔ پیوست.
+		 * @return bool
+		 */
+		private static function remove_legacy_original_backup( $attachment_id ) {
+			$attachment_id = absint( $attachment_id );
+			$legacy        = get_option( self::OPTION_ORIG_INDEX, array() );
+			if ( ! is_array( $legacy ) || ! isset( $legacy[ $attachment_id ] ) ) {
+				return false;
+			}
+			unset( $legacy[ $attachment_id ] );
+			if ( empty( $legacy ) ) {
+				delete_option( self::OPTION_ORIG_INDEX );
+			} else {
+				update_option( self::OPTION_ORIG_INDEX, $legacy, false );
+			}
+			return true;
+		}
+
+		/**
 		 * فهرست پشتیبان‌های اولیهٔ فشرده‌سازی.
+		 * هر ردیف از آپشن جدا خوانده می‌شود؛ آپشن یکپارچه فقط برای مهاجرت نگه داشته شده.
 		 *
 		 * @return array<int,array<string,mixed>>
 		 */
 		public static function list_original_backups() {
-			$raw = get_option( self::OPTION_ORIG_INDEX, array() );
-			return is_array( $raw ) ? $raw : array();
+			self::migrate_legacy_original_backups();
+			$items  = self::read_original_backup_options();
+			$legacy = get_option( self::OPTION_ORIG_INDEX, array() );
+			if ( is_array( $legacy ) ) {
+				foreach ( $legacy as $attachment_id => $entry ) {
+					$attachment_id = absint( $attachment_id );
+					if ( $attachment_id > 0 && is_array( $entry ) && ! isset( $items[ $attachment_id ] ) ) {
+						$entry['attachment_id'] = $attachment_id;
+						$items[ $attachment_id ] = $entry;
+					}
+				}
+			}
+			return $items;
 		}
 
 		/**
@@ -843,30 +1155,25 @@ if ( ! class_exists( 'TisaCase_Optimizer_Vault' ) ) {
 		 * @return array{quarantine_count:int,quarantine_bytes:int,originals_count:int,originals_bytes:int}
 		 */
 		public static function summary() {
-			// این متد در آمار کلی صفحه، فهرست قرنطینه و کارت «ادامه» صدا زده
-			// می‌شود؛ بدون کش، هر بار دو آپشن کامل پیمایش می‌شد. کش با هر تغییر
-			// در فهرست‌ها باطل می‌شود تا هیچ‌گاه عدد قدیمی نشان داده نشود.
+			// فهرست قرنطینه هنوز در یک آپشن است؛ اما آمار پشتیبان‌های اولیه از
+			// شمارندهٔ سبک خوانده می‌شود و متادیتای هزاران تصویر رمزگشایی نمی‌شود.
 			static $cache = null;
 			static $cache_rev = -1;
 			if ( is_array( $cache ) && $cache_rev === self::$summary_rev ) {
 				return $cache;
 			}
-			$q_items = self::list_quarantine();
-			$q_bytes = 0;
+			$q_items   = self::list_quarantine();
+			$q_bytes   = 0;
+			$o_summary = self::original_backup_summary();
 			foreach ( $q_items as $q ) {
 				$q_bytes += isset( $q['total_bytes'] ) ? (int) $q['total_bytes'] : 0;
-			}
-			$o_items = self::list_original_backups();
-			$o_bytes = 0;
-			foreach ( $o_items as $o ) {
-				$o_bytes += isset( $o['bytes'] ) ? (int) $o['bytes'] : 0;
 			}
 			$cache_rev = self::$summary_rev;
 			$cache     = array(
 				'quarantine_count' => count( $q_items ),
 				'quarantine_bytes' => $q_bytes,
-				'originals_count'  => count( $o_items ),
-				'originals_bytes'  => $o_bytes,
+				'originals_count'  => (int) $o_summary['count'],
+				'originals_bytes'  => (int) $o_summary['bytes'],
 			);
 			return $cache;
 		}

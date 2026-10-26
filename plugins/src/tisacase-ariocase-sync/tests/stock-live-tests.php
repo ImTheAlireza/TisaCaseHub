@@ -12,12 +12,37 @@ function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, (arr
 function sanitize_text_field( $value ) { return trim( (string) $value ); }
 function absint( $value ) { return abs( (int) $value ); }
 function get_option( $key, $default = false ) { return isset( $GLOBALS['options'][ $key ] ) ? $GLOBALS['options'][ $key ] : $default; }
-function add_option( ...$args ) { return true; }
-function update_option( ...$args ) { return true; }
-function add_action( ...$args ) {}
+function add_option( ...$args ) { $GLOBALS['options'][ $args[0] ] = $args[1]; return true; }
+function update_option( ...$args ) { $GLOBALS['options'][ $args[0] ] = $args[1]; return true; }
+function add_action( ...$args ) { $GLOBALS['actions'][] = $args; }
 function add_filter( ...$args ) {}
-function is_admin() { return false; }
-function wp_doing_ajax() { return false; }
+function is_admin() { return ! empty( $GLOBALS['is_admin'] ); }
+function wp_doing_ajax() { return ! empty( $GLOBALS['doing_ajax'] ); }
+function is_product() { return ! empty( $GLOBALS['context']['product'] ); }
+function is_cart() { return ! empty( $GLOBALS['context']['cart'] ); }
+function is_checkout() { return ! empty( $GLOBALS['context']['checkout'] ); }
+function get_transient( $key ) {
+	if ( ! isset( $GLOBALS['transients'][ $key ] ) ) { return false; }
+	$entry = $GLOBALS['transients'][ $key ];
+	if ( ! empty( $entry['expires'] ) && time() >= $entry['expires'] ) { unset( $GLOBALS['transients'][ $key ] ); return false; }
+	return $entry['value'];
+}
+function set_transient( $key, $value, $expiration = 0 ) { $GLOBALS['transients'][ $key ] = array( 'value' => $value, 'expires' => $expiration ? time() + $expiration : 0 ); return true; }
+function delete_transient( $key ) { unset( $GLOBALS['transients'][ $key ] ); return true; }
+function wp_next_scheduled( $hook, $args = array() ) {
+	foreach ( (array) $GLOBALS['scheduled'] as $event ) { if ( $event['hook'] === $hook && $event['args'] === $args ) { return $event['timestamp']; } }
+	return false;
+}
+function wp_schedule_single_event( $timestamp, $hook, $args = array() ) {
+	if ( wp_next_scheduled( $hook, $args ) ) { return false; }
+	$GLOBALS['scheduled'][] = array( 'timestamp' => $timestamp, 'hook' => $hook, 'args' => $args );
+	return true;
+}
+function wp_clear_scheduled_hook( $hook, $args = array() ) {
+	$before = count( $GLOBALS['scheduled'] );
+	$GLOBALS['scheduled'] = array_values( array_filter( $GLOBALS['scheduled'], function( $event ) use ( $hook, $args ) { return $event['hook'] !== $hook || $event['args'] !== $args; } ) );
+	return $before - count( $GLOBALS['scheduled'] );
+}
 function get_post_meta( $id, $key, $single = true ) { return isset( $GLOBALS['meta'][ $id ][ $key ] ) ? $GLOBALS['meta'][ $id ][ $key ] : ''; }
 function update_post_meta( $id, $key, $value ) { $GLOBALS['meta'][ $id ][ $key ] = $value; return true; }
 function delete_post_meta( $id, $key ) { unset( $GLOBALS['meta'][ $id ][ $key ] ); return true; }
@@ -60,14 +85,23 @@ require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-live.php';
 
 $pass = 0; $fail = 0;
+$GLOBALS['actions'] = array(); $GLOBALS['scheduled'] = array(); $GLOBALS['transients'] = array(); $GLOBALS['context'] = array();
+$GLOBALS['is_admin'] = false; $GLOBALS['doing_ajax'] = false;
 function live_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
 function map_product( $id, $code, $product = null ) {
 	$GLOBALS['products'][ $id ] = $product ?: new TCAS_Test_Product( $id );
 	$GLOBALS['meta'][ $id ][ TCAS_Mapping::META_CODE ] = $code;
 	$GLOBALS['meta'][ $id ][ TCAS_Mapping::META_ENABLED ] = 'yes';
 }
-$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::defaults(), array( 'base_url' => 'https://ariocase.test/api', 'api_key' => 'secret' ) );
 $GLOBALS['wc'] = (object) array( 'cart' => new TCAS_Test_Cart() );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::defaults(), array( 'live_scope' => 'all', 'base_url' => 'https://ariocase.test/api', 'api_key' => 'secret' ) );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS_VERSION ] = 0;
+TCAS_Core::maybe_upgrade_settings();
+live_test( 'تنظیمات نسخهٔ قدیمی از خواندن هم‌زمان به حالت خرید مهاجرت می‌کند', 'purchase' === get_option( TCAS_Core::OPTION_SETTINGS )['live_scope'] && 'secret' === get_option( TCAS_Core::OPTION_SETTINGS )['api_key'] );
+live_test( 'پیش‌فرض نصب جدید هم مسیر امن خرید است', 'purchase' === TCAS_Core::defaults()['live_scope'] );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::settings(), array( 'live_scope' => 'all' ) );
+TCAS_Core::maybe_upgrade_settings();
+live_test( 'حالت هم‌زمان پس از مهاجرت فقط با انتخاب صریح فعال می‌ماند', 'all' === TCAS_Core::settings()['live_scope'] );
 
 map_product( 1, 'REMOTE-1', new TCAS_Test_Product( 1, 'simple', 9, 'outofstock' ) );
 TCAS_Api::$responses['REMOTE-1'] = array( 'code' => 'REMOTE-1', 'quantity' => 5.0, 'status' => 'instock', 'product' => array( 'remote_id' => 1001 ) );
@@ -128,6 +162,68 @@ $product1_saved = $GLOBALS['products'][1]->saved;
 TCAS_Live::refresh( 1 );
 live_test( 'Refresh دوباره API می‌خواند ولی مقدار تکراری را بازنویسی نمی‌کند', 2 === array_count_values( TCAS_Api::$calls )['REMOTE-1'] && $product1_saved === $GLOBALS['products'][1]->saved );
 live_test( 'درخواست بعدی شناسهٔ عددی ذخیره‌شده را به API می‌دهد', 1001 === TCAS_Api::$identifiers['REMOTE-1']['remote_id'] );
+
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['live_scope'] = 'purchase';
+map_product( 14, 'REMOTE-14', new TCAS_Test_Product( 14, 'simple', 0, 'outofstock' ) );
+$GLOBALS['meta'][14][ TCAS_Mapping::META_QTY ] = '0';
+$GLOBALS['meta'][14][ TCAS_Mapping::META_STATUS ] = 'outofstock';
+$GLOBALS['meta'][14][ TCAS_Mapping::META_FETCHED_AT ] = time();
+TCAS_Api::$responses['REMOTE-14'] = array( 'code' => 'REMOTE-14', 'quantity' => 3.0, 'status' => 'instock' );
+$api_before_purchase = count( TCAS_Api::$calls );
+$purchase_passed = TCAS_Live::validate_add_to_cart( true, 14, 1 );
+live_test( 'افزودن به سبد در حالت کش، Snapshot کهنه را نادیده می‌گیرد و API زنده را کنترل می‌کند', true === $purchase_passed && count( TCAS_Api::$calls ) === $api_before_purchase + 1 && '3' === (string) $GLOBALS['meta'][14][ TCAS_Mapping::META_QTY ] );
+
+map_product( 15, 'REMOTE-15', new TCAS_Test_Product( 15, 'simple', 0, 'outofstock' ) );
+$GLOBALS['meta'][15][ TCAS_Mapping::META_QTY ] = '0';
+$GLOBALS['meta'][15][ TCAS_Mapping::META_STATUS ] = 'outofstock';
+$GLOBALS['meta'][15][ TCAS_Mapping::META_FETCHED_AT ] = time();
+TCAS_Api::$responses['REMOTE-15'] = array( 'code' => 'REMOTE-15', 'quantity' => 2.0, 'status' => 'instock' );
+$GLOBALS['wc']->cart->items = array( array( 'product_id' => 15, 'variation_id' => 0, 'quantity' => 1 ) );
+$checkout_errors = new TCAS_Test_Errors();
+$api_before_checkout = count( TCAS_Api::$calls );
+TCAS_Live::validate_checkout( array(), $checkout_errors );
+live_test( 'Checkout در حالت کش موجودی تازهٔ API را بررسی می‌کند', empty( $checkout_errors->errors ) && count( TCAS_Api::$calls ) === $api_before_checkout + 1 );
+
+map_product( 11, 'REMOTE-11', new TCAS_Test_Product( 11, 'simple', 1, 'outofstock' ) );
+$GLOBALS['meta'][11][ TCAS_Mapping::META_QTY ] = '4';
+$GLOBALS['meta'][11][ TCAS_Mapping::META_STATUS ] = 'instock';
+$GLOBALS['meta'][11][ TCAS_Mapping::META_FETCHED_AT ] = time();
+$GLOBALS['context'] = array( 'product' => true );
+$api_before = count( TCAS_Api::$calls );
+$cached_quantity = TCAS_Live::filter_quantity( 1, $GLOBALS['products'][11] );
+$cached_status = TCAS_Live::filter_status( 'outofstock', $GLOBALS['products'][11] );
+live_test( 'حالت خرید مقدار Snapshot تازه را بدون API در صفحهٔ محصول می‌خواند', 4.0 === $cached_quantity && 'instock' === $cached_status && $api_before === count( TCAS_Api::$calls ) );
+
+$GLOBALS['is_admin'] = true; $GLOBALS['doing_ajax'] = true; $GLOBALS['context'] = array();
+TCAS_Live::filter_status( 'outofstock', $GLOBALS['products'][11] );
+$GLOBALS['is_admin'] = false; $GLOBALS['doing_ajax'] = false;
+live_test( 'درخواست AJAX عمومی در حالت پیشنهادی API هم‌زمان صدا نمی‌زند', $api_before === count( TCAS_Api::$calls ) );
+
+map_product( 13, 'REMOTE-13', new TCAS_Test_Product( 13, 'simple', 1, 'outofstock' ) );
+$GLOBALS['meta'][13][ TCAS_Mapping::META_QTY ] = '4';
+$GLOBALS['meta'][13][ TCAS_Mapping::META_STATUS ] = 'instock';
+$GLOBALS['meta'][13][ TCAS_Mapping::META_FETCHED_AT ] = time() - TCAS_Live::CACHE_TTL - 30;
+$scheduled_before = count( $GLOBALS['scheduled'] );
+$old_quantity = TCAS_Live::filter_quantity( 1, $GLOBALS['products'][13] );
+TCAS_Live::filter_status( 'outofstock', $GLOBALS['products'][13] );
+live_test( 'Snapshot کهنه همان لحظه نمایش داده می‌شود و فقط یک Cron صف می‌گیرد', 4.0 === $old_quantity && $scheduled_before + 1 === count( $GLOBALS['scheduled'] ) && $api_before === count( TCAS_Api::$calls ) );
+
+TCAS_Api::$responses['REMOTE-13'] = array( 'code' => 'REMOTE-13', 'quantity' => 4.0, 'status' => 'instock' );
+$stale_time = (int) $GLOBALS['meta'][13][ TCAS_Mapping::META_FETCHED_AT ];
+TCAS_Live::process_scheduled_refresh( 13 );
+live_test( 'Cron پس‌زمینه موجودی را تازه می‌کند و قفل صف را آزاد می‌کند', count( TCAS_Api::$calls ) === $api_before + 1 && (int) $GLOBALS['meta'][13][ TCAS_Mapping::META_FETCHED_AT ] > $stale_time && false === get_transient( 'tcas_stock_refresh_13' ) );
+live_test( 'پاسخ هم‌مقدار هم زمان Snapshot را تازه می‌کند', (int) $GLOBALS['meta'][13][ TCAS_Mapping::META_FETCHED_AT ] > $stale_time );
+
+map_product( 12, 'REMOTE-12', new TCAS_Test_Product( 12, 'simple', 2, 'instock' ) );
+$GLOBALS['meta'][12][ TCAS_Mapping::META_QTY ] = '2';
+$GLOBALS['meta'][12][ TCAS_Mapping::META_STATUS ] = 'instock';
+$GLOBALS['meta'][12][ TCAS_Mapping::META_FETCHED_AT ] = time() - TCAS_Live::CACHE_TTL - 30;
+TCAS_Api::$responses['REMOTE-12'] = new WP_Error( 'timeout', 'remote timeout' );
+TCAS_Live::filter_quantity( 2, $GLOBALS['products'][12] );
+$scheduled_after_failure_queue = count( $GLOBALS['scheduled'] );
+TCAS_Live::process_scheduled_refresh( 12 );
+TCAS_Live::filter_quantity( 2, $GLOBALS['products'][12] );
+live_test( 'خطای Cron کش قبلی را حفظ و تلاش مجدد را موقتاً محدود می‌کند', 'failed' === get_transient( 'tcas_stock_refresh_12' ) && $scheduled_after_failure_queue === count( $GLOBALS['scheduled'] ) && '2' === $GLOBALS['meta'][12][ TCAS_Mapping::META_QTY ] );
 
 $GLOBALS['products'][40] = new TCAS_Test_Product( 40, 'variable', 0, 'instock' );
 $groups = TCAS_Mapping::group_rows( array(

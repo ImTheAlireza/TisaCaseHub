@@ -283,7 +283,16 @@ echo "--- 11) قوانین داینامیک (TCP_Rules) ---\n";
 function set_rules( $rules ) {
 	$GLOBALS['tcp_options']['tcp_rules'] = $rules;
 	$rc = new ReflectionClass( 'TCP_Rules' );
-	foreach ( array( 'settings_cache' => null, 'rule_cache' => array(), 'category_ids' => array() ) as $prop => $val ) {
+	foreach ( array(
+		'settings_cache' => null,
+		'rule_cache' => array(),
+		'category_ids' => array(),
+		'prefix_ids' => array(),
+		'prefix_rule_map' => array(),
+		'live_rules_day' => '',
+		'live_prefix_rules_cache' => null,
+		'live_category_rules_cache' => null,
+	) as $prop => $val ) {
 		$rp = $rc->getProperty( $prop );
 		$rp->setAccessible( true );
 		$rp->setValue( null, $val );
@@ -515,7 +524,39 @@ t( 'prefix_product_ids: CH و LP → همهٔ محصولات منطبق (۲۰۱�
 t( 'prefix_product_count: CH → ۴ محصول (201، 203 از واریشن، 204 و CHX-… در 206)', 4 === TCP_Rules::prefix_product_count( 'CH' ), (string) TCP_Rules::prefix_product_count( 'CH' ) );
 t( 'prefix_product_count: LP → ۲ محصول (202، 205)', 2 === TCP_Rules::prefix_product_count( 'LP' ), (string) TCP_Rules::prefix_product_count( 'LP' ) );
 
-echo "--- 14) شناسه: هر پیشوند استثنا یا قانون اختصاصی؛ بلندترین پیشوند برنده ---\n";
+echo "--- 14) کارایی فرانت‌اند: چندین پیشوند با حداکثر یک Query برای هر ۱۰۰ قانون ---\n";
+$many_prefix_rules = array();
+foreach ( range( 0, 229 ) as $index ) {
+	$prefix = 'SP' . str_pad( (string) $index, 3, '0', STR_PAD_LEFT );
+	$many_prefix_rules[ $prefix ] = array( 'enabled' => 1, 'increase' => $index % 40 );
+}
+$sku_rows_before_perf = $GLOBALS['tcp_sku_rows'];
+$GLOBALS['tcp_sku_rows'] = array(
+	array( 'product', 301, 0, 'SP229-CASE' ),
+	array( 'product_variation', 3021, 302, 'SP001-RED' ),
+	array( 'product_variation', 3022, 302, 'SP229-BLUE' ),
+);
+$GLOBALS['wpdb'] = new TCP_Test_WPDB();
+set_rules( array( 'global' => array( 'enabled' => 1, 'increase' => 99 ), 'prefixes' => $many_prefix_rules ) );
+$last_prefix_rule = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 301 ) ) );
+$variation_prefix_rule = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 3021, 'variation', 302 ) ) );
+$cached_prefix_rule = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 301 ) ) );
+t( '۲۳۰ قانون پیشوندی با ۳ Query دسته‌ای (نه صدها Query) حل می‌شوند', 3 === $GLOBALS['wpdb']->get_results_calls, 'queries=' . $GLOBALS['wpdb']->get_results_calls );
+$prefix_batch_sizes = array_map( static function( $query ) { return substr_count( $query, 'pm.meta_value LIKE' ); }, $GLOBALS['wpdb']->queries );
+t( 'اندازهٔ دسته‌ها حداکثر ۱۰۰ شرط و برابر ۱۰۰/۱۰۰/۳۰ است', array( 100, 100, 30 ) === $prefix_batch_sizes, var_export( $prefix_batch_sizes, true ) );
+t( 'قانون پیشوند محصول از یک Snapshot مشترک resolve می‌شود', $last_prefix_rule && 29.0 === (float) $last_prefix_rule['increase'] && $cached_prefix_rule === $last_prefix_rule );
+t( 'واریشن‌ها به والد نگاشت و اولویت ترتیب قوانین حفظ می‌شود', $variation_prefix_rule && 1.0 === (float) $variation_prefix_rule['increase'], var_export( $variation_prefix_rule, true ) );
+
+// دسته‌بندی‌ها با get_the_terms استفاده می‌کنند تا Cacheای که WP_Query روی آرشیو محصولات پرایم کرده حفظ شود.
+$GLOBALS['tcp_get_the_terms_calls'] = array();
+$GLOBALS['tcp_post_terms'][304] = array( 55 );
+set_rules( array( 'categories' => array( 55 => array( 'enabled' => 1, 'increase' => 20 ) ) ) );
+call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 304 ) ) );
+t( 'قانون دسته از مسیر سازگار با Cache روابط ترم وردپرس خوانده می‌شود', 1 === $GLOBALS['tcp_get_the_terms_calls'][304] );
+$GLOBALS['tcp_sku_rows'] = $sku_rows_before_perf;
+$GLOBALS['wpdb'] = new TCP_Test_WPDB();
+
+echo "--- 15) شناسه: هر پیشوند استثنا یا قانون اختصاصی؛ بلندترین پیشوند برنده ---\n";
 $t_map = TCP_Rules::normalize_prefix_map( array( 'ch' => array( 'enabled' => 1, 'increase' => 40, 'exclude' => 0 ), 'LP' => array( 'exclude' => 1 ), 'xyz!' => array( 'exclude' => 1 ) ) );
 t( 'normalize_prefix_map: نقشهٔ جدید، کلید بزرگ‌حرف و کلید نامعتبر حذف', array( 'CH', 'LP' ) === array_keys( $t_map ) && 40.0 === (float) $t_map['CH']['increase'] && 1 === $t_map['LP']['exclude'], var_export( array_keys( $t_map ), true ) );
 $t_legacy = TCP_Rules::normalize_prefix_map( array( 'CH', 'lp' ) );

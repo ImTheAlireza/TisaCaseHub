@@ -247,6 +247,21 @@ ok('جایگزینی لینک‌ها دسته‌ای است (یک UPDATE بر ج
 ok('زنجیرهٔ توربو تیک‌ها را حین اجرای کار پشت‌سرهم می‌کند', /function chain_next_tick/.test(runner) && /wp_schedule_single_event\( time\(\) \+ 3, self::HOOK \)/.test(runner));
 ok('رمزنگار WebP/AVIF گزینهٔ سرعت دارد', /webp:method/.test(proc) && /heic:speed/.test(proc));
 
+console.log('── ۱۲) پشتیبان‌های اولیهٔ انبوه بدون نوشتن O(n²) ──');
+const backupFn = fnBody(vault, 'backup_original_before_optimize');
+const restoreOriginalFn = fnBody(vault, 'restore_original_backup');
+const migrationFn = fnBody(vault, 'migrate_legacy_original_backups');
+const vaultSummaryFn = fnBody(vault, 'summary');
+const purgeOriginalFn = fnBody(vault, 'purge_original_backups');
+ok('هر پشتیبان در آپشن مستقلِ غیر-autoload نوشته می‌شود', /OPTION_ORIG_PREFIX/.test(vault) && /add_option\(\s*\$backup_option,\s*\$entry,\s*'',\s*false\s*\)/.test(backupFn));
+ok('مسیر هر تصویر، کل فهرست پشتیبان‌ها را بازخوانی نمی‌کند', !backupFn.includes('list_original_backups'));
+ok('مهاجرت قدیمی در بسته‌های ۱۰۰تایی انجام می‌شود', /array_chunk\(\s*\$valid,\s*100,\s*true\s*\)/.test(migrationFn) && /INSERT IGNORE INTO/.test(migrationFn));
+ok('فهرست قدیمی تا تأیید رکوردهای جدید حذف نمی‌شود', /if \( \$complete \)[\s\S]{0,180}?delete_option\( self::OPTION_ORIG_INDEX \)/.test(migrationFn));
+ok('بازگردانی یک تصویر فقط رکورد همان شناسه را می‌خواند', restoreOriginalFn.includes('get_original_backup_entry') && !restoreOriginalFn.includes('list_original_backups'));
+ok('داشبورد از شمارندهٔ سبک می‌خواند، نه از همهٔ متادیتاها', vaultSummaryFn.includes('original_backup_summary') && !vaultSummaryFn.includes('list_original_backups'));
+ok('فهرست پشتیبان‌ها با جست‌وجوی پیشوندی option_name خوانده می‌شود', /function read_original_backup_options[\s\S]{0,900}?WHERE option_name LIKE %s/.test(vault));
+ok('تخلیهٔ گروهی رکوردهای مستقل را هم پاک می‌کند', purgeOriginalFn.includes('delete_all_original_backup_options'));
+
 console.log('');
 if (fails.length) {
 	console.error(`✗ ${fails.length} نقض در محافظ «بار سرور»:`);
