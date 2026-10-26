@@ -46,7 +46,7 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 		 * @return string
 		 */
 		public static function rewrite_html_images( $html ) {
-			if ( ! is_string( $html ) || '' === $html || false === strpos( $html, '<img' ) ) {
+			if ( ! is_string( $html ) || '' === $html || false === stripos( $html, '<img' ) ) {
 				return $html;
 			}
 
@@ -55,40 +55,31 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 				if ( empty( $uploads['basedir'] ) || empty( $uploads['baseurl'] ) ) {
 					return $html;
 				}
-				$baseurl = trailingslashit( $uploads['baseurl'] );
+				$baseurl       = trailingslashit( $uploads['baseurl'] );
+				$inside_picture = false;
+				$pattern        = "~<!--[\\s\\S]*?-->|<script\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>[\\s\\S]*?</script\\s*>|<style\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>[\\s\\S]*?</style\\s*>|</?picture\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>|<img\\b(?:[^>\"']|\"[^\"]*\"|'[^']*')*>~i";
 
 				return (string) preg_replace_callback(
-					'/(?<!<picture>)\s*<img\b[^>]+>/i',
-					static function ( $match ) use ( $baseurl ) {
-						$img = $match[0];
-						if ( false !== strpos( $img, 'data-no-webp' ) ) {
-							return $img;
+					$pattern,
+					static function ( $match ) use ( $baseurl, &$inside_picture ) {
+						$token = $match[0];
+						if ( 0 === stripos( $token, '<!--' ) || 0 === stripos( $token, '<script' ) || 0 === stripos( $token, '<style' ) ) {
+							return $token;
 						}
-						$src_match = array();
-						if ( ! preg_match( '/\bsrc=["\']([^"\']+\.(?:jpe?g|png))["\']/i', $img, $src_match ) ) {
-							return $img;
+						if ( preg_match( '/^<picture\\b/i', $token ) ) {
+							$inside_picture = true;
+							return $token;
 						}
-						$src_url = $src_match[1];
-						if ( 0 !== strpos( $src_url, $baseurl ) ) {
-							return $img;
+						if ( preg_match( '/^<\\/picture\\b/i', $token ) ) {
+							$inside_picture = false;
+							return $token;
 						}
-
-						$rel = ltrim( substr( $src_url, strlen( $baseurl ) ), '/' );
-
-						$sources = '';
-						// فهرست سبک نسخه‌های موازی: یک خواندن فایل به‌جای دو is_file
-						// برای هر تصویر در هر بازدید. اگر فهرست نباشد، همان is_file
-						// (با حافظهٔ موقت) اجرا می‌شود.
-						if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'avif' ) ) {
-							$sources .= '<source type="image/avif" srcset="' . esc_url( $src_url . '.avif' ) . '">';
+						// تصاویر picture موجود را دست‌نخورده می‌گذاریم؛ wrapper تو‌در‌تو
+						// HTML نامعتبر می‌سازد و می‌تواند art direction قالب را خراب کند.
+						if ( $inside_picture || false !== stripos( $token, 'data-no-webp' ) ) {
+							return $token;
 						}
-						if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'webp' ) ) {
-							$sources .= '<source type="image/webp" srcset="' . esc_url( $src_url . '.webp' ) . '">';
-						}
-						if ( '' === $sources ) {
-							return $img;
-						}
-						return '<picture>' . $sources . trim( $img ) . '</picture>';
+						return self::wrap_image_tag( $token, $baseurl );
 					},
 					$html
 				);
@@ -98,7 +89,73 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 		}
 
 		/**
-		 * افزودن یا حذف قوانین بازنویسی مستقیم WebP/AVIF در `wp-content/uploads/.htaccess`.
+		 * افزودن sourceهای موجود به یک img مستقل (نه img داخل picture موجود).
+		 *
+		 * @param string $img     تگ تصویر.
+		 * @param string $baseurl آدرس uploads با اسلش نهایی.
+		 * @return string
+		 */
+		private static function wrap_image_tag( $img, $baseurl ) {
+			$src_match = array();
+			if ( ! preg_match( "/\\bsrc\\s*=\\s*([\"'])([^\"']+)\\1/i", $img, $src_match ) ) {
+				return $img;
+			}
+
+			$src_url  = html_entity_decode( $src_match[2], ENT_QUOTES, 'UTF-8' );
+			$path_end = strcspn( $src_url, '?#' );
+			$src_path = substr( $src_url, 0, $path_end );
+			if ( 0 !== strpos( $src_path, $baseurl ) || ! preg_match( '/\\.(?:jpe?g|png)$/i', $src_path ) ) {
+				return $img;
+			}
+
+			$rel = ltrim( wp_normalize_path( rawurldecode( substr( $src_path, strlen( $baseurl ) ) ) ), '/' );
+			if ( '' === $rel || in_array( '..', explode( '/', $rel ), true ) ) {
+				return $img;
+			}
+
+			$sources = '';
+			// فهرست سبک نسخه‌های موازی: یک خواندن فایل به‌جای دو is_file
+			// برای هر تصویر در هر بازدید. اگر فهرست نباشد، همان is_file
+			// (با حافظهٔ موقت) اجرا می‌شود.
+			if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'avif' ) ) {
+				$sources .= '<source type="image/avif" srcset="' . esc_url( self::sidecar_url( $src_url, 'avif' ) ) . '">';
+			}
+			if ( TisaCase_Optimizer_Sidecar_Index::has( $rel, 'webp' ) ) {
+				$sources .= '<source type="image/webp" srcset="' . esc_url( self::sidecar_url( $src_url, 'webp' ) ) . '">';
+			}
+			return '' === $sources ? $img : '<picture>' . $sources . $img . '</picture>';
+		}
+
+		/** افزودن پسوند نسخهٔ جانبی پیش از query string یا fragment. */
+		private static function sidecar_url( $url, $ext ) {
+			$split = strcspn( (string) $url, '?#' );
+			return substr( (string) $url, 0, $split ) . '.' . $ext . substr( (string) $url, $split );
+		}
+
+		/** قوانین امن مذاکره و کش برای نسخه‌های موازی تصویر. */
+		public static function htaccess_rules() {
+			return array(
+				// اگر هدر Vary قابل تنظیم نباشد، rewrite هم خاموش می‌ماند تا
+				// cache مشترک نسخهٔ AVIF/WebP را به مرورگر ناسازگار تحویل ندهد.
+				'<IfModule mod_headers.c>',
+				'<IfModule mod_rewrite.c>',
+				'RewriteEngine On',
+				'RewriteCond %{HTTP_ACCEPT} image/avif [NC]',
+				'RewriteCond %{HTTP_ACCEPT} !(^|,)[[:space:]]*image/avif[^,]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0([.]0+)?([[:space:]]*;[^,]*)?[[:space:]]*(,|$) [NC]',
+				'RewriteCond %{REQUEST_FILENAME}\\.avif -f',
+				'RewriteRule ^(.+)\\.(jpe?g|png)$ $1.$2.avif [T=image/avif,L]',
+				'RewriteCond %{HTTP_ACCEPT} image/webp [NC]',
+				'RewriteCond %{HTTP_ACCEPT} !(^|,)[[:space:]]*image/webp[^,]*;[[:space:]]*q[[:space:]]*=[[:space:]]*0([.]0+)?([[:space:]]*;[^,]*)?[[:space:]]*(,|$) [NC]',
+				'RewriteCond %{REQUEST_FILENAME}\\.webp -f',
+				'RewriteRule ^(.+)\\.(jpe?g|png)$ $1.$2.webp [T=image/webp,L]',
+				'</IfModule>',
+				'Header merge Vary Accept',
+				'</IfModule>',
+			);
+		}
+
+		/**
+		 * افزودن/حذف کنترل‌شدهٔ بلوک rewrite داخل uploads/.htaccess.
 		 *
 		 * @param bool $enable فعال یا غیرفعال کردن قوانین.
 		 * @return bool
@@ -106,33 +163,40 @@ if ( ! class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
 		public static function sync_htaccess( $enable ) {
 			$uploads = wp_upload_dir();
 			if ( empty( $uploads['basedir'] ) ) {
-				return false;
+				return ! $enable;
 			}
-			$file  = wp_normalize_path( trailingslashit( $uploads['basedir'] ) . '.htaccess' );
-			$lines = array();
+			$file = wp_normalize_path( trailingslashit( $uploads['basedir'] ) . '.htaccess' );
+			if ( ! is_dir( $uploads['basedir'] ) ) {
+				return ! $enable && ! file_exists( $file );
+			}
 
-			if ( $enable ) {
-				$lines = array(
-					'<IfModule mod_rewrite.c>',
-					'RewriteEngine On',
-					'RewriteCond %{HTTP_ACCEPT} image/avif',
-					'RewriteCond %{REQUEST_FILENAME}\.avif -f',
-					'RewriteRule ^(.+)\.(jpe?g|png)$ $1.$2.avif [T=image/avif,L]',
-					'RewriteCond %{HTTP_ACCEPT} image/webp',
-					'RewriteCond %{REQUEST_FILENAME}\.webp -f',
-					'RewriteRule ^(.+)\.(jpe?g|png)$ $1.$2.webp [T=image/webp,L]',
-					'</IfModule>',
-					'<IfModule mod_headers.c>',
-					'Header append Vary Accept env=REDIRECT_accept',
-					'</IfModule>',
-				);
+			// غیرفعال‌کردن وقتی فایل وجود ندارد باید بی‌صدا موفق شود و فایل تازه نسازد.
+			if ( ! $enable && ! file_exists( $file ) ) {
+				return true;
+			}
+			if ( is_link( $file ) || ( file_exists( $file ) && ! is_writable( $file ) ) || ( ! file_exists( $file ) && ! is_writable( dirname( $file ) ) ) ) {
+				return false;
 			}
 
 			if ( ! function_exists( 'insert_with_markers' ) ) {
 				require_once ABSPATH . 'wp-admin/includes/misc.php';
 			}
-
-			return (bool) insert_with_markers( $file, self::HTACCESS_MARKER, $lines );
+			$ok = (bool) insert_with_markers( $file, self::HTACCESS_MARKER, $enable ? self::htaccess_rules() : array() );
+			if ( ! $ok ) {
+				return false;
+			}
+			// تأیید محتوا پس از نوشتن/پاک‌کردن؛ از موفقیت کاذب رابط در هاست‌های
+			// read-only یا پیاده‌سازی‌هایی که marker را واقعاً تغییر نداده‌اند جلوگیری می‌کند.
+			$written = @file_get_contents( $file );
+			if ( ! is_string( $written ) ) {
+				return false;
+			}
+			if ( ! $enable ) {
+				return false === strpos( $written, '# BEGIN ' . self::HTACCESS_MARKER )
+					&& false === strpos( $written, '# END ' . self::HTACCESS_MARKER );
+			}
+			return false !== strpos( $written, '# BEGIN ' . self::HTACCESS_MARKER )
+				&& false !== strpos( $written, 'Header merge Vary Accept' );
 		}
 	}
 }

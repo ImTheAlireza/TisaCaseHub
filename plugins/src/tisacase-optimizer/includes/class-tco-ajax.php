@@ -618,7 +618,12 @@ if ( ! class_exists( 'TisaCase_Optimizer_Ajax' ) ) {
 						$raw_settings = isset( $_POST['settings'] ) && is_array( $_POST['settings'] ) ? wp_unslash( $_POST['settings'] ) : array();
 						$updated      = TisaCase_Optimizer_Settings::update( $raw_settings );
 						TisaCase_Optimizer_Session::log( 'save_settings', __( 'ذخیرهٔ تنظیمات مرکز بهینه‌سازی', 'tisacase-optimizer' ), 0, 0, '', 'info' );
-						self::ok( array( 'settings' => $updated ) );
+						self::ok(
+							array(
+								'settings'         => $updated,
+								'delivery_warning' => TisaCase_Optimizer_Settings::delivery_warning(),
+							)
+						);
 						break;
 
 					default:
