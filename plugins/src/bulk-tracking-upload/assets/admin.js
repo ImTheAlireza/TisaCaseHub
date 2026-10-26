@@ -239,9 +239,138 @@
         startOrResume();
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initBatchUploader, { once: true });
-    } else {
+    function initCleanupProcessor() {
+        var root = document.getElementById('bwt-cleanup-progress');
+        var config = window.BWTAdmin || {};
+        if (!root || !config.ajaxUrl || !config.nonce) return;
+
+        var jobId = root.getAttribute('data-job-id') || '';
+        var statusNode = root.querySelector('[data-bwt-cleanup-status]');
+        var progressNode = root.querySelector('[data-bwt-cleanup-progress]');
+        var countersNode = root.querySelector('[data-bwt-cleanup-counters]');
+        var resumeButton = root.querySelector('[data-bwt-cleanup-resume]');
+        var resultNode = root.querySelector('[data-bwt-cleanup-result]');
+        var running = false;
+        var finished = false;
+
+        try {
+            var url = new URL(window.location.href);
+            url.searchParams.set('bwt_cleanup_job', jobId);
+            window.history.replaceState({}, '', url.toString());
+        } catch (error) {
+            // The progress UI remains usable if history is unavailable.
+        }
+
+        function post(action) {
+            var body = new URLSearchParams();
+            body.set('action', action);
+            body.set('nonce', config.nonce);
+            body.set('job_id', jobId);
+            return fetch(config.ajaxUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                body: body.toString()
+            }).then(function (response) {
+                return response.text().then(function (text) {
+                    var json;
+                    try { json = JSON.parse(text); } catch (error) { throw new Error('پاسخ سرور قابل خواندن نبود.'); }
+                    if (!response.ok || !json || !json.success) {
+                        throw new Error(json && json.data && json.data.message ? json.data.message : 'ارتباط با سرور ناموفق بود.');
+                    }
+                    return json.data || {};
+                });
+            });
+        }
+
+        function showResult(data) {
+            if (!resultNode) return;
+            resultNode.replaceChildren();
+            var summary = data.file_error
+                ? data.file_error
+                : 'پاک‌سازی کامل شد؛ ' + digits(data.deleted) + ' ردیف metadata حذف شد.';
+            if (data.mode === 'selected') {
+                summary += ' پردازش: ' + digits(data.processed) + ' از ' + digits(data.total)
+                    + ' · بدون کد: ' + digits(data.not_found) + ' · سفارش یافت‌نشده: ' + digits(data.invalid) + '.';
+            }
+            var notice = create('div', 'tisa-notice tisa-notice--' + (data.file_error ? 'danger' : 'success') + ' bwt-notice', summary);
+            resultNode.appendChild(notice);
+            if (data.details && data.details.length) {
+                resultNode.appendChild(create('p', 'bwt-hint', 'جزئیات (حداکثر ۲۰ مورد): ' + data.details.join('، ')));
+            }
+            if (Number(data.details_truncated) > 0) {
+                resultNode.appendChild(create('p', 'bwt-hint', 'جزئیات ' + digits(data.details_truncated) + ' مورد دیگر برای محدودماندن حافظه نگهداری نشد.'));
+            }
+        }
+
+        function update(data) {
+            var percent = Math.max(0, Math.min(100, Number(data.progress) || 0));
+            if (progressNode) progressNode.value = percent;
+            if (statusNode) statusNode.textContent = data.done
+                ? (data.file_error ? 'پاک‌سازی متوقف شد؛ امکان ادامه یا تلاش دوباره وجود دارد.' : 'پاک‌سازی کامل شد.')
+                : 'در حال حذف دسته‌ای… ' + digits(percent) + '٪';
+            if (countersNode) {
+                countersNode.textContent = data.mode === 'selected'
+                    ? 'پردازش‌شده: ' + digits(data.processed) + ' از ' + digits(data.total) + ' · حذف‌شده: ' + digits(data.deleted)
+                    : 'حذف‌شده: ' + digits(data.deleted) + ' · جداول بررسی‌شده: ' + digits(Math.min(2, Math.floor(percent / 50)) + 1) + ' از ۲';
+            }
+        }
+
+        function delay(ms) { return new Promise(function (resolve) { window.setTimeout(resolve, ms); }); }
+        function showRetry(message) {
+            if (statusNode) statusNode.textContent = message || 'ارتباط موقتاً قطع شد؛ می‌توانید پاک‌سازی را ادامه دهید.';
+            if (resumeButton) { resumeButton.hidden = false; resumeButton.textContent = config.retryLabel || 'ادامهٔ پاک‌سازی'; }
+        }
+
+        async function processBatches() {
+            while (!finished) {
+                var data = await post('bwt_cleanup_batch');
+                update(data);
+                if (data.done) {
+                    finished = true;
+                    showResult(data);
+                    return;
+                }
+                await delay(30);
+            }
+        }
+
+        async function startOrResume() {
+            if (running || finished) return;
+            running = true;
+            if (resumeButton) resumeButton.hidden = true;
+            try {
+                var state = await post('bwt_cleanup_status');
+                update(state);
+                if (state.done) {
+                    finished = true;
+                    showResult(state);
+                    return;
+                }
+                if (state.file_error) {
+                    showRetry(state.file_error);
+                    return;
+                }
+                await processBatches();
+            } catch (error) {
+                showRetry(error && error.message ? error.message : 'پاک‌سازی متوقف شد.');
+            } finally {
+                running = false;
+            }
+        }
+
+        if (resumeButton) resumeButton.addEventListener('click', startOrResume);
+        startOrResume();
+    }
+
+    function init() {
         initBatchUploader();
+        initCleanupProcessor();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init, { once: true });
+    } else {
+        init();
     }
 }());

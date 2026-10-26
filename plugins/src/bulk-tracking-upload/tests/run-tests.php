@@ -31,7 +31,7 @@ function wp_generate_uuid4() { return '12345678-1234-4abc-8def-1234567890ab'; }
 function wp_next_scheduled($hook) { return false; }
 function wp_schedule_event($timestamp, $recurrence, $hook) { return true; }
 function check_ajax_referer($action, $query_arg = '_ajax_nonce') {
-    if ($action !== 'bwt_upload_batch' || !isset($_POST[$query_arg]) || $_POST[$query_arg] !== 'test-nonce') {
+    if (!in_array($action, array('bwt_upload_batch', 'bwt_cleanup_batch'), true) || !isset($_POST[$query_arg]) || $_POST[$query_arg] !== 'test-nonce') {
         throw new RuntimeException('Invalid test nonce.');
     }
     return 1;
@@ -81,6 +81,23 @@ $GLOBALS['bwt_order_saves'] = 0;
 function get_post_meta($id, $k, $single = false) { return isset($GLOBALS['bwt_post_meta'][$id][$k]) ? $GLOBALS['bwt_post_meta'][$id][$k] : ''; }
 function update_post_meta($id, $k, $value) { $GLOBALS['bwt_post_meta'][$id][$k] = $value; return true; }
 function delete_post_meta($id, $k) { unset($GLOBALS['bwt_post_meta'][$id][$k]); return true; }
+
+class BWT_Test_DB {
+    public $postmeta = 'wp_postmeta';
+    public $prefix = 'wp_';
+    public $last_sql = '';
+    public $query_result = 500;
+    public function prepare($sql, ...$args) {
+        foreach ($args as $arg) {
+            $replacement = is_int($arg) ? (string) $arg : "'" . addslashes((string) $arg) . "'";
+            $sql = preg_replace('/%[sd]/', $replacement, $sql, 1);
+        }
+        return $sql;
+    }
+    public function query($sql) { $this->last_sql = $sql; return $this->query_result; }
+    public function get_var($sql) { return 'wp_wc_orders_meta'; }
+}
+$GLOBALS['wpdb'] = new BWT_Test_DB();
 
 require_once dirname(__DIR__) . '/bulk-tracking-upload.php';
 
@@ -216,6 +233,71 @@ try { bwt_ajax_upload_batch(); } catch (BWT_Test_Response $response) { $batch_re
 t('اندپوینت AJAX دسته را اجرا و نتیجهٔ تکمیل را برمی‌گرداند', $batch_response instanceof BWT_Test_Response && $batch_response->success && $batch_response->payload['done'] && $batch_response->payload['updated'] === 1 && $batch_response->payload['errors'] === 0);
 $completed_job_state = !empty($created_job['job_id']) ? get_transient(bwt_upload_job_key($created_job['job_id'])) : false;
 t('Job تکمیل‌شده file data موقت را حذف و برای بازیابی نتیجه نگه می‌دارد', $GLOBALS['bwt_post_meta'][101]['_tracking_code'] === 'JOB-TRACK' && is_array($completed_job_state) && isset($completed_job_state['file_path']) && $completed_job_state['file_path'] === '');
+$_POST = array();
+
+
+
+echo "--- 6) سقف سازگاری و پاک‌سازی دسته‌ای ---\n";
+$legacy_csv = tempnam(sys_get_temp_dir(), 'bwt-legacy-');
+$legacy_data = '';
+for ($i = 0; $i < 52; $i++) $legacy_data .= '999999,TRACK-' . $i . "\n";
+file_put_contents($legacy_csv, $legacy_data);
+$legacy_batch = bwt_process_uploaded_file($legacy_csv);
+$legacy_total_errors = $legacy_batch['errors'];
+$legacy_details_bounded = count($legacy_batch['details']) <= BWT_UPLOAD_BATCH_SIZE;
+$legacy_calls = 1;
+while (!$legacy_batch['done'] && $legacy_calls < 10) {
+    $legacy_batch = bwt_process_uploaded_file($legacy_csv, '', $legacy_batch['offset'], $legacy_batch['row_num'], $legacy_batch['has_header']);
+    $legacy_total_errors += $legacy_batch['errors'];
+    $legacy_details_bounded = $legacy_details_bounded && count($legacy_batch['details']) <= BWT_UPLOAD_BATCH_SIZE;
+    $legacy_calls++;
+}
+t('تابع سازگاری CSV در هر درخواست فقط یک batch محدود و حداکثر ۵۰ جزئیات نگه می‌دارد', $legacy_calls >= 2 && $legacy_details_bounded && $legacy_total_errors === 52, var_export(array($legacy_calls, $legacy_total_errors, $legacy_details_bounded, $legacy_batch['row_num']), true));
+t('فراخوان‌های دارای checkpoint تا EOF ادامه پیدا می‌کنند', $legacy_batch['done'] && $legacy_batch['row_num'] === 52);
+unlink($legacy_csv);
+
+$GLOBALS['wpdb']->query_result = 500;
+$limited_delete = bwt_delete_tracking_meta_batch('wp_postmeta', 99999);
+t('حذف SQL به LIMIT امن ۵۰۰ محدود و فقط روی جدول مجاز انجام می‌شود', $limited_delete === 500 && strpos($GLOBALS['wpdb']->last_sql, 'LIMIT 500') !== false && bwt_delete_tracking_meta_batch('wp_postmeta; DROP TABLE wp_users', 1) === false);
+$cleanup_ids = range(1000, 1059);
+$cleanup_job = bwt_create_cleanup_job('selected', $cleanup_ids);
+$cleanup_state = bwt_get_cleanup_job($cleanup_job['job_id']);
+$first_cleanup_batch = bwt_process_selected_cleanup_batch($cleanup_state, 5000);
+t('پاک‌سازی انتخابی حتی با سقف بالاتر فقط ۵۰ سفارش را در هر batch می‌پردازد', $first_cleanup_batch === 50 && $cleanup_state['processed'] === 50 && !$cleanup_state['done']);
+$second_cleanup_batch = bwt_process_selected_cleanup_batch($cleanup_state, 50);
+t('پاک‌سازی انتخابی با checkpoint تا انتهای لیست ادامه می‌یابد', $second_cleanup_batch === 10 && $cleanup_state['processed'] === 60 && $cleanup_state['done']);
+t('جزئیات پاک‌سازی انتخابی حداکثر ۲۰ مورد نگه داشته می‌شود', count($cleanup_state['details']) === 20 && $cleanup_state['details_truncated'] === 40);
+
+$all_cleanup_job = bwt_create_cleanup_job('all');
+$_POST = array('nonce' => 'test-nonce', 'job_id' => $all_cleanup_job['job_id']);
+$GLOBALS['wpdb']->query_result = 500;
+$all_cleanup_batch_one = null;
+try { bwt_ajax_cleanup_batch(); } catch (BWT_Test_Response $response) { $all_cleanup_batch_one = $response; }
+t('پاک‌سازی همهٔ metadata در هر AJAX درخواست حذف را به ۵۰۰ ردیف محدود می‌کند', $all_cleanup_batch_one instanceof BWT_Test_Response && $all_cleanup_batch_one->success && !$all_cleanup_batch_one->payload['done'] && $all_cleanup_batch_one->payload['deleted'] === 500 && strpos($GLOBALS['wpdb']->last_sql, 'LIMIT 500') !== false);
+$GLOBALS['wpdb']->query_result = 0;
+$all_cleanup_batch_two = null;
+try { bwt_ajax_cleanup_batch(); } catch (BWT_Test_Response $response) { $all_cleanup_batch_two = $response; }
+$all_cleanup_batch_three = null;
+try { bwt_ajax_cleanup_batch(); } catch (BWT_Test_Response $response) { $all_cleanup_batch_three = $response; }
+t('پاک‌سازی همه پس از خالی‌شدن جدول نخست به جدول HPOS ادامه می‌دهد و قابل بازیابی است', $all_cleanup_batch_two instanceof BWT_Test_Response && !$all_cleanup_batch_two->payload['done'] && $all_cleanup_batch_three instanceof BWT_Test_Response && $all_cleanup_batch_three->payload['done'] && $all_cleanup_batch_three->payload['deleted'] === 500);
+$_POST = array();
+
+$many_errors_source = tempnam(sys_get_temp_dir(), 'bwt-many-errors-');
+$many_errors_csv = str_repeat("999999,TRACK\n", 520);
+file_put_contents($many_errors_source, $many_errors_csv);
+$many_errors_job = bwt_create_upload_job($many_errors_source);
+@unlink($many_errors_source);
+$many_error_payload = array();
+$many_error_calls = 0;
+while ($many_error_calls < 20) {
+    $_POST = array('nonce' => 'test-nonce', 'job_id' => $many_errors_job['job_id']);
+    try { bwt_ajax_upload_batch(); } catch (BWT_Test_Response $response) { $many_error_payload = $response->payload; }
+    $many_error_calls++;
+    if (!empty($many_error_payload['done'])) break;
+}
+$many_errors_state = bwt_get_upload_job($many_errors_job['job_id']);
+t('جزئیات خطا در طول پردازش تا سقف ۵۰۰ مورد ذخیره می‌ماند و بقیه فقط شمارش می‌شوند', !empty($many_error_payload['done']) && $many_error_payload['errors'] === 520 && count($many_error_payload['details']) === 500 && $many_error_payload['details_truncated'] === 20 && $many_errors_state['details_count'] === 500);
+if (!empty($many_errors_state['error_path']) && bwt_is_upload_temp_path($many_errors_state['error_path'])) @unlink($many_errors_state['error_path']);
 $_POST = array();
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
