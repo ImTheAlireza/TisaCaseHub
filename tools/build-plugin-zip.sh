@@ -84,7 +84,7 @@ mkdir -p plugins/dist
 out="plugins/dist/$top.zip"
 rm -f "$out"
 exclude=("*/.DS_Store" "*/__MACOSX/*")
-if [ "$name" = "tisacase-card-to-card" ]; then exclude+=("*/tests/*"); fi
+if [ "$name" = "tisacase-card-to-card" ] || [ "$name" = "tisa-product-importer" ]; then exclude+=("*/tests/*"); fi
 ( cd "$(dirname "$src")" && zip -qrD "$OLDPWD/$out" "$top" -x "${exclude[@]}" )
 
 # آخرین حلقه: خودِ زیپ هم با پارسر واقعی خوانده می‌شود (چیزی که به سایت می‌رود).
