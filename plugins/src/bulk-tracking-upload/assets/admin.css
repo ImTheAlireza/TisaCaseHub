@@ -140,3 +140,9 @@ body.woocommerce_page_bwt-cleanup #wpcontent { background: var(--tisa-bg, #F4F2E
 .bwt-reason { color: var(--tisa-danger-ink, #8E3128); }
 
 body.tisa-compact .bwt-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px) var(--tisa-sp-4, 16px); }
+
+/* ---------- پردازش دسته‌ای CSV ---------- */
+.bwt-upload-progress { margin: 0 0 var(--tisa-sp-4, 16px); }
+.bwt-progress-bar { display: block; width: 100%; height: 12px; margin: 0 0 10px; accent-color: var(--tisa-primary, #0E7C6B); }
+.bwt-progress-meta { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); font-variant-numeric: tabular-nums; }
+.bwt-upload-progress [data-bwt-resume] { margin-top: 12px; }

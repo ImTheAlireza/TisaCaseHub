@@ -53,6 +53,22 @@ if [ -f tools/bulk-stock-manager-preview-test.mjs ] && node -e "require.resolve(
 else
   echo "⚠ jsdom نصب نیست — تست رگرسیون پیش‌نمایش رد شد (npm install jsdom jquery@3.7.1)." >&2
 fi
+# تست‌های رفتاری bulk-tracking-upload با PHP-WASM (در صورت نصب ابزار تست).
+if [ -f "$src/tests/php-tests.mjs" ]; then
+  if node -e "require.resolve('@php-wasm/universal'); require.resolve('@php-wasm/node')" >/dev/null 2>&1; then
+    node "$src/tests/php-tests.mjs"
+  else
+    echo "⚠ PHP-WASM نصب نیست — تست رفتاری bulk-tracking-upload رد شد." >&2
+  fi
+fi
+# تست UI دسته‌ای bulk-tracking-upload (در صورت وجود jsdom).
+if [ -f "$src/tests/admin-progress-tests.mjs" ]; then
+  if node -e "require.resolve('jsdom')" >/dev/null 2>&1; then
+    node "$src/tests/admin-progress-tests.mjs"
+  else
+    echo "⚠ jsdom نصب نیست — تست پیشرفت آپلود bulk-tracking-upload رد شد." >&2
+  fi
+fi
 js=$(find "$src" -name "*.js" -not -name "*.min.js" | head -20 || true)
 for f in $js; do node --check "$f" >/dev/null || { echo "JS خطا دارد: $f" >&2; exit 1; }; done
 
