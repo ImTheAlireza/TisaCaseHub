@@ -21,6 +21,7 @@ $GLOBALS['tcp_currency']      = 'IRT';
 $GLOBALS['tcp_terms']         = array();
 $GLOBALS['tcp_term_children'] = array();
 $GLOBALS['tcp_post_terms']    = array();
+$GLOBALS['tcp_get_the_terms_calls'] = array();
 $GLOBALS['tcp_products']      = array();
 $GLOBALS['tcp_filters']       = array();
 $GLOBALS['tcp_notices']       = array();
@@ -117,6 +118,15 @@ function wp_get_post_terms( $pid, $tax = '', $args = array() ) {
 	$pid = (int) $pid;
 	return isset( $GLOBALS['tcp_post_terms'][ $pid ] ) ? $GLOBALS['tcp_post_terms'][ $pid ] : array();
 }
+function get_the_terms( $pid, $tax = '' ) {
+	$pid = (int) $pid;
+	$GLOBALS['tcp_get_the_terms_calls'][ $pid ] = isset( $GLOBALS['tcp_get_the_terms_calls'][ $pid ] ) ? $GLOBALS['tcp_get_the_terms_calls'][ $pid ] + 1 : 1;
+	$ids = isset( $GLOBALS['tcp_post_terms'][ $pid ] ) ? $GLOBALS['tcp_post_terms'][ $pid ] : array();
+	if ( empty( $ids ) ) {
+		return false;
+	}
+	return array_map( static function( $id ) { return (object) array( 'term_id' => absint( $id ) ); }, $ids );
+}
 
 /** حداقل wpdb برای تست‌های SQLمحور بدون نصب وردپرس. */
 class TCP_Test_WPDB {
@@ -127,6 +137,8 @@ class TCP_Test_WPDB {
 	public $term_relationships = 'wp_term_relationships';
 	public $term_taxonomy = 'wp_term_taxonomy';
 	public $last_error = '';
+	public $get_results_calls = 0;
+	public $queries = array();
 
 	public function prepare( $query, ...$args ) {
 		foreach ( $args as $arg ) {
@@ -170,6 +182,27 @@ class TCP_Test_WPDB {
 			return array();
 		}
 		return array();
+	}
+
+	public function get_results( $query ) {
+		$this->get_results_calls++;
+		$this->queries[] = $query;
+		preg_match_all( "/pm\\.meta_value LIKE '([^']*)%'/", $query, $matches );
+		$prefixes = array_map( static function( $prefix ) { return strtoupper( stripcslashes( $prefix ) ); }, $matches[1] );
+		$out = array();
+		foreach ( (array) ( isset( $GLOBALS['tcp_sku_rows'] ) ? $GLOBALS['tcp_sku_rows'] : array() ) as $row ) {
+			list( $type, $id, $parent, $sku ) = $row;
+			foreach ( $prefixes as $prefix ) {
+				if ( 0 === strpos( strtoupper( (string) $sku ), $prefix ) ) {
+					$out[] = (object) array(
+						'pid' => 'product_variation' === $type ? absint( $parent ) : absint( $id ),
+						'sku' => (string) $sku,
+					);
+					break;
+				}
+			}
+		}
+		return $out;
 	}
 }
 
