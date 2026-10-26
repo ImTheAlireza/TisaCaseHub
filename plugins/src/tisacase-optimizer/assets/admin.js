@@ -504,6 +504,13 @@
 		return json.data;
 	}
 
+	function applySavedSettings(settings) {
+		if (!settings || typeof settings !== 'object') return;
+		state.settings = settings;
+		const deliverySelect = document.getElementById('tco-s-delivery');
+		if (deliverySelect && settings.delivery_method) deliverySelect.value = settings.delivery_method;
+	}
+
 	function renderNav() {
 		const nav = document.getElementById('tco-module-nav');
 		if (!nav) return;
@@ -1934,7 +1941,8 @@
 		// تنظیمات در پس‌زمینه ذخیره می‌شود تا کاربر معطل نماند؛ خطا فقط اطلاع داده می‌شود.
 		api('save_settings', { settings })
 			.then((res) => {
-				if (res && res.settings) state.settings = res.settings;
+				if (res && res.settings) applySavedSettings(res.settings);
+				if (res && res.delivery_warning) toast(res.delivery_warning, 'error');
 			})
 			.catch((err) => toast(`ذخیرهٔ «تعداد در هر صفحه» انجام نشد: ${err.message || 'خطای نامشخص'}`, 'error'));
 		await ensureDataForCurrentView(false);
@@ -4310,7 +4318,8 @@
 				keep_icc_profile: document.getElementById('tco-s-icc').checked ? 1 : 0,
 			};
 			const savedCfg = await api('save_settings', { settings: cfg });
-			state.settings = savedCfg.settings;
+			applySavedSettings(savedCfg.settings);
+			if (savedCfg.delivery_warning) toast(savedCfg.delivery_warning, 'error');
 			await runBatchOptimize(null, { replaceMode: true });
 			return;
 		}
@@ -4330,8 +4339,8 @@
 				keep_icc_profile: document.getElementById('tco-s-icc').checked ? 1 : 0,
 			};
 			const saved = await api('save_settings', { settings: payload });
-			state.settings = saved.settings;
-			toast('تنظیمات فشرده‌سازی و WebP ذخیره شد.');
+			applySavedSettings(saved.settings);
+			toast(saved.delivery_warning || 'تنظیمات فشرده‌سازی و WebP ذخیره شد.', saved.delivery_warning ? 'error' : 'success');
 			if (startNow) {
 				await runBatchOptimize(null);
 			}
@@ -4353,9 +4362,9 @@
 			if (throttle) payload.delete_throttle_ms = throttle.value;
 			if (verifyChunk) payload.verify_chunk = verifyChunk.value;
 			const saved = await api('save_settings', { settings: payload });
-			state.settings = saved.settings;
+			applySavedSettings(saved.settings);
 			state.deleteMode = saved.settings.delete_mode;
-			toast('تنظیمات کلی با موفقیت ذخیره شد.');
+			toast(saved.delivery_warning || 'تنظیمات کلی با موفقیت ذخیره شد.', saved.delivery_warning ? 'error' : 'success');
 			render();
 			return;
 		}

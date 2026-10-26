@@ -61,6 +61,14 @@ if [ -f "$src/tests/php-tests.mjs" ]; then
     echo "⚠ PHP-WASM نصب نیست — تست رفتاری bulk-tracking-upload رد شد." >&2
   fi
 fi
+# رگرسیون مسیر تحویل WebP/AVIF، negotiation، Vary و fallback تنظیمات.
+if [ -f "$src/tests/webp-delivery-tests.mjs" ]; then
+  if node -e "require.resolve('@php-wasm/universal'); require.resolve('@php-wasm/node')" >/dev/null 2>&1; then
+    node "$src/tests/webp-delivery-tests.mjs"
+  else
+    echo "⚠ PHP-WASM نصب نیست — تست WebP delivery رد شد." >&2
+  fi
+fi
 # تست UI دسته‌ای bulk-tracking-upload (در صورت وجود jsdom).
 if [ -f "$src/tests/admin-progress-tests.mjs" ]; then
   if node -e "require.resolve('jsdom')" >/dev/null 2>&1; then
