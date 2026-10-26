@@ -53,12 +53,19 @@ if [ -f tools/bulk-stock-manager-preview-test.mjs ] && node -e "require.resolve(
 else
   echo "⚠ jsdom نصب نیست — تست رگرسیون پیش‌نمایش رد شد (npm install jsdom jquery@3.7.1)." >&2
 fi
-# تست‌های رفتاری bulk-tracking-upload با PHP-WASM (در صورت نصب ابزار تست).
+# تست‌های رفتاری افزونه با PHP-WASM (در صورت نصب ابزار تست).
 if [ -f "$src/tests/php-tests.mjs" ]; then
   if node -e "require.resolve('@php-wasm/universal'); require.resolve('@php-wasm/node')" >/dev/null 2>&1; then
     node "$src/tests/php-tests.mjs"
   else
-    echo "⚠ PHP-WASM نصب نیست — تست رفتاری bulk-tracking-upload رد شد." >&2
+    echo "⚠ PHP-WASM نصب نیست — تست رفتاری این افزونه رد شد." >&2
+  fi
+fi
+if [ -f "$src/tests/editor-progress-tests.mjs" ]; then
+  if node -e "require.resolve('jsdom'); require.resolve('jquery')" >/dev/null 2>&1; then
+    node "$src/tests/editor-progress-tests.mjs"
+  else
+    echo "⚠ jsdom یا jquery نصب نیست — تست پیشرفت پنل SKU رد شد." >&2
   fi
 fi
 # رگرسیون مسیر تحویل WebP/AVIF، negotiation، Vary و fallback تنظیمات.
