@@ -3,7 +3,7 @@
  * Plugin Name: پکیج ویژه قاب موبایل
  * Plugin URI:  https://example.com/wc-case-special-package
  * Description: افزودن گزینه «پکیج ویژه» با قیمت ثابت به محصولات قاب موبایل (تشخیص از روی عنوان/دسته‌بندی، با لیست استثنا بر اساس SKU و کلمات منفیِ وتوکننده). قیمت به ازای هر عدد محاسبه و در فاکتور، ایمیل و پیشخوان نمایش داده می‌شود.
- * Version:     1.5.3
+ * Version:     1.5.4
  * Author:      علیرضا شعبان زاده
  * Text Domain: case-special-package
  * WC requires at least: 5.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 define( 'WCSP_MAIN_FILE', __FILE__ );
-define( 'WCSP_VERSION', '1.5.3' );
+define( 'WCSP_VERSION', '1.5.4' );
 
 /**
  * کلاس اصلی پلاگین.
@@ -26,6 +26,11 @@ final class WC_Case_Special_Package {
 	const OPTION_KEY   = 'wcsp_settings';
 	const CART_KEY     = 'wcsp_package';
 	const PRODUCT_META = '_wcsp_mode';
+	const STATS_TRANSIENT = 'wcsp_stats_v1';
+	const STATS_SNAPSHOT_OPTION = 'wcsp_stats_snapshot_v1';
+	const STATS_BUILD_OPTION = 'wcsp_stats_build_v1';
+	const STATS_VERSION_OPTION = 'wcsp_stats_data_version';
+	const STATS_PAGE_SIZE = 50;
 
 	/** @var WC_Case_Special_Package|null */
 	private static $instance = null;
@@ -57,6 +62,7 @@ final class WC_Case_Special_Package {
 		add_action( 'admin_menu', array( $this, 'add_settings_page' ) );
 		add_action( 'admin_init', array( $this, 'register_settings' ) );
 		add_action( 'admin_post_wcsp_refresh_stats', array( __CLASS__, 'handle_refresh_stats' ) );
+		add_action( 'wcsp_process_stats_batch', array( __CLASS__, 'process_stats_batch' ), 10, 2 );
 		add_action( 'admin_post_wcsp_emergency_pause', array( __CLASS__, 'handle_emergency_pause' ) );
 		// اولویت ۲۰: بعد از ووکامرس تا هندل‌های select2/enhanced-select ثبت شده باشند.
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ), 20 );
@@ -112,7 +118,9 @@ final class WC_Case_Special_Package {
 	}
 
 	public static function flush_stats() {
-		delete_transient( 'wcsp_stats_v1' );
+		delete_transient( self::STATS_TRANSIENT );
+		$version = absint( get_option( self::STATS_VERSION_OPTION, 0 ) ) + 1;
+		update_option( self::STATS_VERSION_OPTION, $version, false );
 	}
 
 	public static function handle_refresh_stats() {
@@ -121,6 +129,7 @@ final class WC_Case_Special_Package {
 		}
 		check_admin_referer( 'wcsp_refresh_stats' );
 		self::flush_stats();
+		self::ensure_stats_refresh();
 		wp_safe_redirect( admin_url( 'admin.php?page=wcsp-settings&stats-refreshed=1#wcsp-dash' ) );
 		exit;
 	}
@@ -373,7 +382,10 @@ final class WC_Case_Special_Package {
 				<?php elseif ( isset( $_GET['settings-updated'] ) ) : // phpcs:ignore ?>
 					<div class="wcsp-flashbar" role="status">تنظیمات ذخیره شد.</div>
 				<?php elseif ( isset( $_GET['stats-refreshed'] ) ) : // phpcs:ignore ?>
-					<div class="wcsp-flashbar" role="status">آمار دوباره از سفارش‌ها محاسبه شد.</div>
+					<div class="wcsp-flashbar" role="status">بازمحاسبهٔ آمار در پس‌زمینه شروع شد؛ پس از تکمیل، داشبورد با دادهٔ تازه به‌روزرسانی می‌شود.</div>
+				<?php endif; ?>
+				<?php if ( ! empty( $stats['calculating'] ) ) : ?>
+					<div class="wcsp-flashbar wcsp-flashbar--warn" role="status">آمار در پس‌زمینه و به‌صورت صفحه‌ای در حال محاسبه است. تا پایان، اعداد آخرین snapshot در دسترس نمایش داده می‌شوند.</div>
 				<?php endif; ?>
 
 				<!-- ================= داشبورد ================= -->
@@ -643,7 +655,7 @@ final class WC_Case_Special_Package {
 								<li><b>توقف اضطراری:</b> دکمهٔ تنظیمات قابلیت را خاموش می‌کند؛ سبدهای قدیمیِ پکیج‌دار تا حذف آیتم یا رفع مشکل پرداخت نمی‌شوند. این دکمه بازگشت کد نیست.</li>
 								<li><b>اولویت استثنا:</b> لیست SKU بر همه قوانین مقدم است.</li>
 								<li><b>سبد/پرداخت بلوکی:</b> چک‌باکس با صفحات کلاسیک (shortcode) کار می‌کند.</li>
-								<li><b>کش آمار:</b> اعداد داشبورد تا یک ساعت کش می‌شوند و با ذخیره محصول یا تغییر سفارش تازه می‌شوند.</li>
+								<li><b>کش آمار:</b> اعداد داشبورد تا یک ساعت کش می‌شوند؛ بازسازی cache-miss و تازه‌سازی پس از تغییر محصول/سفارش به‌صورت صفحه‌ای در پس‌زمینه انجام می‌شود و رندر صفحه منتظر اسکن فروشگاه نمی‌ماند.</li>
 							</ul>
 						</div>
 					</section>
@@ -862,13 +874,8 @@ final class WC_Case_Special_Package {
 		return false;
 	}
 
-	/**
-	 * آمار داشبورد: محصولات واجد شرایط، سفارش‌های دارای پکیج و سری ۱۴ روز اخیر.
-	 * نتیجه یک ساعت کش می‌شود.
-	 */
-	public static function get_stats() {
-		// ساختار پیش‌فرض (هم برای محاسبهٔ تازه، هم برای پرکردن کلیدهای جدید
-		// در کشِ نسخه‌های قبلی که «negatives/vetoed» را ندارد).
+	/** Create the fixed dashboard-statistics shape, including the rolling 14-day series. */
+	private static function empty_stats() {
 		$stats = array(
 			'eligible'       => 0,
 			'total_products' => 0,
@@ -881,108 +888,289 @@ final class WC_Case_Special_Package {
 			'today'          => 0,
 			'series'         => array(),
 			'recent'         => array(),
+			'calculating'    => false,
 		);
-
-		$cached = get_transient( 'wcsp_stats_v1' );
-		if ( is_array( $cached ) ) {
-			return array_merge( $stats, $cached );
-		}
-
 		for ( $i = 13; $i >= 0; $i-- ) {
-			$ts             = strtotime( "-{$i} days" );
+			$ts              = strtotime( "-{$i} days" );
 			$stats['series'][] = array(
 				'label' => date_i18n( 'j F', $ts ),
 				'date'  => gmdate( 'Y-m-d', $ts + ( get_option( 'gmt_offset', 0 ) * HOUR_IN_SECONDS ) ),
 				'count' => 0,
 			);
 		}
+		return $stats;
+	}
 
-		if ( function_exists( 'WC' ) && WC() ) {
-			$settings            = self::get_settings();
-			$stats['exceptions'] = count( self::parse_list( $settings['sku_exceptions'] ) );
-			$stats['negatives']  = count( self::parse_list( $settings['negative_keywords'] ) );
+	/** Queue one bounded background batch; never calculate cold-cache stats in page rendering. */
+	private static function schedule_stats_batch( $generation, $step ) {
+		$args = array( (string) $generation, absint( $step ) );
+		if ( function_exists( 'as_enqueue_async_action' ) ) {
+			$action_id = as_enqueue_async_action( 'wcsp_process_stats_batch', $args, 'wcsp-stats', true );
+			if ( $action_id || ( function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( 'wcsp_process_stats_batch', $args, 'wcsp-stats' ) ) ) {
+				return true;
+			}
+		}
+		if ( function_exists( 'wp_next_scheduled' ) && wp_next_scheduled( 'wcsp_process_stats_batch', $args ) ) {
+			return true;
+		}
+		return (bool) wp_schedule_single_event( time() + 5, 'wcsp_process_stats_batch', $args );
+	}
 
-			// شمارش محصولات واجد شرایط + گزارش محصولاتی که کلمهٔ منفی وتو کرده است
-			// (بدون کوئری اضافه: همین حلقه، هم شمارش و هم پیش‌نمایش را می‌سازد).
-			$ids = get_posts(
-				array(
-					'post_type'   => 'product',
-					'post_status' => 'publish',
-					'fields'      => 'ids',
-					'numberposts' => -1,
-				)
-			);
-			foreach ( $ids as $pid ) {
-				$p = wc_get_product( $pid );
-				if ( ! $p ) {
-					continue;
+	/** Create or resume an aggregate build, leaving the normal admin request lightweight. */
+	private static function ensure_stats_refresh() {
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			return;
+		}
+		$state = get_option( self::STATS_BUILD_OPTION, false );
+		$current_version = absint( get_option( self::STATS_VERSION_OPTION, 0 ) );
+		if ( is_array( $state ) && ! empty( $state['generation'] ) && isset( $state['started_at'], $state['step'], $state['version'] ) && (int) $state['version'] === $current_version ) {
+			if ( empty( $state['last_scheduled'] ) || time() - (int) $state['last_scheduled'] > 180 ) {
+				$state['last_scheduled'] = time();
+				update_option( self::STATS_BUILD_OPTION, $state, false );
+				self::schedule_stats_batch( $state['generation'], $state['step'] );
+			}
+			return;
+		}
+		if ( is_array( $state ) ) {
+			delete_option( self::STATS_BUILD_OPTION );
+		}
+
+		$settings             = self::get_settings();
+		$stats                = self::empty_stats();
+		$stats['exceptions']  = count( self::parse_list( $settings['sku_exceptions'] ) );
+		$stats['negatives']   = count( self::parse_list( $settings['negative_keywords'] ) );
+		$generation           = function_exists( 'wp_generate_uuid4' ) ? wp_generate_uuid4() : uniqid( 'wcsp-', true );
+		$state                = array(
+			'generation'      => $generation,
+			'step'            => 0,
+			'version'         => absint( get_option( self::STATS_VERSION_OPTION, 0 ) ),
+			'started_at'      => time(),
+			'last_scheduled'  => time(),
+			'product_cursor'  => 0,
+			'products_done'   => false,
+			'order_cursor'    => 0,
+			'orders_done'     => false,
+			'stats'           => $stats,
+		);
+		if ( ! add_option( self::STATS_BUILD_OPTION, $state, '', false ) ) {
+			return;
+		}
+		if ( ! self::schedule_stats_batch( $generation, 0 ) ) {
+			delete_option( self::STATS_BUILD_OPTION );
+		}
+	}
+
+	/** Return an ascending keyset page of published product IDs. */
+	private static function stats_product_page( $cursor ) {
+		$limit = self::STATS_PAGE_SIZE;
+		$cursor = absint( $cursor );
+		$args = array(
+			'post_type'              => 'product',
+			'post_status'            => 'publish',
+			'fields'                 => 'ids',
+			'posts_per_page'         => $limit + 1,
+			'orderby'                => 'ID',
+			'order'                  => 'ASC',
+			'no_found_rows'          => true,
+			'ignore_sticky_posts'    => true,
+			'update_post_meta_cache' => false,
+			'update_post_term_cache' => false,
+			'wcsp_stats_cursor'      => $cursor,
+		);
+		$cursor_filter = static function( $where, $query ) use ( $cursor ) {
+			if ( $cursor > 0 && (int) $query->get( 'wcsp_stats_cursor' ) === $cursor ) {
+				global $wpdb;
+				$where .= $wpdb->prepare( " AND {$wpdb->posts}.ID > %d", $cursor );
+			}
+			return $where;
+		};
+		add_filter( 'posts_where', $cursor_filter, 10, 2 );
+		try {
+			$query = new WP_Query( $args );
+		} finally {
+			remove_filter( 'posts_where', $cursor_filter, 10 );
+		}
+		$ids = array_map( 'absint', (array) $query->posts );
+		$has_more = count( $ids ) > $limit;
+		if ( $has_more ) {
+			array_pop( $ids );
+		}
+		return array( 'ids' => $ids, 'has_more' => $has_more, 'cursor' => $ids ? (int) end( $ids ) : $cursor );
+	}
+
+	/** Return one keyset page of order-item aggregates rather than every matching order. */
+	private static function stats_order_page( $cursor ) {
+		global $wpdb;
+		$cursor = absint( $cursor );
+		$sql = "SELECT oi.order_id, SUM( im.meta_value + 0 ) AS total
+			FROM {$wpdb->prefix}woocommerce_order_itemmeta im
+			INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON oi.order_item_id = im.order_item_id
+			WHERE im.meta_key = '_wcsp_package_total' AND oi.order_item_type = 'line_item'";
+		$args = array();
+		if ( $cursor > 0 ) {
+			$sql .= ' AND oi.order_id < %d';
+			$args[] = $cursor;
+		}
+		$sql .= ' GROUP BY oi.order_id HAVING total > 0 ORDER BY oi.order_id DESC LIMIT %d';
+		$args[] = self::STATS_PAGE_SIZE + 1;
+		$prepared = $wpdb->prepare( $sql, $args );
+		$rows = (array) $wpdb->get_results( $prepared ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$has_more = count( $rows ) > self::STATS_PAGE_SIZE;
+		if ( $has_more ) {
+			array_pop( $rows );
+		}
+		return array( 'rows' => $rows, 'has_more' => $has_more, 'cursor' => $rows ? (int) end( $rows )->order_id : $cursor );
+	}
+
+	/** Process at most one product page and one order page in a background request. */
+	public static function process_stats_batch( $generation = '', $step = 0 ) {
+		if ( ! function_exists( 'WC' ) || ! WC() ) {
+			return;
+		}
+		$generation = sanitize_text_field( (string) $generation );
+		$step       = absint( $step );
+		$state      = get_option( self::STATS_BUILD_OPTION, false );
+		if ( ! is_array( $state ) || empty( $state['generation'] ) || $generation !== $state['generation'] || $step !== (int) $state['step'] ) {
+			return;
+		}
+		$lock_name = 'wcsp_stats_lock_' . substr( md5( $generation . ':' . $step ), 0, 24 );
+		if ( ! add_option( $lock_name, time(), '', false ) ) {
+			$lock_time = absint( get_option( $lock_name, 0 ) );
+			if ( $lock_time > time() - 900 ) {
+				return;
+			}
+			delete_option( $lock_name );
+			if ( ! add_option( $lock_name, time(), '', false ) ) {
+				return;
+			}
+		}
+		try {
+			$state = get_option( self::STATS_BUILD_OPTION, false );
+			if ( ! is_array( $state ) || $generation !== $state['generation'] || $step !== (int) $state['step'] ) {
+				return;
+			}
+			if ( absint( get_option( self::STATS_VERSION_OPTION, 0 ) ) !== (int) $state['version'] ) {
+				delete_option( self::STATS_BUILD_OPTION );
+				self::ensure_stats_refresh();
+				return;
+			}
+
+			if ( empty( $state['products_done'] ) ) {
+				$page = self::stats_product_page( $state['product_cursor'] );
+				foreach ( $page['ids'] as $product_id ) {
+					$state['stats']['total_products']++;
+					$product = wc_get_product( $product_id );
+					if ( ! $product ) {
+						continue;
+					}
+					if ( self::is_eligible( $product ) ) {
+						$state['stats']['eligible']++;
+						continue;
+					}
+					if ( $state['stats']['negatives'] > 0 && self::is_eligible( $product, true ) ) {
+						$state['stats']['vetoed_total']++;
+						if ( count( $state['stats']['vetoed'] ) < 10 ) {
+							$state['stats']['vetoed'][] = array(
+								'id'    => (int) $product_id,
+								'title' => $product->get_name(),
+								'word'  => self::find_negative_word( $product->get_name(), self::get_settings() ),
+								'url'   => admin_url( 'post.php?post=' . (int) $product_id . '&action=edit' ),
+							);
+						}
+					}
 				}
-				if ( self::is_eligible( $p ) ) {
-					$stats['eligible']++;
-					continue;
-				}
-				// اگر بدون کلمهٔ منفی واجد شرایط می‌بود، یعنی «وتو» شده است.
-				if ( $stats['negatives'] > 0 && self::is_eligible( $p, true ) ) {
-					$stats['vetoed_total']++;
-					if ( count( $stats['vetoed'] ) < 10 ) {
-						$stats['vetoed'][] = array(
-							'id'    => $pid,
-							'title' => $p->get_name(),
-							'word'  => self::find_negative_word( $p->get_name(), $settings ),
-							'url'   => admin_url( 'post.php?post=' . (int) $pid . '&action=edit' ),
+				$state['product_cursor'] = $page['cursor'];
+				$state['products_done']  = ! $page['has_more'];
+			}
+
+			if ( empty( $state['orders_done'] ) ) {
+				$page = self::stats_order_page( $state['order_cursor'] );
+				$today = gmdate( 'Y-m-d', time() + ( get_option( 'gmt_offset', 0 ) * HOUR_IN_SECONDS ) );
+				$statuses = array( 'processing', 'completed' );
+				foreach ( $page['rows'] as $row ) {
+					$order = wc_get_order( (int) $row->order_id );
+					if ( ! $order || ! in_array( $order->get_status(), $statuses, true ) ) {
+						continue;
+					}
+					$total = (float) $row->total;
+					$state['stats']['orders']++;
+					$state['stats']['revenue'] += $total;
+					$date = $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d' ) : '';
+					if ( $date === $today ) {
+						$state['stats']['today']++;
+					}
+					foreach ( $state['stats']['series'] as $key => $point ) {
+						if ( $point['date'] === $date ) {
+							$state['stats']['series'][ $key ]['count']++;
+							break;
+						}
+					}
+					if ( count( $state['stats']['recent'] ) < 10 ) {
+						$state['stats']['recent'][] = array(
+							'id'     => $order->get_id(),
+							'number' => $order->get_order_number(),
+							'date'   => $order->get_date_created() ? $order->get_date_created()->date_i18n( 'j F Y' ) : '',
+							'status' => wc_get_order_status_name( $order->get_status() ),
+							'total'  => $total,
+							'url'    => $order->get_edit_order_url(),
 						);
 					}
 				}
+				$state['order_cursor'] = $page['cursor'];
+				$state['orders_done']  = ! $page['has_more'];
 			}
-			$stats['total_products'] = count( $ids );
 
-			// سفارش‌های دارای پکیج: جست‌وجوی مستقیم روی متای آیتم‌های سفارش
-			// (سریع، مستقل از HPOS، و بدون بارگذاری همهٔ سفارش‌ها).
-			global $wpdb;
-			$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-				"SELECT oi.order_id, SUM( im.meta_value + 0 ) AS total
-				   FROM {$wpdb->prefix}woocommerce_order_itemmeta im
-				  INNER JOIN {$wpdb->prefix}woocommerce_order_items oi ON oi.order_item_id = im.order_item_id
-				  WHERE im.meta_key = '_wcsp_package_total'
-				    AND oi.order_item_type = 'line_item'
-				  GROUP BY oi.order_id
-				 HAVING total > 0
-				  ORDER BY oi.order_id DESC"
-			);
-			$today    = gmdate( 'Y-m-d', time() + ( get_option( 'gmt_offset', 0 ) * HOUR_IN_SECONDS ) );
-			$statuses = array( 'processing', 'completed' );
-			foreach ( (array) $rows as $row ) {
-				$order = wc_get_order( (int) $row->order_id );
-				if ( ! $order || ! in_array( $order->get_status(), $statuses, true ) ) {
-					continue;
+			if ( ! empty( $state['products_done'] ) && ! empty( $state['orders_done'] ) ) {
+				if ( absint( get_option( self::STATS_VERSION_OPTION, 0 ) ) === (int) $state['version'] ) {
+					$stats = $state['stats'];
+					$stats['calculating'] = false;
+					$stats['_version'] = (int) $state['version'];
+					update_option( self::STATS_SNAPSHOT_OPTION, $stats, false );
+					set_transient( self::STATS_TRANSIENT, $stats, $stats['orders'] > 0 ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
 				}
-				$total = (float) $row->total;
-				$stats['orders']++;
-				$stats['revenue'] += $total;
-				$d = $order->get_date_created() ? $order->get_date_created()->date( 'Y-m-d' ) : '';
-				if ( $d === $today ) {
-					$stats['today']++;
+				delete_option( self::STATS_BUILD_OPTION );
+				if ( absint( get_option( self::STATS_VERSION_OPTION, 0 ) ) !== (int) $state['version'] ) {
+					self::ensure_stats_refresh();
 				}
-				foreach ( $stats['series'] as $k => $pt ) {
-					if ( $pt['date'] === $d ) {
-						$stats['series'][ $k ]['count']++;
-						break;
-					}
-				}
-				if ( count( $stats['recent'] ) < 10 ) {
-					$stats['recent'][] = array(
-						'id'     => $order->get_id(),
-						'number' => $order->get_order_number(),
-						'date'   => $order->get_date_created() ? $order->get_date_created()->date_i18n( 'j F Y' ) : '',
-						'status' => wc_get_order_status_name( $order->get_status() ),
-						'total'  => $total,
-						'url'    => $order->get_edit_order_url(),
-					);
-				}
+				return;
 			}
+
+			$state['step'] = $step + 1;
+			$state['last_scheduled'] = time();
+			update_option( self::STATS_BUILD_OPTION, $state, false );
+			self::schedule_stats_batch( $generation, $state['step'] );
+		} finally {
+			delete_option( $lock_name );
+		}
+	}
+
+	/** Read a completed aggregate immediately; enqueue cold-cache work and serve a stale snapshot. */
+	public static function get_stats() {
+		$stats   = self::empty_stats();
+		$version = absint( get_option( self::STATS_VERSION_OPTION, 0 ) );
+		$cached  = get_transient( self::STATS_TRANSIENT );
+		if ( is_array( $cached ) && isset( $cached['_version'] ) && (int) $cached['_version'] === $version ) {
+			unset( $cached['_version'] );
+			return array_merge( $stats, $cached, array( 'calculating' => false ) );
 		}
 
-		set_transient( 'wcsp_stats_v1', $stats, $stats['orders'] > 0 ? HOUR_IN_SECONDS : 5 * MINUTE_IN_SECONDS );
+		$stale = get_option( self::STATS_SNAPSHOT_OPTION, false );
+		if ( ! is_array( $stale ) && is_array( $cached ) ) {
+			$stale = $cached; // temporary compatibility while older transient data expires.
+		}
+		if ( function_exists( 'WC' ) && WC() ) {
+			self::ensure_stats_refresh();
+			if ( ! is_array( $stale ) ) {
+				$settings = self::get_settings();
+				$stats['exceptions'] = count( self::parse_list( $settings['sku_exceptions'] ) );
+				$stats['negatives'] = count( self::parse_list( $settings['negative_keywords'] ) );
+			}
+			$stats['calculating'] = true;
+		}
+		if ( is_array( $stale ) ) {
+			unset( $stale['_version'] );
+			$stats = array_merge( $stats, $stale, array( 'calculating' => true ) );
+		}
 		return $stats;
 	}
 
