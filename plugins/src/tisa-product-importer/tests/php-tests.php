@@ -7,6 +7,7 @@ define( 'HOUR_IN_SECONDS', 3600 );
 $GLOBALS['tpi_transients'] = array();
 $GLOBALS['tpi_options'] = array();
 $GLOBALS['tpi_scheduled_actions'] = 0;
+$GLOBALS['tpi_password_counter'] = 0;
 $GLOBALS['tpi_syncs'] = 0;
 $GLOBALS['tpi_test_pass'] = 0;
 $GLOBALS['tpi_test_fail'] = 0;
@@ -20,13 +21,14 @@ function sanitize_key( $value ) { return preg_replace( '/[^a-z0-9_\-]/', '', str
 function sanitize_text_field( $value ) { return trim( strip_tags( (string) $value ) ); }
 function sanitize_title( $value ) { return strtolower( preg_replace( '/[^a-z0-9-]+/i', '-', (string) $value ) ); }
 function update_post_meta( $id, $key, $value ) { return true; }
+function get_post_meta( $id, $key, $single = false ) { return isset( $GLOBALS['tpi_meta'][ $id ][ $key ] ) ? $GLOBALS['tpi_meta'][ $id ][ $key ] : ''; }
 function clean_post_cache( $id ) {}
 function set_transient( $key, $value, $expiration = 0 ) { $GLOBALS['tpi_transients'][ $key ] = $value; return true; }
 function get_transient( $key ) { return isset( $GLOBALS['tpi_transients'][ $key ] ) ? $GLOBALS['tpi_transients'][ $key ] : false; }
 function delete_transient( $key ) { unset( $GLOBALS['tpi_transients'][ $key ] ); return true; }
 function add_option( $key, $value = '', $deprecated = '', $autoload = null ) { if ( isset( $GLOBALS['tpi_options'][ $key ] ) ) return false; $GLOBALS['tpi_options'][ $key ] = $value; return true; }
 function delete_option( $key ) { unset( $GLOBALS['tpi_options'][ $key ] ); return true; }
-function wp_generate_password( $length = 12, $special = true, $extra = false ) { return str_repeat( 'a', $length ); }
+function wp_generate_password( $length = 12, $special = true, $extra = false ) { $char = chr(97 + ($GLOBALS['tpi_password_counter']++ % 26)); return str_repeat( $char, $length ); }
 function as_enqueue_async_action( $hook, $args = array(), $group = '', $unique = false ) { return ++$GLOBALS['tpi_scheduled_actions']; }
 function wp_schedule_single_event( $timestamp, $hook, $args = array() ) { return true; }
 function wp_delete_attachment( $id, $force = false ) { return true; }
@@ -118,6 +120,19 @@ $GLOBALS['tpi_existing_ids'] = range(1, Tisa_Product_Zip_Importer::MAX_EXISTING_
 tpi_test( 'تا ۵۰۰ variation موجود برای پیش‌فحص محدود خوانده می‌شود', count(tpi_call_private('existing_variation_ids', 55)) === 500 );
 $GLOBALS['tpi_existing_ids'] = range(1, Tisa_Product_Zip_Importer::MAX_EXISTING_VARIATIONS + 1);
 tpi_test( 'بیش از ۵۰۰ variation موجود پیش از restock رد می‌شود', false !== strpos(tpi_catch_existing_variation_error(55), 'بیش از ۵۰۰') );
+$GLOBALS['tpi_existing_ids'] = range(1, 21);
+$update_plan = tpi_call_private('update_queue_plan', 55, array('price'=>25), '/tmp/not-used');
+tpi_test( 'شارژ محصول با بیش از ۲۰ variation موجود به صف پس‌زمینه می‌رود', $update_plan['queued'] === true && $update_plan['variation_count'] === 0 );
+$update_parent = '/tmp/tpi-update-job-test';
+$update_dir = $update_parent . '/payload';
+if (!is_dir($update_parent)) @mkdir($update_parent, 0700, true);
+if (!is_dir($update_dir)) @mkdir($update_dir, 0700, true);
+$update_job_id = tpi_call_private('queue_update_job', 55, array('price'=>25), $update_dir, 0);
+$update_job = get_transient('tisa_import_job_' . $update_job_id);
+tpi_test( 'شارژهای بزرگ با نوع job به‌درستی وارد Action Scheduler می‌شوند', is_array($update_job) && $update_job['type'] === 'update' && $update_job['status'] === 'queued' );
+delete_transient('tisa_import_job_' . $update_job_id);
+tpi_call_private('remove_dir', $update_dir);
+@rmdir($update_parent);
 
 $sku = tpi_call_private( 'next_sku', 'CASE' );
 tpi_test( 'تولید SKU به lookup-table ایندکس‌شده متکی است', $sku === 'CASE8' && false !== strpos( implode( ' ', $GLOBALS['tpi_query_log'] ), 'wc_product_meta_lookup' ) );

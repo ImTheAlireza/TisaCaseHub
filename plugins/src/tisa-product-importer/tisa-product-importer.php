@@ -295,10 +295,14 @@ final class Tisa_Product_Zip_Importer {
                     return;
                 }
                 if ($lock) delete_option('tisa_import_lock_' . $job_id);
-                foreach ((array)($job['image_ids'] ?? []) as $attachment_id) wp_delete_attachment((int)$attachment_id, true);
-                foreach (get_children(array('post_parent'=>(int)$job['product_id'], 'post_type'=>'product_variation', 'post_status'=>'any', 'fields'=>'ids')) as $variation_id) wp_delete_post($variation_id, true);
-                wp_delete_post((int)$job['product_id'], true);
-                delete_transient('tisa_import_job_' . $job_id);
+                if (($job['type'] ?? 'new') !== 'update') {
+                    foreach ((array)($job['image_ids'] ?? []) as $attachment_id) wp_delete_attachment((int)$attachment_id, true);
+                    foreach (get_children(array('post_parent'=>(int)$job['product_id'], 'post_type'=>'product_variation', 'post_status'=>'any', 'fields'=>'ids')) as $variation_id) wp_delete_post($variation_id, true);
+                    wp_delete_post((int)$job['product_id'], true);
+                }
+                $job['status'] = 'failed';
+                $job['error'] = 'مدت مجاز اجرای کار پس‌زمینه تمام شد.';
+                set_transient('tisa_import_job_' . $job_id, $job, DAY_IN_SECONDS);
             }
         }
         self::remove_workspace($dir);
@@ -468,6 +472,29 @@ final class Tisa_Product_Zip_Importer {
         return $job_id;
     }
 
+    private static function queue_update_job($product_id, $data, $dir, $variation_count) {
+        $job_id = wp_generate_password(24, false, false);
+        $job = array('type'=>'update', 'status'=>'queued', 'product_id'=>(int)$product_id, 'data'=>$data, 'dir'=>$dir, 'variation_count'=>(int)$variation_count, 'variation_offset'=>0, 'images'=>array(), 'image_offset'=>0, 'image_ids'=>array());
+        if (!set_transient('tisa_import_job_' . $job_id, $job, 10 * DAY_IN_SECONDS)) throw new RuntimeException('ذخیرهٔ وضعیت شارژ پس‌زمینه ناموفق بود.');
+        if (!self::schedule_import_job($job_id, false)) {
+            delete_transient('tisa_import_job_' . $job_id);
+            throw new RuntimeException('صف پس‌زمینه در دسترس نیست؛ شارژ انجام نشد.');
+        }
+        self::schedule_workspace_cleanup($dir, 7 * DAY_IN_SECONDS, $job_id);
+        return $job_id;
+    }
+
+    private static function update_queue_plan($product_id, $data, $dir) {
+        $models = self::values($data['models'] ?? array());
+        $incoming_attrs = is_array($data['attributes'] ?? null) ? $data['attributes'] : array();
+        $has_variation_update = !empty($models) || !empty($incoming_attrs) || !empty($data['prices']);
+        $attrs = $has_variation_update ? self::updated_attributes($product_id, $models, $incoming_attrs) : array();
+        $variation_count = $has_variation_update ? self::variation_count($attrs) : 0;
+        $existing_count = count(self::existing_variation_ids($product_id));
+        $image_count = (($data['image_mode'] ?? 'keep') === 'replace') ? count(self::collect_images($dir)) : 0;
+        return array('queued'=>$variation_count > self::INLINE_VARIATIONS || $existing_count > self::INLINE_VARIATIONS || $image_count > self::INLINE_IMAGES, 'variation_count'=>$variation_count);
+    }
+
     private static function schedule_import_job($job_id, $delayed = true) {
         $args = [$job_id];
         if (function_exists('as_enqueue_async_action')) {
@@ -491,6 +518,16 @@ final class Tisa_Product_Zip_Importer {
         try {
             $job = get_transient($job_key);
             if (!is_array($job) || empty($job['product_id']) || empty($job['dir']) || !is_dir($job['dir'])) return;
+            if (($job['type'] ?? 'new') === 'update') {
+                $job['status'] = 'processing';
+                if (!set_transient($job_key, $job, 10 * DAY_IN_SECONDS)) throw new RuntimeException('ذخیرهٔ وضعیت شارژ ناموفق بود.');
+                self::update_existing_product((int)$job['product_id'], $job['data'], $job['dir']);
+                self::remove_workspace($job['dir']);
+                $job['status'] = 'complete';
+                $job['completed_at'] = time();
+                set_transient($job_key, $job, DAY_IN_SECONDS);
+                return;
+            }
             $job['status'] = 'processing';
             $count = (int)$job['variation_count'];
             $offset = (int)$job['variation_offset'];
@@ -521,9 +558,11 @@ final class Tisa_Product_Zip_Importer {
             $failed_job = isset($job) && is_array($job) ? $job : get_transient($job_key);
             if (is_array($failed_job)) {
                 $job = $failed_job;
-                foreach ((array)($job['image_ids'] ?? []) as $attachment_id) wp_delete_attachment((int)$attachment_id, true);
-                foreach (get_children(['post_parent'=>(int)$job['product_id'], 'post_type'=>'product_variation', 'post_status'=>'any', 'fields'=>'ids']) as $variation_id) wp_delete_post($variation_id, true);
-                wp_delete_post((int)$job['product_id'], true);
+                if (($job['type'] ?? 'new') !== 'update') {
+                    foreach ((array)($job['image_ids'] ?? []) as $attachment_id) wp_delete_attachment((int)$attachment_id, true);
+                    foreach (get_children(['post_parent'=>(int)$job['product_id'], 'post_type'=>'product_variation', 'post_status'=>'any', 'fields'=>'ids']) as $variation_id) wp_delete_post($variation_id, true);
+                    wp_delete_post((int)$job['product_id'], true);
+                }
                 self::remove_workspace($job['dir']);
                 $job['status'] = 'failed';
                 $job['error'] = sanitize_text_field($e->getMessage());
@@ -539,9 +578,13 @@ final class Tisa_Product_Zip_Importer {
         $job = get_transient('tisa_import_job_' . $job_id);
         if (!is_array($job)) return;
         if (($job['status'] ?? '') === 'complete') {
-            echo '<div class="notice notice-success tisa-notice"><p>ساخت variationها و تصاویر پس‌زمینه کامل شد.</p></div>';
+            $message = ($job['type'] ?? 'new') === 'update' ? 'شارژ پس‌زمینهٔ محصول کامل شد.' : 'ساخت variationها و تصاویر پس‌زمینه کامل شد.';
+            echo '<div class="notice notice-success tisa-notice"><p>' . esc_html($message) . '</p></div>';
         } elseif (($job['status'] ?? '') === 'failed') {
-            echo '<div class="notice notice-error tisa-notice"><p>کار پس‌زمینه متوقف شد: ' . esc_html($job['error'] ?? 'خطای نامشخص') . '</p></div>';
+            $message = ($job['type'] ?? 'new') === 'update' ? 'شارژ پس‌زمینه متوقف شد؛ ممکن است بخشی از تغییرات اعمال شده باشد. ' : 'کار پس‌زمینه متوقف شد: ';
+            echo '<div class="notice notice-error tisa-notice"><p>' . esc_html($message . ($job['error'] ?? 'خطای نامشخص')) . '</p></div>';
+        } elseif (($job['type'] ?? 'new') === 'update') {
+            echo '<div class="notice notice-info tisa-notice"><p>شارژ محصول در صف پس‌زمینه است؛ برای تازه‌سازی وضعیت صفحه را دوباره باز کنید.</p></div>';
         } else {
             $done = (int)($job['variation_offset'] ?? 0); $total = (int)($job['variation_count'] ?? 0);
             $images_done = (int)($job['image_offset'] ?? 0); $images_total = count((array)($job['images'] ?? []));
@@ -582,12 +625,19 @@ final class Tisa_Product_Zip_Importer {
         $product_id = absint($_POST['product_id'] ?? 0);
         if (!is_array($pending) || !$product_id || get_post_type($product_id) !== 'product') self::fail('اطلاعات شارژ یا محصول انتخاب‌شده معتبر نیست.');
         try {
+            $plan = self::update_queue_plan($product_id, $pending['data'], $pending['dir']);
+            if ($plan['queued']) {
+                $job_id = self::queue_update_job($product_id, $pending['data'], $pending['dir'], $plan['variation_count']);
+                delete_transient('tisa_update_' . $token);
+                self::success('شارژ بزرگ محصول در صف پس‌زمینه ثبت شد؛ وضعیت را با تازه‌سازی صفحه پیگیری کنید.', $product_id, $job_id);
+            }
             self::update_existing_product($product_id, $pending['data'], $pending['dir']);
             delete_transient('tisa_update_' . $token);
             self::remove_workspace($pending['dir']);
             self::success('شارژ محصول با موفقیت انجام شد.', $product_id);
         } catch (Throwable $e) {
             error_log('[Tisa Product Importer update] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            delete_transient('tisa_update_' . $token);
             self::remove_workspace($pending['dir']);
             self::fail('شارژ محصول ناموفق بود: ' . $e->getMessage());
         }
