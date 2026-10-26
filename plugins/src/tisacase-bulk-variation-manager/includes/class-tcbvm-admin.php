@@ -43,7 +43,7 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 			$clean = TCBVM_Core::default_settings();
 			if ( is_array( $input ) ) {
 				if ( isset( $input['batch_size'] ) ) {
-					$clean['batch_size'] = max( 1, min( 50, absint( $input['batch_size'] ) ) );
+					$clean['batch_size'] = max( 1, min( 2, absint( $input['batch_size'] ) ) );
 				}
 				if ( isset( $input['target_attr_name'] ) ) {
 					$clean['target_attr_name'] = sanitize_text_field( $input['target_attr_name'] );
@@ -618,8 +618,8 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 									<div class="tcbvm-grid-2">
 										<div class="tcbvm-field">
 											<label class="tcbvm-label" for="tcbvm_opt_batch_size">اندازه هر بسته پردازش (Batch Size)</label>
-											<input type="number" id="tcbvm_opt_batch_size" name="tcbvm_settings[batch_size]" class="tcbvm-input" value="<?php echo esc_attr( $settings['batch_size'] ); ?>" min="1" max="50">
-											<p class="tcbvm-muted">پیش‌فرض: ۵ محصول در هر بسته. برای محصولات با تعداد متغیرهای بالا، عدد ۲ تا ۵ سرعتی عالی و پایداری کامل بدون قطعی ایجاد می‌کند.</p>
+											<input type="number" id="tcbvm_opt_batch_size" name="tcbvm_settings[batch_size]" class="tcbvm-input" value="<?php echo esc_attr( $settings['batch_size'] ); ?>" min="1" max="2">
+											<p class="tcbvm-muted">حداکثر دو محصول در هر درخواست؛ اندازهٔ هر بسته بر اساس تعداد variationهای موجود و هدف به‌طور خودکار کاهش می‌یابد تا سقف زمان و عملیات رعایت شود.</p>
 										</div>
 										<div class="tcbvm-field">
 											<label class="tcbvm-label" for="tcbvm_opt_attr_default">نام پیش‌فرض ویژگی</label>
@@ -792,6 +792,7 @@ if ( ! class_exists( 'TCBVM_Admin' ) ) {
 									<div class="tcbvm-field">
 										<label class="tcbvm-label" for="tcbvm-manual-ids">شناسه‌های محصول (IDs)</label>
 										<textarea id="tcbvm-manual-ids" class="tcbvm-textarea" rows="3" placeholder="شناسه‌ها را با کاما یا در خطوط جداگانه وارد کنید (مثال: 1205, 1206, 1432)"></textarea>
+										<span id="tcbvm-manual-counter" class="tcbvm-counter-text"></span>
 									</div>
 									<div class="tcbvm-actions">
 										<button type="button" class="tisa-btn tisa-btn--soft" id="tcbvm-btn-manual-add">افزودن شناسه‌ها به لیست</button>

@@ -13,6 +13,9 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 	final class TCBVM_OPS {
 
 		const MAX_VARIATIONS_PER_PRODUCT = 3000;
+		const MAX_ESTIMATED_WORK_PER_BATCH = 6000;
+		const MAX_VARIATION_OPERATIONS_PER_REQUEST = 12000;
+		const MAX_REQUEST_WORK_SECONDS = 18;
 		const MODE_REPLACE_ALL            = 'replace_all';
 		const MODE_ADD_MISSING            = 'add_missing';
 		const MODE_REMOVE_VALUES          = 'remove_values';
@@ -1073,6 +1076,14 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 
 				$preflight_error = '';
 				$preloaded_entry = isset( $bulk_maps[ $product_id ] ) ? $bulk_maps[ $product_id ] : null;
+				if ( is_array( $preloaded_entry ) && ! empty( $preloaded_entry['too_many'] ) ) {
+					$over_limit_count++;
+					$total_old += (int) $preloaded_entry['variation_count'];
+					$message = 'محصول بیش از سقف ۳۰۰۰ variation فعلی دارد؛ پیش‌نمایش و اجرا بدون خواندن فهرست کامل متغیرها متوقف می‌شود.';
+					if ( count( $preview_issues ) < $max_issue_ids ) $preview_issues[] = array( 'id' => $product_id, 'reason' => 'over_limit', 'message' => $message ); else $issues_truncated = true;
+					if ( count( $samples ) < $max_samples ) $samples[] = array( 'id' => $product_id, 'name' => $product->get_name(), 'type' => $product->get_type(), 'old_vars' => (int) $preloaded_entry['variation_count'], 'new_vars' => 0, 'remove_vars' => 0, 'drop_any_vars' => 0, 'over_limit' => true, 'preflight_error' => $message, 'other_attrs' => 'پیش‌بررسی محدودیت variation' );
+					continue;
+				}
 				$preloaded_attrs = is_array( $preloaded_entry ) && isset( $preloaded_entry['attrs'] ) ? $preloaded_entry['attrs'] : null;
 				$old_count       = is_array( $preloaded_entry ) && $product->is_type( 'variable' ) ? count( $preloaded_entry['children'] ) : ( $product->is_type( 'variable' ) ? count( $product->get_children() ) : 0 );
 				$total_old      += $old_count;
@@ -1372,11 +1383,24 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				$sal_price = absint( preg_replace( '/[^\d]/', '', (string) $sale_price ) );
 				$stock_st  = in_array( $stock_status, array( 'instock', 'outofstock' ), true ) ? $stock_status : 'instock';
 
+				if ( count( $batch_ids ) > 2 ) throw new RuntimeException( 'برای رعایت سقف واقعی عملیات، هر درخواست حداکثر دو محصول را اجرا می‌کند.' );
+				$variation_counts = TCBVM_DB::get_variation_counts( $batch_ids );
+				$estimated_work = array();
+				$total_estimated_work = 0;
+				foreach ( $batch_ids as $estimate_id ) {
+					$old_count = isset( $variation_counts[ $estimate_id ] ) ? (int) $variation_counts[ $estimate_id ] : 0;
+					$estimate = self::MODE_REMOVE_VALUES === $operation_mode ? max( 1, $old_count ) : 2 * max( 1, $old_count, count( $clean_values ) );
+					$estimated_work[ $estimate_id ] = min( self::MAX_VARIATIONS_PER_PRODUCT * 2, $estimate );
+					$total_estimated_work += $estimated_work[ $estimate_id ];
+				}
+				if ( $total_estimated_work > self::MAX_ESTIMATED_WORK_PER_BATCH ) throw new RuntimeException( 'حجم variationهای پیش‌بینی‌شده از بودجهٔ ۶٬۰۰۰تایی این بسته بیشتر است؛ بستهٔ کوچک‌تری لازم است.' );
+
 				$results = array(
 					'processed' => 0,
 					'success'   => 0,
 					'failed'    => 0,
 					'items'     => array(),
+					'variation_operations' => 0,
 				);
 
 				// توقف ایمنی وسط بسته (مثلاً از دست رفتن قفل) نباید نتیجهٔ محصولاتِ
@@ -1385,7 +1409,12 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				// ثبت کند و زنجیرهٔ بسته‌های بعدی را هم متوقف نگه دارد. پرتاب استثنا
 				// فقط برای اعتبارسنجی‌های پیش از حلقه است (هنوز آیتمی ساخته نشده).
 				$stop_message = '';
+				$batch_start_time = microtime( true );
 				foreach ( $batch_ids as $batch_index => $product_id ) {
+					if ( $results['processed'] > 0 && ( microtime( true ) - $batch_start_time >= self::MAX_REQUEST_WORK_SECONDS || $results['variation_operations'] >= self::MAX_VARIATION_OPERATIONS_PER_REQUEST ) ) {
+						$stop_message = 'سقف زمان/عملیات واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات در بسته متوقف شد.';
+						break;
+					}
 					if ( 0 === ( $batch_index % 10 ) && ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
 						$stop_message = 'قفل اجرای هم‌زمان از دست رفت؛ batch متوقف شد.';
 						break;
@@ -1427,6 +1456,10 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							);
 						}
 
+						$results['variation_operations'] += ! empty( $res['success'] )
+							? ( isset( $res['created'] ) ? (int) $res['created'] : 0 ) + ( isset( $res['deleted'] ) ? (int) $res['deleted'] : 0 )
+							: ( isset( $estimated_work[ $product_id ] ) ? (int) $estimated_work[ $product_id ] : 1 );
+
 						// نتیجهٔ این محصول ثبت شد؛ حالا شرط‌های توقف ایمنی بررسی می‌شوند.
 						if ( ! TCBVM_Backup::refresh_run_lock( $run_id ) ) {
 							$stop_message = 'قفل اجرا پس از پردازش محصول از دست رفت؛ batch متوقف شد.';
@@ -1444,7 +1477,8 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 							'title'   => "محصول #{$product_id}",
 							'message' => 'خطا: ' . $e->getMessage(),
 						);
-						if ( false !== strpos( $e->getMessage(), 'قفل' ) ) {
+						$results['variation_operations'] += isset( $estimated_work[ $product_id ] ) ? (int) $estimated_work[ $product_id ] : 1;
+						if ( false !== strpos( $e->getMessage(), 'قفل' ) || false !== strpos( $e->getMessage(), 'سقف زمان' ) ) {
 							$stop_message = $e->getMessage();
 							break;
 						}
@@ -1483,6 +1517,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 		 * @return array نتیجه عملیات روی این محصول.
 		 */
 		private static function remove_selected_variations_locked( $product, $run_id, array $target_info, array $values ) {
+			$start_time = microtime( true );
 			$product_id = absint( $product->get_id() );
 			$title      = $product->get_name();
 			$target_key = isset( $target_info['name'] ) ? (string) $target_info['name'] : '';
@@ -1495,6 +1530,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$matching_ids      = array();
 			if ( $product->is_type( 'variable' ) && ! empty( $comparison_values ) ) {
 				foreach ( (array) $product->get_children() as $index => $variation_id ) {
+					if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 					if ( 0 === ( $index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
 						return array( 'success' => false, 'title' => $title, 'message' => 'قفل اجرا/محصول هنگام بررسی مقادیر حذف از دست رفت؛ عملیات متوقف شد.' );
 					}
@@ -1571,6 +1607,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 
 			$deleted_count = 0;
 			foreach ( $matching_ids as $index => $variation_id ) {
+				if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 				if ( 0 === ( $index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
 					throw new RuntimeException( 'قفل اجرا/محصول از دست رفت؛ حذف variationها متوقف شد.' );
 				}
@@ -1671,6 +1708,11 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				return array( 'success' => false, 'message' => 'محصول در سیستم یافت نشد.' );
 			}
 			$title    = $product->get_name();
+			$current_variation_counts = TCBVM_DB::get_variation_counts( array( $product_id ) );
+			$current_variation_count  = isset( $current_variation_counts[ $product_id ] ) ? (int) $current_variation_counts[ $product_id ] : 0;
+			if ( $current_variation_count > self::MAX_VARIATIONS_PER_PRODUCT ) {
+				return array( 'success' => false, 'title' => $title, 'message' => 'محصول بیش از سقف ۳۰۰۰ variation فعلی دارد؛ برای جلوگیری از بارگذاری فهرست نامحدود هیچ تغییری اعمال نشد.' );
+			}
 			$pre_info = self::resolve_product_target_attribute( $product, $attr_name, false );
 			$pre_key  = $pre_info['name'];
 			// گزینهٔ «فقط محصولاتی که ویژگی را دارند»: محصولی که ویژگی هدف روی خودش
@@ -1763,6 +1805,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 				$preflight_keys         = array_keys( $requested_matrix );
 				if ( $product->is_type( 'variable' ) ) {
 					foreach ( (array) $product->get_children() as $child_index => $child_id ) {
+						if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 						if ( 0 === ( $child_index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
 							return array( 'success' => false, 'title' => $title, 'message' => 'قفل اجرا/محصول هنگام تطبیق variationهای موجود از دست رفت؛ افزودن متوقف شد.' );
 						}
@@ -2001,6 +2044,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			// snapshot پیش‌تر گرفته شده است، پس از تاریخچه قابل بازگردانی‌اند.
 			if ( self::MODE_ADD_MISSING === $operation_mode && ! empty( $drop_any_ids ) ) {
 				foreach ( $drop_any_ids as $drop_index => $drop_id ) {
+					if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 					if ( 0 === ( $drop_index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
 						throw new RuntimeException( 'قفل اجرا/محصول از دست رفت؛ حذف variationهای بدون مقدار متوقف شد.' );
 					}
@@ -2025,6 +2069,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			}
 			if ( self::MODE_REPLACE_ALL === $operation_mode ) {
 				foreach ( $old_children as $old_index => $old_id ) {
+					if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 					if ( 0 === ( $old_index % 10 ) && ( ! TCBVM_Backup::refresh_run_lock( $run_id ) || ! TCBVM_Backup::refresh_product_lock( $product_id ) ) ) {
 						throw new RuntimeException( 'قفل اجرا/محصول از دست رفت؛ عملیات متوقف شد تا نوشتن هم‌زمان رخ ندهد.' );
 					}
@@ -2052,6 +2097,7 @@ if ( ! class_exists( 'TCBVM_OPS' ) ) {
 			$final_price   = '' !== $sale_str && (float) $sale_str > 0 ? $sale_str : $price_str;
 			$combination_keys = array_keys( $combo_matrix );
 			foreach ( $combinations as $idx => $combination_attrs ) {
+				if ( microtime( true ) - $start_time >= self::MAX_REQUEST_WORK_SECONDS ) throw new RuntimeException( 'سقف زمان واقعی این درخواست تکمیل شد؛ ادامهٔ محصولات متوقف شد.' );
 				if ( self::MODE_ADD_MISSING === $operation_mode ) {
 					$signature = self::combination_signature( $combination_attrs, $combination_keys );
 					if ( false === $signature ) {

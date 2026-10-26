@@ -64,13 +64,17 @@ if ( ! class_exists( 'TCBVM_Core' ) ) {
 		}
 
 		public static function get_settings() {
-			$saved = get_option( self::OPTION_SETTINGS, array() );
-			return wp_parse_args( is_array( $saved ) ? $saved : array(), self::default_settings() );
+			$saved    = get_option( self::OPTION_SETTINGS, array() );
+			$settings = wp_parse_args( is_array( $saved ) ? $saved : array(), self::default_settings() );
+			// Runtime work bounds cap each request at two products even if an older
+			// saved option contains the former 1–50 range.
+			$settings['batch_size'] = max( 1, min( 2, absint( $settings['batch_size'] ) ) );
+			return $settings;
 		}
 
 		public static function get_batch_size() {
 			$settings = self::get_settings();
-			return isset( $settings['batch_size'] ) ? max( 1, absint( $settings['batch_size'] ) ) : 10;
+			return isset( $settings['batch_size'] ) ? max( 1, min( 2, absint( $settings['batch_size'] ) ) ) : 2;
 		}
 
 		public static function update_settings( $new_settings ) {
