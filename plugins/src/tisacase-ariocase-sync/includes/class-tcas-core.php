@@ -12,9 +12,11 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 	final class TCAS_Core {
 		const PAGE            = 'tisacase-ariocase-sync';
 		const NONCE           = 'tcas_admin_nonce';
-		const OPTION_SETTINGS = 'tcas_ariocase_settings';
-		const OPTION_LOGS     = 'tcas_ariocase_logs';
-		const MAX_CODES       = 50;
+		const OPTION_SETTINGS         = 'tcas_ariocase_settings';
+		const OPTION_SETTINGS_VERSION = 'tcas_ariocase_settings_version';
+		const SETTINGS_VERSION        = 2;
+		const OPTION_LOGS            = 'tcas_ariocase_logs';
+		const MAX_CODES              = 50;
 
 		private static $instance = null;
 
@@ -26,6 +28,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		}
 
 		private function __construct() {
+			self::maybe_upgrade_settings();
 			add_action( 'init', array( __CLASS__, 'load_textdomain' ) );
 			if ( class_exists( 'WooCommerce' ) ) {
 				TCAS_Live::init();
@@ -47,7 +50,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		public static function defaults() {
 			return array(
 				'enabled'             => 'yes',
-				'live_scope'          => 'all',
+				'live_scope'          => 'purchase',
 				'persist_stock'       => 'yes',
 				'checkout_guard'      => 'yes',
 				'base_url'            => 'https://ariocase.com/wp-json/wc/v3',
@@ -75,8 +78,12 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		}
 
 		public static function settings() {
-			$saved = get_option( self::OPTION_SETTINGS, array() );
-			return wp_parse_args( is_array( $saved ) ? $saved : array(), self::defaults() );
+			$saved    = get_option( self::OPTION_SETTINGS, array() );
+			$settings = wp_parse_args( is_array( $saved ) ? $saved : array(), self::defaults() );
+			if ( ! in_array( $settings['live_scope'], array( 'all', 'purchase' ), true ) ) {
+				$settings['live_scope'] = 'purchase';
+			}
+			return $settings;
 		}
 
 		public static function api_key( $settings = null ) {
@@ -103,7 +110,8 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			foreach ( $booleans as $key ) {
 				$clean[ $key ] = ! empty( $input[ $key ] ) ? 'yes' : 'no';
 			}
-			$clean['live_scope'] = isset( $input['live_scope'] ) && 'purchase' === $input['live_scope'] ? 'purchase' : 'all';
+			$live_scope          = isset( $input['live_scope'] ) ? sanitize_key( $input['live_scope'] ) : 'purchase';
+			$clean['live_scope'] = in_array( $live_scope, array( 'all', 'purchase' ), true ) ? $live_scope : 'purchase';
 
 			$url_keys = array( 'base_url', 'product_endpoint', 'slug_endpoint', 'stock_endpoint' );
 			foreach ( $url_keys as $key ) {
@@ -213,13 +221,33 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			return $out;
 		}
 
+		/**
+		 * قدیمی‌ترین نسخهٔ تنظیمات، Getterهای محصول را زنده می‌خواند. مهاجرت به
+		 * Snapshot محلی، درخواست‌های عمومی فروشگاه را از API خارجی جدا می‌کند.
+		 */
+		public static function maybe_upgrade_settings() {
+			$version = absint( get_option( self::OPTION_SETTINGS_VERSION, 0 ) );
+			if ( $version >= self::SETTINGS_VERSION ) {
+				return;
+			}
+
+			$saved = get_option( self::OPTION_SETTINGS, false );
+			if ( is_array( $saved ) ) {
+				$saved['live_scope'] = 'purchase';
+				update_option( self::OPTION_SETTINGS, $saved, false );
+			}
+			update_option( self::OPTION_SETTINGS_VERSION, self::SETTINGS_VERSION, false );
+		}
+
 		public static function activate() {
+			self::maybe_upgrade_settings();
 			if ( false === get_option( self::OPTION_SETTINGS, false ) ) {
 				add_option( self::OPTION_SETTINGS, self::defaults(), '', 'no' );
 			}
 			if ( false === get_option( self::OPTION_LOGS, false ) ) {
 				add_option( self::OPTION_LOGS, array(), '', 'no' );
 			}
+			update_option( self::OPTION_SETTINGS_VERSION, self::SETTINGS_VERSION, false );
 		}
 
 		public static function deactivate() {

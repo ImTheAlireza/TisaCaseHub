@@ -25,7 +25,7 @@ $field = function( $key ) use ( $settings ) {
 			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[enabled]" <?php checked( $settings['enabled'], 'yes' ); ?>><span><strong>سینک فعال</strong></span></label>
 			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[persist_stock]" <?php checked( $settings['persist_stock'], 'yes' ); ?>><span><strong>ذخیره در ووکامرس</strong></span></label>
 			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[checkout_guard]" <?php checked( $settings['checkout_guard'], 'yes' ); ?>><span><strong>کنترل سبد و تسویه</strong></span></label>
-			<label><span class="tcas-label">خواندن زنده</span><select name="tcas_settings[live_scope]"><option value="all" <?php selected( $settings['live_scope'], 'all' ); ?>>همهٔ درخواست‌های محصول</option><option value="purchase" <?php selected( $settings['live_scope'], 'purchase' ); ?>>فقط مسیر خرید</option></select></label>
+			<label><span class="tcas-label">منبع موجودی فروشگاه</span><select name="tcas_settings[live_scope]"><option value="purchase" <?php selected( $settings['live_scope'], 'purchase' ); ?>>پیشنهادی: کش محلی + تازه‌سازی پس‌زمینه؛ کنترل زنده هنگام خرید</option><option value="all" <?php selected( $settings['live_scope'], 'all' ); ?>>همهٔ Getterها: درخواست هم‌زمان API برای هر محصول</option></select></label>
 		</div>
 	</section>
 

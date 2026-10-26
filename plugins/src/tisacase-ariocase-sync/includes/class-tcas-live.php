@@ -1,6 +1,6 @@
 <?php
 /**
- * خواندن زنده با کش فقط در همان Request و نگهبان خرید.
+ * نمایش موجودی از Snapshot محلی، تازه‌سازی پس‌زمینه و نگهبان زندهٔ خرید.
  *
  * @package TisaCase_ArioCase_Sync
  */
@@ -10,11 +10,22 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TCAS_Live' ) ) {
 
 	final class TCAS_Live {
-		private static $states   = array();
-		private static $applying = array();
-		private static $notices  = array();
+		const REFRESH_HOOK             = 'tcas_refresh_mapped_stock';
+		const REFRESH_TRANSIENT_PREFIX = 'tcas_stock_refresh_';
+		const CACHE_TTL                = 300;
+		const REFRESH_DELAY            = 5;
+		const REFRESH_LOCK_TTL         = 300;
+		const REFRESH_RETRY_TTL        = 300;
+		const MAX_REFRESHES_PER_REQUEST  = 10;
+
+		private static $states               = array();
+		private static $cached_states        = array();
+		private static $applying             = array();
+		private static $notices              = array();
+		private static $scheduled_refreshes  = 0;
 
 		public static function init() {
+			add_action( self::REFRESH_HOOK, array( __CLASS__, 'process_scheduled_refresh' ), 10, 1 );
 			foreach ( array( 'woocommerce_product_get_stock_quantity', 'woocommerce_product_variation_get_stock_quantity' ) as $hook ) {
 				add_filter( $hook, array( __CLASS__, 'filter_quantity' ), 20, 2 );
 			}
@@ -34,6 +45,7 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			return 'yes' === $settings['enabled'] && TCAS_Core::is_configured( $settings );
 		}
 
+		/** false = no override, live = synchronous API (explicit opt-in), cached = local Snapshot. */
 		private static function filter_context() {
 			if ( ! self::enabled() ) {
 				return false;
@@ -42,12 +54,7 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 				return false;
 			}
 			$settings = TCAS_Core::settings();
-			if ( 'all' === $settings['live_scope'] || wp_doing_ajax() ) {
-				return true;
-			}
-			return ( function_exists( 'is_product' ) && is_product() )
-				|| ( function_exists( 'is_cart' ) && is_cart() )
-				|| ( function_exists( 'is_checkout' ) && is_checkout() );
+			return 'all' === $settings['live_scope'] ? 'live' : 'cached';
 		}
 
 		private static function product_id( $product ) {
@@ -61,7 +68,7 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 				return null;
 			}
 			if ( $fresh ) {
-				unset( self::$states[ $product_id ] );
+				unset( self::$states[ $product_id ], self::$cached_states[ $product_id ] );
 			}
 			if ( array_key_exists( $product_id, self::$states ) ) {
 				return self::$states[ $product_id ];
@@ -96,34 +103,125 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 					TCAS_Mapping::remember_error( $product_id, $result->get_error_message() );
 				}
 			}
+			unset( self::$cached_states[ $product_id ] );
 			return $state;
 		}
 
+		/** Return the last good remote Snapshot without blocking the page request. */
+		private static function cached_state( $product_id, $product = null ) {
+			$product_id = absint( $product_id );
+			if ( ! $product_id || ! self::enabled() || ! TCAS_Mapping::is_enabled( $product_id ) ) {
+				return null;
+			}
+			if ( array_key_exists( $product_id, self::$cached_states ) ) {
+				return self::$cached_states[ $product_id ];
+			}
+			$product = is_object( $product ) ? $product : wc_get_product( $product_id );
+			if ( ! $product || $product->is_type( 'variable' ) ) {
+				return null;
+			}
+
+			$raw_quantity = get_post_meta( $product_id, TCAS_Mapping::META_QTY, true );
+			$raw_status   = (string) get_post_meta( $product_id, TCAS_Mapping::META_STATUS, true );
+			$fetched_at   = absint( get_post_meta( $product_id, TCAS_Mapping::META_FETCHED_AT, true ) );
+			$quantity     = '' !== (string) $raw_quantity && is_numeric( $raw_quantity ) ? (float) $raw_quantity : null;
+			$status       = in_array( $raw_status, array( 'instock', 'outofstock', 'onbackorder' ), true ) ? $raw_status : '';
+
+			if ( null === $quantity && '' === $status ) {
+				self::schedule_refresh( $product_id );
+				self::$cached_states[ $product_id ] = null;
+				return null;
+			}
+			if ( ! $fetched_at || time() - $fetched_at >= self::CACHE_TTL ) {
+				self::schedule_refresh( $product_id );
+			}
+			self::$cached_states[ $product_id ] = array( 'quantity' => $quantity, 'status' => $status );
+			return self::$cached_states[ $product_id ];
+		}
+
+		private static function refresh_transient_key( $product_id ) {
+			return self::REFRESH_TRANSIENT_PREFIX . absint( $product_id );
+		}
+
+		/** Schedule at most a few refreshes per page and never call the remote API inline. */
+		private static function schedule_refresh( $product_id ) {
+			$product_id = absint( $product_id );
+			if ( ! $product_id || self::$scheduled_refreshes >= self::MAX_REFRESHES_PER_REQUEST
+				|| ! function_exists( 'wp_schedule_single_event' ) || ! function_exists( 'wp_next_scheduled' )
+				|| ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+				return false;
+			}
+
+			$key = self::refresh_transient_key( $product_id );
+			if ( false !== get_transient( $key ) ) {
+				return false;
+			}
+			$args = array( $product_id );
+			set_transient( $key, 'queued', self::REFRESH_LOCK_TTL );
+			if ( wp_next_scheduled( self::REFRESH_HOOK, $args ) ) {
+				return true;
+			}
+
+			$scheduled = wp_schedule_single_event( time() + self::REFRESH_DELAY, self::REFRESH_HOOK, $args );
+			if ( ! $scheduled && ! wp_next_scheduled( self::REFRESH_HOOK, $args ) ) {
+				delete_transient( $key );
+				return false;
+			}
+			self::$scheduled_refreshes++;
+			return true;
+		}
+
+		private static function settle_refresh( $product_id, $state ) {
+			$key = self::refresh_transient_key( $product_id );
+			if ( is_wp_error( $state ) ) {
+				TCAS_Mapping::remember_error( $product_id, $state->get_error_message() );
+				set_transient( $key, 'failed', self::REFRESH_RETRY_TTL );
+				return;
+			}
+			delete_transient( $key );
+		}
+
+		/** WP-Cron callback: network work happens outside the customer-facing request. */
+		public static function process_scheduled_refresh( $product_id ) {
+			$product_id = absint( $product_id );
+			if ( ! $product_id ) {
+				return;
+			}
+			$state = self::state( $product_id, true );
+			self::settle_refresh( $product_id, $state );
+		}
+
 		public static function refresh( $product_id ) {
-			return self::state( $product_id, true );
+			$product_id = absint( $product_id );
+			$state      = self::state( $product_id, true );
+			if ( function_exists( 'wp_clear_scheduled_hook' ) ) {
+				wp_clear_scheduled_hook( self::REFRESH_HOOK, array( $product_id ) );
+			}
+			self::settle_refresh( $product_id, $state );
+			return $state;
+		}
+
+		private static function filtered_state( $product ) {
+			$mode = self::filter_context();
+			if ( false === $mode ) {
+				return null;
+			}
+			$product_id = self::product_id( $product );
+			return 'live' === $mode ? self::state( $product_id ) : self::cached_state( $product_id, $product );
 		}
 
 		public static function filter_quantity( $value, $product ) {
-			if ( ! self::filter_context() ) {
-				return $value;
-			}
-			$state = self::state( self::product_id( $product ) );
+			$state = self::filtered_state( $product );
 			return is_array( $state ) && null !== $state['quantity'] ? $state['quantity'] : $value;
 		}
 
 		public static function filter_status( $value, $product ) {
-			if ( ! self::filter_context() ) {
-				return $value;
-			}
-			$state = self::state( self::product_id( $product ) );
+			$state = self::filtered_state( $product );
 			return is_array( $state ) && ! empty( $state['status'] ) ? $state['status'] : $value;
 		}
 
 		public static function filter_manage_stock( $value, $product ) {
-			if ( ! self::filter_context() ) {
-				return $value;
-			}
-			$state = self::state( self::product_id( $product ) );
+			$state = self::filtered_state( $product );
 			if ( ! is_array( $state ) ) {
 				return $value;
 			}
