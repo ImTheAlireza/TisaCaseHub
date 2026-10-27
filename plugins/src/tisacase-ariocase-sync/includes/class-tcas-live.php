@@ -271,11 +271,11 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 				return true;
 			}
 			if ( is_wp_error( $state ) ) {
-				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
+				// خطای منبع موجودی فقط برای مدیر ثبت می‌شود؛ مشتری نام فروشگاه تأمین‌کننده را نمی‌بیند.
+				TCAS_Mapping::remember_error( $product_id, $state->get_error_message() );
+				self::log_fallback( $product_id, $state->get_error_message() );
 				if ( self::fail_open() ) {
-					// فروش سالم با آخرین Snapshot معتبر ادامه می‌یابد؛ خطا فقط ثبت می‌شود.
-					TCAS_Mapping::remember_error( $product_id, $state->get_error_message() );
-					self::notice_degraded( $partner_label, $state->get_error_message() );
+					// فروش سالم با آخرین Snapshot معتبر ادامه می‌یابد؛ هیچ پیامی به مشتری نشان داده نمی‌شود.
 					$fallback = self::cached_state( $product_id );
 					if ( is_array( $fallback ) && ! empty( $fallback['status'] ) ) {
 						$state = $fallback;
@@ -283,7 +283,7 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 						return true;
 					}
 				} else {
-					return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» از %s قابل بررسی نیست. لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name(), $partner_label ) );
+					return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» در حال حاضر قابل بررسی نیست؛ لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name() ) );
 				}
 			}
 			if ( empty( $state['status'] ) ) {
@@ -291,8 +291,8 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 				return true;
 			}
 			if ( 'instock' !== $state['status'] ) {
-				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
-				return new WP_Error( 'tcas_live_outofstock', sprintf( '«%s» نزد %s فعلاً موجود نیست.', $product->get_name(), $partner_label ) );
+				// بدون نام همکار/تأمین‌کننده؛ متن عمومی و قابل‌استفاده در فروشگاه.
+				return new WP_Error( 'tcas_live_outofstock', sprintf( '«%s» در حال حاضر ناموجود است.', $product->get_name() ) );
 			}
 			if ( null !== $state['quantity'] && (float) $quantity > (float) $state['quantity'] ) {
 				$available = (float) $state['quantity'];
@@ -316,9 +316,14 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			return $out;
 		}
 
-		/** یک بار در هر صفحه: همکار پاسخ نداد و با آخرین موجودی ذخیره‌شده ادامه شد. */
-		private static function notice_degraded( $partner_label, $error ) {
-			self::notice_once( 'degraded', sprintf( 'موجودی %s همین حالا قابل بررسی نیست؛ کنترل خرید با آخرین موجودی ثبت‌شده ادامه یافت. (%s)', $partner_label, $error ), 'notice' );
+		/**
+		 * افتادن به Snapshot قبلی فقط در گزارش عملیات مدیر ثبت می‌شود.
+		 * هیچ نوتیسی از نام تأمین‌کننده یا منبع موجودی به مشتری نمایش داده نمی‌شود.
+		 */
+		private static function log_fallback( $product_id, $error ) {
+			if ( class_exists( 'TCAS_Logger' ) ) {
+				TCAS_Logger::add( 'stock_fallback', '#' . absint( $product_id ), 'کنترل خرید با آخرین موجودی ثبت‌شده ادامه یافت. ' . $error );
+			}
 		}
 
 		private static function notice_once( $key, $message, $type = 'error' ) {

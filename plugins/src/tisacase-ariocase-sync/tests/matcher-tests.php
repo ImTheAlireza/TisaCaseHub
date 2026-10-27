@@ -232,7 +232,36 @@ $result = TCAS_Matcher::match(
 	array( matcher_variation( 'ID:1', 'A56', '' ) ),
 	array( matcher_variation( 'ID:9/1', 'A56 / A56s', '' ) )
 );
-matcher_test( 'مدل تک‌توکنی بدون نام خانواده، پیشنهاد خانوادگی نمی‌سازد', 0 === count( $result['matches'] ) );
+matcher_test( 'یک Variation تیساکیس با برچسب چندمدلی همکار، پیشنهاد «فهرست مدل» می‌گیرد', 1 === count( $result['matches'] ) && 'list' === $result['matches'][0]['confidence'] && ! empty( $result['matches'][0]['shared_remote'] ) );
+
+// --- فهرست مدل: «Samsung A52 / A52s» در همکار ↔ دو Variation جدا در تیساکیس ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:407473', 'Samsung A52', '' ), matcher_variation( 'ID:407474', 'Samsung A52s', '' ) ),
+	array( matcher_variation( 'ID:46922/46993', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'یک Variation همکار با دو مدل، دو کارت جدا برای دو Variation تیساکیس می‌سازد', 2 === count( $result['matches'] ) );
+matcher_test( 'هر دو کارت به همان مرجع همکار و با نشان «فهرست مدل» ساخته می‌شوند', 'ID:407473=ID:46922/46993' === matcher_refs( $result )[0] && 'ID:407474=ID:46922/46993' === matcher_refs( $result )[1] && 'list' === $result['matches'][0]['confidence'] && 'list' === $result['matches'][1]['confidence'] );
+matcher_test( 'مدل هر کارت و مدل‌های دیگر همان برچسب گزارش می‌شود', array( 'a52' ) === $result['matches'][0]['shared'] && in_array( 'a52s', $result['matches'][0]['extra'], true ) && array( 'a52s' ) === $result['matches'][1]['shared'] );
+matcher_test( 'کارت‌های فهرست مدل در فهرست مبهم تکرار نمی‌شوند', 0 === count( $result['ambiguous'] ) && 0 === count( $result['unmatched'] ) && 2 === $result['summary']['list'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 5G / A52s 5G', '' ) )
+);
+matcher_test( 'فهرست مدل هم 4G را با 5G جفت نمی‌کند', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A52 / A52s', '' ), matcher_variation( 'ID:9/2', 'A52 / A53', '' ) )
+);
+$issues = array_merge( $result['ambiguous'], $result['unmatched'] );
+matcher_test( 'اگر یک Variation به دو برچسب چندمدلی بخورد، هیچ‌کدام خودکار وصل نمی‌شود', 0 === count( $result['matches'] ) && 3 === count( $issues ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52', '' ), matcher_variation( 'ID:2', 'Galaxy A52', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'دو Variation محلی با مدل یکسان، فهرست مدل مبهم می‌سازد و وصل نمی‌شود', 0 === count( $result['matches'] ) );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

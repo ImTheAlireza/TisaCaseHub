@@ -112,7 +112,11 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			return '' !== self::remote_code( $product_id ) && 'no' !== get_post_meta( $product_id, self::META_ENABLED, true );
 		}
 
-		public static function map( $product_id, $remote_code, $enabled = true, $partner_id = 'ariocase' ) {
+		/**
+		 * @param bool $allow_shared اجازهٔ اشتراک یک مرجع همکار بین چند Variation محلی
+		 *                           (برچسب چندمدلی مثل «A52 / A52s» که همکار یکی کرده است).
+		 */
+		public static function map( $product_id, $remote_code, $enabled = true, $partner_id = 'ariocase', $allow_shared = false ) {
 			$product_id  = absint( $product_id );
 			$remote_code = trim( sanitize_text_field( $remote_code ) );
 			$partner_id  = sanitize_key( $partner_id );
@@ -125,10 +129,12 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			if ( '' !== $current && $current_partner !== $partner_id ) {
 				return new WP_Error( 'tcas_mapping_partner_exists', 'این محصول به همکار دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.' );
 			}
-			$other_ids = self::ids_by_remote_code( $remote_code, $partner_id );
-			foreach ( $other_ids as $other_id ) {
-				if ( $other_id !== $product_id ) {
-					return new WP_Error( 'tcas_remote_code_used', sprintf( 'این مرجع %s قبلاً به محصول #%d متصل شده است.', class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'همکار', $other_id ) );
+			if ( ! $allow_shared ) {
+				$other_ids = self::ids_by_remote_code( $remote_code, $partner_id );
+				foreach ( $other_ids as $other_id ) {
+					if ( $other_id !== $product_id ) {
+						return new WP_Error( 'tcas_remote_code_used', sprintf( 'این مرجع %s قبلاً به محصول #%d متصل شده است.', class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'همکار', $other_id ) );
+					}
 				}
 			}
 			if ( '' !== $current && $current !== $remote_code ) {

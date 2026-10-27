@@ -104,12 +104,27 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			if ( ! $pairs ) {
 				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - مرجع محصول همکار» وارد کنید.' ), 400 );
 			}
+			// «فهرست مدل»: یک مرجع همکار روی چند Variation تیساکیس می‌نشیند؛ فهرست آن نمایه‌ها اینجا نگه داشته می‌شود.
+			$shared = array();
+			if ( isset( $_POST['shared'] ) ) {
+				foreach ( (array) wp_unslash( $_POST['shared'] ) as $raw_shared ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					if ( is_scalar( $raw_shared ) && ctype_digit( (string) $raw_shared ) ) {
+						$shared[ (int) $raw_shared ] = true;
+					}
+				}
+			}
+			$pairs = array_values( $pairs );
+			foreach ( $pairs as $index => $pair ) {
+				if ( isset( $shared[ $index ] ) ) {
+					$pairs[ $index ]['shared_remote'] = true;
+				}
+			}
 			$token = wp_generate_password( 32, false, false );
 			$job   = array(
 				'user_id' => get_current_user_id(),
 				'mode'    => 'preview',
 				'partner_id' => $partner_id,
-				'pairs'   => array_values( $pairs ),
+				'pairs'   => $pairs,
 				'offset'  => 0,
 				'results' => array(),
 			);
@@ -357,7 +372,12 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'شناسهٔ هر دو فروشگاه را وارد کنید.' ), 422 );
 			}
 			$preview = TCAS_Pairing::preview(
-				array( 'local_code' => $local, 'remote_code' => $remote, 'error' => '' ),
+				array(
+					'local_code'    => $local,
+					'remote_code'   => $remote,
+					'error'         => '',
+					'shared_remote' => isset( $_POST['shared_remote'] ) && '1' === (string) sanitize_text_field( wp_unslash( $_POST['shared_remote'] ) ),
+				),
 				$partner_id
 			);
 			wp_send_json_success( array( 'row' => $preview['row'] ) );

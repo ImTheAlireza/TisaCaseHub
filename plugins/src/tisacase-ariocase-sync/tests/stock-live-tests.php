@@ -274,7 +274,7 @@ TCAS_Api::$responses['REMOTE-60'] = new WP_Error( 'timeout', 'timeout' );
 TCAS_Live::state( 60, true );
 $GLOBALS['notices'] = array();
 $open_add = TCAS_Live::validate_add_to_cart( true, 60, 1 );
-live_test( 'در fail-open با Snapshot موجود، فروش ادامه و یک پیام اطلاع‌رسانی ثبت می‌شود', true === $open_add && 'notice' === $GLOBALS['notices'][0][1] && false !== strpos( $GLOBALS['notices'][0][0], 'آخرین موجودی' ) );
+live_test( 'در fail-open با Snapshot موجود فروش ادامه می‌یابد و هیچ پیامی به مشتری نشان داده نمی‌شود', true === $open_add && empty( $GLOBALS['notices'] ) );
 
 map_product( 63, 'REMOTE-63', new TCAS_Test_Product( 63, 'simple', 3, 'instock' ) );
 TCAS_Api::$responses['REMOTE-63'] = new WP_Error( 'timeout', 'timeout' );
@@ -285,6 +285,23 @@ $GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'closed';
 $GLOBALS['notices'] = array();
 $closed_add = TCAS_Live::validate_add_to_cart( true, 60, 1 );
 live_test( 'در حالت بسته، قطعی همکار افزودن به سبد را متوقف می‌کند', false === $closed_add && 'error' === $GLOBALS['notices'][0][1] );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'open';
+
+// --- متن‌های مشتری: هیچ اشاره‌ای به نام همکار ---
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'closed';
+map_product( 64, 'REMOTE-64', new TCAS_Test_Product( 64, 'simple', 0, 'outofstock' ) );
+TCAS_Api::$responses['REMOTE-64'] = array( 'code' => 'REMOTE-64', 'quantity' => 0.0, 'status' => 'outofstock' );
+TCAS_Live::state( 64, true );
+$GLOBALS['notices'] = array();
+$oos = TCAS_Live::validate_add_to_cart( true, 64, 1 );
+live_test( 'پیام ناموجودی مشتری نام فروشگاه تأمین‌کننده را نمی‌برد', false === $oos && false !== strpos( $GLOBALS['notices'][0][0], 'ناموجود' ) && false === stripos( $GLOBALS['notices'][0][0], 'ariocase' ) );
+
+map_product( 65, 'REMOTE-65', new TCAS_Test_Product( 65, 'simple', 3, 'instock' ) );
+TCAS_Api::$responses['REMOTE-65'] = new WP_Error( 'timeout', 'timeout' );
+TCAS_Live::state( 65, true );
+$GLOBALS['notices'] = array();
+$closed_error = TCAS_Live::validate_add_to_cart( true, 65, 1 );
+live_test( 'پیام خطای بررسی موجودی هم نام همکار را لو نمی‌دهد', false === $closed_error && false === stripos( $GLOBALS['notices'][0][0], 'ariocase' ) && false !== strpos( $GLOBALS['notices'][0][0], 'قابل بررسی نیست' ) );
 $GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'open';
 
 map_product( 62, 'REMOTE-62', new TCAS_Test_Product( 62, 'simple', 3, 'instock' ) );

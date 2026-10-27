@@ -48,6 +48,7 @@
 	const matchFlags = {
 		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
 		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
+		list: { text: 'پیشنهاد · فهرست مدل', cls: 'is-list', hint: 'این Variation همکار چند مدل را با هم دارد و هر مدل، Variation جداگانه‌ای در تیساکیس است؛ همین موجودی روی همهٔ آن کارت‌ها اعمال می‌شود.' },
 		label: { text: 'بررسی · تطبیق از برچسب', cls: '', hint: 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.' },
 		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' },
 		manual: { text: 'دستی · نیاز به بررسی', cls: 'is-manual', hint: 'این جفت دستی وارد شده است؛ کد و موجودی هر دو طرف را کنترل کنید.' },
@@ -477,9 +478,11 @@
 		entry.dataset.checkedFor = '';
 		if (hasBoth) {
 			const ok = 'exact' === confidence;
+			// کارت «فهرست مدل» هم نیاز به تأیید دارد ولی دلیلش مشخص است؛ برچسب آن حفظ می‌شود.
+			const list = 'list' === confidence;
 			setEntrySelectable(entry, !entry.dataset.savedDone);
 			setEntryState(entry, ok ? 'ready' : 'review', {
-				flag: ok ? 'قطعی · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال',
+				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال'),
 				tone: ok ? 'ok' : 'warn',
 				text: 'موجودی هنگام زدن «اتصال انتخاب‌شده‌ها» خوانده می‌شود.'
 			});
@@ -872,7 +875,7 @@
 			updateConnectAvailability();
 			return;
 		}
-		const signature = local + '\u0000' + remote;
+		const signature = local + '\u0000' + remote + '\u0000' + (entry.dataset.sharedRemote || '');
 		if (!opts.force && entry.dataset.checkedFor === signature && ['ok', 'review', 'done'].includes(entry.dataset.state || '')) {
 			updateConnectAvailability();
 			return;
@@ -882,7 +885,11 @@
 		setEntryLoading(entry, true);
 		setEntryState(entry, 'loading', { flag: 'در حال بررسی…', tone: 'idle', text: '' });
 		try {
-			const data = await enqueuePreview(() => request('preview_pair', { local_code: local, remote_code: remote }));
+			const data = await enqueuePreview(() => request('preview_pair', {
+				local_code: local,
+				remote_code: remote,
+				shared_remote: entry.dataset.sharedRemote || ''
+			}));
 			if (entrySeq.get(entry) !== seq) return;
 			applyRow(entry, data.row || {});
 			if (entry.dataset.state !== 'error') entry.dataset.checkedFor = signature;
@@ -909,11 +916,18 @@
 		const info = matchFlags[confidence] || matchFlags[match.matched_by] || matchFlags.label;
 		const tone = 'exact' === confidence ? 'ok' : 'warn';
 		setEntryFlag(entry, info.text, tone, info.cls, info.hint);
+		// مرجع مشترک: کارت‌های همان فهرست مدل، همه به یک Variation همکار وصل می‌شوند.
+		entry.dataset.sharedRemote = match.shared_remote ? '1' : '';
 		const parts = entryParts(entry);
 		const shared = Array.isArray(match.shared) ? match.shared.map(String) : [];
 		const extra = Array.isArray(match.extra) ? match.extra.map(String) : [];
 		if (parts.note) {
-			if (shared.length || extra.length) {
+			if (match.shared_remote) {
+				parts.note.textContent = 'مدل این کارت: ' + (shared.join('، ') || '—')
+					+ (extra.length ? ' · مدل‌های دیگر در همان Variation همکار: ' + extra.join('، ') : '')
+					+ ' · موجودی این Variation روی همهٔ این کارت‌ها یکی است.';
+				parts.note.hidden = false;
+			} else if (shared.length || extra.length) {
 				const details = [];
 				if (shared.length) details.push('مدل مشترک: ' + shared.join('، '));
 				if (extra.length) details.push('فقط در برچسب مقابل: ' + extra.join('، '));
@@ -966,6 +980,7 @@
 		const list = Array.isArray(entries) ? entries : pairEntries();
 		const usable = [];
 		const lines = [];
+		const shared = [];
 		let incomplete = 0;
 		let invalid = 0;
 		list.forEach((entry) => {
@@ -981,10 +996,12 @@
 				invalid++;
 				return;
 			}
+			// نمایهٔ همان خطی که فرستاده می‌شود؛ مرجع مشترک باید با همان ترتیب بازگردد.
+			if ('1' === entry.dataset.sharedRemote) shared.push(String(usable.length));
 			usable.push(entry);
 			lines.push(local + ' - ' + remote);
 		});
-		return { lines, entries: usable, incomplete, invalid };
+		return { lines, entries: usable, shared, incomplete, invalid };
 	}
 
 	function wirePairEntry(entry) {
@@ -1002,6 +1019,7 @@
 				onPick: (row) => {
 					setVariationTitle(entry.querySelector('.tcas-shop-local'), row.name || '');
 					entry.dataset.confidence = 'manual';
+					entry.dataset.sharedRemote = '';
 					scheduleEntryCheck(entry, 120);
 				},
 				emptyHint: 'محصول ساده یا Variation با این نام/SKU پیدا نشد؛ شناسه را دستی وارد کنید.'
@@ -1011,6 +1029,7 @@
 			input.addEventListener('input', () => {
 				setVariationTitle(input.closest('.tcas-shop-field'), '');
 				entry.dataset.confidence = 'manual';
+				entry.dataset.sharedRemote = '';
 				const parts = entryParts(entry);
 				if (parts.note) {
 					parts.note.textContent = '';
@@ -1047,6 +1066,7 @@
 		if (local) local.value = typeof localCode === 'string' ? localCode : '';
 		if (remote) remote.value = typeof remoteCode === 'string' ? remoteCode : '';
 		entry.dataset.confidence = confidence || 'manual';
+		entry.dataset.sharedRemote = '';
 		entry.dataset.state = 'idle';
 		wirePairEntry(entry);
 		refreshPairEntries();
@@ -1304,10 +1324,13 @@
 		const flagged = batch.filter((match) => match && match.confidence && 'exact' !== match.confidence).length;
 		const familyCount = batch.filter((match) => match && 'family' === match.confidence).length;
 		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
+		const listCount = batch.filter((match) => match && 'list' === match.confidence).length;
+		const sharedRemotes = new Set(batch.filter((match) => match && match.shared_remote).map((match) => String(match.remote_code))).size;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
 		const smartParts = [];
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
 		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
+		if (listCount) smartParts.push(String(listCount) + ' کارت از ' + String(sharedRemotes) + ' Variation چندمدلی همکار');
 		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «نیاز به بررسی» علامت خورد.';
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
@@ -1460,7 +1483,7 @@
 		if (!opts.quiet) text('tcas-preview-status', 'در حال بررسی ' + collected.lines.length + ' جفت و خواندن موجودی تازه…');
 		const rows = [];
 		try {
-			const job = await request('preview_start', { pairs: collected.lines.join('\n') });
+			const job = await request('preview_start', { pairs: collected.lines.join('\n'), shared: collected.shared });
 			state.token = job.token;
 			progress('tcas-preview', 0, job.total || 0);
 			await runSteps(job, (row) => {
@@ -1528,7 +1551,12 @@
 				: ((cfg.strings && cfg.strings.selectRows) || 'حداقل یک کارت قابل اتصال را انتخاب کنید.'), true);
 			return;
 		}
-		const pairs = selected.map((entry) => entryCodes(entry)).filter((codes) => codes.local && codes.remote);
+		const wanted = selected.map((entry) => ({ codes: entryCodes(entry), shared: '1' === entry.dataset.sharedRemote }));
+		const pairs = wanted.filter((item) => item.codes.local && item.codes.remote);
+		// نمایهٔ کارت‌های «فهرست مدل» با همان ترتیب جفت‌های ارسالی می‌رود.
+		const sharedIndexes = pairs
+			.map((item, index) => (item.shared ? String(index) : ''))
+			.filter((value) => '' !== value);
 		if (!pairs.length) {
 			text('tcas-connect-status', 'کارت‌های انتخابی شناسهٔ کامل ندارند.', true);
 			return;
@@ -1541,7 +1569,7 @@
 			+ (resumed ? ' ' + String(resumed) + ' کارت از قبل متصل و ذخیره‌شده بود و دوباره فرستاده نشد.' : ''));
 		selected.forEach((entry) => setEntryLoading(entry, true));
 		try {
-			const job = await request('preview_start', { pairs: pairs.map((codes) => codes.local + ' - ' + codes.remote).join('\n') });
+			const job = await request('preview_start', { pairs: pairs.map((item) => item.codes.local + ' - ' + item.codes.remote).join('\n'), shared: sharedIndexes });
 			state.token = job.token;
 			const order = [];
 			await runSteps(job, (row) => {

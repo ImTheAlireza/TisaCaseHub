@@ -25,6 +25,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				'partner_id'   => isset( $pair['partner_id'] ) ? sanitize_key( $pair['partner_id'] ) : 'ariocase',
 				'partner_label'=> isset( $pair['partner_label'] ) ? (string) $pair['partner_label'] : 'ArioCase',
 				'stock'        => null,
+				'shared_remote' => ! empty( $pair['shared_remote'] ),
 			), $extra );
 		}
 
@@ -54,7 +55,9 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 
 		public static function preview( $pair, $partner_id = 'ariocase' ) {
 			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
-			$pair = wp_parse_args( is_array( $pair ) ? $pair : array(), array( 'local_code' => '', 'remote_code' => '', 'error' => '' ) );
+			$pair = wp_parse_args( is_array( $pair ) ? $pair : array(), array( 'local_code' => '', 'remote_code' => '', 'error' => '', 'shared_remote' => false ) );
+			// برچسب چندمدلی همکار («A52 / A52s»): یک مرجع می‌تواند روی چند Variation تیساکیس بنشیند.
+			$shared = ! empty( $pair['shared_remote'] );
 			$pair['partner_id'] = $partner_id;
 			$pair['partner_label'] = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase';
 			if ( '' !== $pair['error'] ) {
@@ -84,7 +87,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( ! $is_url && '' !== $current && $current !== $reference ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}
-			if ( ! $is_url ) {
+			if ( ! $is_url && ! $shared ) {
 				foreach ( TCAS_Mapping::ids_by_remote_code( $reference, $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
 						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
@@ -112,7 +115,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
-			if ( $is_url ) {
+			if ( $is_url && ! $shared ) {
 				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'], $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
 						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
@@ -141,7 +144,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return array( 'row' => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			return array(
-				'row'      => self::row( $pair, 'connect', 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ' . $partner_label . ' خوانده و اعمال می‌شود.', $extra ),
+				'row'      => self::row(
+					$pair,
+					'connect',
+					$shared
+						? 'برچسب همکار چند مدل را با هم دارد؛ همین موجودی روی این Variation و کارت‌های همان فهرست اعمال می‌شود.'
+						: 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ' . $partner_label . ' خوانده و اعمال می‌شود.',
+					$extra
+				),
 				'remote'   => $remote,
 				'local_id' => $local_id,
 			);
@@ -173,7 +183,8 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$previous_code     = TCAS_Mapping::remote_code( $local_id );
 			$previous_enabled  = TCAS_Mapping::is_enabled( $local_id );
 			$previous_partner  = TCAS_Mapping::partner_id( $local_id );
-			$mapped            = TCAS_Mapping::map( $local_id, $row['remote_code'], true, $partner_id );
+			$shared            = ! empty( $row['shared_remote'] );
+			$mapped            = TCAS_Mapping::map( $local_id, $row['remote_code'], true, $partner_id, $shared );
 			if ( is_wp_error( $mapped ) ) {
 				return $mapped;
 			}

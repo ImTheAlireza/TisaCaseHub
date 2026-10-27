@@ -157,6 +157,45 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۵) فهرست مدل: یک Variation همکار روی دو کارت تیساکیس ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = [];
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		bodies.push({ action, body: options.body });
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:407473', remote_code: 'ID:46922/46993', local_label: 'Samsung A52', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52'], extra: ['a52s'], shared_remote: true },
+				{ local_code: 'ID:407474', remote_code: 'ID:46922/46993', local_label: 'Samsung A52s', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52s'], extra: ['a52'], shared_remote: true }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		if (action === 'tcas_preview_start') return reply({ token: 'b'.repeat(32), total: 2 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2, rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('یک Variation چندمدلی همکار دو کارت جدا برای دو Variation تیساکیس می‌سازد', 2 === entries.length && entries[0].querySelector('.tcas-local-code').value === 'ID:407473' && entries[1].querySelector('.tcas-local-code').value === 'ID:407474');
+	ok('هر دو کارت به همان مرجع همکار وصل می‌شوند', entries[0].querySelector('.tcas-remote-code').value === 'ID:46922/46993' && entries[1].querySelector('.tcas-remote-code').value === 'ID:46922/46993');
+	ok('نشان کارت «پیشنهاد · فهرست مدل» با رنگ بررسی است', entries[0].querySelector('.tcas-pair-flag').textContent.includes('فهرست مدل') && entries[0].querySelector('.tcas-pair-flag').classList.contains('is-warn') && entries[0].classList.contains('is-review'));
+	ok('یادداشت کارت، مدل خودش و مدل‌های دیگر همان Variation را نشان می‌دهد', entries[0].querySelector('.tcas-pair-flag-note').textContent.includes('مدل این کارت') && entries[0].querySelector('.tcas-pair-flag-note').textContent.includes('a52s'));
+	ok('هر دو کارت برای اتصال انتخاب‌شده‌اند', entries.every((entry) => entry.querySelector('.tcas-row-select').checked && !entry.querySelector('.tcas-row-select').disabled));
+	ok('پرچم مرجع مشترک روی کارت ذخیره می‌شود', entries.every((entry) => '1' === entry.dataset.sharedRemote));
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => bodies.some((item) => 'tcas_preview_start' === item.action), 8000);
+	const start = bodies.filter((item) => 'tcas_preview_start' === item.action).pop();
+	const shared = start && start.body.getAll ? start.body.getAll('shared[]') : [];
+	ok('درخواست اتصال، هر دو نمایهٔ مرجع مشترک را می‌فرستد', 2 === shared.length && shared.includes('0') && shared.includes('1'));
+	ok('گزارش تطبیق، کارت‌های فهرست مدل را می‌شمارد', window.document.getElementById('tcas-smart-status').textContent.includes('Variation چندمدلی'));
+	dom.window.close();
+}
+
 // ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];
@@ -853,4 +892,5 @@ ok('محصولات متصل آکارئونی و کارت‌های Variation سه
 ok('کارت همگام‌سازی خودکار در تنظیمات با چرخه، نوع نوشتن و سیاست قطعی همکار هست', settingsView.includes('sweep-controls.php') && sweepView.includes('name="tcas_settings[sweep_interval]"') && sweepView.includes('name="tcas_settings[stock_mode]"') && sweepView.includes('name="tcas_settings[fail_mode]"') && sweepView.includes('name="tcas_settings[sweep_batch]"') && sweepView.includes('id="tcas-sweep-now"'));
 ok('وضعیت جارو، صف و Backoff در کارت تنظیمات نمایش داده می‌شود', sweepView.includes('id="tcas-sweep-status"') && sweepView.includes('TCAS_Sweeper::summary_text()') && sweepView.includes('در صف است') && sweepView.includes('محدودیت اعمال کرده'));
 ok('دکمهٔ همگام‌سازی الان به همان عملیات AJAX وصل است', script.includes("simpleAction(sweepNow, 'sweep_now'") && script.includes("$('tcas-sweep-now')") && uiCss.includes('.tcas-sweep-status') && uiCss.includes('.tcas-sweep-actions') && uiCss.includes('.tcas-sweep-result'));
+ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکریپت و CSS واقعی تعریف شده‌اند', script.includes("list: { text: 'پیشنهاد · فهرست مدل'") && script.includes('entry.dataset.sharedRemote') && script.includes('shared_remote: entry.dataset.sharedRemote') && uiCss.includes('.tcas-pair-flag.is-list'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

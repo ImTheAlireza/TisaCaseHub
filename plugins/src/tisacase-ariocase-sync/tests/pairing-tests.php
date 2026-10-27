@@ -168,6 +168,22 @@ pair_test( 'همان مرجع ریموت می‌تواند در providerهای �
 $cross_provider_remap = TCAS_Mapping::map( 301, 'OTHER-REF', true, 'vendor_b' );
 pair_test( 'یک محصول برای جلوگیری از تداخل موجودی هم‌زمان به provider دوم منتقل نمی‌شود', is_wp_error( $cross_provider_remap ) && 'vendor_a' === TCAS_Mapping::partner_id( 301 ) );
 
+// --- فهرست مدل: یک مرجع همکار روی چند Variation تیساکیس ---
+TCAS_Core::$settings = array( 'stock_mode' => 'quantity' );
+$a52  = local_product( 70, 'A52' );
+$a52s = local_product( 71, 'A52s' );
+TCAS_Api::$responses['A52-MERGED'] = remote_product( 'A52-MERGED', array( 'stock' => array( 'quantity' => 3.0, 'status' => 'instock' ) ) );
+list( $first_preview, $first_result ) = connect_pair( 'A52', 'A52-MERGED' );
+pair_test( 'اولین Variation فهرست مدل عادی وصل می‌شود', ! is_wp_error( $first_result ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 70 ) );
+list( $duplicate_preview, $duplicate_result ) = connect_pair( 'A52s', 'A52-MERGED' );
+pair_test( 'بدون پرچم فهرست مدل، مرجع تکراری همچنان رد می‌شود', is_wp_error( $duplicate_result ) && '' === TCAS_Mapping::remote_code( 71 ) );
+
+$shared_preview = TCAS_Pairing::preview( array( 'local_code' => 'A52s', 'remote_code' => 'A52-MERGED', 'error' => '', 'shared_remote' => true ) );
+pair_test( 'پیش‌نمایش با پرچم اشتراک، کارت را قابل اتصال و با پیام مشترک می‌سازد', 'connect' === $shared_preview['row']['status'] && ! empty( $shared_preview['row']['shared_remote'] ) && false !== strpos( $shared_preview['row']['message'], 'همین موجودی' ) );
+$shared_result = TCAS_Pairing::connect( $shared_preview );
+pair_test( 'دومین Variation تیساکیس هم به همان Variation همکار وصل می‌شود', ! is_wp_error( $shared_result ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 71 ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 70 ) );
+pair_test( 'هر دو Variation موجودی همان مرجع را می‌گیرند', 3.0 === (float) $a52->get_stock_quantity() && 3.0 === (float) $a52s->get_stock_quantity() );
+
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );
 $flag_product = local_product( 60, 'FLAG-1' );

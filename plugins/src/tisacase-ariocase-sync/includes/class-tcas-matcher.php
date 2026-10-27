@@ -14,6 +14,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 		const SCORE_LABEL      = 95;
 		const SCORE_TOKEN      = 90;
 		const SCORE_FAMILY     = 88;
+		const SCORE_LIST       = 84;
 		const SCORE_SUGGESTION = 80;
 
 		private static function unicode_text( $value ) {
@@ -316,6 +317,132 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				$found[] = $entry;
 				$matched_local[ $local_id ]   = true;
 				$matched_remote[ $remote_id ] = true;
+			}
+			return $found;
+		}
+
+		/**
+		 * بخش‌های مدل یک برچسب چندمدلی: «Samsung A52 / A52s» → [['a52'], ['a52s']].
+		 * نام برند و توکن نسل شبکه حذف می‌شود تا فقط مدل واقعی هر بخش بماند.
+		 */
+		private static function model_segments( $raw ) {
+			$raw   = self::unicode_text( $raw );
+			$parts = preg_split( '#[/+|&،]|\s+(?:و|یا|or|and)\s+#u', $raw );
+			$out   = array();
+			foreach ( (array) $parts as $part ) {
+				$models = array();
+				foreach ( self::label_tokens( $part ) as $token ) {
+					if ( self::is_net_token( $token ) ) {
+						continue;
+					}
+					$models[ $token ] = true;
+				}
+				$models = array_map( 'strval', array_keys( $models ) );
+				sort( $models, SORT_STRING );
+				if ( $models ) {
+					$out[] = $models;
+				}
+			}
+			return $out;
+		}
+
+		/**
+		 * پاس «فهرست مدل» (یک‌به‌چند): وقتی یک Variation همکار چند مدل را با هم دارد
+		 * («Samsung A52 / A52s») و تیساکیس همان مدل‌ها را جدا دارد، برای هر Variation
+		 * تیساکیس یک کارت ساخته می‌شود و همه به همان مرجع همکار وصل می‌شوند.
+		 *
+		 * هر مدل داخل برچسب همکار باید دقیقاً با مدل یک Variation تیساکیس برابر باشد
+		 * (نه زیرمجموعه یا پیشوند)؛ وگرنه «Note 11» به «Note 11 Pro / 11s» وصل می‌شد.
+		 * قواعد ایمنی: Variation محلی تک‌مدلیِ دارای شمارهٔ مدل؛ نسل شبکهٔ سازگار؛ هر
+		 * Variation محلی فقط با یک برچسب چندمدلی و هر بخش برچسب فقط با یک Variation.
+		 */
+		private static function list_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, &$matched_local, &$matched_remote ) {
+			$locals = array();
+			foreach ( $local_variations as $index => $variation ) {
+				if ( isset( $matched_local[ $index ] ) || ! self::profile_ready( $variation, $index, $duplicate_local ) ) {
+					continue;
+				}
+				$profile = self::profile( $variation );
+				if ( ! $profile['models'] || $profile['multi'] ) {
+					continue;
+				}
+				if ( ! preg_match( '/[0-9]/', implode( '', $profile['models'] ) ) ) {
+					continue;
+				}
+				$locals[ (int) $index ] = $profile;
+			}
+			if ( ! $locals ) {
+				return array();
+			}
+			$pairs   = array();
+			$remotes = array();
+			foreach ( $remote_variations as $remote_index => $variation ) {
+				if ( isset( $matched_remote[ $remote_index ] ) || ! self::profile_ready( $variation, $remote_index, $duplicate_remote ) ) {
+					continue;
+				}
+				$remote = self::profile( $variation );
+				if ( ! $remote['multi'] ) {
+					continue;
+				}
+				$segments = self::model_segments( isset( $variation['label'] ) ? $variation['label'] : '' );
+				if ( count( $segments ) < 2 ) {
+					continue;
+				}
+				$claims = array();
+				foreach ( $segments as $segment ) {
+					$candidates = array();
+					foreach ( $locals as $local_index => $local ) {
+						if ( count( $local['models'] ) !== count( $segment ) || ! self::contains_all( $local['models'], $segment ) ) {
+							continue;
+						}
+						if ( ! self::nets_compatible( $local['nets'], $remote['nets'], true ) ) {
+							continue;
+						}
+						$candidates[] = (int) $local_index;
+					}
+					if ( 1 !== count( $candidates ) ) {
+						// هیچ Variation هم‌نامی ندارد یا چند Variation با همین مدل وجود دارد.
+						continue;
+					}
+					$claims[ $candidates[0] ][] = $segment;
+				}
+				if ( ! $claims ) {
+					continue;
+				}
+				$accepted = array();
+				foreach ( $claims as $local_index => $segments_found ) {
+					// یک Variation که به دو بخش از یک برچسب می‌خورد، مبهم است.
+					if ( 1 !== count( $segments_found ) ) {
+						continue;
+					}
+					$accepted[ (int) $local_index ] = $segments_found[0];
+					$pairs[ (int) $local_index ][] = (int) $remote_index;
+				}
+				if ( $accepted ) {
+					$remotes[ (int) $remote_index ] = array( 'profile' => $remote, 'locals' => $accepted );
+				}
+			}
+			$found = array();
+			foreach ( $pairs as $local_index => $remote_indexes ) {
+				if ( 1 !== count( $remote_indexes ) ) {
+					// این Variation محلی به بیش از یک برچسب چندمدلی می‌خورد؛ دستی بررسی شود.
+					continue;
+				}
+				$remote_index = (int) $remote_indexes[0];
+				$remote       = $remotes[ $remote_index ]['profile'];
+				$local        = $locals[ $local_index ];
+				$entry        = self::family_entry(
+					$local_variations[ $local_index ], $local_index,
+					$remote_variations[ $remote_index ], $remote_index,
+					self::SCORE_LIST, 'list', 'list'
+				);
+				$entry['shared']        = $local['models'];
+				$entry['extra']         = array_values( array_diff( $remote['models'], $local['models'] ) );
+				$entry['list_models']   = $remote['models'];
+				$entry['shared_remote'] = true;
+				$found[]                = $entry;
+				$matched_local[ $local_index ]   = true;
+				$matched_remote[ $remote_index ] = true;
 			}
 			return $found;
 		}
@@ -668,12 +795,17 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			foreach ( self::family_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, $matched_local, $matched_remote ) as $entry ) {
 				$family_matches[] = $entry;
 			}
-			// پاس سوم: پیشنهاد خانوادگی برای برچسب‌های چندمدلی (پس از مصرف پاس‌های قبلی).
+			// پاس سوم: فهرست مدل (یک Variation همکار ↔ چند Variation تیساکیس با همان مدل‌ها).
+			$list_matches = array();
+			foreach ( self::list_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, $matched_local, $matched_remote ) as $entry ) {
+				$list_matches[] = $entry;
+			}
+			// پاس چهارم: پیشنهاد خانوادگی برای برچسب‌های چندمدلی (پس از مصرف پاس‌های قبلی).
 			$suggested = array();
 			foreach ( self::suggestion_pairs( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, $matched_local, $matched_remote ) as $entry ) {
 				$suggested[] = $entry;
 			}
-			$matches = array_merge( $matches, $family_matches, $suggested );
+			$matches = array_merge( $matches, $family_matches, $list_matches, $suggested );
 			usort( $matches, function( $a, $b ) {
 				return $a['_local_index'] <=> $b['_local_index'];
 			} );
@@ -709,10 +841,13 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			$exact     = 0;
 			$fuzzy     = 0;
 			$family    = 0;
+			$list      = 0;
 			$suggested_count = 0;
 			foreach ( $matches as $match ) {
 				if ( 'suggested' === $match['confidence'] ) {
 					$suggested_count++;
+				} elseif ( 'list' === $match['confidence'] ) {
+					$list++;
 				} elseif ( 'family' === $match['confidence'] ) {
 					$family++;
 				} elseif ( 'exact' === $match['confidence'] ) {
@@ -725,7 +860,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				'matches'   => $matches,
 				'ambiguous' => $ambiguous,
 				'unmatched' => $unmatched,
-				'summary'   => array( 'exact' => $exact, 'fuzzy' => $fuzzy, 'family' => $family, 'suggested' => $suggested_count ),
+				'summary'   => array( 'exact' => $exact, 'fuzzy' => $fuzzy, 'family' => $family, 'list' => $list, 'suggested' => $suggested_count ),
 			);
 		}
 	}
