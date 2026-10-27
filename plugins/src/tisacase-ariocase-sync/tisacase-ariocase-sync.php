@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — همگام‌سازی موجودی با همکار
  * Plugin URI:        https://tisacase.com
  * Description:       اتصال محصولات تیساکیس به همکارهای ثبت‌شده و همگام‌سازی فقط موجودی؛ ArioCase به‌صورت پیش‌فرض پشتیبانی می‌شود.
- * Version:           1.19.0
+ * Version:           1.20.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -21,7 +21,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCAS_VERSION', '1.19.0' );
+define( 'TCAS_VERSION', '1.20.0' );
 define( 'TCAS_FILE', __FILE__ );
 define( 'TCAS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCAS_URL', plugin_dir_url( __FILE__ ) );
@@ -39,6 +39,7 @@ require_once TCAS_PATH . 'includes/class-tcas-matcher.php';
 require_once TCAS_PATH . 'includes/class-tcas-mapping.php';
 require_once TCAS_PATH . 'includes/class-tcas-stock.php';
 require_once TCAS_PATH . 'includes/class-tcas-live.php';
+require_once TCAS_PATH . 'includes/class-tcas-sweeper.php';
 require_once TCAS_PATH . 'includes/class-tcas-pairing.php';
 require_once TCAS_PATH . 'includes/class-tcas-logger.php';
 require_once TCAS_PATH . 'includes/class-tcas-ajax.php';

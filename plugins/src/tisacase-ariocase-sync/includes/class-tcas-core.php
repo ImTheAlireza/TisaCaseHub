@@ -35,6 +35,9 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			if ( class_exists( 'WooCommerce' ) ) {
 				TCAS_Live::init();
 			}
+			if ( class_exists( 'TCAS_Sweeper' ) ) {
+				TCAS_Sweeper::init();
+			}
 			if ( is_admin() ) {
 				TCAS_Admin::init();
 				TCAS_Ajax::init();
@@ -58,6 +61,10 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				'live_scope'          => 'purchase',
 				'persist_stock'       => 'yes',
 				'checkout_guard'      => 'yes',
+				'stock_mode'          => 'flag',
+				'fail_mode'           => 'open',
+				'sweep_interval'      => 30,
+				'sweep_batch'         => 20,
 				'base_url'            => 'https://ariocase.com/wp-json/wc/v3',
 				'product_endpoint'    => 'products?status=publish&per_page=100&sku={code}',
 				'slug_endpoint'       => 'products?status=publish&per_page=100&slug={slug}',
@@ -91,7 +98,22 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			if ( ! in_array( $settings['live_scope'], array( 'all', 'purchase' ), true ) ) {
 				$settings['live_scope'] = 'purchase';
 			}
+			if ( ! in_array( $settings['stock_mode'], array( 'flag', 'quantity' ), true ) ) {
+				$settings['stock_mode'] = 'flag';
+			}
+			if ( ! in_array( $settings['fail_mode'], array( 'open', 'closed' ), true ) ) {
+				$settings['fail_mode'] = 'open';
+			}
+			$settings['sweep_interval'] = self::interval_option( $settings['sweep_interval'] );
+			$settings['sweep_batch']    = max( 1, min( 50, absint( $settings['sweep_batch'] ) ) );
 			return $settings;
+		}
+
+		/** فقط مقادیر مجاز چرخهٔ تازه‌سازی؛ صفر یعنی خاموش. */
+		public static function interval_option( $value ) {
+			$allowed = array( 0, 15, 30, 60 );
+			$value   = absint( $value );
+			return in_array( $value, $allowed, true ) ? $value : 30;
 		}
 
 		/** Run one provider request with its own connection settings in legacy API helpers. */
@@ -131,6 +153,13 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			}
 			$live_scope          = isset( $input['live_scope'] ) ? sanitize_key( $input['live_scope'] ) : 'purchase';
 			$clean['live_scope'] = in_array( $live_scope, array( 'all', 'purchase' ), true ) ? $live_scope : 'purchase';
+
+			$stock_mode          = isset( $input['stock_mode'] ) ? sanitize_key( $input['stock_mode'] ) : 'flag';
+			$clean['stock_mode'] = in_array( $stock_mode, array( 'flag', 'quantity' ), true ) ? $stock_mode : 'flag';
+			$fail_mode           = isset( $input['fail_mode'] ) ? sanitize_key( $input['fail_mode'] ) : 'open';
+			$clean['fail_mode']  = in_array( $fail_mode, array( 'open', 'closed' ), true ) ? $fail_mode : 'open';
+			$clean['sweep_interval'] = self::interval_option( isset( $input['sweep_interval'] ) ? $input['sweep_interval'] : $current['sweep_interval'] );
+			$clean['sweep_batch']    = max( 1, min( 50, isset( $input['sweep_batch'] ) ? absint( $input['sweep_batch'] ) : absint( $current['sweep_batch'] ) ) );
 
 			$url_keys = array( 'base_url', 'product_endpoint', 'slug_endpoint', 'stock_endpoint' );
 			foreach ( $url_keys as $key ) {
@@ -273,10 +302,16 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				add_option( self::OPTION_LOGS, array(), '', 'no' );
 			}
 			update_option( self::OPTION_SETTINGS_VERSION, self::SETTINGS_VERSION, false );
+			if ( class_exists( 'TCAS_Sweeper' ) ) {
+				TCAS_Sweeper::ensure_schedule();
+			}
 		}
 
 		public static function deactivate() {
 			// نگاشت‌ها و تنظیمات با غیرفعال‌سازی حفظ می‌شوند.
+			if ( class_exists( 'TCAS_Sweeper' ) ) {
+				TCAS_Sweeper::unschedule();
+			}
 		}
 	}
 }

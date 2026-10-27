@@ -15,7 +15,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		const STEP_MAX  = 20;
 
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -442,6 +442,27 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			TCAS_Mapping::forget( $product_id );
 			TCAS_Logger::add( 'mapping_remove', $code, sprintf( 'اتصال محصول #%d حذف شد؛ خود محصول حذف نشد.', $product_id ) );
 			wp_send_json_success( array( 'message' => 'اتصال حذف شد؛ محصول و موجودی فعلی حذف نشدند.', 'reload' => true ) );
+		}
+
+		/** اجرای دستی جارو؛ دفعهٔ اول فقط چند کد تا پاسخ سریع بماند، ادامه در پس‌زمینه. */
+		public static function sweep_now() {
+			self::auth();
+			if ( ! class_exists( 'TCAS_Sweeper' ) ) {
+				wp_send_json_error( array( 'message' => 'موتور همگام‌سازی پس‌زمینه در دسترس نیست.' ), 500 );
+			}
+			$result = TCAS_Sweeper::run( 'manual', 8, true );
+			$data   = array(
+				'message'   => (string) $result['message'],
+				'processed' => isset( $result['processed'] ) ? (int) $result['processed'] : 0,
+				'changed'   => isset( $result['changed'] ) ? (int) $result['changed'] : 0,
+				'errors'    => isset( $result['errors'] ) ? (int) $result['errors'] : 0,
+				'backlog'   => isset( $result['backlog'] ) ? (int) $result['backlog'] : 0,
+				'reload'    => false,
+			);
+			if ( empty( $result['ok'] ) && empty( $result['processed'] ) ) {
+				wp_send_json_error( $data, 409 );
+			}
+			wp_send_json_success( $data );
 		}
 
 		public static function clear_logs() {

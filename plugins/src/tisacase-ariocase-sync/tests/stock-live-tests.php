@@ -80,6 +80,11 @@ class TCAS_Api {
 }
 class TCAS_Test_Errors { public $errors = array(); public function add( $code, $message ) { $this->errors[ $code ] = $message; } }
 
+/** دوبل Backoff جارو (کلاس واقعی در این مجموعه بارگذاری نمی‌شود). */
+class TCAS_Sweeper {
+	public static $backoff = array();
+	public static function in_backoff() { return ! empty( self::$backoff ); }
+}
 require_once dirname( __DIR__ ) . '/includes/class-tcas-core.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
@@ -95,12 +100,12 @@ function map_product( $id, $code, $product = null ) {
 	$GLOBALS['meta'][ $id ][ TCAS_Mapping::META_ENABLED ] = 'yes';
 }
 $GLOBALS['wc'] = (object) array( 'cart' => new TCAS_Test_Cart() );
-$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::defaults(), array( 'live_scope' => 'all', 'base_url' => 'https://ariocase.test/api', 'api_key' => 'secret' ) );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::defaults(), array( 'live_scope' => 'all', 'base_url' => 'https://ariocase.test/api', 'api_key' => 'secret', 'stock_mode' => 'quantity', 'fail_mode' => 'closed' ) );
 $GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS_VERSION ] = 0;
 TCAS_Core::maybe_upgrade_settings();
 live_test( 'تنظیمات نسخهٔ قدیمی از خواندن هم‌زمان به حالت خرید مهاجرت می‌کند', 'purchase' === get_option( TCAS_Core::OPTION_SETTINGS )['live_scope'] && 'secret' === get_option( TCAS_Core::OPTION_SETTINGS )['api_key'] );
 live_test( 'پیش‌فرض نصب جدید هم مسیر امن خرید است', 'purchase' === TCAS_Core::defaults()['live_scope'] );
-$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::settings(), array( 'live_scope' => 'all' ) );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ] = array_merge( TCAS_Core::settings(), array( 'live_scope' => 'all', 'stock_mode' => 'quantity', 'fail_mode' => 'closed' ) );
 TCAS_Core::maybe_upgrade_settings();
 live_test( 'حالت هم‌زمان پس از مهاجرت فقط با انتخاب صریح فعال می‌ماند', 'all' === TCAS_Core::settings()['live_scope'] );
 
@@ -236,6 +241,62 @@ live_test( 'اتصال‌های Variation بر اساس جفت والد محلی
 
 $GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['enabled'] = 'no';
 live_test( 'خاموش‌کردن سینک State جدید نمی‌سازد', null === TCAS_Live::state( 10 ) );
+
+// --- حالت flag: فقط موجود/ناموجود ---
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['enabled']     = 'yes';
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['stock_mode'] = 'flag';
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode']  = 'open';
+live_test( 'حالت پیش‌فرض نوشتن، فقط وضعیت است', 'flag' === TCAS_Stock::mode() );
+
+$GLOBALS['products'][60] = new TCAS_Test_Product( 60, 'variation', 40, 'instock', 59 );
+$GLOBALS['meta'][60][ TCAS_Mapping::META_QTY ] = '40';
+$GLOBALS['meta'][60][ TCAS_Mapping::META_STATUS ] = 'instock';
+$flag_applied = TCAS_Stock::apply( $GLOBALS['products'][60], array( 'quantity' => 0.0, 'status' => 'instock' ) );
+live_test( 'حالت flag با موجودی صفر فقط Variation را ناموجود می‌کند', true === $flag_applied && 'outofstock' === $GLOBALS['products'][60]->get_stock_status() );
+live_test( 'حالت flag انبار عددی و مدیریت انبار محلی را دست نمی‌زند', 40.0 === (float) $GLOBALS['products'][60]->get_stock_quantity() && false === $GLOBALS['products'][60]->get_manage_stock() && 1 === $GLOBALS['products'][60]->saved );
+$flag_repeat = TCAS_Stock::apply( $GLOBALS['products'][60], array( 'quantity' => 0.0, 'status' => 'outofstock' ) );
+live_test( 'تکرار همان وضعیت نوشتن تازه نمی‌سازد', false === $flag_repeat && 1 === $GLOBALS['products'][60]->saved );
+$GLOBALS['products'][60]->set_stock_status( 'outofstock' );
+TCAS_Stock::apply( $GLOBALS['products'][60], array( 'quantity' => 12.0, 'status' => 'instock' ) );
+live_test( 'بازگشت موجودی همکار وضعیت را دوباره موجود می‌کند', 'instock' === $GLOBALS['products'][60]->get_stock_status() && 40.0 === (float) $GLOBALS['products'][60]->get_stock_quantity() );
+
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['stock_mode'] = 'quantity';
+$GLOBALS['products'][61] = new TCAS_Test_Product( 61, 'simple', 40, 'instock' );
+TCAS_Stock::apply( $GLOBALS['products'][61], array( 'quantity' => 3.0, 'status' => 'instock' ) );
+live_test( 'حالت quantity عدد دقیق همکار را می‌نویسد', 3.0 === (float) $GLOBALS['products'][61]->get_stock_quantity() && true === $GLOBALS['products'][61]->get_manage_stock() );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['stock_mode'] = 'flag';
+
+// --- سیاست «همکار در دسترس نیست» ---
+map_product( 60, 'REMOTE-60', $GLOBALS['products'][60] );
+TCAS_Api::$responses['REMOTE-60'] = array( 'code' => 'REMOTE-60', 'quantity' => 5.0, 'status' => 'instock' );
+TCAS_Live::state( 60, true );
+TCAS_Api::$responses['REMOTE-60'] = new WP_Error( 'timeout', 'timeout' );
+TCAS_Live::state( 60, true );
+$GLOBALS['notices'] = array();
+$open_add = TCAS_Live::validate_add_to_cart( true, 60, 1 );
+live_test( 'در fail-open با Snapshot موجود، فروش ادامه و یک پیام اطلاع‌رسانی ثبت می‌شود', true === $open_add && 'notice' === $GLOBALS['notices'][0][1] && false !== strpos( $GLOBALS['notices'][0][0], 'آخرین موجودی' ) );
+
+map_product( 63, 'REMOTE-63', new TCAS_Test_Product( 63, 'simple', 3, 'instock' ) );
+TCAS_Api::$responses['REMOTE-63'] = new WP_Error( 'timeout', 'timeout' );
+TCAS_Live::state( 63, true );
+live_test( 'بدون هیچ Snapshot، قطعی همکار فروش را نمی‌بندد (fail-open)', true === TCAS_Live::validate_add_to_cart( true, 63, 1 ) );
+
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'closed';
+$GLOBALS['notices'] = array();
+$closed_add = TCAS_Live::validate_add_to_cart( true, 60, 1 );
+live_test( 'در حالت بسته، قطعی همکار افزودن به سبد را متوقف می‌کند', false === $closed_add && 'error' === $GLOBALS['notices'][0][1] );
+$GLOBALS['options'][ TCAS_Core::OPTION_SETTINGS ]['fail_mode'] = 'open';
+
+map_product( 62, 'REMOTE-62', new TCAS_Test_Product( 62, 'simple', 3, 'instock' ) );
+$GLOBALS['meta'][62][ TCAS_Mapping::META_STATUS ] = 'outofstock';
+$GLOBALS['meta'][62][ TCAS_Mapping::META_QTY ] = '0';
+$GLOBALS['meta'][62][ TCAS_Mapping::META_FETCHED_AT ] = time();
+TCAS_Api::$responses['REMOTE-62'] = array( 'code' => 'REMOTE-62', 'quantity' => 9.0, 'status' => 'instock' );
+TCAS_Sweeper::$backoff = array( 'until' => time() + 600 );
+$calls_before_backoff = count( TCAS_Api::$calls );
+$backoff_result = TCAS_Live::validate_add_to_cart( true, 62, 1 );
+live_test( 'در بازهٔ Backoff کنترل خرید از Snapshot می‌خواند و API را صدا نمی‌زند', false === $backoff_result && $calls_before_backoff === count( TCAS_Api::$calls ) );
+TCAS_Sweeper::$backoff = array();
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) { exit( $fail ? 1 : 0 ); }

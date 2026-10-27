@@ -75,8 +75,8 @@ if ( ! class_exists( 'TCAS_Partners' ) ) {
 			$common  = TCAS_Core::settings();
 			$provider_defaults = $provider->defaults();
 			$provider_defaults = is_array( $provider_defaults ) ? $provider_defaults : array();
-			$defaults = array_merge( $provider_defaults, array_intersect_key( $common, array_flip( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard' ) ) ) );
-			return array_merge( $defaults, $stored, array_intersect_key( $common, array_flip( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard' ) ) ) );
+			$defaults = array_merge( $provider_defaults, array_intersect_key( $common, array_flip( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard', 'stock_mode', 'fail_mode', 'sweep_interval', 'sweep_batch' ) ) ) );
+			return array_merge( $defaults, $stored, array_intersect_key( $common, array_flip( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard', 'stock_mode', 'fail_mode', 'sweep_interval', 'sweep_batch' ) ) ) );
 		}
 
 		public static function is_configured( $id = self::DEFAULT_ID ) {
@@ -112,7 +112,7 @@ if ( ! class_exists( 'TCAS_Partners' ) ) {
 			// Shared stock behavior remains in the historic option, avoiding a breaking migration.
 			$current_common = TCAS_Core::settings();
 			$common = TCAS_Core::sanitize_settings( $input, $current_common );
-			foreach ( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard' ) as $key ) {
+			foreach ( array( 'enabled', 'live_scope', 'persist_stock', 'checkout_guard', 'stock_mode', 'fail_mode', 'sweep_interval', 'sweep_batch' ) as $key ) {
 				$current_common[ $key ] = $common[ $key ];
 			}
 			$current_common['active_partner_id'] = $id;

@@ -834,6 +834,8 @@ function type(entry, field, value) {
 const uiCss = fs.readFileSync(path.join(root, 'assets/admin.css'), 'utf8');
 const pairsView = fs.readFileSync(path.join(root, 'views/pairs.php'), 'utf8');
 const linkedGroupsView = fs.readFileSync(path.join(root, 'views/linked-groups.php'), 'utf8');
+const settingsView = fs.readFileSync(path.join(root, 'views/settings.php'), 'utf8');
+const sweepView = fs.readFileSync(path.join(root, 'views/partials/sweep-controls.php'), 'utf8');
 ok('Checkbox تنظیمات اندازهٔ ثابت دارد و تمام‌عرض نمی‌شود', uiCss.includes('.tcas-check-line input[type=checkbox]') && uiCss.includes('width:16px') && uiCss.includes('justify-self:start'));
 ok('Selector و استایل جمع‌وجور Variation در View واقعی وجود دارد', pairsView.includes('id="tcas-link-variation"') && pairsView.includes('class="tcas-link-variation" hidden') && uiCss.includes('.tcas-link-variation select'));
 ok('چیدمان قدیمی و فلش حذف و نتیجهٔ واقعی پیش‌فرض مخفی است', pairsView.includes('tcas-converter-flow') && pairsView.includes('id="tcas-link-result" class="tcas-converter-result" hidden') && !pairsView.includes('tcas-converter-layout') && !pairsView.includes('tcas-converter-arrow') && !uiCss.includes('.tcas-converter-arrow') && !uiCss.includes('.tcas-input-action'));
@@ -848,4 +850,7 @@ ok('اسپینر و موجودی کارت استایل اختصاصی دارند
 ok('نشان‌های خانوادهٔ مدل و پیشنهاد در CSS واقعی وجود دارد', uiCss.includes('.tcas-pair-flag.is-warn') && uiCss.includes('.tcas-pair-flag-note') && uiCss.includes('.tcas-smart-issue-multiple_families'));
 ok('جفت‌های تازه با کارت والد و شبکهٔ Variation سه‌ستونی ساخته می‌شوند', script.includes('tcas-fresh-product-group') && script.includes('tcas-pair-entries-grouped') && uiCss.includes('.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr))'));
 ok('محصولات متصل آکارئونی و کارت‌های Variation سه‌ستونی با موجودی دارند', linkedGroupsView.includes('<details class="tcas-linked-group">') && linkedGroupsView.includes('tcas-linked-variation-card') && linkedGroupsView.includes("$row['quantity']") && uiCss.includes('.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))'));
+ok('کارت همگام‌سازی خودکار در تنظیمات با چرخه، نوع نوشتن و سیاست قطعی همکار هست', settingsView.includes('sweep-controls.php') && sweepView.includes('name="tcas_settings[sweep_interval]"') && sweepView.includes('name="tcas_settings[stock_mode]"') && sweepView.includes('name="tcas_settings[fail_mode]"') && sweepView.includes('name="tcas_settings[sweep_batch]"') && sweepView.includes('id="tcas-sweep-now"'));
+ok('وضعیت جارو، صف و Backoff در کارت تنظیمات نمایش داده می‌شود', sweepView.includes('id="tcas-sweep-status"') && sweepView.includes('TCAS_Sweeper::summary_text()') && sweepView.includes('در صف است') && sweepView.includes('محدودیت اعمال کرده'));
+ok('دکمهٔ همگام‌سازی الان به همان عملیات AJAX وصل است', script.includes("simpleAction(sweepNow, 'sweep_now'") && script.includes("$('tcas-sweep-now')") && uiCss.includes('.tcas-sweep-status') && uiCss.includes('.tcas-sweep-actions') && uiCss.includes('.tcas-sweep-result'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

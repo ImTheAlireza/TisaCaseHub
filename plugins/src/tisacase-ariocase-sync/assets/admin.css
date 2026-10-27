@@ -283,6 +283,14 @@
 
 .tcas-smart-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:10px; align-items:end; }
 .tcas-smart-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-sweep-status { display:grid; gap:4px; margin-top:14px; padding:11px 13px; border:1px solid var(--tisa-line,#E3E3E3); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface-alt,#FAFAFA); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-sweep-status p { margin:0; }
+.tcas-sweep-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px; }
+.tcas-sweep-actions .tcas-muted { font-size:var(--tisa-fs-tiny,11px); }
+.tcas-sweep-result { margin:8px 0 0; font-size:var(--tisa-fs-meta,12.5px); color:var(--tcas-muted); }
+.tcas-sweep-result:empty { display:none; }
+.tcas-sweep-result.is-error { color:var(--tisa-danger,#B5453A); }
+.tcas-sweep-result.is-success { color:var(--tisa-success,#1A7F37); }
 .tcas-smart-card .tcas-status { margin-top:9px; }
 .tcas-smart-issues { display:grid; gap:9px; margin-top:12px; padding:12px; border:1px solid var(--tisa-warning-soft,#F4E4C6); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-warning-soft,#FFF8E8); }
 .tcas-smart-issues[hidden] { display:none; }

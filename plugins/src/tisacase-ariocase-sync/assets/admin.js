@@ -1871,4 +1871,6 @@
 	}));
 	const clearLogs = $('tcas-clear-logs');
 	if (clearLogs) clearLogs.addEventListener('click', () => simpleAction(clearLogs, 'clear_logs', {}, 'tcas-log-status'));
+	const sweepNow = $('tcas-sweep-now');
+	if (sweepNow) sweepNow.addEventListener('click', () => simpleAction(sweepNow, 'sweep_now', {}, 'tcas-sweep-result'));
 }());

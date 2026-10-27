@@ -41,6 +41,12 @@ class TCAS_Api {
 	public static function fetch_product( $code ) { return self::fetch_reference( $code ); }
 	public static function fetch_reference( $reference ) { self::$calls[] = $reference; return isset( self::$responses[ $reference ] ) ? self::$responses[ $reference ] : new WP_Error( 'not_found', 'محصول ArioCase پیدا نشد.' ); }
 }
+/** دوبل تنظیمات: این مجموعه رفتار نوشتن عددی را می‌سنجد. */
+class TCAS_Core {
+	public static $settings = array( 'stock_mode' => 'quantity' );
+	public static function defaults() { return array( 'stock_mode' => 'quantity', 'fail_mode' => 'closed' ); }
+	public static function settings() { return array_merge( self::defaults(), self::$settings ); }
+}
 require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-pairing.php';
@@ -161,6 +167,13 @@ $map_b = TCAS_Mapping::map( 302, 'SAME-REMOTE-REF', true, 'ariocase' );
 pair_test( 'همان مرجع ریموت می‌تواند در providerهای جدا به محصولات متفاوت متصل شود', true === $map_a && true === $map_b && array( 301 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'vendor_a' ) && array( 302 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'ariocase' ) );
 $cross_provider_remap = TCAS_Mapping::map( 301, 'OTHER-REF', true, 'vendor_b' );
 pair_test( 'یک محصول برای جلوگیری از تداخل موجودی هم‌زمان به provider دوم منتقل نمی‌شود', is_wp_error( $cross_provider_remap ) && 'vendor_a' === TCAS_Mapping::partner_id( 301 ) );
+
+// --- حالت flag: فقط موجود/ناموجود ---
+TCAS_Core::$settings = array( 'stock_mode' => 'flag' );
+$flag_product = local_product( 60, 'FLAG-1' );
+TCAS_Api::$responses['FLAG-R'] = remote_product( 'FLAG-R', array( 'stock' => array( 'quantity' => 0.0, 'status' => 'instock' ) ) );
+connect_pair( 'FLAG-1', 'FLAG-R' );
+pair_test( 'حالت flag فقط وضعیت را می‌نویسد و انبار عددی محلی را دست نمی‌زند', 'outofstock' === $flag_product->get_stock_status() && null === $flag_product->get_stock_quantity() && false === $flag_product->get_manage_stock() );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

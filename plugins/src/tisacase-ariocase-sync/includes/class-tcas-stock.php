@@ -2,6 +2,11 @@
 /**
  * اعمال موجودی با CRUD ووکامرس؛ خطای API در این لایه به صفر تبدیل نمی‌شود.
  *
+ * دو حالت نوشتن پشتیبانی می‌شود:
+ * - `flag` (پیش‌فرض): فقط وضعیت موجود/ناموجود از همکار نوشته می‌شود و انبار عددی
+ *   محلی دست نمی‌خورد. با رسیدن موجودی همکار به صفر، همان Variation ناموجود می‌شود.
+ * - `quantity`: عدد دقیق موجودی همکار در انبار ووکامرس نوشته می‌شود.
+ *
  * @package TisaCase_ArioCase_Sync
  */
 
@@ -11,11 +16,26 @@ if ( ! class_exists( 'TCAS_Stock' ) ) {
 
 	final class TCAS_Stock {
 
+		const MODE_FLAG     = 'flag';
+		const MODE_QUANTITY = 'quantity';
+		const STATUSES      = array( 'instock', 'outofstock', 'onbackorder' );
+
 		public static function valid( $stock ) {
 			return is_array( $stock ) && ( isset( $stock['quantity'] ) && null !== $stock['quantity'] || ! empty( $stock['status'] ) );
 		}
 
-		private static function targets( $stock ) {
+		/** حالت نوشتن موجودی از تنظیمات خوانده می‌شود. */
+		public static function mode() {
+			$settings = class_exists( 'TCAS_Core' ) ? TCAS_Core::settings() : array();
+			return isset( $settings['stock_mode'] ) && self::MODE_QUANTITY === $settings['stock_mode'] ? self::MODE_QUANTITY : self::MODE_FLAG;
+		}
+
+		/**
+		 * مقصد نوشتن. در حالت flag همیشه quantity=null برمی‌گردد تا هیچ عددی به
+		 * ووکامرس نوشته نشود؛ ولی خود عدد برای کنترل سبد استفاده می‌شود.
+		 */
+		private static function targets( $stock, $mode = '' ) {
+			$mode     = '' === $mode ? self::mode() : $mode;
 			$quantity = isset( $stock['quantity'] ) && null !== $stock['quantity'] ? (float) $stock['quantity'] : null;
 			$status   = isset( $stock['status'] ) ? (string) $stock['status'] : '';
 			if ( null !== $quantity ) {
@@ -24,16 +44,19 @@ if ( ! class_exists( 'TCAS_Stock' ) ) {
 				}
 				if ( $quantity <= 0 ) {
 					$status = 'outofstock';
-				} elseif ( ! in_array( $status, array( 'instock', 'outofstock', 'onbackorder' ), true ) ) {
+				} elseif ( ! in_array( $status, self::STATUSES, true ) ) {
 					$status = 'instock';
 				}
-				return array( 'manage' => true, 'quantity' => $quantity, 'status' => $status );
+				if ( self::MODE_QUANTITY === $mode ) {
+					return array( 'manage' => true, 'quantity' => $quantity, 'status' => $status, 'mode' => $mode );
+				}
+				return array( 'manage' => false, 'quantity' => null, 'status' => $status, 'mode' => $mode );
 			}
-			if ( ! in_array( $status, array( 'instock', 'outofstock', 'onbackorder' ), true ) ) {
+			if ( ! in_array( $status, self::STATUSES, true ) ) {
 				return new WP_Error( 'tcas_invalid_stock', 'دادهٔ موجودی همکار معتبر نیست.' );
 			}
 			// در حالت Status-only، انبار عددی محلی نباید پاسخ سرویس دور را خنثی کند.
-			return array( 'manage' => false, 'quantity' => null, 'status' => $status );
+			return array( 'manage' => false, 'quantity' => null, 'status' => $status, 'mode' => $mode );
 		}
 
 		public static function populate( $product, $stock ) {
@@ -62,9 +85,16 @@ if ( ! class_exists( 'TCAS_Stock' ) ) {
 			$old_qty     = $product->get_stock_quantity( 'edit' );
 			$old_status  = (string) $product->get_stock_status( 'edit' );
 			$qty_changed = null !== $target['quantity'] && ( null === $old_qty || abs( (float) $old_qty - $target['quantity'] ) > 0.00001 );
-			if ( $old_manage === $target['manage'] && ! $qty_changed && $old_status === $target['status'] ) {
+
+			if ( self::MODE_QUANTITY === $target['mode'] ) {
+				if ( $old_manage === $target['manage'] && ! $qty_changed && $old_status === $target['status'] ) {
+					return false;
+				}
+			} elseif ( $old_status === $target['status'] ) {
+				// حالت flag فقط وضعیت را می‌نویسد؛ انبار عددی محلی دست‌نخورده می‌ماند.
 				return false;
 			}
+
 			$result = self::populate( $product, $stock );
 			if ( is_wp_error( $result ) ) {
 				return $result;

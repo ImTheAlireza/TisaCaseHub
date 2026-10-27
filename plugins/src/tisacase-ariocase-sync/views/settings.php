@@ -43,6 +43,7 @@ if ( 'ariocase' !== $partner_id ) :
 			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[checkout_guard]" <?php checked( $settings['checkout_guard'], 'yes' ); ?>><span><strong>کنترل سبد و تسویه</strong></span></label>
 			<label><span class="tcas-label">منبع موجودی فروشگاه</span><select name="tcas_settings[live_scope]"><option value="purchase" <?php selected( $settings['live_scope'], 'purchase' ); ?>>کش محلی + تازه‌سازی پس‌زمینه؛ کنترل زنده هنگام خرید</option><option value="all" <?php selected( $settings['live_scope'], 'all' ); ?>>درخواست API برای هر Getter</option></select></label>
 		</div></section>
+		<?php require TCAS_PATH . 'views/partials/sweep-controls.php'; ?>
 		<div class="tcas-sticky-actions"><button type="submit" class="button button-primary tcas-btn-primary">ذخیره تنظیمات <?php echo esc_html( $partner_label ); ?></button></div>
 	</form>
 	<section class="tcas-card"><div class="tcas-card-head"><div><span class="tcas-step">✓</span><h2>تست اتصال</h2></div><span class="tcas-tag">فقط خواندنی</span></div><div class="tcas-inline-form"><label class="tcas-grow"><span>شناسه یا مرجع محصول در <?php echo esc_html( $partner_label ); ?></span><input id="tcas-test-code" type="text" dir="ltr" placeholder="SKU / ID / URL"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div><div id="tcas-test-result" class="tcas-test-result" role="status" aria-live="polite"></div></section>
@@ -72,6 +73,8 @@ if ( 'ariocase' !== $partner_id ) :
 			<label><span class="tcas-label">منبع موجودی فروشگاه</span><select name="tcas_settings[live_scope]"><option value="purchase" <?php selected( $settings['live_scope'], 'purchase' ); ?>>پیشنهادی: کش محلی + تازه‌سازی پس‌زمینه؛ کنترل زنده هنگام خرید</option><option value="all" <?php selected( $settings['live_scope'], 'all' ); ?>>همهٔ Getterها: درخواست هم‌زمان API برای هر محصول</option></select></label>
 		</div>
 	</section>
+
+	<?php require TCAS_PATH . 'views/partials/sweep-controls.php'; ?>
 
 	<details class="tcas-card tcas-advanced">
 		<summary><strong>تنظیمات پیشرفته</strong><span>Endpoints و فیلدهای JSON</span></summary>

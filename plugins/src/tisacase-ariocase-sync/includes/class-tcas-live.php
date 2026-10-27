@@ -215,7 +215,15 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			return 'live' === $mode ? self::state( $product_id ) : self::cached_state( $product_id, $product );
 		}
 
+		/** در حالت flag عدد انبار محلی نمایش داده و دست‌کاری نمی‌شود. */
+		private static function quantity_mode() {
+			return class_exists( 'TCAS_Stock' ) && TCAS_Stock::MODE_QUANTITY === TCAS_Stock::mode();
+		}
+
 		public static function filter_quantity( $value, $product ) {
+			if ( ! self::quantity_mode() ) {
+				return $value;
+			}
 			$state = self::filtered_state( $product );
 			return is_array( $state ) && null !== $state['quantity'] ? $state['quantity'] : $value;
 		}
@@ -226,6 +234,9 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 		}
 
 		public static function filter_manage_stock( $value, $product ) {
+			if ( ! self::quantity_mode() ) {
+				return $value;
+			}
 			$state = self::filtered_state( $product );
 			if ( ! is_array( $state ) ) {
 				return $value;
@@ -233,18 +244,51 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			return null !== $state['quantity'];
 		}
 
+		/** سیاست «همکار در دسترس نیست»: باز (فروش با Snapshot آخر) یا بسته. */
+		private static function fail_open() {
+			$settings = TCAS_Core::settings();
+			return ! isset( $settings['fail_mode'] ) || 'open' === $settings['fail_mode'];
+		}
+
+		/**
+		 * موجودی تازه برای کنترل خرید. اگر همکار در Backoff باشد درخواست تازه زده
+		 * نمی‌شود و همان Snapshot محلی معیار است تا فایروال بیشتر تحریک نشود.
+		 */
+		private static function purchase_state( $product_id ) {
+			if ( class_exists( 'TCAS_Sweeper' ) && TCAS_Sweeper::in_backoff() ) {
+				return self::cached_state( $product_id );
+			}
+			return self::state( $product_id );
+		}
+
 		private static function validate( $product_id, $quantity ) {
 			$product = wc_get_product( $product_id );
 			if ( ! $product || ! TCAS_Mapping::is_enabled( $product_id ) ) {
 				return true;
 			}
-			$state = self::state( $product_id );
+			$state = self::purchase_state( $product_id );
 			if ( null === $state ) {
 				return true;
 			}
 			if ( is_wp_error( $state ) ) {
 				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
-				return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» از %s قابل بررسی نیست. لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name(), $partner_label ) );
+				if ( self::fail_open() ) {
+					// فروش سالم با آخرین Snapshot معتبر ادامه می‌یابد؛ خطا فقط ثبت می‌شود.
+					TCAS_Mapping::remember_error( $product_id, $state->get_error_message() );
+					self::notice_degraded( $partner_label, $state->get_error_message() );
+					$fallback = self::cached_state( $product_id );
+					if ( is_array( $fallback ) && ! empty( $fallback['status'] ) ) {
+						$state = $fallback;
+					} else {
+						return true;
+					}
+				} else {
+					return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» از %s قابل بررسی نیست. لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name(), $partner_label ) );
+				}
+			}
+			if ( empty( $state['status'] ) ) {
+				// Snapshot ذخیره‌شده هم وضعیت ندارد؛ جلوی فروش گرفته نمی‌شود.
+				return true;
 			}
 			if ( 'instock' !== $state['status'] ) {
 				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
@@ -272,12 +316,17 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			return $out;
 		}
 
-		private static function notice_once( $key, $message ) {
+		/** یک بار در هر صفحه: همکار پاسخ نداد و با آخرین موجودی ذخیره‌شده ادامه شد. */
+		private static function notice_degraded( $partner_label, $error ) {
+			self::notice_once( 'degraded', sprintf( 'موجودی %s همین حالا قابل بررسی نیست؛ کنترل خرید با آخرین موجودی ثبت‌شده ادامه یافت. (%s)', $partner_label, $error ), 'notice' );
+		}
+
+		private static function notice_once( $key, $message, $type = 'error' ) {
 			if ( isset( self::$notices[ $key ] ) || ! function_exists( 'wc_add_notice' ) ) {
 				return;
 			}
 			self::$notices[ $key ] = true;
-			wc_add_notice( $message, 'error' );
+			wc_add_notice( $message, $type );
 		}
 
 		public static function validate_add_to_cart( $passed, $product_id, $quantity, $variation_id = 0, $variations = array(), $cart_item_data = array() ) {
