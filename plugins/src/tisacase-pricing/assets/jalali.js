@@ -419,15 +419,16 @@
 		var raw = text.value.trim();
 		if (!raw) {
 			syncFields(wrapper, '', '');
-			return;
+			return true;
 		}
 		var g = parseJalali(raw);
 		if (g) {
 			syncFields(wrapper, toJalaliText(g), g);
-		} else {
-			text.classList.add('is-invalid');
-			wrapper.querySelector('.tcp-jdate__value').value = '';
+			return true;
 		}
+		text.classList.add('is-invalid');
+		wrapper.querySelector('.tcp-jdate__value').value = '';
+		return false;
 	}
 
 	function bindWrapper(wrapper) {
@@ -449,6 +450,21 @@
 			});
 		}
 		text.addEventListener('input', function () { text.classList.remove('is-invalid'); });
+		// پیش از submit همگام‌سازی فوری انجام شود؛ به timeout رویداد blur وابسته نباشیم.
+		var form = wrapper.closest('form');
+		if (form) {
+			form.addEventListener('submit', function (e) {
+				if (!commitTyped(wrapper)) {
+					e.preventDefault();
+					text.focus();
+					return;
+				}
+				// فرم کوپن نسخهٔ ISO مخفی را مرجع می‌فرستد؛ بدون JS ورودی visible fallback است.
+				if (text.name === 'expires') {
+					wrapper.querySelector('.tcp-jdate__value').setAttribute('name', 'expires_gregorian');
+				}
+			});
+		}
 		text.addEventListener('blur', function () {
 			// تأخیر کوتاه تا کلیک روی روز تقویم اول اجرا شود.
 			window.setTimeout(function () {

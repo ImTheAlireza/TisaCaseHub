@@ -185,9 +185,11 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$c->set_individual_use( ! empty( $p['individual_use'] ) );
 			$c->set_exclude_sale_items( ! empty( $p['exclude_sale_items'] ) );
 
-			// مقدار فرم می‌تواند شمسی (تقویم جلالی) یا میلادی Y-m-d باشد؛ هر دو نرمال می‌شوند.
-			$exp = isset( $p['expires'] ) ? trim( (string) $p['expires'] ) : '';
-			$exp = TCP_Jalali::normalize_date_input( $exp );
+			// در فرم JSدار مقدار ISO مخفی مرجع است؛ بدون JS مقدار visible (شمسی/میلادی) را می‌پذیریم.
+			$raw_exp = array_key_exists( 'expires_gregorian', $p )
+				? $p['expires_gregorian']
+				: ( isset( $p['expires'] ) ? $p['expires'] : '' );
+			$exp = TCP_Jalali::normalize_date_input( trim( (string) $raw_exp ) );
 			$c->set_date_expires( '' !== $exp ? strtotime( $exp . ' 23:59:59' ) : null );
 
 			$min = TCP_Ops::number( isset( $p['minimum_amount'] ) ? $p['minimum_amount'] : '' );
