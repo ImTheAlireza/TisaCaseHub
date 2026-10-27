@@ -7,92 +7,232 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const script = fs.readFileSync(path.join(root, 'assets/admin.js'), 'utf8');
 let pass = 0; let fail = 0;
 function ok(label, condition, detail = '') { if (condition) { pass++; console.log('OK   ' + label); } else { fail++; console.error('FAIL ' + label + (detail ? ' >> ' + detail : '')); } }
-function reply(data, success = true, status = 200) { return { status, json: async () => (success ? { success: true, data } : { success: false, data }) }; }
-function entryMarkup() {
-	return '<article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair">×</button><label class="tcas-shop-field tcas-shop-local"><input class="tcas-local-code"></label><label class="tcas-shop-field tcas-shop-remote"><input class="tcas-remote-code"></label></article>';
+function reply(data, success = true, status = 200) {
+	const text = JSON.stringify(success ? { success: true, data } : { success: false, data });
+	return { status, text: async () => text, json: async () => JSON.parse(text) };
 }
-function makeDom() {
+function htmlReply(body, status) { return { status, text: async () => body, json: async () => { throw new Error('not json'); } }; }
+function entryMarkup() {
+	return '<article class="tcas-pair-entry" data-state="idle" data-confidence="manual"><button type="button" class="tcas-remove-pair">×</button>'
+		+ '<div class="tcas-pair-top"><span class="tcas-pair-flag tcas-pair-flag-idle">در انتظار بررسی</span><span class="tcas-spinner" hidden></span><label class="tcas-pair-select"><input type="checkbox" class="tcas-row-select" disabled><span>انتخاب</span></label></div>'
+		+ '<small class="tcas-pair-flag-note" hidden></small>'
+		+ '<div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><input class="tcas-local-code" type="text"><span class="tcas-variation-title"></span></label><span class="tcas-pair-link">+</span><label class="tcas-shop-field tcas-shop-remote"><input class="tcas-remote-code" type="text"><span class="tcas-variation-title"></span></label></div>'
+		+ '<div class="tcas-pair-stock" hidden></div><small class="tcas-pair-message"></small></article>';
+}
+function makeDom(entryCount = 1) {
+	let entries = '';
+	for (let i = 0; i < entryCount; i++) entries += entryMarkup();
 	const dom = new JSDOM(`<!doctype html><html><body>
 		<div class="tcas-converter-flow"><label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button></span></label><div id="tcas-link-result" class="tcas-converter-result" hidden><div class="tcas-converter-result-meta"><span id="tcas-link-shop"></span><small id="tcas-link-product"></small></div><label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><select id="tcas-link-variation"></select></label><span class="tcas-converter-reference"><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button></span></div><span id="tcas-link-status"></span></div>
 		<input id="tcas-smart-local"><input id="tcas-smart-remote"><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span>
 		<section id="tcas-smart-issues" hidden><h3>موارد نیازمند بررسی</h3><span id="tcas-smart-issues-count"></span><p class="tcas-smart-issues-help"></p><div id="tcas-smart-issue-filters" role="group"></div><div id="tcas-smart-issue-list" role="list"></div></section>
-		<div id="tcas-pair-entries">${entryMarkup()}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template><button id="tcas-pair-add">افزودن</button>
-		<button id="tcas-preview-start">بررسی</button><span id="tcas-preview-status"></span>
-		<div id="tcas-preview-progress" hidden><progress max="100" value="0"><span></span></div>
-		<section id="tcas-preview-panel" hidden><div id="tcas-preview-list"></div>
-		<button id="tcas-connect-start">اتصال</button><span id="tcas-connect-status"></span>
-		<div id="tcas-connect-progress" hidden><progress max="100" value="0"><span></span></div><div id="tcas-connect-results"></div></section>
+		<section class="tcas-card tcas-pairs-card"><div class="tcas-card-head"><div class="tcas-pairs-actions"><button id="tcas-select-valid" class="button">انتخاب همه</button><button id="tcas-preview-start" class="button">بررسی همه دوباره</button><button id="tcas-pair-add" class="button">افزودن جفت</button></div></div><p class="tcas-pairs-help">help</p>
+		<div id="tcas-pair-entries" class="tcas-pair-entries">${entries}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template>
+		<div class="tcas-pair-actions"><button id="tcas-connect-start" class="button" disabled>اتصال انتخاب‌شده‌ها</button><span id="tcas-preview-status" class="tcas-status"></span><span id="tcas-connect-status" class="tcas-status"></span></div>
+		<div id="tcas-preview-progress" class="tcas-progress" hidden><progress max="100" value="0"></progress><span>۰٪</span></div>
+		<div id="tcas-connect-progress" class="tcas-progress" hidden><progress max="100" value="0"></progress><span>۰٪</span></div></section>
 		<input id="tcas-test-code"><button id="tcas-test-connection">تست</button><div id="tcas-test-result"></div>
 	</body></html>`, { url: 'https://tisa.test/wp-admin/admin.php?page=tcas', runScripts: 'outside-only' });
-	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce', maxPairs: 50, strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
+	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce', maxPairs: 50, partnerLabel: 'ArioCase', mappingsUrl: '/wp-admin/admin.php?page=tcas-mappings', strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
 	return dom;
 }
 async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!fn()) { if (Date.now() - start > timeout) throw new Error('waitFor timeout'); await new Promise((resolve) => setTimeout(resolve, 10)); } }
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function codes(local, remote) { return { local_code: local, remote_code: remote }; }
+function pairRow(overrides) {
+	return Object.assign({ status: 'connect', selectable: true, local_name: 'Local case', remote_name: 'Remote case', stock: { quantity: 4, status: 'instock' }, local_stock: { quantity: 2, status: 'instock' }, message: 'دو محصول جفت می‌شوند.' }, overrides || {});
+}
+function type(entry, field, value) {
+	const input = entry.querySelector(field);
+	input.value = value;
+	input.dispatchEvent(new entry.ownerDocument.defaultView.Event('input'));
+}
 
+// ---------- ۱) بررسی زندهٔ همان کارت بعد از هر ویرایش ----------
 {
 	const dom = makeDom(); const { window } = dom; const calls = [];
-	const queue = [
-		reply({ token: 'a'.repeat(32), total: 2 }),
-		reply({ done: false, processed: 1, total: 2, row: { index: 0, local_code: 'AR120', remote_code: 'AR22', status: 'connect', selectable: true, local_name: 'قاب تیساکیس', remote_name: '<img src=x>', local_id: 10, stock: { quantity: 4, status: 'instock' }, message: 'ready' } }),
-		reply({ done: true, processed: 2, total: 2, row: { index: 1, local_code: 'BAD', remote_code: 'NONE', status: 'error', selectable: false, local_name: '', remote_name: '', local_id: 0, stock: null, message: 'not found' } }),
-		reply({ total: 1 }),
-		reply({ done: true, processed: 1, total: 1, row: { local_code: 'AR120', remote_code: 'AR22', status: 'done', message: 'connected', product_id: 10, edit_url: '/wp-admin/post.php?post=10&action=edit' } }),
-	];
-	window.fetch = async (url, options) => { calls.push(options.body); return queue.shift(); };
+	window.fetch = async (url, options) => {
+		const body = options.body; calls.push(body);
+		if (body.get('action') === 'tcas_preview_pair') return reply({ row: pairRow(codes(body.get('local_code'), body.get('remote_code'))) });
+		return reply({});
+	};
 	window.eval(script);
-	window.document.querySelector('.tcas-local-code').value = 'AR120'; window.document.querySelector('.tcas-remote-code').value = 'AR22';
-	window.document.getElementById('tcas-pair-add').click();
-	ok('کارت جفت تازه با دو Input ساخته می‌شود', window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 2 && window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry:last-child input').length === 2);
-	const second = window.document.querySelector('#tcas-pair-entries .tcas-pair-entry:last-child');
-	second.querySelector('.tcas-local-code').value = 'BAD'; second.querySelector('.tcas-remote-code').value = 'NONE';
-	window.document.getElementById('tcas-preview-start').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-preview-list .tcas-preview-card').length === 2 && window.document.getElementById('tcas-preview-status').textContent.includes('کامل'));
-	ok('Preview هر دو جفت را به کارت تبدیل می‌کند', window.document.querySelectorAll('#tcas-preview-list .tcas-preview-card').length === 2);
-	ok('فقط جفت قابل‌اتصال Checkbox فعال دارد', window.document.querySelectorAll('.tcas-row-select:not(:disabled)').length === 1);
-	ok('Index جفت برای انتخاب استفاده می‌شود', window.document.querySelector('.tcas-row-select').value === '0');
-	const previewInputs = window.document.querySelectorAll('.tcas-preview-card:first-child .tcas-shop-field input');
-	ok('کد تیساکیس و ArioCase در دو Input خوانا نمایش داده می‌شوند', previewInputs[0].value === 'AR120' && previewInputs[1].value === 'AR22' && previewInputs[0].readOnly && previewInputs[1].readOnly);
-	const editorTitles = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry:first-child .tcas-variation-title');
-	ok('بعد از Preview عنوان Variation زیر فیلدهای کارت ورودی قرار می‌گیرد', editorTitles.length === 2 && editorTitles[0].textContent === 'قاب تیساکیس' && editorTitles[1].textContent === '<img src=x>');
-	const previewTitles = window.document.querySelectorAll('.tcas-preview-card:first-child .tcas-variation-title');
-	ok('عنوان هر فروشگاه زیر فیلد همان فروشگاه در Preview است', previewTitles.length === 2 && previewTitles[0].textContent === 'قاب تیساکیس' && previewTitles[1].textContent === '<img src=x>');
-	ok('نام ریموت با textContent امن رندر می‌شود', !window.document.querySelector('#tcas-preview-list img') && !window.document.querySelector('#tcas-pair-entries img'));
-	const previewStart = calls.find((body) => body.get('action') === 'tcas_preview_start');
-	ok('کارت‌ها به قالب جفت استاندارد تبدیل می‌شوند', previewStart.get('pairs') === 'AR120 - AR22\nBAD - NONE');
-	ok('Nonce و Token ارسال می‌شوند', previewStart.get('nonce') === 'nonce' && calls[1].get('token') === 'a'.repeat(32));
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	const spinner = entry.querySelector('.tcas-spinner');
+	ok('کارت خالی در حالت انتظار است و قابل انتخاب نیست', entry.dataset.state === 'idle' && entry.querySelector('.tcas-row-select').disabled && window.document.getElementById('tcas-connect-start').disabled && spinner.hidden);
+	type(entry, '.tcas-local-code', 'TS1');
+	type(entry, '.tcas-remote-code', 'AR1');
+	await sleep(80);
+	ok('درخواست بررسی فقط بعد از مکث کوتاه ارسال می‌شود', calls.filter((body) => body.get('action') === 'tcas_preview_pair').length === 0);
+	await waitFor(() => entry.dataset.state === 'review');
+	ok('ویرایش فیلد، همان کارت را در سرور بررسی می‌کند', calls.some((body) => body.get('action') === 'tcas_preview_pair' && body.get('local_code') === 'TS1' && body.get('remote_code') === 'AR1'));
+	ok('جفت دستی که خودکار قطعی نشده، زرد و نیاز به بررسی است', entry.classList.contains('is-review') && entry.querySelector('.tcas-pair-flag').classList.contains('is-warn') && entry.querySelector('.tcas-pair-flag').textContent.includes('دستی'));
+	ok('کارت زرد قابل انتخاب است و دکمهٔ اتصال فعال می‌شود', !entry.querySelector('.tcas-row-select').disabled && entry.querySelector('.tcas-row-select').checked && !window.document.getElementById('tcas-connect-start').disabled);
+	ok('موجودی هر دو فروشگاه روی همان کارت نوشته می‌شود', !entry.querySelector('.tcas-pair-stock').hidden && entry.querySelector('.tcas-pair-stock').textContent.includes('TisaCase') && entry.querySelector('.tcas-pair-stock').textContent.includes('ArioCase') && entry.querySelector('.tcas-pair-stock').textContent.includes('4'));
+	ok('اسپینر بعد از پایان بررسی مخفی می‌شود', spinner.hidden && !entry.classList.contains('is-loading'));
+	dom.window.close();
+}
+
+// ---------- ۲) اسپینر در طول درخواست ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	let release = null;
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') !== 'tcas_preview_pair') return reply({});
+		await new Promise((resolve) => { release = resolve; });
+		return reply({ row: pairRow({}) });
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS2');
+	type(entry, '.tcas-remote-code', 'AR2');
+	await waitFor(() => entry.querySelector('.tcas-spinner').hidden === false);
+	ok('در طول بررسی، اسپینر همان کارت دیده می‌شود', !entry.querySelector('.tcas-spinner').hidden && entry.classList.contains('is-loading'));
+	release();
+	await waitFor(() => entry.querySelector('.tcas-spinner').hidden);
+	ok('بعد از پاسخ، اسپینر خاموش می‌شود', entry.querySelector('.tcas-spinner').hidden && !entry.classList.contains('is-loading'));
+	dom.window.close();
+}
+
+// ---------- ۳) کارت ناقص: کادر قرمز و فیلد خالی قابل ویرایش ----------
+{
+	const dom = makeDom(); const { window } = dom; const calls = [];
+	window.fetch = async (url, options) => { calls.push(options.body); return reply({}); };
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS3');
+	await waitFor(() => entry.dataset.state === 'incomplete');
+	ok('کارت با یک سمت خالی قرمز می‌شود و نشان «بدون همتا» می‌گیرد', entry.classList.contains('is-orphan') && entry.querySelector('.tcas-pair-flag').textContent.includes('خالی'));
+	ok('برای کارت ناقص هیچ درخواستی به سرور نمی‌رود', calls.filter((body) => body.get('action') === 'tcas_preview_pair').length === 0);
+	ok('فیلد سمت ناقص خالی و قابل ویرایش می‌ماند', entry.querySelector('.tcas-remote-code').value === '' && !entry.querySelector('.tcas-local-code').readOnly && !entry.querySelector('.tcas-remote-code').readOnly);
+	ok('کارت ناقص قابل انتخاب و اتصال نیست', entry.querySelector('.tcas-row-select').disabled && window.document.getElementById('tcas-connect-start').disabled && entry.querySelector('.tcas-pair-message').textContent.includes('دستی'));
+	dom.window.close();
+}
+
+// ---------- ۴) پاسخ قطعی از تطبیق هوشمند: کارت سبز ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({ matches: [{ local_code: 'ID:1', remote_code: 'ID:9/1', local_label: 'A', remote_label: 'A', confidence: 'exact', matched_by: 'sku', score: 100 }], ambiguous: [], unmatched: [], local: { name: 'L', reference: 'ID:0', count: 1 }, remote: { name: 'R', reference: 'ID:9', count: 1 } });
+		if (action === 'tcas_preview_start') return reply({ token: 'a'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, row: pairRow(Object.assign(codes('ID:1', 'ID:9/1'), { index: 0 })) });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelector('.tcas-pair-entry') && window.document.querySelector('.tcas-pair-entry').dataset.state === 'ok');
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	ok('تطبیق قطعی کارت را سبز و انتخاب‌شده می‌کند', entry.classList.contains('is-settled') && entry.querySelector('.tcas-pair-flag').classList.contains('is-ok') && entry.querySelector('.tcas-pair-flag').textContent === 'مشترک قطعی' && entry.querySelector('.tcas-row-select').checked);
+	ok('بعد از تطبیق، موجودی تازه روی همان کارت خوانده می‌شود', !entry.querySelector('.tcas-pair-stock').hidden && entry.querySelector('.tcas-pair-stock').textContent.includes('TisaCase'));
+	dom.window.close();
+}
+
+// ---------- ۵) Variation بدون همتا: کارت قرمز با سمت خالی ----------
+{
+	const dom = makeDom(0); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({ matches: [], ambiguous: [], unmatched: [{ shop: 'tisacase', reference: 'ID:77', label: 'Only local', index: 0, reason: 'no_candidate' }], local: { name: 'L', reference: 'ID:0', count: 1 }, remote: { name: 'R', reference: 'ID:9', count: 1 } });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelector('.tcas-pair-entry') && window.document.querySelector('.tcas-pair-entry').dataset.state === 'incomplete');
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	ok('Variation بدون همتا کارت قرمز با شناسهٔ سمت موجود می‌گیرد', entry.classList.contains('is-orphan') && entry.querySelector('.tcas-local-code').value === 'ID:77');
+	ok('سمت پیدا نشده خالی می‌ماند تا کاربر دستی پر کند', entry.querySelector('.tcas-remote-code').value === '' && !entry.querySelector('.tcas-remote-code').readOnly && entry.querySelector('.tcas-pair-flag').textContent.includes('ArioCase'));
+	ok('گزارش تطبیق، ساخت کارت قرمز را توضیح می‌دهد', window.document.getElementById('tcas-smart-status').textContent.includes('کارت قرمز'));
+	dom.window.close();
+}
+
+// ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = [];
+	window.fetch = async (url, options) => {
+		const body = options.body; bodies.push(body);
+		const action = body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes('TS20', 'AR20')) });
+		if (action === 'tcas_preview_start') return reply({ token: 'd'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, row: pairRow(Object.assign(codes('TS20', 'AR20'), { index: 0 })) });
+		if (action === 'tcas_connect_start') return reply({ token: 'c'.repeat(32), total: 1 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, row: { index: 0, status: 'done', message: 'متصل شد', edit_url: '/wp-admin/post.php?post=12' } });
+		return reply({});
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS20');
+	type(entry, '.tcas-remote-code', 'AR20');
+	await waitFor(() => entry.dataset.state === 'review');
 	window.document.getElementById('tcas-connect-start').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-connect-results .tcas-result-card').length === 1);
-	const connectStart = calls.find((body) => body.get('action') === 'tcas_connect_start');
-	ok('فقط Index جفت انتخاب‌شده ارسال می‌شود', connectStart.getAll('pairs[]').join(',') === '0');
-	ok('هیچ گزینهٔ قیمت یا تصویری ارسال نمی‌شود', connectStart.get('prices') === null && connectStart.get('images') === null);
-	ok('اقدام بعدی connect_step است', calls.some((body) => body.get('action') === 'tcas_connect_step'));
-	ok('نتیجه و لینک محصول تیساکیس نمایش داده می‌شود', window.document.querySelector('#tcas-connect-results a').getAttribute('href').includes('post=10'));
-	ok('پیشرفت اتصال ۱۰۰٪ می‌شود', window.document.querySelector('#tcas-connect-progress progress').value === 100);
-	const editedCode = window.document.querySelector('#tcas-pair-entries .tcas-pair-entry:first-child .tcas-local-code');
-	editedCode.value = 'CHANGED'; editedCode.dispatchEvent(new window.Event('input'));
-	ok('تغییر دستی کد، عنوان قدیمی فقط همان فیلد را پاک می‌کند', !window.document.querySelector('#tcas-pair-entries .tcas-pair-entry:first-child .tcas-shop-local .tcas-variation-title') && window.document.querySelector('#tcas-pair-entries .tcas-pair-entry:first-child .tcas-shop-remote .tcas-variation-title'));
+	await waitFor(() => entry.dataset.state === 'done');
+	const connectStart = bodies.find((body) => body.get('action') === 'tcas_connect_start');
+	ok('اتصال فقط برای کارت‌های انتخاب‌شده و با همان ایندکس ارسال می‌شود', Boolean(connectStart) && connectStart.get('pairs[]') === '0');
+	ok('کارت بعد از اتصال وضعیت «متصل شد» می‌گیرد', entry.querySelector('.tcas-pair-flag').textContent.includes('متصل شد') && entry.classList.contains('is-settled') && entry.querySelector('.tcas-row-select').disabled);
+	ok('لینک محصول متصل‌شده روی همان کارت نشان داده می‌شود', Boolean(entry.querySelector('.tcas-pair-edit-link')));
 	dom.window.close();
 }
 
+// ---------- ۷) پاسخ غیر JSON و خطای فایروال ----------
 {
-	const dom = makeDom(); const { window } = dom; let requests = 0;
-	window.fetch = async () => { requests++; return reply({}); }; window.eval(script);
-	window.document.querySelector('.tcas-local-code').value = 'https://tisacase.com/product/case/'; window.document.querySelector('.tcas-remote-code').value = 'AR22';
-	window.document.getElementById('tcas-preview-start').click();
-	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent.includes('تبدیل لینک'));
-	ok('Input جفت لینک را به‌جای SKU ارسال نمی‌کند', requests === 0);
-	ok('راهنمای استفاده از تبدیل‌کننده نمایش داده می‌شود', window.document.getElementById('tcas-preview-status').classList.contains('is-error'));
+	const dom = makeDom(); const { window } = dom; let attempts = 0;
+	window.fetch = async () => { attempts++; return htmlReply('<html>blocked</html>', 418); };
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS30');
+	type(entry, '.tcas-remote-code', 'AR30');
+	await waitFor(() => entry.dataset.state === 'error');
+	ok('پاسخ غیر JSON یک بار دیگر تلاش می‌شود', attempts === 2, String(attempts));
+	ok('خطای ۴۱۸ با پیام فایروال/محدودیت نرخ گزارش می‌شود', entry.querySelector('.tcas-pair-message').textContent.includes('فایروال') && entry.querySelector('.tcas-pair-message').textContent.includes('418'));
+	ok('کارت خطادار قرمز و غیرقابل‌انتخاب می‌شود', entry.classList.contains('is-failed') && entry.querySelector('.tcas-row-select').disabled);
 	dom.window.close();
 }
 
+// ---------- ۸) پاسخ دیررس کارت را خراب نمی‌کند ----------
 {
-	const dom = makeDom(); const { window } = dom; const queue = [reply({ token: 'b'.repeat(32), total: 2 }), reply({ message: 'API قطع است' }, false, 500)];
-	window.fetch = async () => queue.shift(); window.eval(script);
-	window.document.querySelector('.tcas-local-code').value = 'AR120'; window.document.querySelector('.tcas-remote-code').value = 'AR22'; window.document.getElementById('tcas-preview-start').click();
-	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent === 'API قطع است');
-	ok('خطای AJAX نمایش داده می‌شود', window.document.getElementById('tcas-preview-status').textContent === 'API قطع است');
-	ok('بعد از خطا دکمه آزاد می‌شود', !window.document.getElementById('tcas-preview-start').disabled);
-	ok('کلاس خطا اعمال می‌شود', window.document.getElementById('tcas-preview-status').classList.contains('is-error'));
+	const dom = makeDom(); const { window } = dom; let call = 0;
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') !== 'tcas_preview_pair') return reply({});
+		call++;
+		if (call === 1) { await sleep(400); return reply({ row: pairRow(Object.assign(codes('OLD', 'OLD'), { local_name: 'STALE' })) }); }
+		return reply({ row: pairRow(Object.assign(codes('NEW', 'NEW'), { local_name: 'FRESH' })) });
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'OLD');
+	type(entry, '.tcas-remote-code', 'OLD');
+	await waitFor(() => call === 1);
+	type(entry, '.tcas-local-code', 'NEW');
+	type(entry, '.tcas-remote-code', 'NEW');
+	await waitFor(() => call === 2);
+	await sleep(700);
+	const titles = Array.from(entry.querySelectorAll('.tcas-variation-title')).map((node) => node.textContent);
+	ok('پاسخ قدیمی نادیده گرفته و نام تازه حفظ می‌شود', titles.includes('FRESH') && !titles.includes('STALE'));
+	dom.window.close();
+}
+
+// ---------- ۹) حذف کارت بررسی در جریان را متوقف می‌کند ----------
+{
+	const dom = makeDom(2); const { window } = dom; let release = null; let calls = 0;
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') !== 'tcas_preview_pair') return reply({});
+		calls++;
+		await new Promise((resolve) => { release = resolve; });
+		return reply({ row: pairRow({}) });
+	};
+	window.eval(script);
+	const cards = window.document.querySelectorAll('.tcas-pair-entry');
+	type(cards[1], '.tcas-local-code', 'TS-X');
+	type(cards[1], '.tcas-remote-code', 'AR-X');
+	await waitFor(() => cards[1].querySelector('.tcas-spinner').hidden === false);
+	cards[1].querySelector('.tcas-remove-pair').click();
+	release();
+	await sleep(250);
+	ok('حذف کارت در حین بررسی خطا نمی‌دهد و کارت حذف می‌شود', window.document.querySelectorAll('.tcas-pair-entry').length === 1 && calls === 1);
 	dom.window.close();
 }
 
@@ -184,146 +324,6 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	dom.window.close();
 }
 
-{
-	const dom = makeDom(); const { window } = dom; const calls = [];
-	window.fetch = async (url, options) => {
-		const body = options.body; calls.push(body);
-		const action = body.get('action');
-		if (action === 'tcas_match_variations') return reply({
-			matches: [
-				{ local_code: 'ID:51', remote_code: 'ID:70/71', local_label: 'S25 Ultra', remote_label: 's25ultra', score: 95, local_index: 0, remote_index: 0, matched_by: 'label', confidence: 'fuzzy' },
-				{ local_code: 'ID:52', remote_code: 'AR-BLUE', local_label: 'Blue', remote_label: 'Blue', score: 100, local_index: 1, remote_index: 1, matched_by: 'sku', confidence: 'exact' },
-			],
-			ambiguous: [
-				{ shop: 'tisacase', reference: 'ID:53', label: 'Duplicate', index: 2, reason: 'duplicate_reference', duplicate_count: 2, twins: [{ index: 3, reference: 'ID:53', label: 'Duplicate twin' }], candidate_count: 1, usable_count: 0, candidates: [{ shop: 'ariocase', reference: 'ID:70/72', label: 'S23', score: 100, key: 'sku', usable: false }] },
-				{ shop: 'tisacase', reference: 'ID:54', label: 'A56', index: 3, reason: 'multiple_candidates', candidate_count: 2, usable_count: 2, candidates: [{ shop: 'ariocase', reference: 'ID:70/74', label: 'A56', score: 95, key: 'label', usable: true }, { shop: 'ariocase', reference: 'ID:70/75', label: 'A56 Plus', score: 95, key: 'label', usable: true }] },
-			],
-			unmatched: [{ shop: 'ariocase', reference: 'ID:70/73', label: 'S24', index: 2, reason: 'no_candidate', candidate_count: 0, usable_count: 0, candidates: [] }],
-			local: { name: 'Local product', reference: 'ID:50', count: 3 }, remote: { name: 'Remote product', reference: 'ID:70', count: 3 },
-		});
-		if (action === 'tcas_preview_start') return reply({ token: 'c'.repeat(32), total: 2 });
-		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2 });
-		return reply({ message: 'unexpected' }, false, 500);
-	};
-	window.eval(script);
-	window.document.getElementById('tcas-smart-local').value = 'ID:50'; window.document.getElementById('tcas-smart-remote').value = 'ID:70';
-	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 2);
-	const entries = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry');
-	ok('تطبیق JS مرجع دقیق Local و Remote را در کارت‌ها می‌گذارد', entries[0].querySelector('.tcas-local-code').value === 'ID:51' && entries[0].querySelector('.tcas-remote-code').value === 'ID:70/71' && entries[1].querySelector('.tcas-remote-code').value === 'AR-BLUE');
-	ok('بلافاصله بعد از تطبیق، عنوان هر Variation زیر فیلد خودش دیده می‌شود', entries[0].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'S25 Ultra' && entries[0].querySelector('.tcas-shop-remote .tcas-variation-title').textContent === 's25ultra' && entries[1].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'Blue');
-	ok('تطبیق فقط یک AJAX می‌گیرد و خودکار Preview/Connect نمی‌کند', calls.length === 1 && calls[0].get('action') === 'tcas_match_variations');
-	ok('تعداد موارد مبهم و بدون تطبیق در Status دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('3 مورد'));
-	ok('جفت بدون SKU یکتا با نشان بررسی در Status شمرده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('1 جفت بدون SKU یکتا'));
-	const issuePanel = window.document.getElementById('tcas-smart-issues');
-	const issueRows = issuePanel.querySelectorAll('[role="listitem"]');
-	ok('موارد مبهم و بدون تطبیق در فهرست جداگانه نمایش داده می‌شوند', !issuePanel.hidden && issueRows.length === 3 && window.document.getElementById('tcas-smart-issues-count').textContent === '3 مورد');
-	ok('هر مورد با نوع مشکل، فروشگاه، عنوان و مرجع خودش فلگ می‌شود', issueRows[0].textContent.includes('مبهم') && issueRows[0].textContent.includes('TisaCase') && issueRows[0].textContent.includes('Duplicate') && issueRows[0].textContent.includes('ID:53') && issueRows[2].textContent.includes('بدون تطبیق') && issueRows[2].textContent.includes('ArioCase') && issueRows[2].textContent.includes('ID:70/73'));
-	ok('دلیل دقیق مشکل روی هر کارت نوشته می‌شود', issueRows[0].textContent.includes('مرجع تکراری') && issueRows[0].textContent.includes('2 بار تکرار') && issueRows[1].textContent.includes('چند گزینه') && issueRows[1].textContent.includes('2 Variation محتمل') && issueRows[2].textContent.includes('بدون همتا'));
-	ok('هم‌مرجع‌های تکراری و کاندیدهای محتمل با جزئیات دیده می‌شوند', issueRows[0].textContent.includes('Duplicate twin') && issueRows[0].textContent.includes('S23') && issueRows[0].textContent.includes('غیرقابل‌اتصال') && issueRows[1].textContent.includes('A56 Plus') && issueRows[1].querySelectorAll('.tcas-smart-issue-candidate').length === 2);
-	const filterButtons = window.document.querySelectorAll('#tcas-smart-issue-filters .tcas-smart-issue-filter');
-	ok('فیلتر مبهم/بدون تطبیق با شمارش هر گروه ساخته می‌شود', filterButtons.length === 3 && filterButtons[0].textContent.includes('3') && filterButtons[1].textContent.includes('2') && filterButtons[2].textContent.includes('1'));
-	filterButtons[2].click();
-	ok('فیلتر «بدون تطبیق» فقط ردیف‌های همان گروه را نشان می‌دهد', Array.from(issueRows).filter((row) => !row.hidden).length === 1 && issueRows[2].hidden === false && issueRows[0].hidden === true);
-	filterButtons[0].click();
-	ok('فیلتر «همه» همهٔ موارد را برمی‌گرداند', Array.from(issueRows).every((row) => !row.hidden));
-	const pairFlags = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-flag');
-	ok('جفت تطبیق‌داده‌شده از روی Label با نشان «بررسی» علامت می‌خورد', pairFlags.length === 1 && pairFlags[0].textContent.includes('بررسی') && pairFlags[0].textContent.includes('برچسب') && Boolean(pairFlags[0].closest('.tcas-pair-entry').querySelector('.tcas-local-code').value === 'ID:51'));
-	ok('تعداد Variationهای Load شدهٔ هر دو فروشگاه دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('TisaCase: 3') && window.document.getElementById('tcas-smart-status').textContent.includes('ArioCase: 3'));
-	const group = window.document.querySelector('#tcas-pair-entries details.tcas-fresh-product-group');
-	ok('جفت‌های متغیر زیر یک کارت آکارئونی برای دو محصول والد جمع می‌شوند', Boolean(group) && group.querySelector('summary').textContent.includes('Local product') && group.querySelector('summary').textContent.includes('Remote product'));
-	ok('کارت محصول تازه، کارت‌های Variation را در همان ترتیب سه‌ستونی نگه می‌دارد', Boolean(group) && group.querySelectorAll('.tcas-pair-entry').length === 2 && group.querySelector('.tcas-local-code').value === 'ID:51' && group.querySelector('.tcas-remote-code').value === 'ID:70/71' && group.querySelectorAll('.tcas-pair-entry')[1].querySelector('.tcas-local-code').value === 'ID:52');
-	window.document.getElementById('tcas-preview-start').click();
-	await waitFor(() => window.document.getElementById('tcas-preview-status').textContent.includes('کامل'));
-	const previewStart = calls.find((body) => body.get('action') === 'tcas_preview_start');
-	ok('خروجی تطبیق وارد همان Preview تازهٔ قبلی می‌شود', previewStart && previewStart.get('pairs') === 'ID:51 - ID:70/71\nID:52 - AR-BLUE');
-	ok('Preview همچنان قبل از اتصال انتخابی است', !calls.some((body) => body.get('action') === 'tcas_connect_start'));
-	dom.window.close();
-}
-
-{
-	const dom = makeDom(); const { window } = dom; window.TCAS_ADMIN.maxPairs = 2;
-	window.fetch = async () => reply({ matches: [
-		{ local_code: 'ID:1', remote_code: 'ID:9/1' }, { local_code: 'ID:2', remote_code: 'ID:9/2' }, { local_code: 'ID:3', remote_code: 'ID:9/3' },
-	], ambiguous: [], unmatched: [] });
-	window.eval(script); window.document.getElementById('tcas-smart-local').value = 'ID:50'; window.document.getElementById('tcas-smart-remote').value = 'ID:70'; window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 2);
-	ok('تطبیق بیش از حد دسته را به اندازهٔ MaxPairs محدود می‌کند', !window.document.getElementById('tcas-smart-next').hidden && window.document.querySelector('#tcas-pair-entries .tcas-pair-entry:last-child .tcas-local-code').value === 'ID:2');
-	window.document.getElementById('tcas-smart-next').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 1);
-	ok('دسته بعد فقط جفت‌های باقی‌مانده را جایگزین می‌کند', window.document.querySelector('.tcas-local-code').value === 'ID:3' && window.document.querySelector('.tcas-remote-code').value === 'ID:9/3');
-	ok('بعد از آخرین دسته دکمه مخفی می‌شود', window.document.getElementById('tcas-smart-next').hidden && window.document.getElementById('tcas-smart-status').textContent.includes('3/3'));
-	dom.window.close();
-}
-
-{
-	const dom = makeDom(); const { window } = dom; let requests = 0;
-	window.fetch = async () => { requests++; return reply({ matches: [], ambiguous: [{ label: 'A' }, { label: 'B' }], unmatched: [{ label: 'C' }] }); };
-	window.eval(script); window.document.getElementById('tcas-smart-local').value = 'ID:50'; window.document.getElementById('tcas-smart-remote').value = 'ID:70'; window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.getElementById('tcas-smart-status').textContent.includes('جفت یکتایی پیدا نشد'));
-	ok('نتیجهٔ مبهم هیچ کارت اتصال نمی‌سازد اما هر سه مورد مشکل‌دار را فهرست می‌کند', window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 1 && window.document.querySelector('.tcas-local-code').value === '' && !window.document.getElementById('tcas-smart-issues').hidden && window.document.querySelectorAll('#tcas-smart-issue-list [role="listitem"]').length === 3);
-	ok('نبود تطبیق یکتا خطای قابل‌مشاهده دارد', window.document.getElementById('tcas-smart-status').classList.contains('is-error') && requests === 1);
-	dom.window.close();
-}
-
-{
-	const dom = makeDom(); const { window } = dom;
-	window.fetch = async () => reply({
-		matches: [
-			{ local_code: 'ID:401477', remote_code: 'ID:45969/46045', local_label: 'Redmi Note 11 Pro/12 Pro 4G', remote_label: 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', score: 88, matched_by: 'model', confidence: 'family' },
-			{ local_code: 'ID:401476', remote_code: 'ID:45969/46044', local_label: 'Redmi Note 11 4G', remote_label: 'Xiaomi Note 11 Pro / Note 11s / Note 12s', score: 80, matched_by: 'family', confidence: 'suggested', shared: ['11', 'note'], extra: ['11s', '12s', 'pro'] },
-			{ local_code: 'ID:401481', remote_code: 'ID:45969/46049', local_label: 'Redmi Note 14 Pro 4G', remote_label: 'Xiaomi Note 14 Pro (4G / 5G)', score: 88, matched_by: 'model', confidence: 'family' },
-		],
-		ambiguous: [{ shop: 'tisacase', reference: 'ID:401490', label: 'Note 12 4G', index: 3, reason: 'multiple_families', candidate_count: 2, usable_count: 2, candidates: [{ shop: 'ariocase', reference: 'ID:45969/46051', label: 'Note 12 4G / 5G', score: 80, key: 'family', usable: true }, { shop: 'ariocase', reference: 'ID:45969/46052', label: 'Note 12 Pro / Note 12s', score: 80, key: 'family', usable: true }] }],
-		unmatched: [],
-		local: { name: 'Redmi cases', reference: 'ID:401470', count: 4 }, remote: { name: 'Xiaomi cases', reference: 'ID:45969', count: 3 },
-	});
-	window.eval(script);
-	window.document.getElementById('tcas-smart-local').value = 'ID:401470';
-	window.document.getElementById('tcas-smart-remote').value = 'ID:45969';
-	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 3);
-	const cards = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry');
-	ok('برچسب هم‌معنی با نام برند متفاوت در کارت جفت ساخته می‌شود', cards[0].querySelector('.tcas-local-code').value === 'ID:401477' && cards[0].querySelector('.tcas-remote-code').value === 'ID:45969/46045' && cards[2].querySelector('.tcas-remote-code').value === 'ID:45969/46049');
-	ok('تطبیق خانوادهٔ مدل با نشان «بررسی · خانوادهٔ مدل» علامت می‌خورد', cards[0].querySelector('.tcas-pair-flag').textContent === 'بررسی · خانوادهٔ مدل' && cards[0].querySelector('.tcas-pair-flag').classList.contains('is-family') && !cards[0].querySelector('.tcas-pair-flag-note'));
-	const suggested = cards[1].querySelector('.tcas-pair-flag');
-	ok('جفت پیشنهادی خانواده با نشان جداگانه «پیشنهاد» دیده می‌شود', suggested.textContent === 'پیشنهاد · خانوادهٔ مدل' && suggested.classList.contains('is-suggested'));
-	ok('مدل مشترک و مدل‌های فقط در برچسب مقابل زیر همان کارت نوشته می‌شود', cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('مدل مشترک: 11، note') && cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('11s') && cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('فقط در برچسب مقابل'));
-	ok('وضعیت، تعداد جفت‌های خانواده و پیشنهاد را جدا گزارش می‌کند', window.document.getElementById('tcas-smart-status').textContent.includes('2 جفت از خانوادهٔ مدل') && window.document.getElementById('tcas-smart-status').textContent.includes('1 پیشنهاد خانوادگی'));
-	const familyIssue = window.document.querySelector('#tcas-smart-issue-list [role="listitem"]');
-	ok('ابهام چندخانواده‌ای با دلیل و هر دو کاندید دیده می‌شود', familyIssue.textContent.includes('چند خانواده') && familyIssue.textContent.includes('2 برچسب چندمدلی') && familyIssue.querySelectorAll('.tcas-smart-issue-candidate').length === 2 && familyIssue.textContent.includes('خانوادهٔ مدل'));
-	const localInput = cards[1].querySelector('.tcas-local-code');
-	localInput.value = 'ID:401476-EDIT'; localInput.dispatchEvent(new window.Event('input'));
-	ok('ویرایش دستی کد، هم نشان پیشنهاد و هم توضیح مدل‌ها را پاک می‌کند', !cards[1].querySelector('.tcas-pair-flag') && !cards[1].querySelector('.tcas-pair-flag-note'));
-	dom.window.close();
-}
-
-{
-	const dom = makeDom(); const { window } = dom;
-	window.fetch = async () => reply({
-		matches: [],
-		ambiguous: [{ shop: 'ariocase', reference: 'ID:70/73', label: 'S24', index: 0, reason: 'no_candidate', candidate_count: 0, usable_count: 0, candidates: [] }],
-		unmatched: [{ shop: 'tisacase', reference: 'ID:53', label: 'Duplicate', index: 1, reason: 'duplicate_reference', duplicate_count: 2, twins: [], candidate_count: 0, usable_count: 0, candidates: [] }],
-		local: { name: '', reference: 'ID:50', count: 2 }, remote: { name: '', reference: 'ID:70', count: 1 },
-	});
-	window.eval(script);
-	window.document.getElementById('tcas-smart-local').value = 'ID:50';
-	window.document.getElementById('tcas-smart-remote').value = 'ID:70';
-	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('#tcas-smart-issue-list [role="listitem"]').length === 2);
-	const rows = window.document.querySelectorAll('#tcas-smart-issue-list [role="listitem"]');
-	rows[0].querySelector('.tcas-smart-issue-review').click();
-	let entries = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry');
-	let last = entries[entries.length - 1];
-	ok('بررسی دستی از سمت همکار، کارت جفت با همان مرجع و فیلد خالی TisaCase می‌سازد', last.querySelector('.tcas-remote-code').value === 'ID:70/73' && last.querySelector('.tcas-local-code').value === '' && window.document.activeElement === last.querySelector('.tcas-local-code'));
-	ok('بررسی دستی راهنمای تکمیل سمت مقابل را نشان می‌دهد', window.document.getElementById('tcas-smart-status').textContent.includes('مرجع سمت مقابل') && !window.document.getElementById('tcas-smart-issues').hidden);
-	rows[1].querySelector('.tcas-smart-issue-review').click();
-	entries = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry');
-	last = entries[entries.length - 1];
-	ok('بررسی دستی از سمت TisaCase مرجع محلی را پیش‌پر و فیلد همکار را فوکوس می‌کند', last.querySelector('.tcas-local-code').value === 'ID:53' && last.querySelector('.tcas-remote-code').value === '' && window.document.activeElement === last.querySelector('.tcas-remote-code'));
-	dom.window.close();
-}
-
 const uiCss = fs.readFileSync(path.join(root, 'assets/admin.css'), 'utf8');
 const pairsView = fs.readFileSync(path.join(root, 'views/pairs.php'), 'utf8');
 const linkedGroupsView = fs.readFileSync(path.join(root, 'views/linked-groups.php'), 'utf8');
@@ -332,7 +332,13 @@ ok('Selector و استایل جمع‌وجور Variation در View واقعی و
 ok('چیدمان قدیمی و فلش حذف و نتیجهٔ واقعی پیش‌فرض مخفی است', pairsView.includes('tcas-converter-flow') && pairsView.includes('id="tcas-link-result" class="tcas-converter-result" hidden') && !pairsView.includes('tcas-converter-layout') && !pairsView.includes('tcas-converter-arrow') && !uiCss.includes('.tcas-converter-arrow') && !uiCss.includes('.tcas-input-action'));
 ok('کارت تطبیق و کنترل دستهٔ بعد در View و CSS واقعی وجود دارد', pairsView.includes('id="tcas-smart-local"') && pairsView.includes('id="tcas-smart-remote"') && pairsView.includes('id="tcas-smart-next" class="button" hidden') && uiCss.includes('.tcas-smart-grid'));
 ok('فهرست موارد مشکل‌دار، فیلتر و دلیل دقیق در View و CSS واقعی وجود دارد', pairsView.includes('id="tcas-smart-issue-filters"') && pairsView.includes('id="tcas-smart-issue-list"') && pairsView.includes('بررسی دستی') && uiCss.includes('.tcas-smart-issue-filter') && uiCss.includes('.tcas-smart-issue[hidden]') && uiCss.includes('.tcas-smart-issue-candidate') && uiCss.includes('.tcas-pair-flag'));
-ok('نشان‌های خانوادهٔ مدل و پیشنهاد در CSS واقعی وجود دارد', uiCss.includes('.tcas-pair-flag.is-family') && uiCss.includes('.tcas-pair-flag.is-suggested') && uiCss.includes('.tcas-pair-flag-note') && uiCss.includes('.tcas-smart-issue-multiple_families'));
+const pairsCard = pairsView.slice(pairsView.indexOf('tcas-pairs-card'), pairsView.indexOf('tcas-linked-groups'));
+ok('بخش جداگانهٔ پیش‌نمایش حذف شده است', !pairsView.includes('tcas-preview-panel') && !pairsView.includes('tcas-preview-list') && !pairsView.includes('tcas-connect-results'));
+ok('هر کارت جفت اسپینر، نشان وضعیت، موجودی و پیام خودش را دارد', pairsView.includes('id="tcas-pair-entry-template"') && pairsView.includes('class="tcas-spinner"') && pairsView.includes('class="tcas-pair-stock"') && pairsView.includes('class="tcas-pair-flag') && pairsView.includes('class="tcas-pair-message"'));
+ok('فیلدهای کد هر کارت قابل ویرایش‌اند (readonly نیستند)', pairsCard.includes('class="tcas-local-code" type="text"') && pairsCard.includes('class="tcas-remote-code" type="text"') && !pairsCard.includes('readonly'));
+ok('رنگ‌های سبز/زرد/قرمز کارت و نشان در CSS واقعی تعریف شده‌اند', uiCss.includes('.tcas-pair-entry.is-settled') && uiCss.includes('.tcas-pair-entry.is-review') && uiCss.includes('.tcas-pair-entry.is-orphan') && uiCss.includes('.tcas-pair-flag.is-ok') && uiCss.includes('.tcas-pair-flag.is-warn') && uiCss.includes('.tcas-pair-flag.is-danger'));
+ok('اسپینر و موجودی کارت استایل اختصاصی دارند', uiCss.includes('.tcas-spinner') && uiCss.includes('@keyframes tcas-spin') && uiCss.includes('.tcas-pair-stock') && uiCss.includes('.tcas-pair-top'));
+ok('نشان‌های خانوادهٔ مدل و پیشنهاد در CSS واقعی وجود دارد', uiCss.includes('.tcas-pair-flag.is-warn') && uiCss.includes('.tcas-pair-flag-note') && uiCss.includes('.tcas-smart-issue-multiple_families'));
 ok('جفت‌های تازه با کارت والد و شبکهٔ Variation سه‌ستونی ساخته می‌شوند', script.includes('tcas-fresh-product-group') && script.includes('tcas-pair-entries-grouped') && uiCss.includes('.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr))'));
 ok('محصولات متصل آکارئونی و کارت‌های Variation سه‌ستونی با موجودی دارند', linkedGroupsView.includes('<details class="tcas-linked-group">') && linkedGroupsView.includes('tcas-linked-variation-card') && linkedGroupsView.includes("$row['quantity']") && uiCss.includes('.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

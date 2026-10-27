@@ -49,7 +49,9 @@
 		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
 		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
 		label: { text: 'بررسی · تطبیق از برچسب', cls: '', hint: 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.' },
-		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' }
+		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' },
+		manual: { text: 'دستی · نیاز به بررسی', cls: 'is-manual', hint: 'این جفت دستی وارد شده است؛ کد و موجودی هر دو طرف را کنترل کنید.' },
+		orphan: { text: 'بدون همتا', cls: 'is-orphan', hint: 'برای این Variation همتایی پیدا نشد؛ سمت مقابل باید دستی پر شود.' }
 	};
 
 	function text(id, value, isError) {
@@ -72,22 +74,8 @@
 		}
 	}
 
-	async function request(action, data) {
-		const body = new FormData();
-		body.append('action', 'tcas_' + action);
-		body.append('nonce', cfg.nonce || '');
-		body.append('partner_id', cfg.partnerId || 'ariocase');
-		Object.entries(data || {}).forEach(([key, value]) => {
-			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', item));
-			else body.append(key, value === null || typeof value === 'undefined' ? '' : String(value));
-		});
-		const response = await fetch(cfg.ajaxUrl, { method: 'POST', body, credentials: 'same-origin' });
-		let payload;
-		try { payload = await response.json(); } catch (error) { throw new Error('پاسخ JSON معتبر از سرور سایت دریافت نشد (HTTP ' + response.status + ').'); }
-		if (!payload || !payload.success) {
-			throw new Error(payload && payload.data && payload.data.message ? payload.data.message : (cfg.strings && cfg.strings.unknownError) || 'خطا');
-		}
-		return payload.data || {};
+	function delay(ms) {
+		return new Promise((resolve) => window.setTimeout(resolve, ms));
 	}
 
 	function node(tag, className, value) {
@@ -106,6 +94,79 @@
 		if (bar) bar.value = percent;
 		const label = wrap.querySelector('span');
 		if (label) label.textContent = percent.toLocaleString('fa-IR') + '٪';
+	}
+
+	const RETRY_STATUSES = [408, 418, 425, 429, 500, 502, 503, 504];
+
+	function responseMessage(status, action) {
+		const code = 'HTTP ' + (status || 0);
+		if ([403, 418, 429].includes(status)) {
+			return 'درخواست «' + action + '» توسط فایروال یا محدودکنندهٔ نرخ سرور سایت مسدود شد (' + code + '). چند لحظه صبر کنید و دوباره تلاش کنید.'
+				+ ' اگر تکرار شد، بررسی زندهٔ هر کارت را با دکمهٔ «بررسی همه دوباره» به‌جای تایپ‌زدن پشت‌سرهم انجام دهید.';
+		}
+		if (500 <= status) {
+			return 'سرور سایت هنگام پردازش «' + action + '» خطا داد (' + code + ')؛ گزارش خطاهای PHP را ببینید.';
+		}
+		return 'پاسخ JSON معتبر از سرور سایت دریافت نشد (' + code + ')؛ احتمالاً یک افزونهٔ امنیتی یا CDN درخواست را تغییر داده است.';
+	}
+
+	async function request(action, data, options) {
+		const opts = options || {};
+		const retries = Number.isFinite(Number(opts.retries)) ? Number(opts.retries) : 1;
+		const body = new FormData();
+		body.append('action', 'tcas_' + action);
+		body.append('nonce', cfg.nonce || '');
+		body.append('partner_id', cfg.partnerId || 'ariocase');
+		Object.entries(data || {}).forEach(([key, value]) => {
+			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', item));
+			else body.append(key, value === null || typeof value === 'undefined' ? '' : String(value));
+		});
+		for (let attempt = 0; attempt <= retries; attempt++) {
+			if (attempt) await delay(700 * attempt);
+			let response;
+			try {
+				response = await fetch(cfg.ajaxUrl, { method: 'POST', body, credentials: 'same-origin' });
+			} catch (error) {
+				if (attempt < retries) continue;
+				throw new Error('ارتباط با سرور سایت برقرار نشد؛ اتصال شبکه یا فایروال سایت را بررسی کنید.');
+			}
+			let raw = '';
+			try { raw = await response.text(); } catch (error) { raw = ''; }
+			let payload = null;
+			try { payload = raw ? JSON.parse(raw) : null; } catch (error) { payload = null; }
+			if (!payload || 'object' !== typeof payload) {
+				if (RETRY_STATUSES.includes(response.status) && attempt < retries) continue;
+				throw new Error(responseMessage(response.status, action));
+			}
+			if (!payload.success) {
+				throw new Error(payload && payload.data && payload.data.message ? payload.data.message : (cfg.strings && cfg.strings.unknownError) || 'خطا');
+			}
+			return payload.data || {};
+		}
+		throw new Error(responseMessage(0, action));
+	}
+
+	/** صف تک‌نفره برای بررسی کارت‌ها تا هاست پشت فایروال با موج درخواست مسدود نشود. */
+	const previewQueue = { busy: false, items: [] };
+
+	function pumpPreviewQueue() {
+		if (previewQueue.busy || !previewQueue.items.length) return;
+		const job = previewQueue.items.shift();
+		previewQueue.busy = true;
+		Promise.resolve()
+			.then(job.task)
+			.then(job.resolve, job.reject)
+			.finally(() => {
+				previewQueue.busy = false;
+				pumpPreviewQueue();
+			});
+	}
+
+	function enqueuePreview(task) {
+		return new Promise((resolve, reject) => {
+			previewQueue.items.push({ task, resolve, reject });
+			pumpPreviewQueue();
+		});
 	}
 
 	function stockLabel(stock) {
@@ -138,90 +199,218 @@
 		setVariationTitle(entry.querySelector('.tcas-shop-remote'), remoteTitle);
 	}
 
-	function updatePairEntryTitles(row) {
-		const entries = pairEntries();
-		const sameCodes = (entry) => {
-			if (!entry) return false;
-			const local = entry.querySelector('.tcas-local-code');
-			const remote = entry.querySelector('.tcas-remote-code');
-			return local && remote && local.value.trim() === String(row.local_code || '') && remote.value.trim() === String(row.remote_code || '');
+	// ---- وضعیت زندهٔ هر کارت: سبز=قطعی، زرد=نیاز به بررسی، قرمز=ناقص/خطا ----
+	const entryTimers = new WeakMap();
+	const entrySeq = new WeakMap();
+
+	function entryParts(entry) {
+		return {
+			flag: entry.querySelector('.tcas-pair-flag'),
+			spinner: entry.querySelector('.tcas-spinner'),
+			note: entry.querySelector('.tcas-pair-flag-note'),
+			stock: entry.querySelector('.tcas-pair-stock'),
+			message: entry.querySelector('.tcas-pair-message'),
+			checkbox: entry.querySelector('.tcas-row-select'),
+			local: entry.querySelector('.tcas-local-code'),
+			remote: entry.querySelector('.tcas-remote-code')
 		};
-		let entry = entries[Number(row.index)];
-		if (!sameCodes(entry)) entry = entries.find(sameCodes);
-		if (entry) setPairEntryTitles(entry, row.local_name, row.remote_name);
 	}
 
-	function readonlyShopField(labelText, code, shopClass, variationTitle) {
-		const label = node('label', 'tcas-shop-field ' + shopClass);
-		label.appendChild(node('span', 'tcas-shop-label', labelText));
-		const input = document.createElement('input');
-		input.type = 'text';
-		input.dir = 'ltr';
-		input.readOnly = true;
-		input.value = code || '—';
-		input.setAttribute('aria-label', labelText);
-		label.appendChild(input);
-		setVariationTitle(label, variationTitle);
-		return label;
+	function entryCodes(entry) {
+		const parts = entryParts(entry);
+		return {
+			local: parts.local ? parts.local.value.trim() : '',
+			remote: parts.remote ? parts.remote.value.trim() : ''
+		};
+	}
+
+	function setEntryLoading(entry, loading) {
+		const parts = entryParts(entry);
+		entry.classList.toggle('is-loading', Boolean(loading));
+		if (parts.spinner) parts.spinner.hidden = !loading;
+	}
+
+	function setEntryFlag(entry, label, tone, extraClass, hint) {
+		const parts = entryParts(entry);
+		if (!parts.flag) return;
+		parts.flag.textContent = label || '';
+		parts.flag.className = 'tcas-pair-flag is-' + (tone || 'idle') + (extraClass ? ' ' + extraClass : '');
+		parts.flag.title = hint || '';
+	}
+
+	function setEntrySelectable(entry, selectable) {
+		const parts = entryParts(entry);
+		const box = parts.checkbox;
+		if (!box) return;
+		const wasDisabled = box.disabled;
+		box.disabled = !selectable;
+		if (!selectable) box.checked = false;
+		else if (wasDisabled) box.checked = true;
+		entry.classList.toggle('is-selectable', Boolean(selectable));
+	}
+
+	function setEntryState(entry, state, options) {
+		const opts = options || {};
+		entry.dataset.state = state;
+		entry.classList.toggle('is-orphan', 'incomplete' === state || 'orphan' === state);
+		entry.classList.toggle('is-failed', 'error' === state);
+		entry.classList.toggle('is-settled', 'ok' === state || 'done' === state);
+		entry.classList.toggle('is-review', 'review' === state);
+		if (typeof opts.flag === 'string') setEntryFlag(entry, opts.flag, opts.tone || 'idle', opts.cls || '', opts.hint || '');
+		if (typeof opts.text === 'string') {
+			const parts = entryParts(entry);
+			if (parts.message) {
+				parts.message.textContent = opts.text;
+				parts.message.classList.toggle('is-error', 'error' === state || 'incomplete' === state);
+			}
+		}
+	}
+
+	function flagOutcome(entry, row) {
+		const confidence = entry.dataset.confidence || 'manual';
+		if (row.status === 'connected') {
+			return { state: 'ok', flag: 'قبلاً متصل شده', tone: 'ok', hint: 'این جفت از قبل متصل است و دوباره ساخته نمی‌شود.' };
+		}
+		if ('exact' === confidence) {
+			return { state: 'ok', flag: 'مشترک قطعی', tone: 'ok', hint: 'هر دو طرف با SKU یکتا شناسایی شدند؛ اتصال کم‌ریسک است.' };
+		}
+		const info = matchFlags[confidence] || matchFlags.manual;
+		return { state: 'review', flag: info.text, tone: 'warn', cls: info.cls, hint: info.hint };
+	}
+
+	function applyRow(entry, row) {
+		if (!entry || !row) return;
+		const parts = entryParts(entry);
+		setPairEntryTitles(entry, row.local_name, row.remote_name);
+		if (parts.stock) {
+			const cells = [];
+			if (row.local_stock) cells.push('TisaCase: ' + stockLabel(row.local_stock));
+			cells.push((cfg.partnerLabel || 'ArioCase') + ': ' + stockLabel(row.stock));
+			parts.stock.textContent = cells.join(' · ');
+			parts.stock.hidden = false;
+		}
+		if (row.selectable) {
+			const outcome = flagOutcome(entry, row);
+			setEntryState(entry, outcome.state, { flag: outcome.flag, tone: outcome.tone, cls: outcome.cls, hint: outcome.hint });
+			setEntrySelectable(entry, 'connected' !== row.status);
+		} else {
+			setEntryState(entry, 'error', { flag: 'غیرقابل اتصال · نیاز به بررسی', tone: 'danger', hint: 'این کارت تا رفع مشکل قابل انتخاب و اتصال نیست.' });
+			setEntrySelectable(entry, false);
+		}
+		if (parts.message) {
+			parts.message.textContent = row.message || '';
+			parts.message.classList.toggle('is-error', !row.selectable);
+		}
+	}
+
+	async function checkEntry(entry, options) {
+		if (!entry) return;
+		const opts = options || {};
+		const { local, remote } = entryCodes(entry);
+		const parts = entryParts(entry);
+		if (parts.message) {
+			parts.message.textContent = '';
+			parts.message.classList.remove('is-error');
+		}
+		if (!local && !remote) {
+			setEntryLoading(entry, false);
+			if (parts.stock) parts.stock.hidden = true;
+			setEntrySelectable(entry, false);
+			setEntryState(entry, 'idle', { flag: 'در انتظار شناسه', tone: 'idle', text: '' });
+			updateConnectAvailability();
+			return;
+		}
+		if (!local || !remote) {
+			const missing = !local ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase');
+			setEntryLoading(entry, false);
+			if (parts.stock) parts.stock.hidden = true;
+			setEntrySelectable(entry, false);
+			setEntryState(entry, 'incomplete', {
+				flag: 'ناقص · ' + missing + ' خالی',
+				tone: 'danger',
+				text: 'این Variation در ' + missing + ' پیدا نشد؛ کد آن را دستی وارد کنید یا کارت را حذف کنید.',
+				hint: 'کادر قرمز یعنی یک سمت جفت وجود ندارد یا کد ندارد.'
+			});
+			updateConnectAvailability();
+			return;
+		}
+		if (/^(?:[a-z]+:\/\/|www\.)/i.test(local) || /^(?:[a-z]+:\/\/|www\.)/i.test(remote)) {
+			setEntryLoading(entry, false);
+			setEntrySelectable(entry, false);
+			setEntryState(entry, 'error', { flag: 'لینک به‌جای شناسه', tone: 'danger', text: 'لینک را ابتدا در «تبدیل لینک به شناسه» به شناسه تبدیل کنید.' });
+			updateConnectAvailability();
+			return;
+		}
+		const signature = local + '\u0000' + remote;
+		if (!opts.force && entry.dataset.checkedFor === signature && ['ok', 'review', 'done'].includes(entry.dataset.state || '')) {
+			updateConnectAvailability();
+			return;
+		}
+		const seq = (entrySeq.get(entry) || 0) + 1;
+		entrySeq.set(entry, seq);
+		setEntryLoading(entry, true);
+		setEntryState(entry, 'loading', { flag: 'در حال بررسی…', tone: 'idle', text: '' });
+		try {
+			const data = await enqueuePreview(() => request('preview_pair', { local_code: local, remote_code: remote }));
+			if (entrySeq.get(entry) !== seq) return;
+			applyRow(entry, data.row || {});
+			if (entry.dataset.state !== 'error') entry.dataset.checkedFor = signature;
+		} catch (error) {
+			if (entrySeq.get(entry) !== seq) return;
+			entry.dataset.checkedFor = '';
+			setEntryState(entry, 'error', { flag: 'خطا · نیاز به بررسی', tone: 'danger', text: error.message });
+			setEntrySelectable(entry, false);
+		}
+		if (entrySeq.get(entry) === seq) setEntryLoading(entry, false);
+		updateConnectAvailability();
+	}
+
+	function scheduleEntryCheck(entry, delay) {
+		clearTimeout(entryTimers.get(entry));
+		entryTimers.set(entry, window.setTimeout(() => { checkEntry(entry); }, typeof delay === 'number' ? delay : 500));
 	}
 
 	// جفت‌هایی که با SKU یکتا تطبیق نشده‌اند با نشان «بررسی» یا «پیشنهاد» علامت می‌خورند.
 	function flagMatchEntry(entry, match) {
 		if (!entry || !match) return;
-		const confidence = match.confidence ? String(match.confidence) : '';
-		if (!confidence || 'exact' === confidence) return;
+		const confidence = match.confidence ? String(match.confidence) : 'manual';
+		entry.dataset.confidence = confidence;
 		const info = matchFlags[confidence] || matchFlags[match.matched_by] || matchFlags.label;
-		const badge = node('span', 'tcas-pair-flag ' + info.cls, info.text);
-		badge.title = info.hint;
-		const fields = entry.querySelector('.tcas-pair-fields');
-		if (fields) entry.insertBefore(badge, fields);
-		else entry.appendChild(badge);
+		const tone = 'exact' === confidence ? 'ok' : 'warn';
+		setEntryFlag(entry, info.text, tone, info.cls, info.hint);
+		const parts = entryParts(entry);
 		const shared = Array.isArray(match.shared) ? match.shared.map(String) : [];
 		const extra = Array.isArray(match.extra) ? match.extra.map(String) : [];
-		if (shared.length || extra.length) {
-			const details = [];
-			if (shared.length) details.push('مدل مشترک: ' + shared.join('، '));
-			if (extra.length) details.push('فقط در برچسب مقابل: ' + extra.join('، '));
-			const note = node('small', 'tcas-pair-flag-note', details.join(' · '));
-			if (badge.parentNode) badge.parentNode.insertBefore(note, badge.nextSibling);
+		if (parts.note) {
+			if (shared.length || extra.length) {
+				const details = [];
+				if (shared.length) details.push('مدل مشترک: ' + shared.join('، '));
+				if (extra.length) details.push('فقط در برچسب مقابل: ' + extra.join('، '));
+				parts.note.textContent = details.join(' · ');
+				parts.note.hidden = false;
+			} else {
+				parts.note.textContent = '';
+				parts.note.hidden = true;
+			}
 		}
-	}
-
-	function pairFields(localCode, remoteCode, localTitle, remoteTitle) {
-		const fields = node('div', 'tcas-pair-fields');
-		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local', localTitle));
-		fields.appendChild(node('span', 'tcas-pair-link', '+'));
-		fields.appendChild(readonlyShopField(cfg.partnerLabel || 'ArioCase', remoteCode, 'tcas-shop-remote', remoteTitle));
-		return fields;
-	}
-
-	function addPreviewRow(row) {
-		updatePairEntryTitles(row);
-		const list = $('tcas-preview-list');
-		if (!list) return;
-		const card = node('article', 'tcas-pair-card tcas-preview-card tcas-result-' + row.status);
-		const head = node('div', 'tcas-preview-head');
-		const selectLabel = node('label', 'tcas-pair-select');
-		const checkbox = document.createElement('input');
-		checkbox.type = 'checkbox';
-		checkbox.className = 'tcas-row-select';
-		checkbox.value = String(row.index);
-		checkbox.disabled = !row.selectable;
-		checkbox.checked = Boolean(row.selectable);
-		selectLabel.appendChild(checkbox);
-		selectLabel.appendChild(node('span', '', row.selectable ? 'انتخاب' : 'غیرقابل اتصال'));
-		head.appendChild(selectLabel);
-		head.appendChild(node('span', 'tcas-stock-pill', stockLabel(row.stock)));
-		card.appendChild(head);
-		card.appendChild(pairFields(row.local_code, row.remote_code, row.local_name, row.remote_name));
-		const message = node('p', 'tcas-preview-message', row.message || '');
-		if (row.status === 'error') message.classList.add('tcas-error-text');
-		card.appendChild(message);
-		list.appendChild(card);
 	}
 
 	function pairEntries() {
 		return Array.from(document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry'));
+	}
+
+	function updateConnectAvailability() {
+		const selectable = pairEntries().filter((entry) => {
+			const box = entry.querySelector('.tcas-row-select');
+			return box && !box.disabled;
+		}).length;
+		if (!state.running) {
+			const connect = $('tcas-connect-start');
+			if (connect) connect.disabled = selectable === 0;
+			const selectAll = $('tcas-select-valid');
+			if (selectAll) selectAll.disabled = selectable === 0;
+		}
+		return selectable;
 	}
 
 	function refreshPairEntries() {
@@ -233,15 +422,31 @@
 		});
 		const add = $('tcas-pair-add');
 		if (add) add.disabled = entries.length >= max;
+		updateConnectAvailability();
 	}
 
-	function invalidatePreview() {
-		if (!state.token || state.running) return;
-		state.token = '';
-		state.previewDone = false;
-		const panel = $('tcas-preview-panel');
-		if (panel) panel.hidden = true;
-		text('tcas-preview-status', 'تغییرات را دوباره بررسی کنید.');
+	/** جفت‌های هر کارت؛ ترتیب آرایه با index پاسخ سرور یکی است. */
+	function collectPairs(entries) {
+		const list = Array.isArray(entries) ? entries : pairEntries();
+		const usable = [];
+		const lines = [];
+		let incomplete = 0;
+		let invalid = 0;
+		list.forEach((entry) => {
+			const { local, remote } = entryCodes(entry);
+			if (!local && !remote) return;
+			if (!local || !remote) {
+				incomplete++;
+				return;
+			}
+			if (/^(?:[a-z]+:\/\/|www\.)/i.test(local) || /^(?:[a-z]+:\/\/|www\.)/i.test(remote)) {
+				invalid++;
+				return;
+			}
+			usable.push(entry);
+			lines.push(local + ' - ' + remote);
+		});
+		return { lines, entries: usable, incomplete, invalid };
 	}
 
 	function wirePairEntry(entry) {
@@ -250,34 +455,49 @@
 			if (pairEntries().length <= 1) return;
 			entry.remove();
 			refreshPairEntries();
-			invalidatePreview();
-			resetSmart();
+			text('tcas-preview-status', 'کارت حذف شد؛ تغییرات فقط در همین صفحه است.');
 		});
-		entry.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
-			setVariationTitle(input.closest('.tcas-shop-field'), '');
-			const flag = entry.querySelector('.tcas-pair-flag');
-			if (flag) flag.remove();
-			const flagNote = entry.querySelector('.tcas-pair-flag-note');
-			if (flagNote) flagNote.remove();
-			invalidatePreview();
-			resetSmart();
-		}));
+		entry.querySelectorAll('input[type="text"]').forEach((input) => {
+			input.addEventListener('input', () => {
+				setVariationTitle(input.closest('.tcas-shop-field'), '');
+				entry.dataset.confidence = 'manual';
+				const parts = entryParts(entry);
+				if (parts.note) {
+					parts.note.textContent = '';
+					parts.note.hidden = true;
+				}
+				if (parts.stock) parts.stock.hidden = true;
+				setEntrySelectable(entry, false);
+				updateConnectAvailability();
+				// با هر ویرایش، همان کارت بعد از مکث کوتاه دوباره بررسی می‌شود.
+				scheduleEntryCheck(entry, 500);
+			});
+			input.addEventListener('blur', () => {
+				const { local, remote } = entryCodes(entry);
+				if (local && remote) {
+					clearTimeout(entryTimers.get(entry));
+					checkEntry(entry);
+				}
+			});
+		});
+		entry.querySelector('.tcas-row-select')?.addEventListener('change', updateConnectAvailability);
 	}
 
-	function addPairEntry(localCode, remoteCode, focusInput, targetList) {
+	function addPairEntry(localCode, remoteCode, focusInput, targetList, confidence) {
 		const template = $('tcas-pair-entry-template');
 		const list = targetList || $('tcas-pair-entries');
 		const max = Number(cfg.maxPairs) || 50;
-		if (!template || !list || pairEntries().length >= max) return;
+		if (!template || !list || pairEntries().length >= max) return null;
 		const entry = template.content.firstElementChild.cloneNode(true);
 		list.appendChild(entry);
 		const local = entry.querySelector('.tcas-local-code');
 		const remote = entry.querySelector('.tcas-remote-code');
 		if (local) local.value = typeof localCode === 'string' ? localCode : '';
 		if (remote) remote.value = typeof remoteCode === 'string' ? remoteCode : '';
+		entry.dataset.confidence = confidence || 'manual';
+		entry.dataset.state = 'idle';
 		wirePairEntry(entry);
 		refreshPairEntries();
-		invalidatePreview();
 		if (local && focusInput !== false) local.focus();
 		return entry;
 	}
@@ -450,7 +670,7 @@
 		return local || remote ? 'TisaCase: ' + String(local) + ' · ' + (cfg.partnerLabel || 'ArioCase') + ': ' + String(remote) + ' — ' : '';
 	}
 
-	function fillSmartBatch() {
+	async function fillSmartBatch() {
 		if (state.running) return;
 		if (!state.smartSignature || state.smartSignature !== smartSignature()) {
 			resetSmart();
@@ -460,7 +680,8 @@
 		const max = Number(cfg.maxPairs) || 50;
 		const start = state.smartOffset;
 		const batch = state.smartMatches.slice(start, start + max);
-		if (!batch.length) {
+		const issues = 0 === start ? state.smartIssues : [];
+		if (!batch.length && !issues.length) {
 			text('tcas-smart-status', 'جفت دیگری برای این تطبیق نمانده است.');
 			return;
 		}
@@ -491,17 +712,42 @@
 		group.appendChild(groupEntries);
 		list.appendChild(group);
 		batch.forEach((match) => {
-			const entry = addPairEntry(match.local_code, match.remote_code, false, groupEntries);
+			const entry = addPairEntry(match.local_code, match.remote_code, false, groupEntries, match.confidence || 'manual');
+			if (!entry) return;
 			setPairEntryTitles(entry, match.local_label, match.remote_label);
 			flagMatchEntry(entry, match);
 		});
-		if (pairEntries().length !== batch.length) {
+		// کارت قرمز برای Variationهایی که سمت مقابلشان پیدا نشد؛ همان سمت موجود پیش‌پر و سمت دیگر خالی می‌ماند.
+		let orphans = 0;
+		let skippedOrphans = 0;
+		issues.forEach(({ item }) => {
+			const reference = item && item.reference ? String(item.reference) : '';
+			if (!reference) {
+				skippedOrphans++;
+				return;
+			}
+			const isLocal = item.shop === 'tisacase';
+			const entry = addPairEntry(isLocal ? reference : '', isLocal ? '' : reference, false, groupEntries, 'orphan');
+			if (!entry) {
+				skippedOrphans++;
+				return;
+			}
+			if (isLocal) setVariationTitle(entry.querySelector('.tcas-shop-local'), item.label);
+			else setVariationTitle(entry.querySelector('.tcas-shop-remote'), item.label);
+			const missing = isLocal ? (cfg.partnerLabel || 'ArioCase') : 'TisaCase';
+			setEntryState(entry, 'incomplete', {
+				flag: 'بدون همتا · ' + missing + ' خالی',
+				tone: 'danger',
+				text: 'همتایی برای این Variation پیدا نشد؛ کد ' + missing + ' را دستی وارد کنید یا کارت را حذف کنید.'
+			});
+			orphans++;
+		});
+		if (pairEntries().length !== Math.min(batch.length, max) + orphans) {
 			resetSmart();
 			text('tcas-smart-status', 'ساخت کارت‌های جفت کامل نشد؛ دوباره تلاش کنید.', true);
 			return;
 		}
 		state.smartOffset = start + batch.length;
-		invalidatePreview();
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
 		const flagged = batch.filter((match) => match && match.confidence && 'exact' !== match.confidence).length;
 		const familyCount = batch.filter((match) => match && 'family' === match.confidence).length;
@@ -510,13 +756,21 @@
 		const smartParts = [];
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
 		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
-		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «بررسی»/«پیشنهاد» علامت خورد.';
-		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد.';
+		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «نیاز به بررسی» علامت خورد.';
+		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
-		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
+		if (orphans) message += ' ' + String(orphans) + ' کارت قرمز برای Variationهای بدون همتا ساخته شد.';
+		if (skippedOrphans) message += ' ' + String(skippedOrphans) + ' مورد به‌خاطر ظرفیت یا نبود مرجع کارت نگرفت.';
+		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' موجودی تازهٔ هر کارت پایین همان کارت خوانده می‌شود.';
 		text('tcas-smart-status', message);
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = state.smartOffset >= state.smartMatches.length;
+		if (pairEntries().some((entry) => {
+			const codes = entryCodes(entry);
+			return codes.local && codes.remote;
+		})) {
+			await refreshAllCards($('tcas-preview-start'), { quiet: true });
+		}
 	}
 
 	async function matchVariations() {
@@ -548,12 +802,19 @@
 			state.smartLocalReference = data.local && data.local.reference ? String(data.local.reference) : '';
 			state.smartRemoteReference = data.remote && data.remote.reference ? String(data.remote.reference) : '';
 			state.smartOffset = 0;
+			const reviewable = state.smartIssues.filter(({ item }) => item && item.reference).length;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
-				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+				state.running = false;
+				if (reviewable) {
+					await fillSmartBatch();
+					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + '؛ ' + String(reviewable) + ' کارت قرمز برای بررسی دستی ساخته شد' + (excluded ? ' و ' + String(excluded) + ' مورد با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+				} else {
+					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+				}
 			} else {
 				state.running = false;
-				fillSmartBatch();
+				await fillSmartBatch();
 			}
 		} catch (error) {
 			resetSmart();
@@ -563,126 +824,169 @@
 		busy(button, false);
 	}
 
-	function collectPairs() {
-		const lines = [];
-		for (const entry of pairEntries()) {
-			const localInput = entry.querySelector('.tcas-local-code');
-			const remoteInput = entry.querySelector('.tcas-remote-code');
-			const local = localInput ? localInput.value.trim() : '';
-			const remote = remoteInput ? remoteInput.value.trim() : '';
-			if (!local && !remote) continue;
-			if (!local || !remote) {
-				const missing = local ? remoteInput : localInput;
-				if (missing) missing.focus();
-				throw new Error('برای هر جفت، شناسهٔ هر دو فروشگاه را وارد کنید.');
+	function summarizeRows(entries, rows) {
+		const counts = { ok: 0, review: 0, error: 0 };
+		rows.forEach((row) => {
+			if (!row) return;
+			if (!row.selectable) counts.error++;
+			else if ('connected' === row.status) counts.ok++;
+			else {
+				const entry = entries[Number(row.index)];
+				const confidence = entry ? entry.dataset.confidence : 'manual';
+				if ('exact' === confidence) counts.ok++;
+				else counts.review++;
 			}
-			if (/^(?:[a-z]+:\/\/|www\.)/i.test(local) || /^(?:[a-z]+:\/\/|www\.)/i.test(remote)) {
-				throw new Error('لینک را ابتدا در «تبدیل لینک به شناسه» به شناسه تبدیل کنید.');
-			}
-			lines.push(local + ' - ' + remote);
-		}
-		if (!lines.length) throw new Error('حداقل یک جفت شناسه وارد کنید.');
-		return lines;
+		});
+		return counts;
 	}
 
-	async function previewLoop(button) {
-		let done = false;
-		while (!done) {
-			const data = await request('preview_step', { token: state.token });
-			if (data.row) addPreviewRow(data.row);
-			progress('tcas-preview', data.processed || 0, data.total || 0);
-			text('tcas-preview-status', String(data.processed || 0) + ' از ' + String(data.total || 0));
-			done = Boolean(data.done);
-		}
-		state.previewDone = true;
-		text('tcas-preview-status', 'بررسی کامل شد؛ جفت‌ها را تأیید کنید.');
-		const connectButton = $('tcas-connect-start');
-		if (connectButton) connectButton.disabled = false;
-		busy(button, false);
-		state.running = false;
-	}
-
-	async function startPreview() {
+	/** بررسی گروهی کارت‌ها با همان Job سرور؛ نتیجه روی خود کارت‌ها می‌نشیند. */
+	async function refreshAllCards(button, options) {
 		if (state.running) return;
-		let lines;
-		try { lines = collectPairs(); } catch (error) { text('tcas-preview-status', error.message, true); return; }
-		const button = $('tcas-preview-start');
+		const opts = options || {};
+		const collected = collectPairs();
+		if (!collected.lines.length) {
+			if (!opts.quiet) {
+				text('tcas-preview-status', collected.incomplete ? 'همهٔ کارت‌ها یک سمت خالی دارند؛ حداقل یک جفت کامل لازم است.' : 'حداقل یک جفت شناسه وارد کنید.', true);
+			}
+			return;
+		}
+		const entries = collected.entries;
 		state.running = true;
 		state.previewDone = false;
 		state.token = '';
-		busy(button, true);
-		text('tcas-preview-status', 'در حال ساخت عملیات…');
-		const panel = $('tcas-preview-panel');
-		if (panel) panel.hidden = true;
-		const list = $('tcas-preview-list');
-		if (list) list.textContent = '';
-		const results = $('tcas-connect-results');
-		if (results) results.textContent = '';
+		if (!opts.quiet) busy(button, true, 'در حال بررسی…');
+		entries.forEach((entry) => setEntryLoading(entry, true));
+		if (!opts.quiet) text('tcas-preview-status', 'در حال بررسی ' + collected.lines.length + ' جفت و خواندن موجودی تازه…');
+		const rows = [];
 		try {
-			const data = await request('preview_start', { pairs: lines.join('\n') });
-			state.token = data.token;
-			if (panel) panel.hidden = false;
-			progress('tcas-preview', 0, data.total || 0);
-			await previewLoop(button);
+			const job = await request('preview_start', { pairs: collected.lines.join('\n') });
+			state.token = job.token;
+			progress('tcas-preview', 0, job.total || 0);
+			let done = false;
+			let guard = 0;
+			while (!done && guard++ < 600) {
+				const data = await request('preview_step', { token: job.token });
+				if (data.row) {
+					rows.push(data.row);
+					const entry = entries[Number(data.row.index)];
+					if (entry) {
+						setEntryLoading(entry, false);
+						applyRow(entry, data.row);
+					}
+				}
+				progress('tcas-preview', data.processed || 0, data.total || 0);
+				done = Boolean(data.done);
+			}
+			state.previewDone = true;
+			const counts = summarizeRows(entries, rows);
+			const parts = [];
+			if (counts.ok) parts.push(counts.ok + ' قطعی');
+			if (counts.review) parts.push(counts.review + ' نیاز به بررسی');
+			if (counts.error) parts.push(counts.error + ' غیرقابل اتصال');
+			if (collected.incomplete) parts.push(collected.incomplete + ' کارت ناقص');
+			text('tcas-preview-status', 'بررسی تمام شد — ' + (parts.join(' · ') || 'بدون نتیجه') + '.');
 		} catch (error) {
-			state.running = false;
-			busy(button, false);
 			text('tcas-preview-status', error.message, true);
 		}
-	}
-
-	function connectResult(row) {
-		const wrap = $('tcas-connect-results');
-		if (!wrap) return;
-		const card = node('div', 'tcas-result-card ' + (row.status === 'done' ? 'is-success' : 'is-error'));
-		const label = row.local_code + ' - ' + row.remote_code;
-		card.appendChild(node('strong', '', label + ' — ' + row.message));
-		if (row.edit_url) {
-			const link = node('a', '', 'بازکردن محصول تیساکیس');
-			link.href = row.edit_url;
-			card.appendChild(link);
-		}
-		wrap.appendChild(card);
-	}
-
-	async function connectLoop(button) {
-		let done = false;
-		while (!done) {
-			const data = await request('connect_step', { token: state.token });
-			if (data.row) connectResult(data.row);
-			progress('tcas-connect', data.processed || 0, data.total || 0);
-			done = Boolean(data.done);
-		}
-		text('tcas-connect-status', 'عملیات تمام شد؛ جفت‌های تأییدشده در محصولات متصل گروه‌بندی شدند. ');
-		const status = $('tcas-connect-status');
-		if (status && cfg.mappingsUrl) {
-			const link = node('a', 'tcas-connected-groups-link', 'مشاهدهٔ کارت‌های محصولات متصل');
-			link.href = cfg.mappingsUrl;
-			status.appendChild(link);
-		}
-		busy(button, false);
+		entries.forEach((entry) => setEntryLoading(entry, false));
 		state.running = false;
+		if (!opts.quiet) busy(button, false);
+		updateConnectAvailability();
+	}
+
+	function applyConnectRow(entry, row) {
+		if (!entry || !row) return false;
+		const parts = entryParts(entry);
+		setEntryLoading(entry, false);
+		if ('done' === row.status) {
+			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به‌روز شد', tone: 'ok', text: row.message || '' });
+			setEntrySelectable(entry, false);
+			if (row.edit_url && parts.message) {
+				const link = node('a', 'tcas-pair-edit-link', 'بازکردن محصول تیساکیس');
+				link.href = row.edit_url;
+				if (parts.message.textContent) parts.message.appendChild(document.createTextNode(' '));
+				parts.message.appendChild(link);
+			}
+			return true;
+		}
+		setEntryState(entry, 'error', { flag: 'خطا · نیاز به بررسی', tone: 'danger', text: row.message || '' });
+		setEntrySelectable(entry, false);
+		return false;
 	}
 
 	async function startConnect() {
-		if (state.running || !state.token || !state.previewDone) return;
-		const pairs = Array.from(document.querySelectorAll('.tcas-row-select:checked')).map((input) => input.value);
-		if (!pairs.length) { text('tcas-connect-status', (cfg.strings && cfg.strings.selectRows) || 'جفتی انتخاب نشده.', true); return; }
+		if (state.running) return;
+		const selected = pairEntries().filter((entry) => {
+			const box = entry.querySelector('.tcas-row-select');
+			return box && !box.disabled && box.checked;
+		});
+		if (!selected.length) {
+			text('tcas-connect-status', (cfg.strings && cfg.strings.selectRows) || 'حداقل یک کارت قابل اتصال را انتخاب کنید.', true);
+			return;
+		}
+		const pairs = selected.map((entry) => entryCodes(entry)).filter((codes) => codes.local && codes.remote);
+		if (!pairs.length) {
+			text('tcas-connect-status', 'کارت‌های انتخابی شناسهٔ کامل ندارند.', true);
+			return;
+		}
 		const button = $('tcas-connect-start');
 		state.running = true;
-		busy(button, true);
-		text('tcas-connect-status', 'در حال آماده‌سازی…');
-		const results = $('tcas-connect-results');
-		if (results) results.textContent = '';
+		busy(button, true, 'در حال اتصال…');
+		text('tcas-connect-status', 'در حال بررسی تازهٔ موجودی و اتصال ' + pairs.length + ' جفت…');
+		selected.forEach((entry) => setEntryLoading(entry, true));
 		try {
-			const data = await request('connect_start', { token: state.token, pairs });
-			progress('tcas-connect', 0, data.total || 0);
-			await connectLoop(button);
+			const job = await request('preview_start', { pairs: pairs.map((codes) => codes.local + ' - ' + codes.remote).join('\n') });
+			state.token = job.token;
+			const order = [];
+			let done = false;
+			let guard = 0;
+			while (!done && guard++ < 600) {
+				const data = await request('preview_step', { token: job.token });
+				if (data.row) {
+					const entry = selected[Number(data.row.index)];
+					order[Number(data.row.index)] = data.row;
+					if (entry) {
+						setEntryLoading(entry, false);
+						applyRow(entry, data.row);
+					}
+				}
+				progress('tcas-preview', data.processed || 0, data.total || 0);
+				done = Boolean(data.done);
+			}
+			const indexes = order.filter((row) => row && row.selectable).map((row) => Number(row.index));
+			if (!indexes.length) throw new Error('هیچ‌کدام از کارت‌های انتخابی الان قابل اتصال نیست؛ پیام همان کارت را ببینید.');
+			const connect = await request('connect_start', { token: job.token, pairs: indexes });
+			progress('tcas-connect', 0, connect.total || 0);
+			let finished = false;
+			let guard2 = 0;
+			let okCount = 0;
+			let failCount = 0;
+			while (!finished && guard2++ < 600) {
+				const data = await request('connect_step', { token: job.token });
+				if (data.row) {
+					const index = typeof data.row.index === 'number' ? Number(data.row.index) : -1;
+					const entry = index >= 0 ? selected[index] : null;
+					if (applyConnectRow(entry, data.row)) okCount++;
+					else failCount++;
+				}
+				progress('tcas-connect', data.processed || 0, data.total || 0);
+				finished = Boolean(data.done);
+			}
+			text('tcas-connect-status', okCount + ' جفت متصل و فقط موجودی به‌روز شد' + (failCount ? ' · ' + failCount + ' جفت خطا داشت' : '') + '. ');
+			const status = $('tcas-connect-status');
+			if (status && cfg.mappingsUrl) {
+				const link = node('a', 'tcas-connected-groups-link', 'مشاهدهٔ کارت‌های محصولات متصل');
+				link.href = cfg.mappingsUrl;
+				status.appendChild(link);
+			}
 		} catch (error) {
-			state.running = false;
-			busy(button, false);
 			text('tcas-connect-status', error.message, true);
 		}
+		selected.forEach((entry) => setEntryLoading(entry, false));
+		state.running = false;
+		busy(button, false);
+		updateConnectAvailability();
 	}
 
 	function productDiagnostic(data) {
@@ -844,7 +1148,10 @@
 	pairEntries().forEach(wirePairEntry);
 	refreshPairEntries();
 	const pairAdd = $('tcas-pair-add');
-	if (pairAdd) pairAdd.addEventListener('click', () => { resetSmart(); addPairEntry(); });
+	if (pairAdd) pairAdd.addEventListener('click', () => {
+		const entry = addPairEntry();
+		if (entry) setEntryState(entry, 'idle', { flag: 'در انتظار شناسه', tone: 'idle', text: '' });
+	});
 	const smartMatch = $('tcas-smart-match');
 	if (smartMatch) smartMatch.addEventListener('click', matchVariations);
 	const smartNext = $('tcas-smart-next');
@@ -856,7 +1163,7 @@
 		input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); matchVariations(); } });
 	});
 	const previewButton = $('tcas-preview-start');
-	if (previewButton) previewButton.addEventListener('click', startPreview);
+	if (previewButton) previewButton.addEventListener('click', () => refreshAllCards(previewButton));
 	const connectButton = $('tcas-connect-start');
 	if (connectButton) connectButton.addEventListener('click', startConnect);
 	const selectValid = $('tcas-select-valid');
@@ -864,6 +1171,7 @@
 		const boxes = Array.from(document.querySelectorAll('.tcas-row-select:not(:disabled)'));
 		const allChecked = boxes.length && boxes.every((box) => box.checked);
 		boxes.forEach((box) => { box.checked = !allChecked; });
+		updateConnectAvailability();
 	});
 	const resolveButton = $('tcas-link-resolve');
 	if (resolveButton) resolveButton.addEventListener('click', resolveLink);
@@ -883,6 +1191,12 @@
 		sku: $('tcas-map-sku') ? $('tcas-map-sku').value : '',
 		remote_code: $('tcas-map-code') ? $('tcas-map-code').value : ''
 	}, 'tcas-map-status'));
+	if (pairEntries().some((entry) => {
+		const codes = entryCodes(entry);
+		return codes.local && codes.remote;
+	})) {
+		refreshAllCards(null, { quiet: true });
+	}
 	document.querySelectorAll('.tcas-sync-one').forEach((button) => button.addEventListener('click', () => simpleAction(button, 'sync_mapping', { product_id: button.dataset.productId }, 'tcas-sync-status')));
 	document.querySelectorAll('.tcas-disconnect').forEach((button) => button.addEventListener('click', () => {
 		if (!window.confirm((cfg.strings && cfg.strings.disconnect) || 'ادامه؟')) return;

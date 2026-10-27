@@ -316,10 +316,7 @@
 .tcas-smart-issue-candidate { direction:rtl; unicode-bidi:plaintext; }
 .tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
-.tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
-.tcas-pair-flag.is-family { border-style:solid; border-color:var(--tisa-primary-soft,#E8F0EE); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
-.tcas-pair-flag.is-suggested { border-style:dashed; border-color:var(--tisa-info,#246B8E); background:#EAF3F8; color:#1C556F; }
-.tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 7px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
+.tcas-pair-flag-note:not([hidden]) { display:block; min-width:0; margin:-3px 0 8px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
 .tcas-smart-issue-multiple_families { border-right-color:#C58A19; }
 .tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
 .tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
@@ -391,12 +388,42 @@
 .tcas-stock-pill { display:inline-flex; align-items:center; min-height:23px; padding:2px 8px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); white-space:nowrap; }
 .tcas-card-link { color:var(--tcas-primary); font-size:var(--tisa-fs-meta,12.5px); text-decoration:none; }
 
-.tcas-preview-list { display:grid; gap:10px; }
-.tcas-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); cursor:pointer; }
+/* ---- کارت جفت زنده: اسپینر، وضعیت رنگی و موجودی روی خود کارت ---- */
+.tcas-pairs-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-pairs-actions .button { min-height:30px; }
+.tcas-pairs-help { margin:0 0 12px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-pair-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:11px; border-top:1px solid var(--tcas-border); }
+.tcas-pair-actions .tcas-status { margin:0; }
+.tcas-pair-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; margin-bottom:8px; }
+.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); cursor:pointer; flex:0 0 auto; }
 .tcas-pair-select input { margin:0; }
-.tcas-preview-message { margin:7px 0 0; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
-.tcas-preview-card.tcas-result-error { border-color:var(--tisa-danger-soft,#FBECEA); }
+.tcas-pair-entry .tcas-row-select:disabled + span { opacity:.45; }
+.tcas-pair-stock { margin-top:8px; padding:4px 8px; border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); color:var(--tisa-ink,#1F2A2E); font-size:var(--tisa-fs-tiny,11px); font-weight:600; direction:rtl; unicode-bidi:plaintext; }
+.tcas-pair-stock[hidden] { display:none; }
+.tcas-pair-message { display:block; margin-top:6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.7; }
+.tcas-pair-message:empty { display:none; }
+.tcas-pair-message.is-error { color:var(--tisa-danger,#B5453A); }
+.tcas-pair-edit-link { margin-inline-start:4px; color:var(--tcas-primary); text-decoration:none; }
+.tcas-spinner { display:inline-block; flex:0 0 14px; width:14px; height:14px; margin-inline-start:2px; border:2px solid rgba(15,138,103,.25); border-top-color:var(--tcas-primary); border-radius:50%; animation:tcas-spin .7s linear infinite; }
+.tcas-spinner[hidden] { display:none; }
+@keyframes tcas-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .tcas-spinner { animation-duration:1.8s; } }
+
+.tcas-pair-entry { transition:border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.tcas-pair-entry.is-settled { border-color:var(--tisa-primary,#0f8a67); box-shadow:inset 3px 0 0 var(--tisa-primary,#0f8a67); }
+.tcas-pair-entry.is-review { border-color:#E2C98C; box-shadow:inset 3px 0 0 #C58A19; }
+.tcas-pair-entry.is-orphan { border-color:var(--tisa-danger,#B5453A); background:var(--tisa-danger-soft,#FBECEA); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
+.tcas-pair-entry.is-failed { border-color:var(--tisa-danger,#B5453A); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
+.tcas-pair-entry.is-loading { border-color:var(--tisa-primary-soft,#E8F0EE); box-shadow:inset 3px 0 0 var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-orphan .tcas-shop-field input:placeholder-shown { border-color:var(--tisa-danger,#B5453A); background:#fff; }
+.tcas-pair-entry.is-orphan .tcas-pair-fields { opacity:.96; }
+
+.tcas-pair-flag { display:inline-flex; align-items:center; min-width:0; min-height:22px; padding:2px 9px; border:1px solid transparent; border-radius:var(--tisa-r-pill,999px); font-size:var(--tisa-fs-tiny,10px); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tcas-pair-flag.is-idle { border-color:var(--tcas-border); background:var(--tcas-soft); color:var(--tcas-muted); font-weight:600; }
+.tcas-pair-flag.is-ok { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
+.tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
+.tcas-pair-flag-note[hidden] { display:none; }
 
 @media(max-width:900px) {
   .tcas-hero { align-items:flex-start; }

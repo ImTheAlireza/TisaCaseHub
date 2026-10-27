@@ -324,42 +324,30 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
 .tcas-smart-issue-candidate { direction:rtl; unicode-bidi:plaintext; }
 .tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
-.tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
-.tcas-pair-flag.is-family { border-style:solid; border-color:var(--tisa-primary-soft,#E8F0EE); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
-.tcas-pair-flag.is-suggested { border-style:dashed; border-color:var(--tisa-info,#246B8E); background:#EAF3F8; color:#1C556F; }
-.tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 7px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
-.tcas-smart-issue-multiple_families { border-right-color:#C58A19; }
-.tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
-.tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
-.tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }
-.tcas-fresh-product-summary::before,.tcas-linked-group-summary::before { content:'＋'; display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; border-radius:50%; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tcas-primary); font-weight:700; }
-.tcas-fresh-product-group[open] > .tcas-fresh-product-summary::before,.tcas-linked-group[open] > .tcas-linked-group-summary::before { content:'−'; }
-.tcas-fresh-product-names,.tcas-linked-group-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; flex:1; }
-.tcas-fresh-product-names strong,.tcas-linked-group-title strong { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12.5px); }
-.tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
-.tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
-.tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
-.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 10px 10px; }
-.tcas-pair-entries-grouped .tcas-pair-entry { padding:10px; }
-.tcas-linked-groups { display:grid; gap:10px; }
-.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; padding:0 10px 10px; }
-.tcas-linked-variation-card { display:grid; align-content:start; gap:8px; min-width:0; padding:10px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
-.tcas-linked-variation-heading { display:grid; gap:4px; min-width:0; }
-.tcas-linked-variation-heading a { color:var(--tcas-text); font-size:var(--tisa-fs-meta,12.5px); font-weight:700; text-decoration:none; overflow-wrap:anywhere; }
-.tcas-linked-variation-heading a:hover { color:var(--tcas-primary); }
-.tcas-linked-codes { display:grid; gap:6px; min-width:0; }
-.tcas-linked-codes > div { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:4px 7px; min-width:0; }
-.tcas-linked-codes > div > span { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
-.tcas-linked-codes code { min-width:0; overflow-wrap:anywhere; text-align:left; }
-.tcas-linked-codes small { grid-column:2; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
-.tcas-linked-variation-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding-top:7px; border-top:1px solid var(--tcas-border); }
-.tcas-linked-variation-foot > small { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
-.tcas-linked-actions { display:flex; align-items:center; gap:6px; }
-.tcas-linked-actions .button { min-height:27px; padding:1px 8px; }
-.tcas-connected-groups-link { margin-inline-start:6px; color:var(--tcas-primary); font-weight:700; }
-
-.tcas-pair-entries { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:10px; }
+.tcas-pairs-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-pairs-actions .button { min-height:30px; }
+.tcas-pairs-help { margin:0 0 12px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-pair-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:11px; border-top:1px solid var(--tcas-border); }
+.tcas-pair-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; margin-bottom:8px; }
+.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); cursor:pointer; flex:0 0 auto; }
+.tcas-pair-select input { margin:0; }
+.tcas-pair-stock { margin-top:8px; padding:4px 8px; border-radius:var(--tisa-r-xs,8px); background:#fff; border:1px solid var(--tcas-border); color:var(--tisa-ink,#1F2A2E); font-size:var(--tisa-fs-tiny,11px); font-weight:600; direction:rtl; unicode-bidi:plaintext; }
+.tcas-pair-message { display:block; margin-top:6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.7; }
+.tcas-pair-message.is-error { color:var(--tisa-danger,#B5453A); }
+.tcas-spinner { display:inline-block; flex:0 0 14px; width:14px; height:14px; border:2px solid rgba(15,138,103,.25); border-top-color:var(--tcas-primary); border-radius:50%; animation:tcas-spin .7s linear infinite; }
+@keyframes tcas-spin { to { transform:rotate(360deg); } }
+.tcas-pair-flag { display:inline-flex; align-items:center; min-width:0; min-height:22px; padding:2px 9px; border:1px solid transparent; border-radius:var(--tisa-r-pill,999px); font-size:var(--tisa-fs-tiny,10px); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tcas-pair-flag.is-idle { border-color:var(--tcas-border); background:var(--tcas-soft); color:var(--tcas-muted); font-weight:600; }
+.tcas-pair-flag.is-ok { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
+.tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
+.tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 8px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
 .tcas-pair-entry { position:relative; min-width:0; padding:13px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-pair-entry.is-settled { border-color:var(--tisa-primary,#0f8a67); box-shadow:inset 3px 0 0 var(--tisa-primary,#0f8a67); }
+.tcas-pair-entry.is-review { border-color:#E2C98C; box-shadow:inset 3px 0 0 #C58A19; }
+.tcas-pair-entry.is-orphan { border-color:var(--tisa-danger,#B5453A); background:var(--tisa-danger-soft,#FBECEA); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
+.tcas-pair-entry.is-loading { border-color:var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-orphan .tcas-shop-field input:placeholder-shown { border-color:var(--tisa-danger,#B5453A); background:#fff; }
 .tcas-remove-pair {
   position:absolute;
   top:-7px;
@@ -399,12 +387,8 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
 .tcas-stock-pill { display:inline-flex; align-items:center; min-height:23px; padding:2px 8px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); white-space:nowrap; }
 .tcas-card-link { color:var(--tcas-primary); font-size:var(--tisa-fs-meta,12.5px); text-decoration:none; }
 
-.tcas-preview-list { display:grid; gap:10px; }
-.tcas-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
 .tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); cursor:pointer; }
 .tcas-pair-select input { margin:0; }
-.tcas-preview-message { margin:7px 0 0; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
-.tcas-preview-card.tcas-result-error { border-color:var(--tisa-danger-soft,#FBECEA); }
 
 @media(max-width:900px) {
   .tcas-hero { align-items:flex-start; }
@@ -507,23 +491,82 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
         </div>
       </section>
     </section>
-    <section class="tcas-card">
-      <div class="tcas-card-head"><div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div><span class="tcas-muted">حداکثر 50 جفت</span></div>
-      <details class="tcas-fresh-product-group" open><summary class="tcas-fresh-product-summary"><span class="tcas-fresh-product-names"><strong class="tcas-shop-local-text">TisaCase · قاب گوشی شیائومی</strong><span class="tcas-pair-link">↔</span><strong class="tcas-shop-remote-text">ArioCase · Xiaomi cases</strong></span><span class="tcas-fresh-product-count">3 Variation</span></summary><div class="tcas-pair-entries tcas-pair-entries-grouped">
-        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
-          <span class="tcas-pair-flag is-family" title="برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.">بررسی · خانوادهٔ مدل</span>
-          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401477" readonly><small class="tcas-variation-title">Redmi Note 11 Pro/12 Pro 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46045" readonly><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 12 Pro (4G)</small></label></div>
+    <section class="tcas-card tcas-pairs-card">
+      <div class="tcas-card-head">
+        <div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>
+        <div class="tcas-pairs-actions"><span class="tcas-muted">حداکثر 50 جفت</span><button type="button" class="button">انتخاب همه</button><button type="button" class="button">بررسی همه دوباره</button><button type="button" class="button">افزودن جفت</button></div>
+      </div>
+      <p class="tcas-pairs-help">هر کارت خودش را بررسی می‌کند: اسپینر، موجودی تازهٔ هر دو فروشگاه و وضعیت همان کارت. کادر سبز = جفت قطعی؛ زرد = مشکوک و نیاز به بررسی؛ قرمز = یک سمت پیدا نشده یا کد ندارد. بعد از هر ویرایش، همان کارت دوباره بررسی می‌شود.</p>
+      <div id="tcas-pair-entries" class="tcas-pair-entries">
+        <article class="tcas-pair-entry is-settled" data-state="exact" data-confidence="exact">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-ok">مشترک قطعی</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
+          </div>
+          
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401470"><small class="tcas-variation-title">Samsung A54 5G Clear</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46011" placeholder="SKU / ID:123"><small class="tcas-variation-title">Samsung A54 5G clear case</small></label>
+          </div>
+          <div class="tcas-pair-stock">TisaCase: 12 · موجود · ArioCase: 9 · موجود</div>
+          <small class="tcas-pair-message">هر دو طرف با SKU یکتا شناسایی شدند؛ اتصال کم‌ریسک است.</small>
         </article>
-        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
-          <span class="tcas-pair-flag is-suggested" title="یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.">پیشنهاد · خانوادهٔ مدل</span>
+        <article class="tcas-pair-entry is-review" data-state="review" data-confidence="review">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-warn">بررسی · خانوادهٔ مدل</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
+          </div>
+          <small class="tcas-pair-flag-note">مدل مشترک: 11، pro، note · شبکه: هر دو 4G</small>
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401477"><small class="tcas-variation-title">Redmi Note 11 Pro/12 Pro 4G</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46045" placeholder="SKU / ID:123"><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 12 Pro (4G)</small></label>
+          </div>
+          <div class="tcas-pair-stock">TisaCase: 3 · موجود · ArioCase: 6 · موجود</div>
+          <small class="tcas-pair-message">دو محصول موجود جفت می‌شوند؛ فقط موجودی از ArioCase خوانده و اعمال می‌شود.</small>
+        </article>
+        <article class="tcas-pair-entry is-loading" data-state="loading" data-confidence="loading">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-idle">در حال بررسی…</span>
+            <span class="tcas-spinner" aria-hidden="true"></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
+          </div>
           <small class="tcas-pair-flag-note">مدل مشترک: 11، note · فقط در برچسب مقابل: pro، 11s، 12s</small>
-          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401476" readonly><small class="tcas-variation-title">Redmi Note 11 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46044" readonly><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 11s / Note 12s</small></label></div>
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401476"><small class="tcas-variation-title">Redmi Note 11 4G</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46044" placeholder="SKU / ID:123"><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 11s / Note 12s</small></label>
+          </div>
+          <div class="tcas-pair-stock" hidden></div>
+          <small class="tcas-pair-message"></small>
         </article>
-        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
-          <span class="tcas-pair-flag is-family" title="برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.">بررسی · خانوادهٔ مدل</span>
-          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401481" readonly><small class="tcas-variation-title">Redmi Note 14 Pro 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46049" readonly><small class="tcas-variation-title">Xiaomi Note 14 Pro (4G / 5G)</small></label></div>
+        <article class="tcas-pair-entry is-orphan" data-state="incomplete" data-confidence="incomplete">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-danger">بدون همتا · ArioCase خالی</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" disabled><span>انتخاب</span></label>
+          </div>
+          
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401481"><small class="tcas-variation-title">Redmi Note 14 Pro 4G</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="" placeholder="SKU / ID:123"></label>
+          </div>
+          <div class="tcas-pair-stock" hidden></div>
+          <small class="tcas-pair-message is-error">همتایی برای این Variation پیدا نشد؛ کد ArioCase را دستی وارد کنید یا کارت را حذف کنید.</small>
         </article>
-      </div></details>
+      </div>
+      <div class="tcas-pair-actions">
+        <button type="button" class="button button-primary">اتصال انتخاب‌شده‌ها</button>
+        <span class="tcas-status">۱ قطعی · ۱ نیاز به بررسی · ۱ کارت ناقص</span>
+      </div>
     </section>
   </main>
 </div>

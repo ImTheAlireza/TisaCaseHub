@@ -121,6 +121,13 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			}
 			$extra['remote_name'] = $remote['name'];
 			$extra['stock']       = $remote['stock'];
+			// موجودی فعلی سمت تیساکیس فقط برای نمایش کنار کارت؛ هیچ نوشتنی انجام نمی‌شود.
+			$local_quantity = method_exists( $product, 'get_stock_quantity' ) ? $product->get_stock_quantity() : null;
+			$local_status   = method_exists( $product, 'get_stock_status' ) ? (string) $product->get_stock_status() : '';
+			$extra['local_stock'] = array(
+				'quantity' => ( null === $local_quantity || '' === $local_quantity ) ? null : (float) $local_quantity,
+				'status'   => $local_status,
+			);
 			$local_type           = $product->get_type();
 			$remote_type          = (string) $remote['type'];
 			$type_matches         = 'simple' === $local_type ? in_array( $remote_type, array( '', 'simple' ), true ) : 'variation' === $remote_type;

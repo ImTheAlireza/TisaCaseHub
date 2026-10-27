@@ -33,51 +33,60 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 	</section>
 </section>
 
-<section class="tcas-card">
+<section class="tcas-card tcas-pairs-card">
 	<div class="tcas-card-head">
 		<div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>
-		<span class="tcas-muted">حداکثر <?php echo (int) TCAS_Core::MAX_CODES; ?> جفت</span>
+		<div class="tcas-pairs-actions">
+			<span class="tcas-muted">حداکثر <?php echo (int) TCAS_Core::MAX_CODES; ?> جفت</span>
+			<button type="button" id="tcas-select-valid" class="button">انتخاب همه</button>
+			<button type="button" id="tcas-preview-start" class="button">بررسی همه دوباره</button>
+			<button type="button" id="tcas-pair-add" class="button">افزودن جفت</button>
+		</div>
 	</div>
+	<p class="tcas-pairs-help">هر کارت را خودش بررسی می‌کند: با اسپینر، موجودی تازهٔ هر دو فروشگاه و وضعیت قطعی/نیاز به بررسی همان بالا. کادر سبز یعنی جفت قطعی؛ زرد یعنی مشکوک و نیاز به بررسی؛ قرمز یعنی یک سمت پیدا نشده یا کد ندارد. بعد از هر ویرایش، همان کارت دوباره بررسی می‌شود.</p>
 	<div id="tcas-pair-entries" class="tcas-pair-entries">
-		<article class="tcas-pair-entry">
+		<article class="tcas-pair-entry" data-state="idle" data-confidence="manual">
 			<button type="button" class="tcas-remove-pair" aria-label="حذف جفت" disabled>×</button>
+			<div class="tcas-pair-top">
+				<span class="tcas-pair-flag tcas-pair-flag-idle">در انتظار بررسی</span>
+				<span class="tcas-spinner" aria-hidden="true" hidden></span>
+				<label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" disabled><span>انتخاب</span></label>
+			</div>
+			<small class="tcas-pair-flag-note" hidden></small>
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
 				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="SKU / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
+			<div class="tcas-pair-stock" hidden></div>
+			<small class="tcas-pair-message"></small>
 		</article>
 	</div>
 	<template id="tcas-pair-entry-template">
-		<article class="tcas-pair-entry">
+		<article class="tcas-pair-entry" data-state="idle" data-confidence="manual">
 			<button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+			<div class="tcas-pair-top">
+				<span class="tcas-pair-flag tcas-pair-flag-idle">در انتظار بررسی</span>
+				<span class="tcas-spinner" aria-hidden="true" hidden></span>
+				<label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" disabled><span>انتخاب</span></label>
+			</div>
+			<small class="tcas-pair-flag-note" hidden></small>
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
 				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="SKU / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
+			<div class="tcas-pair-stock" hidden></div>
+			<small class="tcas-pair-message"></small>
 		</article>
 	</template>
-	<div class="tcas-actions">
-		<button type="button" id="tcas-preview-start" class="button button-primary tcas-btn-primary">بررسی و پیش‌نمایش</button>
-		<button type="button" id="tcas-pair-add" class="button">افزودن جفت</button>
+	<div class="tcas-pair-actions">
+		<button type="button" id="tcas-connect-start" class="button button-primary tcas-btn-primary" disabled>اتصال انتخاب‌شده‌ها</button>
 		<span id="tcas-preview-status" class="tcas-status" role="status" aria-live="polite"></span>
-	</div>
-	<div id="tcas-preview-progress" class="tcas-progress" hidden><progress max="100" value="0" aria-label="پیشرفت بررسی"></progress><span>۰٪</span></div>
-</section>
-
-<section id="tcas-preview-panel" class="tcas-card" hidden>
-	<div class="tcas-card-head">
-		<div><span class="tcas-step">✓</span><h2>پیش‌نمایش اتصال</h2><span class="tcas-tag">فقط موجودی</span></div>
-		<button type="button" id="tcas-select-valid" class="button">انتخاب همه</button>
-	</div>
-	<div id="tcas-preview-list" class="tcas-preview-list"></div>
-	<div class="tcas-actions">
-		<button type="button" id="tcas-connect-start" class="button button-primary tcas-btn-primary">اتصال انتخاب‌شده‌ها</button>
 		<span id="tcas-connect-status" class="tcas-status" role="status" aria-live="polite"></span>
 	</div>
+	<div id="tcas-preview-progress" class="tcas-progress" hidden><progress max="100" value="0" aria-label="پیشرفت بررسی"></progress><span>۰٪</span></div>
 	<div id="tcas-connect-progress" class="tcas-progress" hidden><progress max="100" value="0" aria-label="پیشرفت اتصال"></progress><span>۰٪</span></div>
-	<div id="tcas-connect-results" class="tcas-results" aria-live="polite"></div>
 </section>
 
 <section class="tcas-card">

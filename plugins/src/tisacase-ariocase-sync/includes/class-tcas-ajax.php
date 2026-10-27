@@ -11,7 +11,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 	final class TCAS_Ajax {
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'match_variations', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -145,6 +145,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			$preview = TCAS_Pairing::preview( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' );
 			$result  = TCAS_Pairing::connect( $preview );
 			$row     = array(
+				'index'       => (int) $index,
 				'local_code'  => isset( $preview['row']['local_code'] ) ? $preview['row']['local_code'] : $pair['local_code'],
 				'remote_code' => isset( $preview['row']['remote_code'] ) ? $preview['row']['remote_code'] : $pair['remote_code'],
 			);
@@ -256,6 +257,30 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				'local'     => array( 'name' => $local['name'], 'reference' => $local['reference'], 'count' => count( $local['variations'] ) ),
 				'remote'    => array( 'name' => $remote['name'], 'reference' => $remote['reference'], 'count' => count( $remote['variations'] ) ),
 			) );
+		}
+
+		/**
+		 * بررسی یک جفت به‌صورت مستقل؛ برای به‌روزرسانی زندهٔ همان کارت پس از ویرایش
+		 * استفاده می‌شود و هیچ Job یا نگاشتی نمی‌سازد.
+		 */
+		public static function preview_pair() {
+			self::auth();
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
+			$configured = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::is_configured( $partner_id ) : TCAS_Core::is_configured();
+			if ( ! $configured ) {
+				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات اتصال همکار انتخاب‌شده را کامل کنید.' ), 422 );
+			}
+			$local  = self::posted_reference( 'local_code' );
+			$remote = self::posted_reference( 'remote_code' );
+			$limit  = 2048;
+			if ( '' === $local || '' === $remote || strlen( $local ) > $limit || strlen( $remote ) > $limit ) {
+				wp_send_json_error( array( 'message' => 'شناسهٔ هر دو فروشگاه را وارد کنید.' ), 422 );
+			}
+			$preview = TCAS_Pairing::preview(
+				array( 'local_code' => $local, 'remote_code' => $remote, 'error' => '' ),
+				$partner_id
+			);
+			wp_send_json_success( array( 'row' => $preview['row'] ) );
 		}
 
 		public static function test_connection() {
