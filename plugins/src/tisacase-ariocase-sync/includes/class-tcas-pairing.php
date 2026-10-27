@@ -26,6 +26,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				'partner_label'=> isset( $pair['partner_label'] ) ? (string) $pair['partner_label'] : 'ArioCase',
 				'stock'        => null,
 				'shared_remote' => ! empty( $pair['shared_remote'] ),
+				'reclaim'      => ! empty( $pair['reclaim'] ) ? absint( $pair['reclaim'] ) : 0,
 			), $extra );
 		}
 
@@ -78,7 +79,8 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 		 *
 		 * - connected: همین Variation از قبل به همین Variation همکار وصل است.
 		 * - taken:     همین Variation همکار به Variation دیگری وصل است (و برچسب
-		 *              همکار چندمدلی نیست)؛ کارت ساخته نمی‌شود تا خطای تکراری ندهد.
+		 *              همکار چندمدلی نیست)؛ کارت ساخته می‌شود با پرچم reclaim تا با
+		 *              تأیید صریح کاربر، مرجع از Variation قبلی منتقل شود.
 		 * - free:      بقیه.
 		 *
 		 * @param array  $matches    خروجی تطبیق.
@@ -126,10 +128,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 						$product = wc_get_product( $holders[0] );
 						$holder_names[ $holders[0] ] = $product && is_object( $product ) ? (string) $product->get_name() : '';
 					}
+					// کارت ساخته می‌شود تا Variation از چشم نیفتد، ولی بدون تأیید
+					// صریح کاربر انتخاب و ارسال نمی‌شود (مرجع دست Variation دیگری است).
 					$match['taken_by']      = (int) $holders[0];
 					$match['taken_by_name'] = $holder_names[ $holders[0] ];
+					$match['reclaim']       = true;
 					$out['taken'][]         = $match;
 					$out['skipped']++;
+					$out['matches'][]       = $match;
 					continue;
 				}
 				// ۳) آزاد (یا برچسب چندمدلی که اجازهٔ اشتراک دارد).
@@ -283,12 +289,25 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				$shared = true;
 			}
 			$pair['shared_remote'] = $shared;
+			// انتقال با تأیید کاربر: مرجع از Variation قبلی برداشته و به این Variation داده می‌شود.
+			$reclaim_holder = 0;
 			if ( ! $shared ) {
 				foreach ( TCAS_Mapping::holders_of( $pair['remote_code'], $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
+						if ( ! empty( $pair['reclaim'] ) ) {
+							$reclaim_holder = (int) $mapped_id;
+							continue;
+						}
 						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
 					}
 				}
+			}
+			if ( $reclaim_holder ) {
+				$holder_product = wc_get_product( $reclaim_holder );
+				$holder_name    = $holder_product && is_object( $holder_product ) ? (string) $holder_product->get_name() : '';
+				$pair['reclaim'] = $reclaim_holder;
+				$extra['reclaim'] = $reclaim_holder;
+				$extra['reclaim_name'] = $holder_name;
 			}
 			$extra['remote_name'] = $remote['name'];
 			$extra['stock']       = $remote['stock'];
@@ -311,15 +330,19 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( $current === $pair['remote_code'] && TCAS_Mapping::is_enabled( $local_id ) ) {
 				return array( 'row' => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
+			$connect_message = $shared
+				? 'برچسب همکار چند مدل را با هم دارد؛ همین موجودی روی این Variation و کارت‌های همان فهرست اعمال می‌شود.'
+				: 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ' . $partner_label . ' خوانده و اعمال می‌شود.';
+			if ( $reclaim_holder ) {
+				$connect_message = sprintf(
+					'مرجع از محصول #%d%s برداشته و به این Variation منتقل می‌شود؛ اتصال قبلی آن قطع و موجودی‌اش دیگر از %s خوانده نمی‌شود. با تأیید شما همین حالا انجام می‌شود.',
+					$reclaim_holder,
+					'' !== $extra['reclaim_name'] ? ' («' . $extra['reclaim_name'] . '»)' : '',
+					$partner_label
+				);
+			}
 			return array(
-				'row'      => self::row(
-					$pair,
-					'connect',
-					$shared
-						? 'برچسب همکار چند مدل را با هم دارد؛ همین موجودی روی این Variation و کارت‌های همان فهرست اعمال می‌شود.'
-						: 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ' . $partner_label . ' خوانده و اعمال می‌شود.',
-					$extra
-				),
+				'row'      => self::row( $pair, 'connect', $connect_message, $extra ),
 				'remote'   => $remote,
 				'local_id' => $local_id,
 			);
@@ -352,8 +375,13 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$previous_enabled  = TCAS_Mapping::is_enabled( $local_id );
 			$previous_partner  = TCAS_Mapping::partner_id( $local_id );
 			$shared            = ! empty( $row['shared_remote'] );
-			$mapped            = TCAS_Mapping::map( $local_id, $row['remote_code'], true, $partner_id, $shared );
+			// انتقال با تأیید: مرجع از Variationهای قبلی آزاد می‌شود (با snapshot برای بازگردانی).
+			$released = ! empty( $row['reclaim'] ) ? TCAS_Mapping::release( $row['remote_code'], $local_id, $partner_id ) : array();
+			$mapped   = TCAS_Mapping::map( $local_id, $row['remote_code'], true, $partner_id, $shared );
 			if ( is_wp_error( $mapped ) ) {
+				if ( $released ) {
+					TCAS_Mapping::restore_released( $released );
+				}
 				return $mapped;
 			}
 			$parent_remote_id = isset( $remote['parent_remote_id'] ) ? $remote['parent_remote_id'] : 0;
@@ -361,14 +389,21 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$applied = TCAS_Stock::apply( $product, $remote['stock'] );
 			if ( is_wp_error( $applied ) ) {
 				if ( '' !== $previous_code ) {
-					TCAS_Mapping::map( $local_id, $previous_code, $previous_enabled, $previous_partner );
+					TCAS_Mapping::map( $local_id, $previous_code, $previous_enabled, $previous_partner, true );
 				} else {
 					TCAS_Mapping::forget( $local_id );
+				}
+				if ( $released ) {
+					TCAS_Mapping::restore_released( $released );
 				}
 				return $applied;
 			}
 			TCAS_Mapping::remember( $local_id, $remote['stock'] );
-			return array( 'product_id' => $local_id, 'message' => 'جفت متصل شد و فقط موجودی به‌روزرسانی شد.' );
+			$message = 'جفت متصل شد و فقط موجودی به‌روزرسانی شد.';
+			if ( $released ) {
+				$message .= ' مرجع از محصول #' . implode( ' و #', array_keys( $released ) ) . ' برداشته شد و اتصال قبلی آن قطع شد.';
+			}
+			return array( 'product_id' => $local_id, 'message' => $message );
 		}
 	}
 }

@@ -236,6 +236,49 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			return true;
 		}
 
+		/**
+		 * آزادکردن یک مرجع همکار از دست Variationهای دیگر (انتقال با تأیید کاربر).
+		 *
+		 * نگاشت Variationهای قبلی حذف می‌شود تا مرجع یکتا بماند؛ خروجی، snapshot
+		 * همان نگاشت‌هاست تا در صورت خطا برگردانده شوند.
+		 *
+		 * @param string $reference     مرجع.
+		 * @param int    $keep_local_id Variationی که باید بماند.
+		 * @param string $partner_id    همکار.
+		 * @return array<int,array{code:string,enabled:bool,partner:string}>
+		 */
+		public static function release( $reference, $keep_local_id = 0, $partner_id = 'ariocase' ) {
+			$keep = absint( $keep_local_id );
+			$out  = array();
+			foreach ( self::holders_of( $reference, $partner_id ) as $product_id ) {
+				$product_id = absint( $product_id );
+				if ( ! $product_id || $product_id === $keep ) {
+					continue;
+				}
+				$out[ $product_id ] = array(
+					'code'    => self::remote_code( $product_id ),
+					'enabled' => self::is_enabled( $product_id ),
+					'partner' => self::partner_id( $product_id ),
+				);
+				self::forget( $product_id );
+			}
+			return $out;
+		}
+
+		/**
+		 * برگرداندن نگاشت‌هایی که release() آزاد کرده است (Rollback).
+		 *
+		 * @param array $snapshot خروجی release().
+		 */
+		public static function restore_released( $snapshot ) {
+			foreach ( (array) $snapshot as $product_id => $row ) {
+				if ( ! is_array( $row ) || empty( $row['code'] ) ) {
+					continue;
+				}
+				self::map( absint( $product_id ), $row['code'], ! empty( $row['enabled'] ), isset( $row['partner'] ) ? $row['partner'] : 'ariocase', true );
+			}
+		}
+
 		public static function forget( $product_id ) {
 			$product_id = absint( $product_id );
 			foreach ( array( self::META_CODE, self::META_ENABLED, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_REMOTE_ID, self::META_PARENT_ID, self::META_REMOTE_NAME, self::META_PARTNER_ID ) as $key ) {

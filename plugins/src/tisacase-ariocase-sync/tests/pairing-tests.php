@@ -215,8 +215,12 @@ $marked = TCAS_Pairing::annotate( array(
 	array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ),
 	array( 'local_code' => 'ID:900', 'remote_code' => 'MERGED-LABEL' ),
 ), 'ariocase' );
-pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked['matches'][0]['connected'] ) && ! empty( $marked['matches'][1]['connected'] ) && empty( $marked['matches'][2]['connected'] ) );
-pair_test( 'مرجعی که به Variation دیگری وصل است کارت نمی‌سازد و «اشغال‌شده» گزارش می‌شود', 2 === $marked['skipped'] && 'ID:74' === $marked['taken'][0]['local_code'] && 72 === $marked['taken'][0]['taken_by'] && 2 === count( $marked['matches'] ) );
+$marked_by_code = array();
+foreach ( $marked['matches'] as $marked_match ) {
+	$marked_by_code[ $marked_match['local_code'] ] = $marked_match;
+}
+pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked_by_code['ID:72']['connected'] ) && ! empty( $marked_by_code['ID:73']['connected'] ) && empty( $marked_by_code['ID:74']['connected'] ) && empty( $marked_by_code['ID:900']['connected'] ) );
+pair_test( 'مرجع اشغال‌شده کارت می‌گیرد، ولی با پرچم انتقال تا از چشم نیفتد', 2 === $marked['skipped'] && 2 === count( $marked['taken'] ) && 'ID:74' === $marked['taken'][0]['local_code'] && 72 === $marked['taken'][0]['taken_by'] && ! empty( $marked_by_code['ID:74']['reclaim'] ) && ! empty( $marked_by_code['ID:900']['reclaim'] ) && 4 === count( $marked['matches'] ) );
 $bundled_marked = TCAS_Pairing::annotate( array(
 	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL', 'remote_label' => 'A52 / A52s' ),
 ), 'ariocase' );
@@ -228,6 +232,19 @@ pair_test( 'نگاشت غیرفعال دوباره ارسال می‌شود (ا�
 
 $other_code = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:70', 'remote_code' => 'SOMETHING-ELSE' ) ), 'ariocase' );
 pair_test( 'اگر مرجع تازه با مرجع ذخیره‌شده یکی نباشد، کارت دوباره بررسی می‌شود', 0 === $other_code['connected'] );
+
+// --- انتقال مرجع با تأیید: از Variation قبلی برداشته و به Variation جدید داده می‌شود ---
+local_product( 80, 'SKU-80' );
+local_product( 81, 'SKU-81' );
+TCAS_Api::$responses['MOVE-1'] = remote_product( 'MOVE-1', array( 'name' => 'Case MOVE', 'remote_id' => 55123, 'stock' => array( 'quantity' => 7.0, 'status' => 'instock' ) ) );
+list( $move_a, $move_a_result ) = connect_pair( 'ID:80', 'MOVE-1' );
+pair_test( 'Variation اول به مرجع انتقال وصل می‌شود', ! is_wp_error( $move_a_result ) && 'MOVE-1' === TCAS_Mapping::remote_code( 80 ) );
+$move_blocked = TCAS_Pairing::preview( pair_of( 'ID:81', 'MOVE-1' ) );
+pair_test( 'بدون تأیید کاربر هیچ انتقالی انجام نمی‌شود', 'error' === $move_blocked['row']['status'] && false !== strpos( $move_blocked['row']['message'], '#80' ) && '' === TCAS_Mapping::remote_code( 81 ) );
+$move_preview = TCAS_Pairing::preview( array_merge( pair_of( 'ID:81', 'MOVE-1' ), array( 'reclaim' => true ) ) );
+pair_test( 'با تأیید، کارت قابل انتقال می‌شود و محصول قبلی را نام می‌برد', 'connect' === $move_preview['row']['status'] && $move_preview['row']['selectable'] && 80 === (int) $move_preview['row']['reclaim'] && false !== strpos( $move_preview['row']['message'], '#80' ) );
+$move_result = TCAS_Pairing::connect( $move_preview );
+pair_test( 'انتقال انجام شد: نگاشت قبلی حذف و مرجع روی Variation جدید ثبت شد', ! is_wp_error( $move_result ) && 'MOVE-1' === TCAS_Mapping::remote_code( 81 ) && '' === TCAS_Mapping::remote_code( 80 ) && false !== strpos( $move_result['message'], '#80' ) );
 
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );

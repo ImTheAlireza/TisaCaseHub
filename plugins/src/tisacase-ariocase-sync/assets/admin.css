@@ -436,6 +436,8 @@
 .tcas-pair-note.is-list { color:var(--tisa-warning,#8A6116); }
 .tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
 .tcas-pair-flag-note[hidden] { display:none; }
+.tcas-pair-entry[data-reclaim]:not([data-reclaim='']) { border-color:#E0B75A; box-shadow:inset 3px 0 0 #C58A19; }
+.tcas-pair-entry[data-reclaim]:not([data-reclaim='']) .tcas-pair-flag-note:not([hidden]) { color:#76520B; }
 /* ---- جست‌وجوی محلی محصول: فهرست پیشنهادها زیر همان فیلد ---- */
 .tcas-search-host { position:relative; }
 .tcas-search-host.is-open { z-index:30; }

@@ -235,34 +235,46 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
-// ---------- ۵.۶۵) مرجع اشغال‌شده: نه کارت قرمز، نه درخواست ----------
+// ---------- ۵.۶۵) مرجع اشغال‌شده: کارت هست، انتقال فقط با تأیید ----------
 {
-	const dom = makeDom(); const { window } = dom; const actions = [];
+	const dom = makeDom(); const { window } = dom; const bodies = []; const confirmations = [];
+	window.confirm = (message) => { confirmations.push(String(message)); return true; };
 	window.fetch = async (url, options) => {
-		const action = options.body.get('action');
-		actions.push(action);
+		const body = options.body; bodies.push(body);
+		const action = body.get('action');
 		if (action === 'tcas_match_variations') return reply({
-			matches: [{ local_code: 'ID:309494', remote_code: 'ID:45448/45452', local_label: 'iPhone 13', remote_label: 'iPhone 13', confidence: 'family', matched_by: 'family', score: 88 }],
-			ambiguous: [], unmatched: [],
-			skipped: [
-				{ local_code: 'ID:309495', local_label: 'iPhone 16', remote_code: 'ID:45448/45453', remote_label: 'iPhone 16', taken_by: 401726, taken_by_name: 'قاب چرم کرم گل آرا - iPhone 16' },
-				{ local_code: 'ID:309496', local_label: 'iPhone 16 Pro Max', remote_code: 'ID:45448/45454', remote_label: 'iPhone 16 Pro Max', taken_by: 401727, taken_by_name: 'قاب چرم کرم گل آرا - iPhone 16 Pro Max' }
+			matches: [
+				{ local_code: 'ID:309494', remote_code: 'ID:45448/45452', local_label: 'iPhone 13', remote_label: 'iPhone 13', confidence: 'family', matched_by: 'family', score: 88 },
+				{ local_code: 'ID:309495', remote_code: 'ID:45448/45453', local_label: 'iPhone 16', remote_label: 'iPhone 16', confidence: 'family', matched_by: 'family', score: 88, taken_by: 401726, taken_by_name: 'قاب چرم کرم گلستان سومه ای - iPhone 13', reclaim: true }
 			],
-			summary: { family: 1, skipped: 2 }, connected: 0,
+			ambiguous: [], unmatched: [], skipped: [{ local_code: 'ID:309495' }],
+			summary: { family: 2, skipped: 1 }, connected: 0,
 			local: { name: 'L', reference: 'ID:0', count: 3 }, remote: { name: 'R', reference: 'ID:9', count: 3 }
 		});
+		if (action === 'tcas_preview_start') return reply({ token: 'r'.repeat(32), total: 2 });
+		if (action === 'tcas_connect_start') return reply({ token: 'r'.repeat(32), total: 2 });
 		return reply({});
 	};
 	window.eval(script);
 	window.document.getElementById('tcas-smart-local').value = 'ID:0';
 	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
 	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 1, 8000);
-	await waitFor(() => !window.document.getElementById('tcas-smart-status').textContent.includes('در حال دریافت'), 8000);
-	ok('برای مرجعِ در اختیار Variation دیگر، کارت قرمزی ساخته نمی‌شود', 1 === window.document.querySelectorAll('.tcas-pair-entry').length);
-	ok('مراجع اشغال‌شده فهرست «موارد نیازمند بررسی» را شلوغ نمی‌کنند', 0 === window.document.querySelectorAll('.tcas-smart-issue').length && window.document.getElementById('tcas-smart-issues').hidden);
-	ok('گزارش تطبیق، تعداد موارد بدون کارت را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت'));
-	ok('هیچ درخواست موجودی‌ای برای این تطبیق زده نمی‌شود', !actions.includes('tcas_preview_pair') && !actions.includes('tcas_preview_start'), actions.join(','));
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	const taken = entries.find((entry) => '401726' === entry.dataset.reclaim);
+	ok('Variation با مرجع اشغال‌شده هم کارت می‌گیرد و از چشم نمی‌افتد', Boolean(taken));
+	ok('روی کارت نوشته می‌شود مرجع دست کدام محصول است', taken && taken.querySelector('.tcas-pair-flag-note').textContent.includes('401726') && taken.querySelector('.tcas-pair-flag-note').textContent.includes('منتقل'));
+	ok('فهرست «موارد نیازمند بررسی» با این کارت شلوغ نمی‌شود', 0 === window.document.querySelectorAll('.tcas-smart-issue').length);
+	ok('گزارش تطبیق می‌گوید کارت‌ها با تأیید منتقل می‌شوند', window.document.getElementById('tcas-smart-status').textContent.includes('مرجع از آن Variation برداشته و منتقل می‌شود'));
+	// اتصال: بدون تأیید کاربر هیچ انتقالی انجام نمی‌شود.
+	window.document.getElementById('tcas-connect-start').disabled = false;
+	entries.forEach((entry) => { const box = entry.querySelector('.tcas-row-select'); box.disabled = false; box.checked = true; });
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => bodies.some((body) => body.get('action') === 'tcas_preview_start'), 8000);
+	const preview = bodies.find((body) => body.get('action') === 'tcas_preview_start');
+	ok('پیش از انتقال، کادر تأیید با شمارهٔ محصول قبلی نشان داده می‌شود', confirmations.some((text) => text.includes('401726') && text.includes('قطع')));
+	const reclaimField = preview.getAll('reclaim[]').join(',');
+	ok('نمایهٔ کارت‌های انتقالی به سرور فرستاده می‌شود', reclaimField.length > 0, reclaimField);
 	dom.window.close();
 }
 

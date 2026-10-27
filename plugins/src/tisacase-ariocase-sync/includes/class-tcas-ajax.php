@@ -113,10 +113,22 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 					}
 				}
 			}
+			// «انتقال با تأیید»: مرجع از Variation قبلی برداشته و به این Variation داده می‌شود.
+			$reclaim = array();
+			if ( isset( $_POST['reclaim'] ) ) {
+				foreach ( (array) wp_unslash( $_POST['reclaim'] ) as $raw_reclaim ) { // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+					if ( is_scalar( $raw_reclaim ) && ctype_digit( (string) $raw_reclaim ) ) {
+						$reclaim[ (int) $raw_reclaim ] = true;
+					}
+				}
+			}
 			$pairs = array_values( $pairs );
 			foreach ( $pairs as $index => $pair ) {
 				if ( isset( $shared[ $index ] ) ) {
 					$pairs[ $index ]['shared_remote'] = true;
+				}
+				if ( isset( $reclaim[ $index ] ) ) {
+					$pairs[ $index ]['reclaim'] = true;
 				}
 			}
 			$token = wp_generate_password( 32, false, false );
@@ -431,6 +443,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 					'remote_code'   => $remote,
 					'error'         => '',
 					'shared_remote' => isset( $_POST['shared_remote'] ) && '1' === (string) sanitize_text_field( wp_unslash( $_POST['shared_remote'] ) ),
+					'reclaim'       => isset( $_POST['reclaim'] ) && '1' === (string) sanitize_text_field( wp_unslash( $_POST['reclaim'] ) ),
 				),
 				$partner_id
 			);

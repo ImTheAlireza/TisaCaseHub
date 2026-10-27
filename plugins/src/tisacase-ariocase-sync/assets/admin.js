@@ -1029,6 +1029,7 @@
 				parts.note.classList.add('is-list');
 			}
 		}
+		if (row.reclaim) entry.dataset.reclaim = String(row.reclaim);
 		setPairEntryTitles(entry, row.local_name, row.remote_name);
 		if (parts.stock) {
 			const cells = [];
@@ -1105,7 +1106,7 @@
 			updateConnectAvailability();
 			return;
 		}
-		const signature = local + '\u0000' + remote + '\u0000' + (entry.dataset.sharedRemote || '');
+		const signature = local + '\u0000' + remote + '\u0000' + (entry.dataset.sharedRemote || '') + '\u0000' + (entry.dataset.reclaim || '');
 		if (!opts.force && entry.dataset.checkedFor === signature && ['ok', 'review', 'done'].includes(entry.dataset.state || '')) {
 			updateConnectAvailability();
 			return;
@@ -1118,7 +1119,8 @@
 			const data = await enqueuePreview(() => request('preview_pair', {
 				local_code: local,
 				remote_code: remote,
-				shared_remote: entry.dataset.sharedRemote || ''
+				shared_remote: entry.dataset.sharedRemote || '',
+				reclaim: entry.dataset.reclaim ? '1' : ''
 			}));
 			if (entrySeq.get(entry) !== seq) return;
 			applyRow(entry, data.row || {});
@@ -1148,6 +1150,9 @@
 		setEntryFlag(entry, info.text, tone, info.cls, info.hint);
 		// مرجع مشترک: کارت‌های همان فهرست مدل، همه به یک Variation همکار وصل می‌شوند.
 		entry.dataset.sharedRemote = match.shared_remote ? '1' : '';
+		// مرجع در اختیار Variation دیگر: کارت ساخته می‌شود تا از چشم نیفتد؛
+		// فقط با تأیید صریح کاربر مرجع منتقل می‌شود.
+		entry.dataset.reclaim = match.taken_by ? String(match.taken_by) : '';
 		const parts = entryParts(entry);
 		// از قبل متصل: نه بررسی دوباره، نه درخواست تازه به همکار.
 		if (match.connected) {
@@ -1164,7 +1169,14 @@
 		const shared = Array.isArray(match.shared) ? match.shared.map(String) : [];
 		const extra = Array.isArray(match.extra) ? match.extra.map(String) : [];
 		if (parts.note) {
-			if (match.shared_remote) {
+			if (match.taken_by) {
+				parts.note.textContent = 'مرجع این Variation همین حالا روی '
+					+ (match.taken_by_name ? '«' + String(match.taken_by_name) + '»' : 'Variationی دیگر')
+					+ ' (#' + String(match.taken_by) + ') است؛ با انتخاب و تأیید، مرجع از آن محصول برداشته و به این Variation منتقل می‌شود.'
+					+ (match.taken_by_name ? '' : '');
+				parts.note.hidden = false;
+				parts.note.classList.add('is-list');
+			} else if (match.shared_remote) {
 				parts.note.textContent = 'مدل این کارت: ' + (shared.join('، ') || '—')
 					+ (extra.length ? ' · مدل‌های دیگر در همان Variation همکار: ' + extra.join('، ') : '')
 					+ ' · موجودی این Variation روی همهٔ این کارت‌ها یکی است.';
@@ -1223,6 +1235,7 @@
 		const usable = [];
 		const lines = [];
 		const shared = [];
+		const reclaim = [];
 		let incomplete = 0;
 		let invalid = 0;
 		list.forEach((entry) => {
@@ -1240,10 +1253,12 @@
 			}
 			// نمایهٔ همان خطی که فرستاده می‌شود؛ مرجع مشترک باید با همان ترتیب بازگردد.
 			if ('1' === entry.dataset.sharedRemote) shared.push(String(usable.length));
+			// «انتقال با تأیید»: مرجع از Variation قبلی برداشته و به این کارت داده می‌شود.
+			if (entry.dataset.reclaim) reclaim.push(String(usable.length));
 			usable.push(entry);
 			lines.push(local + ' - ' + remote);
 		});
-		return { lines, entries: usable, shared, incomplete, invalid };
+		return { lines, entries: usable, shared, reclaim, incomplete, invalid };
 	}
 
 	function wirePairEntry(entry) {
@@ -1272,6 +1287,7 @@
 				setVariationTitle(input.closest('.tcas-shop-field'), '');
 				entry.dataset.confidence = 'manual';
 				entry.dataset.sharedRemote = '';
+				entry.dataset.reclaim = '';
 				const parts = entryParts(entry);
 				if (parts.note) {
 					parts.note.textContent = '';
@@ -1309,6 +1325,7 @@
 		if (remote) remote.value = typeof remoteCode === 'string' ? remoteCode : '';
 		entry.dataset.confidence = confidence || 'manual';
 		entry.dataset.sharedRemote = '';
+		entry.dataset.reclaim = '';
 		entry.dataset.state = 'idle';
 		wirePairEntry(entry);
 		refreshPairEntries();
@@ -1579,7 +1596,7 @@
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
 		if (alreadyConnected) message += ' ' + String(alreadyConnected) + ' کارت از قبل متصل بود و دوباره بررسی یا ارسال نمی‌شود.';
-		if (state.smartSkipped) message += ' ' + String(state.smartSkipped) + ' Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت.';
+		if (state.smartSkipped) message += ' ' + String(state.smartSkipped) + ' کارت مرجعی دارد که از قبل دست Variation دیگری است؛ با انتخاب و تأیید، مرجع از آن Variation برداشته و منتقل می‌شود.';
 		if (orphans) message += ' ' + String(orphans) + ' کارت قرمز برای Variationهای بدون همتا ساخته شد.';
 		if (skippedOrphans) message += ' ' + String(skippedOrphans) + ' مورد به‌خاطر ظرفیت یا نبود مرجع کارت نگرفت.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' هیچ درخواستی برای موجودی زده نشد؛ با «اتصال انتخاب‌شده‌ها» موجودی خوانده و متصل می‌شود.';
@@ -1626,7 +1643,7 @@
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
 				state.running = false;
-				const takenNote = state.smartSkipped ? ' ' + String(state.smartSkipped) + ' Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت.' : '';
+				const takenNote = state.smartSkipped ? ' ' + String(state.smartSkipped) + ' کارت مرجعی دارد که از قبل دست Variation دیگری است؛ برای انتقال، همان کارت‌ها را انتخاب و تأیید کنید.' : '';
 				if (reviewable) {
 					await fillSmartBatch();
 					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + '؛ ' + String(reviewable) + ' کارت قرمز برای بررسی دستی ساخته شد' + (excluded ? ' و ' + String(excluded) + ' مورد با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.') + takenNote, true);
@@ -1732,7 +1749,7 @@
 		if (!opts.quiet) text('tcas-preview-status', 'در حال بررسی ' + collected.lines.length + ' جفت و خواندن موجودی تازه…');
 		const rows = [];
 		try {
-			const job = await request('preview_start', { pairs: collected.lines.join('\n'), shared: collected.shared });
+			const job = await request('preview_start', { pairs: collected.lines.join('\n'), shared: collected.shared, reclaim: collected.reclaim });
 			state.token = job.token;
 			progress('tcas-preview', 0, job.total || 0);
 			await runSteps(job, (row) => {
@@ -1800,7 +1817,11 @@
 				: ((cfg.strings && cfg.strings.selectRows) || 'حداقل یک کارت قابل اتصال را انتخاب کنید.'), true);
 			return;
 		}
-		const wanted = selected.map((entry) => ({ codes: entryCodes(entry), shared: '1' === entry.dataset.sharedRemote }));
+		const wanted = selected.map((entry) => ({
+			codes: entryCodes(entry),
+			shared: '1' === entry.dataset.sharedRemote,
+			reclaim: entry.dataset.reclaim || ''
+		}));
 		const pairs = wanted.filter((item) => item.codes.local && item.codes.remote);
 		// نمایهٔ کارت‌های «فهرست مدل» با همان ترتیب جفت‌های ارسالی می‌رود.
 		const sharedIndexes = pairs
@@ -1810,6 +1831,21 @@
 			text('tcas-connect-status', 'کارت‌های انتخابی شناسهٔ کامل ندارند.', true);
 			return;
 		}
+		// انتقال مرجع: اتصال محصول قبلی قطع می‌شود؛ بدون تأیید صریح انجام نمی‌شود.
+		const reclaimIndexes = pairs
+			.map((item, index) => (item.reclaim ? String(index) : ''))
+			.filter((value) => '' !== value);
+		if (reclaimIndexes.length) {
+			const holders = Array.from(new Set(pairs.filter((item) => item.reclaim).map((item) => String(item.reclaim))));
+			const note = 'مرجع ' + String(reclaimIndexes.length) + ' کارت انتخاب‌شده همین حالا روی '
+				+ (holders.length > 1 ? String(holders.length) + ' محصول دیگر' : 'یک محصول دیگر')
+				+ ' (' + holders.map((id) => '#' + id).join('، ') + ') است. با ادامه، مرجع از آن محصول‌ها برداشته می‌شود، '
+				+ 'اتصال قبلی‌شان قطع می‌شود و موجودی‌شان دیگر از ' + (cfg.partnerLabel || 'ArioCase') + ' خوانده نمی‌شود.';
+			if (!window.confirm(note + ' ادامه می‌دهید؟')) {
+				text('tcas-connect-status', 'به‌خواست شما متوقف شد؛ هیچ تغییری انجام نشد. برای انتقال، تأیید کادر بالا لازم است.', true);
+				return;
+			}
+		}
 		selected.forEach((entry) => clearTimeout(entryTimers.get(entry)));
 		const button = $('tcas-connect-start');
 		state.running = true;
@@ -1818,7 +1854,7 @@
 			+ (resumed ? ' ' + String(resumed) + ' کارت از قبل متصل و ذخیره‌شده بود و دوباره فرستاده نشد.' : ''));
 		selected.forEach((entry) => setEntryLoading(entry, true));
 		try {
-			const job = await request('preview_start', { pairs: pairs.map((item) => item.codes.local + ' - ' + item.codes.remote).join('\n'), shared: sharedIndexes });
+			const job = await request('preview_start', { pairs: pairs.map((item) => item.codes.local + ' - ' + item.codes.remote).join('\n'), shared: sharedIndexes, reclaim: reclaimIndexes });
 			state.token = job.token;
 			const order = [];
 			await runSteps(job, (row) => {
