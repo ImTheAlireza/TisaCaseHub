@@ -33,7 +33,7 @@ function makeDom(entryCount = 1) {
 		<div id="tcas-connect-progress" class="tcas-progress" hidden><progress max="100" value="0"></progress><span>۰٪</span></div></section>
 		<input id="tcas-test-code"><button id="tcas-test-connection">تست</button><div id="tcas-test-result"></div>
 	</body></html>`, { url: 'https://tisa.test/wp-admin/admin.php?page=tcas', runScripts: 'outside-only' });
-	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'nonce', maxPairs: 50, partnerLabel: 'ArioCase', mappingsUrl: '/wp-admin/admin.php?page=tcas-mappings', strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
+	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', restUrl: 'https://tisa.test/wp-json/tcas/v1/do', restNonce: 'rest-nonce', stepSize: 5, nonce: 'nonce', maxPairs: 50, partnerLabel: 'ArioCase', mappingsUrl: '/wp-admin/admin.php?page=tcas-mappings', strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
 	return dom;
 }
 async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!fn()) { if (Date.now() - start > timeout) throw new Error('waitFor timeout'); await new Promise((resolve) => setTimeout(resolve, 10)); } }
@@ -190,7 +190,7 @@ function type(entry, field, value) {
 	type(entry, '.tcas-local-code', 'TS30');
 	type(entry, '.tcas-remote-code', 'AR30');
 	await waitFor(() => entry.dataset.state === 'error');
-	ok('پاسخ غیر JSON یک بار دیگر تلاش می‌شود', attempts === 2, String(attempts));
+	ok('پاسخ غیر JSON یک بار دیگر تلاش می‌شود', attempts > 1 && attempts % 2 === 0, String(attempts));
 	const message = entry.querySelector('.tcas-pair-message').textContent;
 	ok('پیام خطا شامل کد ۴۱۸ و دامنهٔ همان سایت است', message.includes('418') && message.includes('tisa.test') && message.includes('سرور سایت'));
 	ok('کارت خطادار قرمز و غیرقابل‌انتخاب می‌شود', entry.classList.contains('is-failed') && entry.querySelector('.tcas-row-select').disabled);
@@ -245,9 +245,230 @@ function type(entry, field, value) {
 	type(card, '.tcas-local-code', 'ID:401470');
 	type(card, '.tcas-remote-code', 'ID:45969/46045');
 	const before = bodies.length;
-	await waitFor(() => bodies.length > before);
-	const plain = bodies[bodies.length - 1];
-	ok('شناسه‌های غیرلینکی دست‌نخورده و بدون b64 ارسال می‌شوند', plain.get('action') === 'tcas_preview_pair' && plain.get('local_code') === 'ID:401470' && plain.get('remote_code') === 'ID:45969/46045');
+	await waitFor(() => bodies.slice(before).some((body) => body.get('action') === 'tcas_preview_pair'));
+	const plain = bodies.slice(before).filter((body) => body.get('action') === 'tcas_preview_pair').pop();
+	ok('شناسه‌های غیرلینکی دست‌نخورده و بدون b64 ارسال می‌شوند', plain.get('local_code') === 'ID:401470' && plain.get('remote_code') === 'ID:45969/46045');
+	dom.window.close();
+}
+
+// ---------- ۷د) دسته‌بندی گام‌ها و ادامه پس از قطع ارتباط ----------
+{
+	const dom = makeDom(2); const { window } = dom; const steps = []; let startCalls = 0;
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		if (action === 'tcas_preview_start') { startCalls++; return reply({ token: 'e'.repeat(32), total: 2 }); }
+		if (action === 'tcas_preview_step') {
+			steps.push({ from: body.get('from'), size: body.get('size') });
+			const from = Number(body.get('from'));
+			const rows = [];
+			for (let i = from; i < Math.min(2, from + Number(body.get('size') || 1)); i++) rows.push(pairRow(Object.assign(codes('TS' + i, 'AR' + i), { index: i })));
+			const processed = Math.min(2, from + rows.length);
+			return reply({ done: processed >= 2, processed, total: 2, rows });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	const cards = window.document.querySelectorAll('.tcas-pair-entry');
+	cards[0].querySelector('.tcas-local-code').value = 'TS0';
+	cards[0].querySelector('.tcas-remote-code').value = 'AR0';
+	cards[1].querySelector('.tcas-local-code').value = 'TS1';
+	cards[1].querySelector('.tcas-remote-code').value = 'AR1';
+	window.document.getElementById('tcas-preview-start').click();
+	await waitFor(() => cards[0].dataset.state !== 'loading' && cards[0].dataset.state !== 'idle' && cards[1].dataset.state !== 'loading' && cards[1].dataset.state !== 'idle', 8000);
+	ok('گام بررسی، دسته‌ای و با اندازهٔ مشخص ارسال می‌شود', steps.length >= 1 && steps[0].size === '5');
+	ok('همهٔ کارت‌ها با همان تعداد درخواست کمتر پر می‌شوند', startCalls === 1 && cards[0].querySelector('.tcas-pair-stock').hidden === false && cards[1].querySelector('.tcas-pair-stock').hidden === false);
+	const before = steps.length;
+	cards[0].dataset.state = 'idle';
+	window.document.getElementById('tcas-preview-start').click();
+	await waitFor(() => steps.length > before, 8000);
+	ok('بررسی دوباره از جفت صفر شروع می‌شود (پارامتر from)', steps[steps.length - 1].from === '0');
+	dom.window.close();
+}
+
+// ---------- ۷ه) قطع ارتباط در میانهٔ بررسی: تلاش دوباره و ادامه بدون جاافتادن جفت ----------
+{
+	const dom = makeDom(1); const { window } = dom; const steps = []; let dropped = 0;
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		if (action === 'tcas_preview_start') return reply({ token: 'f'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') {
+			steps.push(Number(body.get('from')));
+			dropped++;
+			if (dropped <= 2) throw new TypeError('Failed to fetch');
+			return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS7', 'AR7'), { index: 0 }))] });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	card.querySelector('.tcas-local-code').value = 'TS7';
+	card.querySelector('.tcas-remote-code').value = 'AR7';
+	window.document.getElementById('tcas-preview-start').click();
+	await waitFor(() => card.dataset.state === 'ok' || card.dataset.state === 'review', 8000);
+	ok('قطع ارتباط با تلاش دوباره از همان جفت جبران می‌شود', steps.length === 3 && steps.every((from) => from === 0));
+	ok('کارت بعد از تلاش دوباره نتیجهٔ واقعی می‌گیرد', !card.querySelector('.tcas-pair-stock').hidden && card.querySelector('.tcas-pair-flag').textContent !== 'خطا · نیاز به بررسی');
+	dom.window.close();
+}
+
+// ---------- ۷و) خطای شبکه: پیام HTTP 0 و دلیل قطعی ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async () => { throw new TypeError('Failed to fetch'); };
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS50');
+	type(entry, '.tcas-remote-code', 'AR50');
+	await waitFor(() => entry.dataset.state === 'error', 8000);
+	const message = entry.querySelector('.tcas-pair-message').textContent;
+	ok('قطع کامل ارتباط با پیام HTTP 0 گزارش می‌شود', message.includes('HTTP 0') && message.includes('قطع شد'));
+	ok('پیام، سه دلیل محتمل قطعی را نام می‌برد', message.includes('فایروال') && message.includes('Timeout') && message.includes('شبکه'));
+	const panel = window.document.getElementById('tcas-request-diag');
+	ok('پنل جزئیات، دلیل خام مرورگر را نگه می‌دارد', Boolean(panel) && panel.textContent.includes('Failed to fetch'));
+	dom.window.close();
+}
+
+// ---------- ۷ز) جست‌وجوی محصول TisaCase به‌جای چسباندن لینک ----------
+{
+	const dom = makeDom(); const { window } = dom; const searches = [];
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		if (action === 'tcas_search_products') {
+			searches.push({ term: body.get('term'), productId: body.get('product_id') });
+			if (body.get('product_id')) return reply({ shop: 'tisacase', shop_label: 'TisaCase', sku: 'TS-PARENT', reference: 'TS-PARENT', name: 'قاب شیائومی', product_id: 41, type: 'variable', variations: [{ product_id: 42, parent_id: 41, sku: 'TS-RED', reference: 'ID:42', label: 'قرمز' }] });
+			if ('قاب' === body.get('term')) return reply({ rows: [
+				{ reference: 'TS0100', product_id: 11, type: 'simple', sku: 'TS0100', name: 'قاب شیائومی', label: '', stock: { quantity: 3, status: 'instock' } },
+				{ reference: 'ID:42', product_id: 42, parent_id: 41, type: 'variation', sku: 'TS-RED', name: 'قاب شیائومی', label: 'قرمز', stock: { quantity: 1, status: 'instock' } },
+			] });
+			if ('TS-PARENT' === body.get('term')) return reply({ rows: [
+				{ reference: 'TS-PARENT', product_id: 41, type: 'variable', sku: 'TS-PARENT', name: 'قاب شیائومی', label: '', stock: { quantity: null, status: '' } },
+			] });
+			return reply({ rows: [] });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	const input = window.document.getElementById('tcas-link-input');
+	input.value = 'قاب';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelectorAll('.tcas-search-row').length === 2, 8000);
+	ok('جست‌وجوی نام محصول، فهرست انتخاب را بدون ارسال لینک باز می‌کند', searches.some((call) => call.term === 'قاب') && !searches.some((call) => String(call.term || '').includes('://')));
+	const rows = window.document.querySelectorAll('.tcas-search-row');
+	ok('هر ردیف نام، شناسه و موجودی را نشان می‌دهد', rows[0].textContent.includes('قاب شیائومی') && rows[0].textContent.includes('TS0100') && rows[0].textContent.includes('موجودی'));
+	ok('Variation با برچسب خودش نمایش داده می‌شود', rows[1].textContent.includes('قرمز') && rows[1].dataset.reference === 'ID:42');
+	rows[0].click();
+	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'TS0100');
+	ok('انتخاب محصول ساده، شناسه را بدون هیچ درخواست اضافه‌ای پر می‌کند', searches.filter((call) => call.productId).length === 0 && !window.document.getElementById('tcas-link-result').hidden && !window.document.getElementById('tcas-link-copy').disabled);
+	ok('پس از انتخاب، فهرست بسته می‌شود', window.document.querySelectorAll('.tcas-search-row').length === 0);
+	input.value = 'TS-PARENT';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelectorAll('.tcas-search-row').length === 1, 8000);
+	window.document.querySelector('.tcas-search-row').click();
+	await waitFor(() => window.document.getElementById('tcas-link-variation').options.length === 2, 8000);
+	ok('انتخاب محصول متغیر، فقط Variationهای همان سایت را می‌خواند', searches.some((call) => String(call.productId) === '41') && !window.document.getElementById('tcas-link-variation-wrap').hidden);
+	dom.window.close();
+}
+
+// ---------- ۷ح) لینک چسبانده‌شده همچنان کار می‌کند و جست‌وجو را فعال نمی‌کند ----------
+{
+	const dom = makeDom(); const { window } = dom; const calls = [];
+	window.fetch = async (url, options) => {
+		const body = options.body; calls.push(body.get('action'));
+		if (body.get('action') === 'tcas_resolve_link') return reply({ shop: 'tisacase', shop_label: 'TisaCase', sku: 'TS0100', reference: 'TS0100', name: 'Local case', product_id: 41, type: 'simple', variations: [] });
+		return reply({ rows: [] });
+	};
+	window.eval(script);
+	const input = window.document.getElementById('tcas-link-input');
+	input.value = 'https://tisacase.com/product/local-case/';
+	input.dispatchEvent(new window.Event('input'));
+	await new Promise((resolve) => setTimeout(resolve, 600));
+	ok('چسباندن لینک، جست‌وجوی محلی را اجرا نمی‌کند', !calls.includes('tcas_search_products'));
+	input.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'TS0100', 8000);
+	ok('Enter روی لینک، همان مسیر تبدیل قبلی را اجرا می‌کند', calls.includes('tcas_resolve_link') && !calls.includes('tcas_search_products'));
+	dom.window.close();
+}
+
+// ---------- ۷ط) جست‌وجو در کارت جفت و کارت تطبیق ----------
+{
+	const dom = makeDom(); const { window } = dom; const terms = [];
+	window.fetch = async (url, options) => {
+		const body = options.body;
+		if (body.get('action') === 'tcas_search_products') {
+			terms.push(body.get('term'));
+			return reply({ rows: [
+				{ reference: 'TS0100', product_id: 11, type: 'simple', sku: 'TS0100', name: 'قاب شیائومی', label: '', stock: { quantity: 3, status: 'instock' } },
+				{ reference: 'TS-P', product_id: 41, type: 'variable', sku: 'TS-P', name: 'محصول متغیر', label: '', stock: { quantity: null, status: '' } },
+			] });
+		}
+		if (body.get('action') === 'tcas_preview_pair') return reply({ row: pairRow(codes(body.get('local_code'), body.get('remote_code'))) });
+		return reply({});
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	const local = entry.querySelector('.tcas-local-code');
+	local.value = 'قاب';
+	local.dispatchEvent(new window.Event('input'));
+	await waitFor(() => entry.querySelectorAll('.tcas-search-row').length >= 1, 8000);
+	ok('فیلد شناسهٔ کارت جفت هم فهرست جست‌وجو دارد', terms.includes('قاب'));
+	ok('محصول متغیر در فهرست کارت جفت پیشنهاد نمی‌شود', entry.querySelectorAll('.tcas-search-row').length === 1 && entry.querySelector('.tcas-search-row').dataset.reference === 'TS0100');
+	entry.querySelector('.tcas-search-row').click();
+	ok('انتخاب محصول، شناسه و نام همان Variation را در کارت می‌گذارد', local.value === 'TS0100' && entry.querySelector('.tcas-shop-local .tcas-variation-title') && entry.querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'قاب شیائومی');
+	const smart = window.document.getElementById('tcas-smart-local');
+	smart.value = 'TS0100';
+	smart.dispatchEvent(new window.Event('input'));
+	await waitFor(() => Array.from(window.document.querySelectorAll('.tcas-search-row')).some((row) => !row.closest('.tcas-search-results').hidden), 8000);
+	const visibleRow = Array.from(window.document.querySelectorAll('.tcas-search-row')).filter((row) => !row.closest('.tcas-search-results').hidden)[0];
+	visibleRow.click();
+	ok('جست‌وجو در کارت تطبیق، شناسهٔ والد را در همان فیلد می‌گذارد', smart.value === 'TS0100' && window.document.getElementById('tcas-smart-status').textContent.includes('انتخاب شد'));
+	dom.window.close();
+}
+
+// ---------- ۷ی) مسدودشدن admin-ajax: ادامهٔ کار از مسیر REST ----------
+{
+	const dom = makeDom(1); const { window } = dom; const seen = [];
+	window.fetch = async (url, options) => {
+		seen.push({ url: String(url), action: options.body.get('action'), nonce: (options.headers || {})['X-WP-Nonce'] || '' });
+		if (String(url).includes('admin-ajax.php')) {
+			return htmlReply('<html><body>404 Not Found — LiteSpeed Web Server</body></html>', 404);
+		}
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') return reply({ token: 'g'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS8', 'AR8'), { index: 0 }))] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	card.querySelector('.tcas-local-code').value = 'TS8';
+	card.querySelector('.tcas-remote-code').value = 'AR8';
+	window.document.getElementById('tcas-preview-start').click();
+	await waitFor(() => card.dataset.state === 'ok' || card.dataset.state === 'review', 8000);
+	const restCalls = seen.filter((call) => call.url.includes('/wp-json/tcas/v1/do/'));
+	ok('وقتی admin-ajax صفحهٔ ۴۰۴ هاست را برمی‌گرداند، همان درخواست از مسیر REST تکرار می‌شود', restCalls.length >= 2 && restCalls[0].action === 'tcas_preview_start');
+	ok('مسیر REST برای هر action آدرس اختصاصی خودش را می‌گیرد', restCalls.some((call) => call.url.endsWith('/preview_step')) && restCalls.some((call) => call.url.endsWith('/preview_start')));
+	ok('nonce وردپرس در هدر REST ارسال می‌شود', restCalls.every((call) => call.nonce === 'rest-nonce'));
+	ok('نتیجهٔ واقعی روی کارت می‌نشیند، نه خطای ۴۰۴', card.dataset.state === 'review' || card.dataset.state === 'ok');
+	ok('به کاربر گفته می‌شود مسیر درخواست به REST تغییر کرده است', window.document.getElementById('tcas-preview-status').textContent.includes('REST'));
+	const before = seen.length;
+	card.querySelector('.tcas-local-code').value = 'TS9';
+	card.querySelector('.tcas-local-code').dispatchEvent(new window.Event('input'));
+	await waitFor(() => seen.length > before, 8000);
+	ok('پس از موفقیت REST، درخواست‌های بعدی مستقیم از همان مسیر می‌روند', seen[seen.length - 1].url.includes('/wp-json/tcas/v1/do/') && seen.slice(before).every((call) => call.url.includes('/wp-json/tcas/v1/do/')));
+	dom.window.close();
+}
+
+// ---------- ۷ک) اگر REST هم بسته باشد، خطای روشن نمایش داده می‌شود ----------
+{
+	const dom = makeDom(); const { window } = dom; let calls = 0;
+	window.fetch = async () => { calls++; return htmlReply('<html>404 Not Found — LiteSpeed</html>', 404); };
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS60');
+	type(card, '.tcas-remote-code', 'AR60');
+	await waitFor(() => card.dataset.state === 'error', 10000);
+	const message = card.querySelector('.tcas-pair-message').textContent;
+	ok('هر دو مسیر تلاش می‌شوند', calls >= 4);
+	ok('خطای نهایی کد ۴۰۴ و نام دامنه را نشان می‌دهد', message.includes('404') && message.includes('tisa.test'));
+	ok('پنل جزئیات، LiteSpeed را به‌عنوان فایروال/CDN نشان می‌دهد', window.document.getElementById('tcas-request-diag').textContent.includes('LiteSpeed'));
 	dom.window.close();
 }
 

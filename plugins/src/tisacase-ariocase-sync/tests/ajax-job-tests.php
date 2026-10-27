@@ -29,6 +29,7 @@ class TCAS_Api {
 }
 class TCAS_Mapping { public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } }
 class TCAS_Live { public static $state = null; public static function refresh( $id ) { return self::$state; } }
+require_once dirname( __DIR__ ) . '/includes/class-tcas-local-search.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
 $pass = 0; $fail = 0;
@@ -95,5 +96,28 @@ unset( $_POST['code'] );
 $_POST['product_id'] = 91; TCAS_Live::$state = null;
 $response = invoke_ajax( 'sync_mapping' );
 ajax_test( 'State ناموجود در Sync دستی موفقیت کاذب ندارد', $response && ! $response->success && 409 === $response->status );
+// --- جست‌وجوی محلی محصول: بدون لینک، بدون درخواست بیرونی ---
+unset( $_POST['product_id'], $_POST['code'] );
+TCAS_Api::$reference = null;
+$_POST['term'] = 'a';
+$response = invoke_ajax( 'search_products' );
+ajax_test( 'جست‌وجو با عبارت یک‌حرفی با 400 رد می‌شود', $response && ! $response->success && 400 === $response->status );
+$_POST['term'] = 'قاب شیائومی';
+TCAS_Local_Search::$finder = function ( $term, $limit ) {
+	return array(
+		array( 'product_id' => 41, 'type' => 'simple', 'sku' => 'TS0100', 'name' => 'قاب شیائومی ' . $term, 'quantity' => 3, 'status' => 'instock' ),
+		array( 'product_id' => 42, 'type' => 'variation', 'parent_id' => 40, 'sku' => 'TS0101', 'name' => 'قاب شیائومی', 'label' => 'مشکی' ),
+	);
+};
+$response = invoke_ajax( 'search_products' );
+ajax_test( 'جست‌وجو ردیف‌های آمادهٔ انتخاب را برمی‌گرداند', $response && $response->success && 2 === $response->data['count'] && 'TS0100' === $response->data['rows'][0]['reference'] && 'ID:42' === $response->data['rows'][1]['reference'] );
+ajax_test( 'جست‌وجو هیچ درخواستی به همکار نمی‌فرستد', null === TCAS_Api::$reference );
+TCAS_Local_Search::$finder = null;
+$_POST['product_id'] = 41;
+TCAS_Link_Resolver::$product = null;
+$response = invoke_ajax( 'search_products' );
+ajax_test( 'انتخاب محصول متغیر، جزئیات محلی همان محصول را برمی‌گرداند', $response && $response->success && 41 === $response->data['product_id'] && 'tisacase' === $response->data['shop'] );
+unset( $_POST['product_id'], $_POST['term'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -37,6 +37,9 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			if ( is_admin() ) {
 				TCAS_Admin::init();
 				TCAS_Ajax::init();
+				if ( class_exists( 'TCAS_Rest' ) ) {
+					TCAS_Rest::init();
+				}
 			}
 		}
 

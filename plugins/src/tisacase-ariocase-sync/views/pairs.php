@@ -7,7 +7,7 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 <section class="tcas-card tcas-converter-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">↗</span><h2>تبدیل لینک به شناسه</h2></div><span class="tcas-tag">TisaCase + <?php echo esc_html( $partner_label ); ?></span></div>
 	<div class="tcas-converter-flow">
-		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-converter-input-row"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
+		<label class="tcas-converter-source"><span class="tcas-shop-label">جست‌وجوی محصول TisaCase (نام یا SKU) یا چسباندن لینک</span><span class="tcas-converter-input-row"><input id="tcas-link-input" type="text" dir="auto" placeholder="مثلاً قاب شیائومی یا TS0100 — یا لینک کامل محصول" autocomplete="off" spellcheck="false"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل لینک</button></span></label>
 		<div id="tcas-link-result" class="tcas-converter-result" hidden>
 			<div class="tcas-converter-result-meta"><span id="tcas-link-shop" class="tcas-shop-label">SKU / ID</span><small id="tcas-link-product"></small></div>
 			<label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><span class="tcas-shop-label">انتخاب Variation</span><select id="tcas-link-variation" aria-label="انتخاب Variation"></select></label>

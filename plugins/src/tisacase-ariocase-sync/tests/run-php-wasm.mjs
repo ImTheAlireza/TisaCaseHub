@@ -14,8 +14,10 @@ const suites = [
 	{ file: 'tests/link-resolver-tests.php', sources: ['includes/class-tcas-local-variation-reader.php', 'includes/class-tcas-link-resolver.php'] },
 	{ file: 'tests/matcher-tests.php', sources: ['includes/class-tcas-matcher.php'] },
 	{ file: 'tests/stock-live-tests.php', sources: ['includes/class-tcas-core.php', 'includes/class-tcas-mapping.php', 'includes/class-tcas-stock.php', 'includes/class-tcas-live.php'] },
+	{ file: 'tests/rest-fallback-tests.php', sources: ['includes/class-tcas-rest.php'] },
+	{ file: 'tests/local-search-tests.php', sources: ['includes/class-tcas-local-search.php'] },
 	{ file: 'tests/pairing-tests.php', sources: ['includes/class-tcas-mapping.php', 'includes/class-tcas-stock.php', 'includes/class-tcas-pairing.php'] },
-	{ file: 'tests/ajax-job-tests.php', sources: ['includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
+	{ file: 'tests/ajax-job-tests.php', sources: ['includes/class-tcas-matcher.php', 'includes/class-tcas-local-search.php', 'includes/class-tcas-ajax.php'] },
 	{ file: 'tests/smart-match-integration-tests.php', sources: ['includes/class-tcas-local-variation-reader.php', 'includes/class-tcas-link-resolver.php', 'includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
 	{ file: 'tests/provider-tests.php', sources: ['includes/class-tcas-core.php', 'includes/interface-tcas-partner-provider.php', 'includes/providers/class-tcas-ariocase-provider.php', 'includes/class-tcas-partners.php'] },
 ];

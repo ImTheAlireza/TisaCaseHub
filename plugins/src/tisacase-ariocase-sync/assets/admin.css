@@ -424,6 +424,17 @@
 .tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
 .tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
 .tcas-pair-flag-note[hidden] { display:none; }
+/* ---- جست‌وجوی محلی محصول: فهرست پیشنهادها زیر همان فیلد ---- */
+.tcas-search-host { position:relative; }
+.tcas-search-results { position:absolute; z-index:40; inset-inline:0; top:calc(100% + 4px); display:grid; gap:2px; max-height:290px; overflow:auto; padding:5px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:#fff; box-shadow:0 10px 24px rgba(15,42,38,.12); }
+.tcas-search-results[hidden] { display:none; }
+.tcas-search-note { margin:4px 6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
+.tcas-search-row { display:grid; gap:1px; width:100%; padding:7px 9px; border:1px solid transparent; border-radius:var(--tisa-r-xs,8px); background:transparent; text-align:start; cursor:pointer; font-size:var(--tisa-fs-tiny,11.5px); line-height:1.7; }
+.tcas-search-row:hover, .tcas-search-row.is-active { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); }
+.tcas-search-name { min-width:0; color:var(--tisa-ink,#1F2A2E); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tcas-search-label { min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tcas-search-meta { min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); direction:rtl; unicode-bidi:plaintext; }
+.tcas-shop-field.tcas-search-host .tcas-search-results { top:calc(100% - 2px); }
 /* ---- جزئیات خطای درخواست: مبدا، هدرها و نمونهٔ پاسخ ---- */
 .tcas-request-diag { flex:1 1 100%; margin-top:10px; padding:9px 11px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
 .tcas-request-diag[hidden] { display:none; }

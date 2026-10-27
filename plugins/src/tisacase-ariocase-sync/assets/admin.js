@@ -8,7 +8,7 @@
 		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0,
 		smartLocalCount: 0, smartRemoteCount: 0, smartLocalName: '', smartRemoteName: '',
 		smartLocalReference: '', smartRemoteReference: '',
-		smartIssues: [], smartIssueFilter: 'all'
+		smartIssues: [], smartIssueFilter: 'all', transport: 'ajax'
 	};
 
 	// دلیل دقیق هر مورد «نیازمند بررسی»؛ همان کدهایی که Matcher برمی‌گرداند.
@@ -265,6 +265,11 @@
 	}
 
 	function responseMessage(status, action, host, firewall) {
+		if (!status) {
+			return 'ارتباط با سرور سایت هنگام «' + action + '» قطع شد (HTTP 0). این خطا یعنی پاسخ به مرورگر نرسیده است:'
+				+ ' یا هاست درخواست را قطع کرده (محدودیت نرخ/فایروال)، یا PHP در میانهٔ کار متوقف شده (Fatal/Timeout)، یا اتصال شبکه پایدار نبوده است.'
+				+ ' درخواست‌ها خودکار دسته‌بندی می‌شوند تا تعدادشان کم شود؛ اگر تکرار شد، گزارش خطاهای PHP و لاگ فایروال هاست را ببینید.';
+		}
 		const code = 'HTTP ' + (status || 0);
 		const where = host ? ' · ' + host : '';
 		const who = firewall ? ' · ' + firewall : '';
@@ -293,6 +298,30 @@
 		}
 	}
 
+	/** مسیرهای ممکن: admin-ajax اول، REST به‌عنوان پشتیبان در صورت مسدودشدن. */
+	function restTarget(action) {
+		const base = cfg.restUrl ? String(cfg.restUrl).replace(/\/$/, '') : '';
+		return base ? base + '/' + action : '';
+	}
+
+	function transportUrl(transport, action) {
+		if ('rest' === transport) return restTarget(action);
+		return ajaxTarget().url;
+	}
+
+	function transportHeaders(transport) {
+		const headers = { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/plain, */*' };
+		if ('rest' === transport && cfg.restNonce) headers['X-WP-Nonce'] = cfg.restNonce;
+		return headers;
+	}
+
+	function transports() {
+		const order = ['rest' === state.transport ? 'rest' : 'ajax'];
+		order.push('rest' === order[0] ? 'ajax' : 'rest');
+		if (!restTarget('preview_step')) return ['ajax'];
+		return order;
+	}
+
 	async function request(action, data, options) {
 		const opts = options || {};
 		const retries = Number.isFinite(Number(opts.retries)) ? Number(opts.retries) : 1;
@@ -304,47 +333,53 @@
 			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', transportValue(item)));
 			else body.append(key, value === null || typeof value === 'undefined' ? '' : transportValue(value));
 		});
-		const target = ajaxTarget();
+		const backoff = Number.isFinite(Number(opts.backoff)) ? Number(opts.backoff) : 700;
+		let lastError = null;
+		let lastResponse = null;
+		let lastRaw = '';
 		for (let attempt = 0; attempt <= retries; attempt++) {
-			if (attempt) await delay(700 * attempt);
-			let response;
-			try {
-				response = await fetch(target.url, {
-					method: 'POST',
-					body,
-					credentials: 'same-origin',
-					headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/plain, */*' }
-				});
-			} catch (error) {
-				if (attempt < retries) continue;
-				diag.action = action;
-				diag.url = target.url;
-				diag.host = target.host || target.origin;
-				diag.status = 0;
-				diag.server = '';
-				diag.firewall = '';
-				diag.excerpt = String(error && error.message ? error.message : error);
-				diag.at = new Date().toLocaleString('fa-IR');
-				reportFailure(action, null, diag.excerpt);
-				throw new Error('ارتباط با ' + (target.host || 'سرور سایت') + ' برقرار نشد؛ اتصال شبکه یا فایروال سایت را بررسی کنید.');
+			if (attempt) await delay(backoff * attempt);
+			for (const transport of transports()) {
+				const url = transportUrl(transport, action);
+				if (!url) continue;
+				let response;
+				try {
+					response = await fetch(url, { method: 'POST', body, credentials: 'same-origin', headers: transportHeaders(transport) });
+				} catch (error) {
+					if ('ajax' === transport) {
+						lastError = String(error && error.message ? error.message : error);
+						continue; // شاید REST باز باشد
+					}
+					lastError = String(error && error.message ? error.message : error);
+					continue;
+				}
+				let raw = '';
+				try { raw = await response.text(); } catch (error) { raw = ''; }
+				let payload = null;
+				try { payload = raw ? JSON.parse(raw) : null; } catch (error) { payload = null; }
+				if (!payload || 'object' !== typeof payload) {
+					// مسیر بسته یا صفحهٔ خطای هاست؛ مسیر دیگر امتحان می‌شود.
+					lastResponse = response;
+					lastRaw = raw;
+					lastError = responseMessage(response.status, action, ajaxTarget().host, detectFirewall(response, raw));
+					continue;
+				}
+				if (state.transport !== transport) {
+					state.transport = transport;
+					if ('rest' === transport) text('tcas-preview-status', 'مسیر admin-ajax مسدود بود؛ درخواست‌ها از مسیر REST همین سایت ادامه پیدا کرد.');
+				}
+				if (!payload.success) {
+					throw new Error(payload && payload.data && payload.data.message ? payload.data.message : (cfg.strings && cfg.strings.unknownError) || 'خطا');
+				}
+				return payload.data || {};
 			}
-			let raw = '';
-			try { raw = await response.text(); } catch (error) { raw = ''; }
-			let payload = null;
-			try { payload = raw ? JSON.parse(raw) : null; } catch (error) { payload = null; }
-			if (!payload || 'object' !== typeof payload) {
-				if (RETRY_STATUSES.includes(response.status) && attempt < retries) continue;
-				const firewall = detectFirewall(response, raw);
-				reportFailure(action, response, raw);
-				throw new Error(responseMessage(response.status, action, target.host || target.origin, firewall));
-			}
-			if (!payload.success) {
-				throw new Error(payload && payload.data && payload.data.message ? payload.data.message : (cfg.strings && cfg.strings.unknownError) || 'خطا');
-			}
-			return payload.data || {};
 		}
-		reportFailure(action, null, '');
-		throw new Error(responseMessage(0, action, target.host || target.origin, ''));
+		if (lastResponse) {
+			reportFailure(action, lastResponse, lastRaw);
+			throw new Error(lastError || responseMessage(lastResponse.status, action, ajaxTarget().host, ''));
+		}
+		reportFailure(action, null, lastError || '');
+		throw new Error(responseMessage(0, action, ajaxTarget().host, ''));
 	}
 
 	/** صف تک‌نفره برای بررسی کارت‌ها تا هاست پشت فایروال با موج درخواست مسدود نشود. */
@@ -368,6 +403,157 @@
 			previewQueue.items.push({ task, resolve, reject });
 			pumpPreviewQueue();
 		});
+	}
+
+	// ---- جست‌وجوی محلی محصول TisaCase: بدون درخواست بیرونی و بدون لینک در POST ----
+	const SEARCH_DEBOUNCE = 350;
+
+	function looksLikeLink(value) {
+		const text = String(value || '').trim();
+		return /^(?:https?:\/\/|www\.)/i.test(text) || /\.(?:com|ir|net|org|shop|store)(?:\/|$)/i.test(text);
+	}
+
+	function productTypeLabel(type) {
+		const labels = { simple: 'ساده', variation: 'Variation', variable: 'متغیر', grouped: 'گروهی', external: 'خارجی' };
+		return labels[type] || (type || 'محصول');
+	}
+
+	function searchFetch(term) {
+		return enqueuePreview(() => request('search_products', { term }));
+	}
+
+	/**
+	 * یک ورودی را به ترکیب «جست‌وجو + انتخاب» تبدیل می‌کند.
+	 * جست‌وجو فقط روی دیتابیس همین سایت انجام می‌شود، پس نه به همکار درخواستی می‌رود
+	 * و نه لینکی در بدنهٔ POST قرار می‌گیرد.
+	 */
+	function attachProductSearch(input, options) {
+		if (!input || input.dataset.searchBound) return null;
+		const opts = options || {};
+		input.dataset.searchBound = '1';
+		input.setAttribute('autocomplete', 'off');
+		input.setAttribute('role', 'combobox');
+		input.setAttribute('aria-autocomplete', 'list');
+		const host = opts.host || (input.closest('.tcas-shop-field') || input.parentElement);
+		if (!host) return null;
+		host.classList.add('tcas-search-host');
+		const box = node('div', 'tcas-search-results');
+		box.hidden = true;
+		box.setAttribute('role', 'listbox');
+		host.appendChild(box);
+		let timer = 0;
+		let seq = 0;
+		let rows = [];
+		let active = -1;
+
+		const hide = () => {
+			box.hidden = true;
+			box.textContent = '';
+			active = -1;
+			input.setAttribute('aria-expanded', 'false');
+		};
+
+		const show = () => {
+			if (!rows.length) return;
+			box.hidden = false;
+			input.setAttribute('aria-expanded', 'true');
+		};
+
+		const render = (list, note) => {
+			box.textContent = '';
+			rows = Array.isArray(list) ? list : [];
+			active = -1;
+			if (note) {
+				box.appendChild(node('p', 'tcas-search-note', note));
+			}
+			rows.forEach((row, index) => {
+				const item = node('button', 'tcas-search-row');
+				item.type = 'button';
+				item.setAttribute('role', 'option');
+				item.dataset.index = String(index);
+				item.dataset.reference = row.reference || '';
+				item.appendChild(node('span', 'tcas-search-name', row.name || row.reference || 'محصول'));
+				if (row.label) item.appendChild(node('span', 'tcas-search-label', row.label));
+				const meta = [row.sku ? 'SKU: ' + row.sku : row.reference, productTypeLabel(row.type)];
+				if (row.stock) meta.push('موجودی: ' + stockLabel(row.stock));
+				item.appendChild(node('span', 'tcas-search-meta', meta.filter(Boolean).join(' · ')));
+				item.addEventListener('mousedown', (event) => event.preventDefault());
+				item.addEventListener('click', () => pick(row));
+				box.appendChild(item);
+			});
+			show();
+		};
+
+		const pick = (row) => {
+			if (!row) return;
+			input.value = row.reference || '';
+			hide();
+			if (typeof opts.onPick === 'function') opts.onPick(row);
+		};
+
+		const highlight = () => {
+			Array.from(box.querySelectorAll('.tcas-search-row')).forEach((item, index) => {
+				item.classList.toggle('is-active', index === active);
+				item.setAttribute('aria-selected', index === active ? 'true' : 'false');
+			});
+			const current = box.querySelector('.tcas-search-row.is-active');
+			if (current && current.scrollIntoView) current.scrollIntoView({ block: 'nearest' });
+		};
+
+		const run = async () => {
+			const term = String(input.value || '').trim();
+			if (looksLikeLink(term) || (opts.minLength || 2) > term.length) {
+				hide();
+				return;
+			}
+			const current = ++seq;
+			try {
+				const data = await searchFetch(term);
+				if (current !== seq) return;
+				const list = (Array.isArray(data.rows) ? data.rows : []).filter((row) => (typeof opts.filter === 'function' ? opts.filter(row) : true));
+				if (!list.length) {
+					render([], opts.emptyHint || 'محصولی با این نام یا SKU پیدا نشد.');
+					return;
+				}
+				render(list, '');
+			} catch (error) {
+				if (current !== seq) return;
+				render([], error.message);
+			}
+		};
+
+		input.addEventListener('input', () => {
+			const value = String(input.value || '');
+			if (looksLikeLink(value) || (opts.minLength || 2) > value.trim().length) {
+				window.clearTimeout(timer);
+				hide();
+				return;
+			}
+			window.clearTimeout(timer);
+			timer = window.setTimeout(run, opts.debounce || SEARCH_DEBOUNCE);
+		});
+		input.addEventListener('focus', () => { if (rows.length) show(); });
+		input.addEventListener('blur', () => { window.setTimeout(hide, 150); });
+		input.addEventListener('keydown', (event) => {
+			if (box.hidden) return;
+			if ('ArrowDown' === event.key) {
+				event.preventDefault();
+				active = Math.min(active + 1, rows.length - 1);
+				highlight();
+			} else if ('ArrowUp' === event.key) {
+				event.preventDefault();
+				active = Math.max(active - 1, 0);
+				highlight();
+			} else if ('Escape' === event.key) {
+				hide();
+			} else if ('Enter' === event.key && active >= 0) {
+				event.preventDefault();
+				event.stopPropagation();
+				pick(rows[active]);
+			}
+		});
+
+		return { hide, run, pick, box };
 	}
 
 	function stockLabel(stock) {
@@ -658,6 +844,18 @@
 			refreshPairEntries();
 			text('tcas-preview-status', 'کارت حذف شد؛ تغییرات فقط در همین صفحه است.');
 		});
+		const localField = entry.querySelector('.tcas-local-code');
+		if (localField) {
+			attachProductSearch(localField, {
+				filter: (row) => 'variable' !== row.type && 'grouped' !== row.type,
+				onPick: (row) => {
+					setVariationTitle(entry.querySelector('.tcas-shop-local'), row.name || '');
+					entry.dataset.confidence = 'manual';
+					scheduleEntryCheck(entry, 120);
+				},
+				emptyHint: 'محصول ساده یا Variation با این نام/SKU پیدا نشد؛ شناسه را دستی وارد کنید.'
+			});
+		}
 		entry.querySelectorAll('input[type="text"]').forEach((input) => {
 			input.addEventListener('input', () => {
 				setVariationTitle(input.closest('.tcas-shop-field'), '');
@@ -1025,6 +1223,49 @@
 		busy(button, false);
 	}
 
+	/** ردیف‌های یک پاسخ گام (سازگار با پاسخ تک‌ردیفی نسخه‌های قبل). */
+	function stepRows(data) {
+		if (data && Array.isArray(data.rows)) return data.rows;
+		return data && data.row ? [data.row] : [];
+	}
+
+	function stepSize() {
+		const size = Number(cfg.stepSize);
+		return Number.isFinite(size) && size > 0 ? size : 3;
+	}
+
+	/**
+	 * گام‌های بررسی را دسته‌ای اجرا می‌کند و در صورت قطع ارتباط از همان‌جا ادامه می‌دهد
+	 * (سرور با پارامتر «from» همان بازه را دوباره می‌خواند، پس هیچ جفتی جا نمی‌افتد).
+	 */
+	async function runSteps(job, onRow, onProgress) {
+		const total = Number(job.total) || 0;
+		let from = 0;
+		let done = false;
+		let guard = 0;
+		let failures = 0;
+		while (!done && guard++ < 4000) {
+			let data;
+			try {
+				data = await request('preview_step', { token: job.token, from, size: stepSize() }, { retries: 2, backoff: 900 });
+			} catch (error) {
+				failures++;
+				if (failures > 2 || from >= total) throw error;
+				text('tcas-preview-status', 'ارتباط قطع شد؛ تلاش دوباره از جفت ' + String(from + 1) + ' (' + String(failures) + '/۳)…', true);
+				await delay(1500 * failures);
+				continue;
+			}
+			failures = 0;
+			stepRows(data).forEach((row) => onRow(row));
+			const processed = Number(data.processed);
+			from = Number.isFinite(processed) ? processed : from + stepRows(data).length;
+			if (typeof onProgress === 'function') onProgress(from, Number(data.total) || total);
+			done = Boolean(data.done);
+			if (!done && from >= total) done = true;
+		}
+		return from;
+	}
+
 	function summarizeRows(entries, rows) {
 		const counts = { ok: 0, review: 0, error: 0 };
 		rows.forEach((row) => {
@@ -1064,21 +1305,14 @@
 			const job = await request('preview_start', { pairs: collected.lines.join('\n') });
 			state.token = job.token;
 			progress('tcas-preview', 0, job.total || 0);
-			let done = false;
-			let guard = 0;
-			while (!done && guard++ < 600) {
-				const data = await request('preview_step', { token: job.token });
-				if (data.row) {
-					rows.push(data.row);
-					const entry = entries[Number(data.row.index)];
-					if (entry) {
-						setEntryLoading(entry, false);
-						applyRow(entry, data.row);
-					}
+			await runSteps(job, (row) => {
+				rows.push(row);
+				const entry = entries[Number(row.index)];
+				if (entry) {
+					setEntryLoading(entry, false);
+					applyRow(entry, row);
 				}
-				progress('tcas-preview', data.processed || 0, data.total || 0);
-				done = Boolean(data.done);
-			}
+			}, (processed, total) => progress('tcas-preview', processed, total));
 			state.previewDone = true;
 			const counts = summarizeRows(entries, rows);
 			const parts = [];
@@ -1086,7 +1320,9 @@
 			if (counts.review) parts.push(counts.review + ' نیاز به بررسی');
 			if (counts.error) parts.push(counts.error + ' غیرقابل اتصال');
 			if (collected.incomplete) parts.push(collected.incomplete + ' کارت ناقص');
-			text('tcas-preview-status', 'بررسی تمام شد — ' + (parts.join(' · ') || 'بدون نتیجه') + '.');
+			let summary = 'بررسی تمام شد — ' + (parts.join(' · ') || 'بدون نتیجه') + '.';
+			if ('rest' === state.transport) summary += ' درخواست‌ها از مسیر REST همین سایت انجام شد (admin-ajax توسط هاست مسدود شده بود).';
+			text('tcas-preview-status', summary);
 		} catch (error) {
 			text('tcas-preview-status', error.message, true);
 		}
@@ -1140,38 +1376,45 @@
 			const job = await request('preview_start', { pairs: pairs.map((codes) => codes.local + ' - ' + codes.remote).join('\n') });
 			state.token = job.token;
 			const order = [];
-			let done = false;
-			let guard = 0;
-			while (!done && guard++ < 600) {
-				const data = await request('preview_step', { token: job.token });
-				if (data.row) {
-					const entry = selected[Number(data.row.index)];
-					order[Number(data.row.index)] = data.row;
-					if (entry) {
-						setEntryLoading(entry, false);
-						applyRow(entry, data.row);
-					}
+			await runSteps(job, (row) => {
+				const entry = selected[Number(row.index)];
+				order[Number(row.index)] = row;
+				if (entry) {
+					setEntryLoading(entry, false);
+					applyRow(entry, row);
 				}
-				progress('tcas-preview', data.processed || 0, data.total || 0);
-				done = Boolean(data.done);
-			}
+			}, (processed, total) => progress('tcas-preview', processed, total));
 			const indexes = order.filter((row) => row && row.selectable).map((row) => Number(row.index));
 			if (!indexes.length) throw new Error('هیچ‌کدام از کارت‌های انتخابی الان قابل اتصال نیست؛ پیام همان کارت را ببینید.');
 			const connect = await request('connect_start', { token: job.token, pairs: indexes });
 			progress('tcas-connect', 0, connect.total || 0);
-			let finished = false;
-			let guard2 = 0;
 			let okCount = 0;
 			let failCount = 0;
-			while (!finished && guard2++ < 600) {
-				const data = await request('connect_step', { token: job.token });
-				if (data.row) {
-					const index = typeof data.row.index === 'number' ? Number(data.row.index) : -1;
-					const entry = index >= 0 ? selected[index] : null;
-					if (applyConnectRow(entry, data.row)) okCount++;
-					else failCount++;
+			let from = 0;
+			let finished = false;
+			let guard2 = 0;
+			let failures = 0;
+			while (!finished && guard2++ < 4000) {
+				let data;
+				try {
+					data = await request('connect_step', { token: job.token, from, size: stepSize() }, { retries: 2, backoff: 900 });
+				} catch (error) {
+					failures++;
+					if (failures > 2 || from >= (Number(connect.total) || 0)) throw error;
+					text('tcas-connect-status', 'ارتباط قطع شد؛ تلاش دوباره برای اتصال از مورد ' + String(from + 1) + '…', true);
+					await delay(1500 * failures);
+					continue;
 				}
-				progress('tcas-connect', data.processed || 0, data.total || 0);
+				failures = 0;
+				stepRows(data).forEach((row) => {
+					const index = typeof row.index === 'number' ? Number(row.index) : -1;
+					const entry = index >= 0 ? selected[index] : null;
+					if (applyConnectRow(entry, row)) okCount++;
+					else failCount++;
+				});
+				const processed = Number(data.processed);
+				from = Number.isFinite(processed) ? processed : from + stepRows(data).length;
+				progress('tcas-connect', from, Number(data.total) || Number(connect.total) || 0);
 				finished = Boolean(data.done);
 			}
 			text('tcas-connect-status', okCount + ' جفت متصل و فقط موجودی به‌روز شد' + (failCount ? ' · ' + failCount + ' جفت خطا داشت' : '') + '. ');
@@ -1247,56 +1490,89 @@
 		text('tcas-link-status', 'شناسهٔ Variation آمادهٔ کپی است.');
 	}
 
+	function showLinkPayload(data) {
+		state.linkProduct = data;
+		state.linkVariations = Array.isArray(data.variations) ? data.variations : [];
+		const result = $('tcas-link-result');
+		if (result) {
+			result.hidden = false;
+			if (data.shop) result.dataset.shop = data.shop;
+		}
+		if (data.type === 'variable') {
+			const wrap = $('tcas-link-variation-wrap');
+			const select = $('tcas-link-variation');
+			if (wrap) wrap.hidden = false;
+			if (select) {
+				select.textContent = '';
+				const placeholder = node('option', '', 'انتخاب Variation…');
+				placeholder.value = '';
+				select.appendChild(placeholder);
+				state.linkVariations.forEach((variation, index) => {
+					const identity = variation.sku || variation.reference || 'بدون شناسه';
+					const details = [variation.label || 'Variation', variation.product_id ? '#' + String(variation.product_id) : '', identity].filter(Boolean);
+					const option = node('option', '', details.join(' · '));
+					option.value = String(index);
+					option.disabled = !variation.reference;
+					select.appendChild(option);
+				});
+			}
+			setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
+			const usable = state.linkVariations.filter((variation) => Boolean(variation.reference));
+			if (usable.length === 1 && select) {
+				select.value = String(state.linkVariations.indexOf(usable[0]));
+				chooseLinkVariation();
+			} else {
+				text('tcas-link-status', usable.length ? String(usable.length) + ' Variation قابل‌اتصال بارگذاری شد؛ یک مورد را انتخاب کنید.' : 'Variation واقعی با شناسهٔ معتبر پیدا نشد؛ گزینهٔ Attribute کافی نیست.', !usable.length);
+			}
+			return;
+		}
+		const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
+		setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), productDiagnostic(data));
+		text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
+	}
+
 	async function resolveLink() {
 		const input = $('tcas-link-input');
 		const button = $('tcas-link-resolve');
 		const url = input ? input.value.trim() : '';
-		if (!url || !/^https?:\/\//i.test(url)) { text('tcas-link-status', 'لینک کامل محصول را وارد کنید.', true); return; }
+		if (!url || !/^https?:\/\//i.test(url)) { text('tcas-link-status', 'لینک کامل محصول را وارد کنید یا نام/SKU را جست‌وجو کنید.', true); return; }
 		resetLinkResult();
 		busy(button, true, 'در حال تشخیص…');
 		text('tcas-link-status', 'در حال تشخیص فروشگاه و دریافت شناسه…');
 		try {
-			const data = await request('resolve_link', { url });
-			state.linkProduct = data;
-			state.linkVariations = Array.isArray(data.variations) ? data.variations : [];
-			const result = $('tcas-link-result');
-			if (result) {
-				result.hidden = false;
-				if (data.shop) result.dataset.shop = data.shop;
-			}
-			if (data.type === 'variable') {
-				const wrap = $('tcas-link-variation-wrap');
-				const select = $('tcas-link-variation');
-				if (wrap) wrap.hidden = false;
-				if (select) {
-					select.textContent = '';
-					const placeholder = node('option', '', 'انتخاب Variation…');
-					placeholder.value = '';
-					select.appendChild(placeholder);
-					state.linkVariations.forEach((variation, index) => {
-						const identity = variation.sku || variation.reference || 'بدون شناسه';
-						const details = [variation.label || 'Variation', variation.product_id ? '#' + String(variation.product_id) : '', identity].filter(Boolean);
-						const option = node('option', '', details.join(' · '));
-						option.value = String(index);
-						option.disabled = !variation.reference;
-						select.appendChild(option);
-					});
-				}
-				setLinkOutput('', (data.shop_label || 'محصول') + ' · Variation', productDiagnostic(data));
-				const usable = state.linkVariations.filter((variation) => Boolean(variation.reference));
-				if (usable.length === 1 && select) {
-					select.value = String(state.linkVariations.indexOf(usable[0]));
-					chooseLinkVariation();
-				} else {
-					text('tcas-link-status', usable.length ? String(usable.length) + ' Variation قابل‌اتصال بارگذاری شد؛ یک مورد را انتخاب کنید.' : 'Variation واقعی با شناسهٔ معتبر پیدا نشد؛ گزینهٔ Attribute کافی نیست.', !usable.length);
-				}
-			} else {
-				const reference = data.reference || data.sku || (data.product_id ? 'ID:' + String(data.product_id) : '');
-				setLinkOutput(reference, (data.shop_label || 'محصول') + (/^ID:/i.test(reference) ? ' · ID' : ' · SKU'), productDiagnostic(data));
-				text('tcas-link-status', reference ? 'شناسه آمادهٔ کپی است.' : 'شناسه پیدا نشد.', !reference);
-			}
+			showLinkPayload(await request('resolve_link', { url }));
 		} catch (error) { text('tcas-link-status', error.message, true); }
 		busy(button, false);
+	}
+
+	/** انتخاب از فهرست جست‌وجو: محصول ساده بدون هیچ درخواستی پاسخ می‌دهد. */
+	async function selectSearchedProduct(row) {
+		resetLinkResult();
+		const reference = String(row.reference || '');
+		if ('variable' === row.type) {
+			const button = $('tcas-link-resolve');
+			busy(button, true, 'در حال خواندن Variationها…');
+			text('tcas-link-status', 'در حال خواندن Variationهای «' + (row.name || reference) + '» از همین سایت…');
+			try {
+				showLinkPayload(await enqueuePreview(() => request('search_products', { product_id: row.product_id })));
+			} catch (error) {
+				text('tcas-link-status', error.message, true);
+			}
+			busy(button, false);
+			return;
+		}
+		showLinkPayload({
+			shop: 'tisacase',
+			shop_label: 'TisaCase',
+			sku: row.sku || '',
+			reference: reference,
+			name: row.name || reference,
+			product_id: row.product_id,
+			parent_id: row.parent_id || 0,
+			type: row.type || 'simple',
+			variations: []
+		});
+		text('tcas-link-status', 'محصول از فهرست انتخاب شد؛ بدون ارسال لینک و بدون درخواست به همکار.');
 	}
 
 	async function copyLinkSku() {
@@ -1363,6 +1639,16 @@
 		input.addEventListener('input', resetSmart);
 		input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); matchVariations(); } });
 	});
+	const smartLocalInput = $('tcas-smart-local');
+	if (smartLocalInput) {
+		attachProductSearch(smartLocalInput, {
+			host: smartLocalInput.closest('.tcas-shop-field') || smartLocalInput.parentElement,
+			onPick: (row) => {
+				text('tcas-smart-status', 'محصول «' + (row.name || row.reference) + '» انتخاب شد؛ شناسه: ' + row.reference + '. اکنون مرجع همکار را وارد و «یافتن جفت‌ها» را بزنید.');
+			},
+			emptyHint: 'محصولی پیدا نشد؛ می‌توانید شناسه یا لینک را دستی وارد کنید.'
+		});
+	}
 	const previewButton = $('tcas-preview-start');
 	if (previewButton) previewButton.addEventListener('click', () => refreshAllCards(previewButton));
 	const connectButton = $('tcas-connect-start');
@@ -1378,8 +1664,20 @@
 	if (resolveButton) resolveButton.addEventListener('click', resolveLink);
 	const linkInput = $('tcas-link-input');
 	if (linkInput) {
-		linkInput.addEventListener('input', () => { resetLinkResult(); text('tcas-link-status', ''); });
-		linkInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); resolveLink(); } });
+		linkInput.addEventListener('input', () => {
+			text('tcas-link-status', '');
+			if (!looksLikeLink(linkInput.value)) resetLinkResult();
+		});
+		linkInput.addEventListener('keydown', (event) => {
+			if (event.key !== 'Enter') return;
+			event.preventDefault();
+			if (looksLikeLink(linkInput.value)) resolveLink();
+		});
+		attachProductSearch(linkInput, {
+			host: linkInput.closest('.tcas-converter-source') || linkInput.parentElement,
+			onPick: selectSearchedProduct,
+			emptyHint: 'محصولی با این نام یا SKU در TisaCase پیدا نشد؛ می‌توانید لینک کامل را بچسبانید.'
+		});
 	}
 	const copyButton = $('tcas-link-copy');
 	if (copyButton) copyButton.addEventListener('click', copyLinkSku);

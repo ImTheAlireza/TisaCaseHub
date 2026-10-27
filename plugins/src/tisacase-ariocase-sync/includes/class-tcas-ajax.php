@@ -10,8 +10,12 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 	final class TCAS_Ajax {
+		/** هر درخواست چند جفت را بررسی می‌کند تا تعداد درخواست‌ها به هاست کم شود. */
+		const STEP_SIZE = 5;
+		const STEP_MAX  = 10;
+
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -73,6 +77,22 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			return trim( (string) $pair['local_code'] . ' - ' . $remote );
 		}
 
+		/** اندازهٔ دسته و نقطهٔ شروع را از درخواست می‌خواند («from» اجازهٔ ادامه پس از قطع ارتباط می‌دهد). */
+		private static function step_window( $total, $offset ) {
+			$from = isset( $_POST['from'] ) ? absint( $_POST['from'] ) : (int) $offset;
+			if ( $from > $total ) {
+				$from = $total;
+			}
+			$size = isset( $_POST['size'] ) ? absint( $_POST['size'] ) : self::STEP_SIZE;
+			if ( $size < 1 ) {
+				$size = 1;
+			}
+			if ( $size > self::STEP_MAX ) {
+				$size = self::STEP_MAX;
+			}
+			return array( (int) $from, (int) $size );
+		}
+
 		public static function preview_start() {
 			self::auth();
 			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
@@ -100,23 +120,34 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		public static function preview_step() {
 			self::auth();
 			list( $token, $job ) = self::get_job( 'preview' );
-			if ( $job['offset'] >= count( $job['pairs'] ) ) {
-				wp_send_json_success( array( 'done' => true, 'processed' => count( $job['pairs'] ), 'total' => count( $job['pairs'] ) ) );
+			$total = count( $job['pairs'] );
+			$partner_id = isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase';
+			list( $from, $size ) = self::step_window( $total, $job['offset'] );
+			// از «from» ادامه می‌دهیم؛ اگر پاسخ درخواست قبلی در شبکه گم شده باشد، دوباره همان بازه خوانده می‌شود.
+			$job['offset'] = $from;
+			if ( $from >= $total ) {
+				self::save_job( $token, $job );
+				wp_send_json_success( array( 'token' => $token, 'done' => true, 'processed' => $total, 'total' => $total, 'rows' => array() ) );
 			}
-			$index   = $job['offset'];
-			$pair    = $job['pairs'][ $index ];
-			$preview = TCAS_Pairing::preview( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' );
-			$preview['row']['index'] = $index;
-			$job['results'][ $index ]  = $preview;
-			$job['offset']++;
+			$rows = array();
+			$end  = min( $total, $from + $size );
+			for ( $index = $from; $index < $end; $index++ ) {
+				$pair    = $job['pairs'][ $index ];
+				$preview = TCAS_Pairing::preview( $pair, $partner_id );
+				$preview['row']['index']  = $index;
+				$job['results'][ $index ] = $preview;
+				$rows[]                   = $preview['row'];
+				TCAS_Logger::add( 'pair_preview', self::pair_label( $pair, $partner_id ), $preview['row']['message'] );
+			}
+			$job['offset'] = $end;
 			self::save_job( $token, $job );
-			TCAS_Logger::add( 'pair_preview', self::pair_label( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' ), $preview['row']['message'] );
 			wp_send_json_success( array(
 				'token'     => $token,
-				'done'      => $job['offset'] >= count( $job['pairs'] ),
-				'processed' => $job['offset'],
-				'total'     => count( $job['pairs'] ),
-				'row'       => $preview['row'],
+				'done'      => $end >= $total,
+				'processed' => $end,
+				'total'     => $total,
+				'rows'      => $rows,
+				'row'       => $rows ? $rows[ count( $rows ) - 1 ] : null,
 			) );
 		}
 
@@ -149,38 +180,74 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			self::auth();
 			list( $token, $job ) = self::get_job( 'connect' );
 			$total = count( $job['connect_indexes'] );
-			if ( $job['offset'] >= $total ) {
-				wp_send_json_success( array( 'done' => true, 'processed' => $total, 'total' => $total ) );
+			list( $from, $size ) = self::step_window( $total, $job['offset'] );
+			$job['offset'] = $from;
+			if ( $from >= $total ) {
+				self::save_job( $token, $job );
+				wp_send_json_success( array( 'done' => true, 'processed' => $total, 'total' => $total, 'rows' => array() ) );
 			}
-			$index   = $job['connect_indexes'][ $job['offset'] ];
-			$pair    = $job['pairs'][ $index ];
-			// فقط دادهٔ تازه؛ Snapshot پیش‌نمایش برای اتصال نهایی استفاده نمی‌شود.
-			$preview = TCAS_Pairing::preview( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' );
-			$result  = TCAS_Pairing::connect( $preview );
-			$row     = array(
-				'index'       => (int) $index,
-				'local_code'  => isset( $preview['row']['local_code'] ) ? $preview['row']['local_code'] : $pair['local_code'],
-				'remote_code' => isset( $preview['row']['remote_code'] ) ? $preview['row']['remote_code'] : $pair['remote_code'],
-			);
-			if ( is_wp_error( $result ) ) {
-				$row['status']  = 'error';
-				$row['message'] = $result->get_error_message();
-			} else {
-				$row['status']     = 'done';
-				$row['message']    = $result['message'];
-				$row['product_id'] = $result['product_id'];
-				$row['edit_url']   = admin_url( 'post.php?post=' . absint( $result['product_id'] ) . '&action=edit' );
+			$rows = array();
+			$end  = min( $total, $from + $size );
+			for ( $slot = $from; $slot < $end; $slot++ ) {
+				$index   = $job['connect_indexes'][ $slot ];
+				$pair    = $job['pairs'][ $index ];
+				$partner_id = isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase';
+				// فقط دادهٔ تازه؛ Snapshot پیش‌نمایش برای اتصال نهایی استفاده نمی‌شود.
+				$preview = TCAS_Pairing::preview( $pair, $partner_id );
+				$result  = TCAS_Pairing::connect( $preview );
+				$row     = array(
+					'index'       => (int) $index,
+					'local_code'  => isset( $preview['row']['local_code'] ) ? $preview['row']['local_code'] : $pair['local_code'],
+					'remote_code' => isset( $preview['row']['remote_code'] ) ? $preview['row']['remote_code'] : $pair['remote_code'],
+				);
+				if ( is_wp_error( $result ) ) {
+					$row['status']  = 'error';
+					$row['message'] = $result->get_error_message();
+				} else {
+					$row['status']     = 'done';
+					$row['message']    = $result['message'];
+					$row['product_id'] = $result['product_id'];
+					$row['edit_url']   = admin_url( 'post.php?post=' . absint( $result['product_id'] ) . '&action=edit' );
+				}
+				$job['connect_result'][ $index ] = $row;
+				$rows[]                          = $row;
+				TCAS_Logger::add( 'pair_connect', self::pair_label( $pair, $partner_id ), $row['message'] );
 			}
-			$job['connect_result'][ $index ] = $row;
-			$job['offset']++;
+			$job['offset'] = $end;
 			self::save_job( $token, $job );
-			TCAS_Logger::add( 'pair_connect', self::pair_label( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' ), $row['message'] );
 			wp_send_json_success( array(
-				'done'      => $job['offset'] >= $total,
-				'processed' => $job['offset'],
+				'done'      => $end >= $total,
+				'processed' => $end,
 				'total'     => $total,
-				'row'       => $row,
+				'rows'      => $rows,
+				'row'       => $rows ? $rows[ count( $rows ) - 1 ] : null,
 			) );
+		}
+
+		/**
+		 * جست‌وجوی محصول محلی (نام یا SKU) و خواندن جزئیات یک محصول انتخاب‌شده.
+		 * فقط از دیتابیس همین سایت می‌خواند؛ هیچ درخواستی به همکار نمی‌رود.
+		 */
+		public static function search_products() {
+			self::auth();
+			if ( ! class_exists( 'TCAS_Local_Search' ) ) {
+				wp_send_json_error( array( 'message' => 'جست‌وجوی محصول در این نصب فعال نیست.' ), 501 );
+			}
+			$product_id = isset( $_POST['product_id'] ) ? absint( $_POST['product_id'] ) : 0;
+			if ( $product_id ) {
+				$detail = TCAS_Local_Search::detail( $product_id );
+				if ( is_wp_error( $detail ) ) {
+					wp_send_json_error( array( 'message' => $detail->get_error_message() ), 404 );
+				}
+				wp_send_json_success( $detail );
+			}
+			$term = isset( $_POST['term'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['term'] ) ) ) : '';
+			if ( TCAS_Local_Search::too_short( $term ) ) {
+				wp_send_json_error( array( 'message' => 'برای جست‌وجو دست‌کم ' . TCAS_Local_Search::MIN_TERM . ' حرف از نام محصول یا SKU را وارد کنید.' ), 400 );
+			}
+			$rows = TCAS_Local_Search::search( $term );
+			TCAS_Logger::add( 'product_search', $term, count( $rows ) . ' نتیجه' );
+			wp_send_json_success( array( 'rows' => $rows, 'term' => $term, 'count' => count( $rows ) ) );
 		}
 
 		public static function resolve_link() {
