@@ -127,7 +127,8 @@
 		var m = /^(\d{4})[\s\/\-.](\d{1,2})[\s\/\-.](\d{1,2})$/.exec(clean);
 		if (!m) { return ''; }
 		var jy = parseInt(m[1], 10), jm = parseInt(m[2], 10), jd = parseInt(m[3], 10);
-		if (jy < 1 || jy > 3000 || jm < 1 || jm > 12 || jd < 1 || jd > monthLength(jy, jm)) {
+		// همان بازهٔ محافظه‌کارانهٔ PHP؛ از تولید تاریخ‌هایی که ذخیره‌سازی رد می‌کند جلوگیری شود.
+		if (jy < 1100 || jy > 1500 || jm < 1 || jm > 12 || jd < 1 || jd > monthLength(jy, jm)) {
 			return '';
 		}
 		var g = toGregorian(jy, jm, jd);
@@ -459,9 +460,16 @@
 					text.focus();
 					return;
 				}
-				// فرم کوپن نسخهٔ ISO مخفی را مرجع می‌فرستد؛ بدون JS ورودی visible fallback است.
-				if (text.name === 'expires') {
-					wrapper.querySelector('.tcp-jdate__value').setAttribute('name', 'expires_gregorian');
+				// نشان می‌دهیم که مقدار مخفی ISO همین لحظه توسط datepicker اعتبارسنجی/همگام شده است.
+				if (text.name === 'expires_jalali') {
+					var marker = form.querySelector('input[name="tcp_jalali_date_ready"]');
+					if (!marker) {
+						marker = document.createElement('input');
+						marker.type = 'hidden';
+						marker.name = 'tcp_jalali_date_ready';
+						form.appendChild(marker);
+					}
+					marker.value = '1';
 				}
 			});
 		}

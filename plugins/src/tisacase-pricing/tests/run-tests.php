@@ -13,6 +13,7 @@ require_once dirname( __DIR__ ) . '/includes/class-tcp-round.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-ops.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-db.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-rules.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcp-coupons.php';
 
 /* ---------- هارنس ---------- */
 
@@ -582,6 +583,18 @@ $r204 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 204 ) 
 t( 'اولویت: قانون تکی محصول (۱۰٪) بر قانون شناسه CH (۴۰٪) برنده است', $r204 && 10.0 === (float) $r204['increase'] );
 
 require __DIR__ . '/jalali-tests.php';
+
+echo "--- تاریخ انقضای فرم کوپن: مسیر POST با/بدون JS ---\n";
+$exp_js = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '2026-10-30', 'expires_jalali' => '1405/08/08', 'tcp_jalali_date_ready' => '1' ) ) );
+t( 'POST جاوااسکریپت: ISO تازه‌همگام‌شده مرجع است', array( '2026-10-30', '2026-10-30' ) === $exp_js );
+$exp_no_js = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '2025-01-01', 'expires_jalali' => '1405/08/08' ) ) );
+t( 'POST بدون جاوااسکریپت: ورودی شمسی بر مقدار پنهان کهنه اولویت دارد', array( '1405/08/08', '2026-10-30' ) === $exp_no_js );
+$exp_legacy = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '1405/08/08' ) ) );
+t( 'فرم نسخهٔ قبلی: ورودی شمسی سازگار می‌ماند', array( '1405/08/08', '2026-10-30' ) === $exp_legacy );
+$exp_invalid = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires_jalali' => '1405/13/99' ) ) );
+t( 'POST تاریخ نامعتبر: خروجی خالی برای جلوگیری از ذخیره', array( '1405/13/99', '' ) === $exp_invalid );
+$exp_clear = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '', 'expires_jalali' => '', 'tcp_jalali_date_ready' => '1' ) ) );
+t( 'پاک‌کردن صریح تاریخ: هر دو مقدار خالی', array( '', '' ) === $exp_clear );
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

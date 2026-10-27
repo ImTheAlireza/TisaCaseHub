@@ -16,6 +16,7 @@ $tcp_search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s']
 $tcp_batch   = isset( $_GET['batch'] ) ? sanitize_text_field( wp_unslash( $_GET['batch'] ) ) : '';
 $tcp_edit_id = isset( $_GET['edit'] ) ? absint( $_GET['edit'] ) : 0;
 $tcp_panel   = isset( $_GET['panel'] ) ? sanitize_key( $_GET['panel'] ) : ( $tcp_edit_id ? 'single' : 'list' );
+$tcp_error   = isset( $_GET['err'], $_GET['msg'] ) && 'invalid_expiry' === sanitize_key( wp_unslash( $_GET['msg'] ) ) ? 'invalid_expiry' : '';
 // phpcs:enable
 
 $tcp_rows    = TCP_Coupons::list_coupons( $tcp_search, $tcp_batch );
@@ -81,9 +82,10 @@ $tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
 		$gregorian = '';
 	}
 	?>
+	<?php $visible_name = 'expires' === $name ? 'expires_jalali' : $name; ?>
 	<span class="tcp-jdate" data-tcp-jdate>
-		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $jalali ); ?>">
-		<input type="hidden" class="tcp-jdate__value"<?php echo $hidden_id ? ' id="' . esc_attr( $hidden_id ) . '"' : ''; ?> value="<?php echo esc_attr( $gregorian ); ?>">
+		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08" name="<?php echo esc_attr( $visible_name ); ?>" value="<?php echo esc_attr( $jalali ); ?>">
+		<input type="hidden" class="tcp-jdate__value"<?php echo $hidden_id ? ' id="' . esc_attr( $hidden_id ) . '"' : ''; ?><?php echo 'expires' === $name ? ' name="expires"' : ''; ?> value="<?php echo esc_attr( $gregorian ); ?>">
 		<button type="button" class="tcp-jdate__toggle" tabindex="-1" aria-label="باز کردن تقویم شمسی">
 			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
 		</button>
@@ -150,6 +152,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 ?>
 
 <p class="tcp-lead">کدها همان کوپن‌های ووکامرس‌اند؛ در سبد، پرداخت و گزارش‌ها طبیعی کار می‌کنند. اینجا ساخت سریع، تولید انبوه کدهای یک‌بارمصرف، رند به ۸ و مدیریت یک‌جا اضافه شده.</p>
+<?php if ( 'invalid_expiry' === $tcp_error ) : ?><div class="notice notice-error"><p>تاریخ انقضا ذخیره نشد؛ تاریخ را از تقویم انتخاب کنید یا با قالب ۱۴۰۵/۰۸/۰۸ وارد کنید. تاریخ قبلی تغییر نکرده است.</p></div><?php endif; ?>
 
 <nav class="tcp-subnav">
 	<a class="tcp-subtab<?php echo 'list' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons' ) ); ?>">فهرست کدها <span class="tcp-count"><?php echo esc_html( number_format_i18n( count( $tcp_rows ) ) ); ?></span></a>
