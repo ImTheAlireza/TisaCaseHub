@@ -283,6 +283,14 @@
 
 .tcas-smart-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:10px; align-items:end; }
 .tcas-smart-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-sweep-status { display:grid; gap:4px; margin-top:14px; padding:11px 13px; border:1px solid var(--tisa-line,#E3E3E3); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface-alt,#FAFAFA); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-sweep-status p { margin:0; }
+.tcas-sweep-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:12px; }
+.tcas-sweep-actions .tcas-muted { font-size:var(--tisa-fs-tiny,11px); }
+.tcas-sweep-result { margin:8px 0 0; font-size:var(--tisa-fs-meta,12.5px); color:var(--tcas-muted); }
+.tcas-sweep-result:empty { display:none; }
+.tcas-sweep-result.is-error { color:var(--tisa-danger,#B5453A); }
+.tcas-sweep-result.is-success { color:var(--tisa-success,#1A7F37); }
 .tcas-smart-card .tcas-status { margin-top:9px; }
 .tcas-smart-issues { display:grid; gap:9px; margin-top:12px; padding:12px; border:1px solid var(--tisa-warning-soft,#F4E4C6); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-warning-soft,#FFF8E8); }
 .tcas-smart-issues[hidden] { display:none; }
@@ -290,16 +298,34 @@
 .tcas-smart-issues-head h3 { margin:0; font-size:var(--tisa-fs-meta,13px); }
 .tcas-smart-issues-count { flex:0 0 auto; padding:3px 9px; border-radius:var(--tisa-r-pill,999px); background:#F4E4C6; color:#76520B; font-size:var(--tisa-fs-tiny,11px); font-weight:700; }
 .tcas-smart-issues-help { margin:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
+.tcas-smart-issue-filters { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.tcas-smart-issue-filters[hidden] { display:none; }
+.tcas-smart-issue-filter { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; border-color:var(--tisa-warning-soft,#F4E4C6) !important; background:var(--tisa-surface,#fff) !important; color:#76520B !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.4 !important; }
+.tcas-smart-issue-filter.is-active { border-color:#C58A19 !important; background:#F4E4C6 !important; color:#5A3D06 !important; font-weight:700; }
 .tcas-smart-issue-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .tcas-smart-issue { display:grid; gap:5px; min-width:0; padding:9px; border:1px solid var(--tcas-border); border-right:3px solid #C58A19; border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-smart-issue[hidden] { display:none; }
 .tcas-smart-issue-unmatched { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-counterpart_unusable,.tcas-smart-issue-missing_reference { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-duplicate_reference { border-right-color:#B5453A; }
 .tcas-smart-issue-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.tcas-smart-issue-flags { display:flex; align-items:center; flex-wrap:wrap; gap:4px; min-width:0; }
 .tcas-smart-issue-flag { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border-radius:var(--tisa-r-pill,999px); background:#FFF1CE; color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
 .tcas-smart-issue-unmatched .tcas-smart-issue-flag { background:var(--tisa-danger-soft,#FBECEA); color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-flag-reason { background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-smart-issue-unmatched .tcas-smart-issue-flag-reason,.tcas-smart-issue-duplicate_reference .tcas-smart-issue-flag-reason,.tcas-smart-issue-counterpart_unusable .tcas-smart-issue-flag-reason,.tcas-smart-issue-missing_reference .tcas-smart-issue-flag-reason { background:#F4E4C6; color:#76520B; }
 .tcas-smart-issue-shop { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); }
 .tcas-smart-issue-label { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12px); }
 .tcas-smart-issue-reference { min-width:0; overflow-wrap:anywhere; direction:ltr; text-align:left; }
 .tcas-smart-issue-reason { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; }
+.tcas-smart-issue-twins,.tcas-smart-issue-candidates { display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; }
+.tcas-smart-issue-twins-title,.tcas-smart-issue-candidates-title { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); font-weight:600; }
+.tcas-smart-issue-twin,.tcas-smart-issue-candidate { display:inline-flex; align-items:center; min-width:0; max-width:100%; padding:2px 7px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-pill,999px); background:var(--tcas-soft); color:var(--tcas-ink); font-size:var(--tisa-fs-tiny,10px); overflow-wrap:anywhere; }
+.tcas-smart-issue-candidate { direction:rtl; unicode-bidi:plaintext; }
+.tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
+.tcas-pair-flag-note:not([hidden]) { display:block; min-width:0; margin:-3px 0 8px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
+.tcas-smart-issue-multiple_families { border-right-color:#C58A19; }
 .tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
 .tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
 .tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }
@@ -310,6 +336,22 @@
 .tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
 .tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
 .tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-broken-card { border-color:#E6BDB8; }
+.tcas-count-warn { background:var(--tisa-danger-soft,#FBECEA) !important; color:var(--tisa-danger,#B5453A) !important; }
+.tcas-warn-help { margin:0; color:#76520B; font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-broken-list { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+.tcas-broken-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:7px 9px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-broken-row code { direction:ltr; }
+.tcas-broken-id { color:var(--tcas-muted); }
+.tcas-broken-row small { color:var(--tcas-muted); }
+.tcas-broken-row .button { margin-inline-start:auto; }
+.tcas-release-holder { margin-top:6px; min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.5 !important; }
+.tcas-linked-group-tail { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.tcas-linked-group-actions { display:flex; align-items:center; gap:5px; }
+.tcas-linked-group-actions .button { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.5 !important; }
+.tcas-linked-group-tail .tcas-group-disconnect { border-color:#E6BDB8 !important; color:var(--tisa-danger,#B5453A) !important; }
+.tcas-linked-group-tail .tcas-group-disconnect:hover { background:var(--tisa-danger-soft,#FBECEA) !important; }
+@media (max-width:782px) { .tcas-linked-group-tail { flex-wrap:wrap; justify-content:flex-end; } }
 .tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 10px 10px; }
 .tcas-pair-entries-grouped .tcas-pair-entry { padding:10px; }
 .tcas-linked-groups { display:grid; gap:10px; }
@@ -370,12 +412,74 @@
 .tcas-stock-pill { display:inline-flex; align-items:center; min-height:23px; padding:2px 8px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); white-space:nowrap; }
 .tcas-card-link { color:var(--tcas-primary); font-size:var(--tisa-fs-meta,12.5px); text-decoration:none; }
 
-.tcas-preview-list { display:grid; gap:10px; }
-.tcas-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
-.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); cursor:pointer; }
+/* ---- کارت جفت زنده: اسپینر، وضعیت رنگی و موجودی روی خود کارت ---- */
+.tcas-pairs-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-pairs-actions .button { min-height:30px; }
+.tcas-pairs-help { margin:0 0 12px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-pair-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:11px; border-top:1px solid var(--tcas-border); }
+.tcas-pair-actions .tcas-status { margin:0; }
+.tcas-pair-top { display:flex; align-items:center; justify-content:space-between; gap:8px; min-width:0; margin-bottom:8px; }
+.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); cursor:pointer; flex:0 0 auto; }
 .tcas-pair-select input { margin:0; }
-.tcas-preview-message { margin:7px 0 0; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
-.tcas-preview-card.tcas-result-error { border-color:var(--tisa-danger-soft,#FBECEA); }
+.tcas-pair-entry .tcas-row-select:disabled + span { opacity:.45; }
+.tcas-pair-stock { margin-top:8px; padding:4px 8px; border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); color:var(--tisa-ink,#1F2A2E); font-size:var(--tisa-fs-tiny,11px); font-weight:600; direction:rtl; unicode-bidi:plaintext; }
+.tcas-pair-stock[hidden] { display:none; }
+.tcas-pair-message { display:block; margin-top:6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.7; }
+.tcas-pair-message:empty { display:none; }
+.tcas-pair-message.is-error { color:var(--tisa-danger,#B5453A); }
+.tcas-pair-edit-link { margin-inline-start:4px; color:var(--tcas-primary); text-decoration:none; }
+.tcas-spinner { display:inline-block; flex:0 0 14px; width:14px; height:14px; margin-inline-start:2px; border:2px solid rgba(15,138,103,.25); border-top-color:var(--tcas-primary); border-radius:50%; animation:tcas-spin .7s linear infinite; }
+.tcas-spinner[hidden] { display:none; }
+@keyframes tcas-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .tcas-spinner { animation-duration:1.8s; } }
+
+.tcas-pair-entry { transition:border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
+.tcas-pair-entry.is-settled { border-color:var(--tisa-primary,#0f8a67); box-shadow:inset 3px 0 0 var(--tisa-primary,#0f8a67); }
+.tcas-pair-entry.is-ready { border-color:var(--tisa-primary,#0f8a67); border-style:solid; box-shadow:inset 3px 0 0 var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-saved { border-color:var(--tisa-primary,#0f8a67); background:var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-review { border-color:#E2C98C; box-shadow:inset 3px 0 0 #C58A19; }
+.tcas-pair-entry.is-orphan { border-color:var(--tisa-danger,#B5453A); background:var(--tisa-danger-soft,#FBECEA); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
+.tcas-pair-entry.is-failed { border-color:var(--tisa-danger,#B5453A); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
+.tcas-pair-entry.is-loading { border-color:var(--tisa-primary-soft,#E8F0EE); box-shadow:inset 3px 0 0 var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-orphan .tcas-shop-field input:placeholder-shown { border-color:var(--tisa-danger,#B5453A); background:#fff; }
+.tcas-pair-entry.is-orphan .tcas-pair-fields { opacity:.96; }
+
+.tcas-pair-flag { display:inline-flex; align-items:center; min-width:0; min-height:22px; padding:2px 9px; border:1px solid transparent; border-radius:var(--tisa-r-pill,999px); font-size:var(--tisa-fs-tiny,10px); font-weight:700; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tcas-pair-flag.is-idle { border-color:var(--tcas-border); background:var(--tcas-soft); color:var(--tcas-muted); font-weight:600; }
+.tcas-pair-flag.is-ok { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
+.tcas-pair-flag.is-list { border-style:dashed; }
+.tcas-pair-note.is-list { color:var(--tisa-warning,#8A6116); }
+.tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
+.tcas-pair-flag-note[hidden] { display:none; }
+.tcas-pair-entry[data-reclaim]:not([data-reclaim='']) { border-color:#E0B75A; box-shadow:inset 3px 0 0 #C58A19; }
+.tcas-pair-entry[data-reclaim]:not([data-reclaim='']) .tcas-pair-flag-note:not([hidden]) { color:#76520B; }
+/* ---- جست‌وجوی محلی محصول: فهرست پیشنهادها زیر همان فیلد ---- */
+.tcas-search-host { position:relative; }
+.tcas-search-host.is-open { z-index:30; }
+.tcas-card.is-search-open,.tcas-pair-entry.is-search-open,.tcas-fresh-product-group.is-search-open { overflow:visible; z-index:20; }
+.tcas-search-host.is-open .tcas-search-results { box-shadow:0 16px 32px rgba(15,42,38,.18); }
+.tcas-search-results { position:absolute; z-index:40; inset-inline:0; top:calc(100% + 4px); display:grid; gap:2px; max-height:290px; overflow:auto; padding:5px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:#fff; box-shadow:0 10px 24px rgba(15,42,38,.12); }
+.tcas-search-results[hidden] { display:none; }
+.tcas-search-note { margin:4px 6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
+.tcas-search-row { display:grid; gap:1px; width:100%; padding:7px 9px; border:1px solid transparent; border-radius:var(--tisa-r-xs,8px); background:transparent; text-align:start; cursor:pointer; font-size:var(--tisa-fs-tiny,11.5px); line-height:1.7; }
+.tcas-search-row:hover, .tcas-search-row.is-active { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); }
+.tcas-search-name { min-width:0; color:var(--tisa-ink,#1F2A2E); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tcas-search-label { min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tcas-search-meta { min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); direction:rtl; unicode-bidi:plaintext; }
+.tcas-shop-field.tcas-search-host .tcas-search-results { top:calc(100% - 2px); }
+/* ---- جزئیات خطای درخواست: مبدا، هدرها و نمونهٔ پاسخ ---- */
+.tcas-request-diag { flex:1 1 100%; margin-top:10px; padding:9px 11px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-request-diag[hidden] { display:none; }
+.tcas-request-diag-summary { cursor:pointer; color:var(--tisa-danger,#B5453A); font-weight:700; }
+.tcas-request-diag-note { margin:8px 0; color:var(--tcas-muted); }
+.tcas-request-diag-row { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; border-top:1px dashed var(--tcas-border); }
+.tcas-request-diag-label { flex:0 0 150px; color:var(--tcas-muted); font-weight:600; }
+.tcas-request-diag-value { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+.tcas-request-diag-value[dir=ltr] { text-align:left; direction:ltr; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:var(--tisa-fs-tiny,10px); }
+.tcas-request-diag-actions { margin-top:8px; }
+.tcas-request-diag-copy { min-height:28px; }
+
 
 @media(max-width:900px) {
   .tcas-hero { align-items:flex-start; }

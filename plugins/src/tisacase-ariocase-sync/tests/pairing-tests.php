@@ -1,6 +1,7 @@
 <?php
 /** اتصال جفتی: فقط محصولات موجود و فقط فیلدهای Stock. */
 define( 'ABSPATH', __DIR__ . '/' );
+if ( ! defined( 'ARRAY_A' ) ) { define( 'ARRAY_A', 'ARRAY_A' ); }
 class WP_Error { private $code; private $message; public function __construct( $c = '', $m = '' ) { $this->code = $c; $this->message = $m; } public function get_error_code() { return $this->code; } public function get_error_message() { return $this->message; } }
 function is_wp_error( $v ) { return $v instanceof WP_Error; }
 function wp_parse_args( $a, $d ) { return array_merge( $d, (array) $a ); }
@@ -17,8 +18,28 @@ class TCAS_Test_WPDB {
 	public function prepare( $query, ...$args ) { foreach ( $args as $arg ) { $query = preg_replace( '/%s/', "'" . addslashes( (string) $arg ) . "'", $query, 1 ); $query = preg_replace( '/%d/', (string) (int) $arg, $query, 1 ); } return $query; }
 	public function get_col( $query ) {
 		preg_match( "/pm\.meta_key = '([^']+)'/", $query, $key ); preg_match( "/pm\.meta_value = '([^']*)'/", $query, $value ); $out = array();
-		foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $key[1], $value[1], $meta[ $key[1] ] ) && 0 === strcasecmp( (string) $meta[ $key[1] ], (string) $value[1] ) ) $out[] = $id;
+		if ( isset( $value[1] ) ) {
+			foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $key[1], $meta[ $key[1] ] ) && 0 === strcasecmp( (string) $meta[ $key[1] ], (string) $value[1] ) ) $out[] = $id;
+		} elseif ( isset( $key[1] ) ) {
+			// کوئری «مقدار خالی نیست» (پاک‌سازی مرجع‌های یتیم).
+			foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $meta[ $key[1] ] ) && '' !== (string) $meta[ $key[1] ] ) $out[] = $id;
+			if ( preg_match( "/code\.meta_key = '([^']+)'/", $query, $code_key ) ) {
+				$out = array_values( array_filter( $out, function( $id ) use ( $code_key ) {
+					return ! isset( $GLOBALS['meta'][ $id ][ $code_key[1] ] ) || '' === (string) $GLOBALS['meta'][ $id ][ $code_key[1] ];
+				} ) );
+			}
+		}
 		sort( $out ); return $out;
+	}
+	public function get_results( $query, $mode = null ) {
+		preg_match( "/pm\.meta_key = '([^']+)'/", $query, $key );
+		$rows = array();
+		foreach ( $GLOBALS['meta'] as $id => $meta ) {
+			if ( isset( $key[1], $meta[ $key[1] ] ) && '' !== (string) $meta[ $key[1] ] ) {
+				$rows[] = array( 'id' => (string) $id, 'code' => (string) $meta[ $key[1] ] );
+			}
+		}
+		return $rows;
 	}
 }
 $GLOBALS['wpdb'] = new TCAS_Test_WPDB(); $GLOBALS['meta'] = array(); $GLOBALS['products'] = array();
@@ -28,7 +49,7 @@ class TCAS_Test_Product {
 	public $saved = 0;
 	public function __construct( $id, $sku, $type = 'simple', $parent = 0, $fail_save = false ) { $this->id = $id; $this->sku = $sku; $this->type = $type; $this->parent = $parent; $this->fail_save = $fail_save; $this->name = 'نام اصلی ' . $sku; $this->price = 9000.0; $this->status = 'publish'; $this->description = 'توضیح اصلی'; }
 	public function get_id() { return $this->id; } public function get_parent_id() { return $this->parent; } public function get_type() { return $this->type; }
-	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; }
+	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; } public function set_name( $n ) { $this->name = (string) $n; }
 	public function get_regular_price() { return $this->price; } public function get_status() { return $this->status; } public function get_description() { return $this->description; }
 	public function get_manage_stock( $context = 'view' ) { return $this->manage; } public function get_stock_quantity( $context = 'view' ) { return $this->qty; } public function get_stock_status( $context = 'view' ) { return $this->stock_status; }
 	public function set_manage_stock( $v ) { $this->manage = (bool) $v; } public function set_stock_quantity( $v ) { $this->qty = (float) $v; } public function set_stock_status( $v ) { $this->stock_status = $v; }
@@ -41,6 +62,13 @@ class TCAS_Api {
 	public static function fetch_product( $code ) { return self::fetch_reference( $code ); }
 	public static function fetch_reference( $reference ) { self::$calls[] = $reference; return isset( self::$responses[ $reference ] ) ? self::$responses[ $reference ] : new WP_Error( 'not_found', 'محصول ArioCase پیدا نشد.' ); }
 }
+/** دوبل تنظیمات: این مجموعه رفتار نوشتن عددی را می‌سنجد. */
+class TCAS_Core {
+	public static $settings = array( 'stock_mode' => 'quantity' );
+	public static function defaults() { return array( 'stock_mode' => 'quantity', 'fail_mode' => 'closed' ); }
+	public static function settings() { return array_merge( self::defaults(), self::$settings ); }
+}
+require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-pairing.php';
@@ -161,6 +189,117 @@ $map_b = TCAS_Mapping::map( 302, 'SAME-REMOTE-REF', true, 'ariocase' );
 pair_test( 'همان مرجع ریموت می‌تواند در providerهای جدا به محصولات متفاوت متصل شود', true === $map_a && true === $map_b && array( 301 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'vendor_a' ) && array( 302 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'ariocase' ) );
 $cross_provider_remap = TCAS_Mapping::map( 301, 'OTHER-REF', true, 'vendor_b' );
 pair_test( 'یک محصول برای جلوگیری از تداخل موجودی هم‌زمان به provider دوم منتقل نمی‌شود', is_wp_error( $cross_provider_remap ) && 'vendor_a' === TCAS_Mapping::partner_id( 301 ) );
+
+// --- فهرست مدل: یک مرجع همکار روی چند Variation تیساکیس ---
+TCAS_Core::$settings = array( 'stock_mode' => 'quantity' );
+$a52  = local_product( 70, 'A52' );
+$a52s = local_product( 71, 'A52s' );
+TCAS_Api::$responses['A52-MERGED'] = remote_product( 'A52-MERGED', array( 'stock' => array( 'quantity' => 3.0, 'status' => 'instock' ) ) );
+list( $first_preview, $first_result ) = connect_pair( 'A52', 'A52-MERGED' );
+pair_test( 'اولین Variation فهرست مدل عادی وصل می‌شود', ! is_wp_error( $first_result ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 70 ) );
+list( $duplicate_preview, $duplicate_result ) = connect_pair( 'A52s', 'A52-MERGED' );
+pair_test( 'بدون پرچم فهرست مدل، مرجع تکراری همچنان رد می‌شود', is_wp_error( $duplicate_result ) && '' === TCAS_Mapping::remote_code( 71 ) );
+
+$shared_preview = TCAS_Pairing::preview( array( 'local_code' => 'A52s', 'remote_code' => 'A52-MERGED', 'error' => '', 'shared_remote' => true ) );
+pair_test( 'پیش‌نمایش با پرچم اشتراک، کارت را قابل اتصال و با پیام مشترک می‌سازد', 'connect' === $shared_preview['row']['status'] && ! empty( $shared_preview['row']['shared_remote'] ) && false !== strpos( $shared_preview['row']['message'], 'همین موجودی' ) );
+$shared_result = TCAS_Pairing::connect( $shared_preview );
+pair_test( 'دومین Variation تیساکیس هم به همان Variation همکار وصل می‌شود', ! is_wp_error( $shared_result ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 71 ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 70 ) );
+pair_test( 'هر دو Variation موجودی همان مرجع را می‌گیرند', 3.0 === (float) $a52->get_stock_quantity() && 3.0 === (float) $a52s->get_stock_quantity() );
+
+// --- مرجع مشترک خودکار: برچسب خود Variation همکار چند مدل دارد («Samsung A52 / A52s») ---
+TCAS_Core::$settings = array( 'stock_mode' => 'quantity' );
+local_product( 72, 'SKU-72' );
+local_product( 73, 'SKU-73' );
+local_product( 74, 'SKU-74' );
+$GLOBALS['products'][72]->set_name( 'قاب چرم A52 ـ روشن' );
+$GLOBALS['products'][73]->set_name( 'قاب چرم A52s ـ روشن' );
+$GLOBALS['products'][74]->set_name( 'قاب چرم A54 ـ روشن' );
+TCAS_Api::$responses['MERGED-LABEL'] = remote_product( 'MERGED-LABEL', array( 'name' => 'Samsung A52 / A52s', 'remote_id' => 47978, 'stock' => array( 'quantity' => 5.0, 'status' => 'instock' ) ) );
+list( $auto_first, $auto_first_result ) = connect_pair( 'ID:72', 'MERGED-LABEL' );
+pair_test( 'کارت اول برچسب چندمدلی بدون پرچم کلاینت وصل می‌شود', ! is_wp_error( $auto_first_result ) && 'MERGED-LABEL' === TCAS_Mapping::remote_code( 72 ) );
+$auto_second = TCAS_Pairing::preview( pair_of( 'ID:73', 'MERGED-LABEL' ) );
+pair_test( 'بدون پرچم کلاینت، برچسب چندمدلی همکار خودکار مشترک شناخته می‌شود', 'connect' === $auto_second['row']['status'] && ! empty( $auto_second['row']['shared_remote'] ) );
+$auto_second_result = TCAS_Pairing::connect( $auto_second );
+pair_test( 'کارت دوم همان مرجع مشترک را می‌گیرد و موجودی یکی است', ! is_wp_error( $auto_second_result ) && 'MERGED-LABEL' === TCAS_Mapping::remote_code( 73 ) && 5.0 === (float) $GLOBALS['products'][73]->get_stock_quantity() );
+
+$not_in_list = TCAS_Pairing::preview( pair_of( 'ID:74', 'MERGED-LABEL' ) );
+pair_test( 'مدلی که در فهرست برچسب همکار نیست همچنان مرجع تکراری می‌گیرد', 'error' === $not_in_list['row']['status'] && false !== strpos( $not_in_list['row']['message'], '#72' ) && '' === TCAS_Mapping::remote_code( 74 ) );
+
+// --- کارت‌های از قبل متصل: بدون درخواست تازه ---
+$before_recheck = count( TCAS_Api::$calls );
+$recheck = TCAS_Pairing::preview( pair_of( 'ID:72', 'MERGED-LABEL' ) );
+pair_test( 'جفت از قبل متصل بدون هیچ درخواستی به همکار Connected برمی‌گردد', 'connected' === $recheck['row']['status'] && ! $recheck['row']['selectable'] && $before_recheck === count( TCAS_Api::$calls ) && false !== strpos( $recheck['row']['message'], 'تکراری' ) );
+
+$marked = TCAS_Pairing::annotate( array(
+	array( 'local_code' => 'ID:72', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:900', 'remote_code' => 'MERGED-LABEL' ),
+), 'ariocase' );
+$marked_by_code = array();
+foreach ( $marked['matches'] as $marked_match ) {
+	$marked_by_code[ $marked_match['local_code'] ] = $marked_match;
+}
+pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked_by_code['ID:72']['connected'] ) && ! empty( $marked_by_code['ID:73']['connected'] ) && empty( $marked_by_code['ID:74']['connected'] ) && empty( $marked_by_code['ID:900']['connected'] ) );
+pair_test( 'مرجع اشغال‌شده کارت می‌گیرد، ولی با پرچم انتقال تا از چشم نیفتد', 2 === $marked['skipped'] && 2 === count( $marked['taken'] ) && 'ID:74' === $marked['taken'][0]['local_code'] && 72 === $marked['taken'][0]['taken_by'] && ! empty( $marked_by_code['ID:74']['reclaim'] ) && ! empty( $marked_by_code['ID:900']['reclaim'] ) && 4 === count( $marked['matches'] ) );
+$bundled_marked = TCAS_Pairing::annotate( array(
+	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL', 'remote_label' => 'A52 / A52s' ),
+), 'ariocase' );
+pair_test( 'اگر برچسب همکار چندمدلی باشد، همان مرجع برای Variation دوم آزاد می‌ماند', 0 === $bundled_marked['skipped'] && ! empty( $bundled_marked['matches'][0]['shared_remote'] ) );
+
+TCAS_Mapping::map( 73, 'MERGED-LABEL', false, 'ariocase', true );
+$disabled_marked = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ) ), 'ariocase' );
+pair_test( 'نگاشت غیرفعال دوباره ارسال می‌شود (از قبل متصل حساب نمی‌شود)', 0 === $disabled_marked['connected'] );
+
+$other_code = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:70', 'remote_code' => 'SOMETHING-ELSE' ) ), 'ariocase' );
+pair_test( 'اگر مرجع تازه با مرجع ذخیره‌شده یکی نباشد، کارت دوباره بررسی می‌شود', 0 === $other_code['connected'] );
+
+// --- انتقال مرجع با تأیید: از Variation قبلی برداشته و به Variation جدید داده می‌شود ---
+local_product( 80, 'SKU-80' );
+local_product( 81, 'SKU-81' );
+TCAS_Api::$responses['MOVE-1'] = remote_product( 'MOVE-1', array( 'name' => 'Case MOVE', 'remote_id' => 55123, 'stock' => array( 'quantity' => 7.0, 'status' => 'instock' ) ) );
+list( $move_a, $move_a_result ) = connect_pair( 'ID:80', 'MOVE-1' );
+pair_test( 'Variation اول به مرجع انتقال وصل می‌شود', ! is_wp_error( $move_a_result ) && 'MOVE-1' === TCAS_Mapping::remote_code( 80 ) );
+$move_blocked = TCAS_Pairing::preview( pair_of( 'ID:81', 'MOVE-1' ) );
+pair_test( 'بدون تأیید کاربر هیچ انتقالی انجام نمی‌شود', 'error' === $move_blocked['row']['status'] && false !== strpos( $move_blocked['row']['message'], '#80' ) && '' === TCAS_Mapping::remote_code( 81 ) );
+$move_preview = TCAS_Pairing::preview( array_merge( pair_of( 'ID:81', 'MOVE-1' ), array( 'reclaim' => true ) ) );
+pair_test( 'با تأیید، کارت قابل انتقال می‌شود و محصول قبلی را نام می‌برد', 'connect' === $move_preview['row']['status'] && $move_preview['row']['selectable'] && 80 === (int) $move_preview['row']['reclaim'] && false !== strpos( $move_preview['row']['message'], '#80' ) );
+$move_result = TCAS_Pairing::connect( $move_preview );
+pair_test( 'انتقال انجام شد: نگاشت قبلی حذف و مرجع روی Variation جدید ثبت شد', ! is_wp_error( $move_result ) && 'MOVE-1' === TCAS_Mapping::remote_code( 81 ) && '' === TCAS_Mapping::remote_code( 80 ) && false !== strpos( $move_result['message'], '#80' ) );
+
+// --- مرجع یتیم: اتصال حذف شده ولی شناسهٔ قدیمی همکار روی محصول مانده ---
+local_product( 85, 'SKU-85' );
+local_product( 86, 'SKU-86' );
+TCAS_Api::$responses['STALE-1'] = remote_product( 'STALE-1', array( 'name' => 'Case STALE', 'remote_id' => 66001, 'stock' => array( 'quantity' => 2.0, 'status' => 'instock' ) ) );
+list( $stale_a, $stale_a_result ) = connect_pair( 'ID:85', 'STALE-1' );
+pair_test( 'Variation اول به مرجع یتیم‌شده وصل می‌شود', ! is_wp_error( $stale_a_result ) && 'STALE-1' === TCAS_Mapping::remote_code( 85 ) );
+TCAS_Mapping::forget( 85 );
+update_post_meta( 85, TCAS_Mapping::META_REMOTE_ID, 66001 );
+pair_test( 'قطع اتصال، مرجع را از فهرست صاحبان زنده حذف می‌کند', ! in_array( 85, TCAS_Mapping::holders_of( 'ID:66001' ), true ) && in_array( 85, TCAS_Mapping::holders_of( 'ID:66001', 'ariocase', false ), true ) );
+$stale_preview = TCAS_Pairing::preview( pair_of( 'ID:86', 'STALE-1' ) );
+pair_test( 'مرجع یتیم مانع اتصال Variation تازه نمی‌شود', 'connect' === $stale_preview['row']['status'] && $stale_preview['row']['selectable'] );
+pair_test( 'پاک‌سازی مرجع‌های یتیم، متای قدیمی را حذف می‌کند', TCAS_Mapping::prune_stale() >= 1 && '' === (string) get_post_meta( 85, TCAS_Mapping::META_REMOTE_ID, true ) );
+
+// --- نگاشت خراب: محصول حذف شده ولی مرجعش روی متا مانده ---
+local_product( 88, 'SKU-88' );
+local_product( 89, 'SKU-89' );
+TCAS_Api::$responses['BROKEN-1'] = remote_product( 'BROKEN-1', array( 'name' => 'Case BROKEN', 'remote_id' => 77001, 'stock' => array( 'quantity' => 3.0, 'status' => 'instock' ) ) );
+list( $broken_a, $broken_a_result ) = connect_pair( 'ID:88', 'BROKEN-1' );
+pair_test( 'Variation اول به مرجع وصل می‌شود', ! is_wp_error( $broken_a_result ) && 'BROKEN-1' === TCAS_Mapping::remote_code( 88 ) );
+unset( $GLOBALS['products'][88] ); // محصول دیگر بارگذاری نمی‌شود (حذف‌شده/خراب)
+pair_test( 'نگاشت خراب صاحب مرجع حساب نمی‌شود', ! in_array( 88, TCAS_Mapping::holders_of( 'ID:77001' ), true ) );
+$broken_preview = TCAS_Pairing::preview( pair_of( 'ID:89', 'BROKEN-1' ) );
+pair_test( 'نگاشت خراب مانع اتصال Variation تازه نمی‌شود', 'connect' === $broken_preview['row']['status'] );
+$broken_rows = TCAS_Mapping::orphans();
+pair_test( 'نگاشت خراب در فهرست تشخیصی دیده می‌شود', 1 === count( $broken_rows ) && 88 === (int) $broken_rows[0]['id'] && 'BROKEN-1' === $broken_rows[0]['code'] );
+pair_test( 'پاک‌سازی نگاشت خراب، متایش را حذف می‌کند', 1 === TCAS_Mapping::clear_broken() && '' === (string) TCAS_Mapping::remote_code( 88 ) );
+
+// --- حالت flag: فقط موجود/ناموجود ---
+TCAS_Core::$settings = array( 'stock_mode' => 'flag' );
+$flag_product = local_product( 60, 'FLAG-1' );
+TCAS_Api::$responses['FLAG-R'] = remote_product( 'FLAG-R', array( 'stock' => array( 'quantity' => 0.0, 'status' => 'instock' ) ) );
+connect_pair( 'FLAG-1', 'FLAG-R' );
+pair_test( 'حالت flag فقط وضعیت را می‌نویسد و انبار عددی محلی را دست نمی‌زند', 'outofstock' === $flag_product->get_stock_status() && null === $flag_product->get_stock_quantity() && false === $flag_product->get_manage_stock() );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

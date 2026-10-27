@@ -51,11 +51,13 @@ if ( ! class_exists( 'TCAS_Admin' ) ) {
 			$partner_id = TCAS_Partners::selected_id();
 			wp_localize_script( 'tcas-admin', 'TCAS_ADMIN', array(
 				'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+				'restUrl' => esc_url_raw( rest_url( TCAS_Rest::NAMESPACE_V1 . '/do' ) ),
+				'restNonce' => wp_create_nonce( 'wp_rest' ),
+				'stepSize' => TCAS_Ajax::STEP_SIZE,
 				'partnerId' => $partner_id,
 				'partnerLabel' => TCAS_Partners::label( $partner_id ),
 				'mappingsUrl' => admin_url( 'admin.php?page=' . TCAS_Core::PAGE . '&tab=mappings&partner_id=' . rawurlencode( $partner_id ) ),
 				'nonce'   => wp_create_nonce( TCAS_Core::NONCE ),
-				'maxPairs' => TCAS_Core::MAX_CODES,
 				'strings' => array(
 					'working'      => 'در حال انجام…',
 					'preview'      => 'دریافت پیش‌نمایش',

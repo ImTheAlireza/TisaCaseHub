@@ -24,6 +24,29 @@ matcher_test( 'Poco و Mi و Redmi بدون تغییر مدل حذف می‌شو
 $result = TCAS_Matcher::match( array( matcher_variation( 'ID:56', 'Samsung A56', '' ) ), array( matcher_variation( 'ID:9/56', 'A56', '' ), matcher_variation( 'ID:9/55', 'A55', '' ) ) );
 matcher_test( 'A56 فقط به A56 وصل می‌شود نه A55', array( 'ID:56=ID:9/56' ) === matcher_refs( $result ) && 1 === count( $result['unmatched'] ) );
 
+// --- رنگ بُعدی جدا از مدل است: «A23 4G / آبی» با «Samsung A23 / آبی» هم‌مدل است ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:305588', 'A23 4G / آبی' ), matcher_variation( 'ID:305589', 'A23 4G / صورتی' ) ),
+	array( matcher_variation( 'ID:45024/45190', 'Samsung A23 / آبی' ), matcher_variation( 'ID:45024/45191', 'Samsung A23 / صورتی' ) )
+);
+$color_refs = matcher_refs( $result );
+sort( $color_refs );
+matcher_test( 'هر رنگ فقط به همان رنگ وصل می‌شود', array( 'ID:305588=ID:45024/45190', 'ID:305589=ID:45024/45191' ) === $color_refs, implode( ',', matcher_refs( $result ) ) );
+matcher_test( 'جفت رنگ‌محور با نشان «بررسی» برمی‌گردد نه قطعی', 2 === count( $result['matches'] ) && 'color' === $result['matches'][0]['confidence'] && 'color' === $result['matches'][0]['matched_by'] );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 / آبی' ) ), array( matcher_variation( 'ID:9/1', 'A23 / صورتی' ) ) );
+matcher_test( 'رنگ متناقض هرگز جفت نمی‌شود', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 / آبی' ), matcher_variation( 'ID:2', 'A23 / صورتی' ) ), array( matcher_variation( 'ID:9/1', 'A23' ) ) );
+matcher_test( 'وقتی یک طرف رنگ ندارد و چند هم‌مدل هست، حدس زده نمی‌شود', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 4G / آبی' ) ), array( matcher_variation( 'ID:9/1', 'Samsung A23 / آبی' ) ) );
+matcher_test( 'نسل نامشخص در یک طرف مانع اتصال نیست', 1 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 4G / آبی' ) ), array( matcher_variation( 'ID:9/1', 'Samsung A23 5G / آبی' ) ) );
+matcher_test( 'نسل متناقض (4G در برابر 5G) همچنان مانع است', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A23 4G / آبی' ), matcher_variation( 'ID:2', 'A23 4G / صورتی' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A23 / آبی' ) )
+);
+matcher_test( 'رنگ مشترک حتی وقتی طرف مقابل یک Variation دارد انتخاب می‌شود', 1 === count( $result['matches'] ) && 'ID:1=ID:9/1' === matcher_refs( $result )[0] );
+
 $local = array(
 	matcher_variation( 'ID:101', 'Samsung Galaxy S25 Ultra', 'SHARED' ),
 	matcher_variation( 'ID:102', 'Samsung Galaxy S24', 'SHARED' ),
@@ -96,6 +119,192 @@ $result = TCAS_Matcher::match(
 	array( matcher_variation( 'ID:9/2', 'Second', '' ), matcher_variation( 'ID:9/1', 'First', '' ) )
 );
 matcher_test( 'خروجی به ترتیب Variationهای Local مرتب است', array( 'ID:2=ID:9/2', 'ID:1=ID:9/1' ) === matcher_refs( $result ) );
+
+
+// ---- تشخیص دقیق دلیل رد شدن هر Variation (فلگ‌گذاری موارد مشکل‌دار) ----
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', 'X' ), matcher_variation( 'ID:1', 'Blue', 'Y' ) ),
+	array( matcher_variation( 'ID:9/1', 'Red', 'X' ), matcher_variation( 'ID:9/2', 'Blue', 'Y' ) )
+);
+$issue = $result['ambiguous'][0];
+matcher_test( 'مرجع تکراری در همان فروشگاه با دلیل و شمارش تکرار علامت می‌خورد', 'duplicate_reference' === $issue['reason'] && 2 === $issue['duplicate_count'] && 1 === count( $issue['twins'] ) && 'Blue' === $issue['twins'][0]['label'] && 'ID:1' === $issue['twins'][0]['reference'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', 'X' ) ),
+	array( matcher_variation( 'DUP', 'Red', 'X' ), matcher_variation( 'DUP', 'Blue', 'Y' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'همتای دارای مرجع تکراری به‌عنوان کاندید غیرقابل‌اتصال نشان داده می‌شود', 'counterpart_unusable' === $issue['reason'] && 1 === $issue['candidate_count'] && 'sku' === $issue['candidates'][0]['key'] && empty( $issue['candidates'][0]['usable'] ) && 'DUP' === $issue['candidates'][0]['reference'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A56', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A56', 'A' ), matcher_variation( 'ID:9/2', 'Samsung A56', 'B' ) )
+);
+$issue = $result['ambiguous'][0];
+matcher_test( 'چند گزینهٔ محتمل با دلیل مشخص و فهرست کاندیدها برمی‌گردد', 'multiple_candidates' === $issue['reason'] && 2 === $issue['candidate_count'] && 2 === $issue['usable_count'] && 2 === count( $issue['candidates'] ) && 'label' === $issue['candidates'][0]['key'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'کاندیدهای ابهام مرجع دقیق و فروشگاه خودشان را دارند', 'ariocase' === $issue['candidates'][0]['shop'] && in_array( $issue['candidates'][0]['reference'], array( 'ID:9/1', 'ID:9/2' ), true ) );
+matcher_test( 'کلید مشترک بدون گزینهٔ چندگانهٔ محلی هم فلگ می‌شود', 'shared_key' === $result['ambiguous'][1]['reason'] && 1 === $result['ambiguous'][1]['usable_count'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'iPhone 13', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'iPhone 14', '' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'Variation بدون همتا دلیل «بدون کاندید» و فهرست خالی دارد', 'no_candidate' === $issue['reason'] && 0 === $issue['candidate_count'] && array() === $issue['candidates'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', '' ) ),
+	array( matcher_variation( 'DUP', 'Red', '' ), matcher_variation( 'DUP', 'Blue', '' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'همتای دارای مرجع تکراری به‌عنوان «غیرقابل‌اتصال» علامت می‌خورد', 'counterpart_unusable' === $issue['reason'] && $issue['candidate_count'] > 0 && 0 === $issue['usable_count'] && empty( $issue['candidates'][0]['usable'] ), json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( '', 'Same', 'X' ) ),
+	array( matcher_variation( 'ID:9/1', 'Same', 'X' ) )
+);
+matcher_test( 'Variation بدون مرجع دقیق دلیل «مرجع ندارد» می‌گیرد', 'missing_reference' === $result['unmatched'][0]['reason'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra', 'ABC-1' ) ),
+	array( matcher_variation( 'ID:9/1', 's25ultra', 'ABC-1' ) )
+);
+matcher_test( 'تطبیق SKU با اطمینان کامل و بدون فلگ برمی‌گردد', 'sku' === $result['matches'][0]['matched_by'] && 'exact' === $result['matches'][0]['confidence'] && 1 === $result['summary']['exact'] && 0 === $result['summary']['fuzzy'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra', '' ) ),
+	array( matcher_variation( 'ID:9/1', 's25ultra', '' ) )
+);
+matcher_test( 'تطبیق از روی Label با فلگ بررسی و شمارش جداگانه برمی‌گردد', 'label' === $result['matches'][0]['matched_by'] && 'fuzzy' === $result['matches'][0]['confidence'] && 1 === $result['summary']['fuzzy'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra black', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'black s25ultra', '' ) )
+);
+matcher_test( 'تطبیق از روی Token هم Fuzzy و قابل‌بررسی علامت می‌خورد', 'tokens' === $result['matches'][0]['matched_by'] && 'fuzzy' === $result['matches'][0]['confidence'] );
+
+
+// ---- تطبیق هوشمند خانوادهٔ مدل (برچسب‌های هم‌معنی با نگارش متفاوت) ----
+$result = TCAS_Matcher::match(
+	array(
+		matcher_variation( 'ID:401477', 'Redmi Note 11 Pro/12 Pro 4G', '' ),
+		matcher_variation( 'ID:401476', 'Redmi Note 11 4G', '' ),
+		matcher_variation( 'ID:401481', 'Redmi Note 14 Pro 4G', '' ),
+	),
+	array(
+		matcher_variation( 'ID:45969/46049', 'Xiaomi Note 14 Pro (4G / 5G)', '' ),
+		matcher_variation( 'ID:45969/46044', 'Xiaomi Note 11 Pro / Note 11s / Note 12s', '' ),
+		matcher_variation( 'ID:45969/46045', 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', '' ),
+	)
+);
+matcher_test( 'برچسب هم‌معنی با نام برند متفاوت از راه خانوادهٔ مدل جفت می‌شود', in_array( 'ID:401477=ID:45969/46045', matcher_refs( $result ), true ) && 'family' === $result['matches'][0]['confidence'] && 'model' === $result['matches'][0]['matched_by'], json_encode( matcher_refs( $result ), JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'نسل شبکهٔ چندگانه (4G / 5G) مانع جفت‌شدن با 4G نمی‌شود', in_array( 'ID:401481=ID:45969/46049', matcher_refs( $result ), true ) && 'family' === $result['matches'][2]['confidence'] );
+matcher_test( 'برچسب کوتاه خانواده با برچسب چندمدلی به‌عنوان پیشنهاد جفت می‌شود', in_array( 'ID:401476=ID:45969/46044', matcher_refs( $result ), true ) && 'suggested' === $result['matches'][1]['confidence'] && 'family' === $result['matches'][1]['matched_by'], json_encode( $result['matches'][1], JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'پیشنهاد خانوادگی مدل‌های مشترک و اضافه را برای بازبینی نشان می‌دهد', array( '11', 'note' ) === $result['matches'][1]['shared'] && in_array( '11s', $result['matches'][1]['extra'], true ) && in_array( '12s', $result['matches'][1]['extra'], true ) );
+matcher_test( 'خلاصهٔ تطبیق تعداد خانواده و پیشنهاد را جدا می‌شمارد', 2 === $result['summary']['family'] && 1 === $result['summary']['suggested'] && 0 === $result['summary']['exact'] && 3 === count( $result['matches'] ) && array() === $result['ambiguous'] && array() === $result['unmatched'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 11s', '' ), matcher_variation( 'ID:9/2', 'Note 11 Pro / Note 12s', '' ) )
+);
+matcher_test( 'دو خانوادهٔ چندمدلی برای یک Variation، پیشنهاد خودکار نمی‌سازد و مبهم می‌ماند', 0 === count( $result['matches'] ) && 'multiple_families' === $result['ambiguous'][0]['reason'] && 2 === $result['ambiguous'][0]['candidate_count'], json_encode( $result['ambiguous'][0], JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A34 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A34 5G', '' ) )
+);
+matcher_test( 'خانوادهٔ مدل هم 4G را به 5G وصل نمی‌کند', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 13 Pro 4G', '' ) )
+);
+matcher_test( 'مدل متفاوت در همان خانواده جفت نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', 'SKU-A' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ), matcher_variation( 'ID:9/2', 'SKU-A', 'SKU-A' ) )
+);
+matcher_test( 'اولویت SKU یکتا بر خانوادهٔ مدل حفظ می‌شود', array( 'ID:1=ID:9/2' ) === matcher_refs( $result ) && 'sku' === $result['matches'][0]['matched_by'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ), matcher_variation( 'ID:1', 'Note 11 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'مرجع تکراری هرگز از راه خانوادهٔ مدل جفت نمی‌شود', 0 === count( $result['matches'] ) && 'duplicate_reference' === $result['ambiguous'][0]['reason'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ), matcher_variation( '', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'Variation بدون مرجع از خانوادهٔ مدل کنار گذاشته می‌شود', array( 'ID:1=ID:9/1' ) === matcher_refs( $result ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ), matcher_variation( 'ID:2', 'Note 11 Pro/12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'خانوادهٔ مدل یک‌به‌یک است و دو Local به یک Remote وصل نمی‌شوند', 0 === count( $result['matches'] ) );
+
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'iPhone 11', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 11s', '' ) )
+);
+matcher_test( 'برچسب تک‌توکنی (iPhone 11) با خانوادهٔ مدلی دیگر پیشنهاد نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A56', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A56 / A56s', '' ) )
+);
+matcher_test( 'یک Variation تیساکیس با برچسب چندمدلی همکار، پیشنهاد «فهرست مدل» می‌گیرد', 1 === count( $result['matches'] ) && 'list' === $result['matches'][0]['confidence'] && ! empty( $result['matches'][0]['shared_remote'] ) );
+
+// --- فهرست مدل: «Samsung A52 / A52s» در همکار ↔ دو Variation جدا در تیساکیس ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:407473', 'Samsung A52', '' ), matcher_variation( 'ID:407474', 'Samsung A52s', '' ) ),
+	array( matcher_variation( 'ID:46922/46993', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'یک Variation همکار با دو مدل، دو کارت جدا برای دو Variation تیساکیس می‌سازد', 2 === count( $result['matches'] ) );
+matcher_test( 'هر دو کارت به همان مرجع همکار و با نشان «فهرست مدل» ساخته می‌شوند', 'ID:407473=ID:46922/46993' === matcher_refs( $result )[0] && 'ID:407474=ID:46922/46993' === matcher_refs( $result )[1] && 'list' === $result['matches'][0]['confidence'] && 'list' === $result['matches'][1]['confidence'] );
+matcher_test( 'مدل هر کارت و مدل‌های دیگر همان برچسب گزارش می‌شود', array( 'a52' ) === $result['matches'][0]['shared'] && in_array( 'a52s', $result['matches'][0]['extra'], true ) && array( 'a52s' ) === $result['matches'][1]['shared'] );
+matcher_test( 'کارت‌های فهرست مدل در فهرست مبهم تکرار نمی‌شوند', 0 === count( $result['ambiguous'] ) && 0 === count( $result['unmatched'] ) && 2 === $result['summary']['list'] );
+
+// --- نام Variation تیساکیس واژه‌های تزئینی دارد («A52s ـ قاب چرم باک روشن») ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:407472', 'A52 ـ قاب چرم باک روشن', '' ), matcher_variation( 'ID:407473', 'A52s ـ قاب چرم باک روشن', '' ) ),
+	array( matcher_variation( 'ID:46922/46978', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'واژه‌های تزئینی فارسی در نام Variation مانع پخش «فهرست مدل» نمی‌شوند', 'ID:407472=ID:46922/46978' === matcher_refs( $result )[0] && 'ID:407473=ID:46922/46978' === matcher_refs( $result )[1] && 2 === $result['summary']['list'] );
+matcher_test( 'مدل گزارش‌شدهٔ کارت تمیز است (بدون واژه‌های تزئینی)', array( 'a52' ) === $result['matches'][0]['shared'] && array( 'a52s' ) === $result['matches'][1]['shared'] && in_array( 'a52s', $result['matches'][0]['extra'], true ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A52 Pro ـ قاب چرم', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'پسوند لاتین اضافه (A52 Pro) با مدل A52 یکی گرفته نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A52s ـ قاب چرم', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'قاب چرم / قاب شفاف', '' ) )
+);
+matcher_test( 'برچسب همکار بدون رقم مدل، فهرست مدل حساب نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 5G / A52s 5G', '' ) )
+);
+matcher_test( 'فهرست مدل هم 4G را با 5G جفت نمی‌کند', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A52 / A52s', '' ), matcher_variation( 'ID:9/2', 'A52 / A53', '' ) )
+);
+$issues = array_merge( $result['ambiguous'], $result['unmatched'] );
+matcher_test( 'اگر یک Variation به دو برچسب چندمدلی بخورد، هیچ‌کدام خودکار وصل نمی‌شود', 0 === count( $result['matches'] ) && 3 === count( $issues ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A52', '' ), matcher_variation( 'ID:2', 'Galaxy A52', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'دو Variation محلی با مدل یکسان، فهرست مدل مبهم می‌سازد و وصل نمی‌شود', 0 === count( $result['matches'] ) );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

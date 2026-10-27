@@ -136,5 +136,96 @@ foreach ( $remaining as $item ) { if ( 'a56' === TCAS_Matcher::normalize_label( 
 foreach ( $matches as $match ) { if ( 'a56' === TCAS_Matcher::normalize_label( $match['local_label'] ) || 'a56' === TCAS_Matcher::normalize_label( $match['remote_label'] ) ) $a56_matched = true; }
 smart_integration_test( 'A56 بدون Variation واقعی Local از Attribute والد جفت نمی‌شود', $a56_remaining && ! $a56_matched && 17 === count( $local_ids ) );
 smart_integration_test( 'برچسب s25ultra از variation_attributes خام بازیابی شده است', $response && 's25ultra' === $matches[7]['remote_label'] );
+$diagnostics_ok   = 34 === count( $remaining );
+$reason_counts    = array();
+$with_candidates  = 0;
+$candidate_ref_ok = true;
+$known_reasons    = array( 'duplicate_reference', 'multiple_candidates', 'shared_key', 'counterpart_unusable', 'missing_reference', 'no_candidate' );
+foreach ( $remaining as $issue ) {
+	$diagnostics_ok = $diagnostics_ok
+		&& ! empty( $issue['reason'] )
+		&& in_array( $issue['reason'], $known_reasons, true )
+		&& array_key_exists( 'candidate_count', $issue )
+		&& array_key_exists( 'usable_count', $issue )
+		&& array_key_exists( 'candidates', $issue )
+		&& array_key_exists( 'duplicate_count', $issue );
+	if ( isset( $issue['reason'] ) ) {
+		$reason_counts[ $issue['reason'] ] = isset( $reason_counts[ $issue['reason'] ] ) ? $reason_counts[ $issue['reason'] ] + 1 : 1;
+	}
+	if ( ! empty( $issue['candidate_count'] ) ) {
+		$with_candidates++;
+	}
+	foreach ( (array) $issue['candidates'] as $candidate ) {
+		if ( empty( $candidate['reference'] ) || 0 !== strpos( (string) $candidate['reference'], 'ID:' ) ) {
+			$candidate_ref_ok = false;
+		}
+	}
+}
+smart_integration_test( 'هر مورد ردشده دلیل شناخته‌شده و شمارش کاندید دارد', $diagnostics_ok, json_encode( $reason_counts, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'در این Fixture هیچ همتای محتملی نیست و هر ۳۴ مورد «بدون کاندید» علامت می‌خورند', 0 === $with_candidates && $candidate_ref_ok && array( 'no_candidate' => 34 ) === $reason_counts, json_encode( $reason_counts, JSON_UNESCAPED_UNICODE ) );
+
+// سناریوی دوم: یک Variation محلی با دو همتای هم‌برچسب در سمت مقابل → مورد مبهم با کاندید مشخص.
+$ambiguous_local_id  = $local_parent_id + 201;
+$ambiguous_remote_id = $remote_parent_id + 201;
+$GLOBALS['integration_products'][ $ambiguous_local_id ] = new TCAS_Integration_Product( $ambiguous_local_id, 'variation', 'Local - A56', 'L-A56', array( 'Model' => 'A56' ), array(), $local_parent_id );
+$GLOBALS['local_ids'] = array( $ambiguous_local_id );
+TCAS_Api::$product = array(
+	'remote_id' => $remote_parent_id, 'parent_remote_id' => 0, 'code' => '', 'name' => 'Remote parent', 'type' => 'variable',
+	'variations' => array(
+		array( 'remote_id' => $ambiguous_remote_id, 'parent_remote_id' => $remote_parent_id, 'code' => 'R-A56-1', 'name' => 'Remote - A56 first', 'variation_attributes' => array( 'Model' => 'A56' ) ),
+		array( 'remote_id' => $ambiguous_remote_id + 1, 'parent_remote_id' => $remote_parent_id, 'code' => 'R-A56-2', 'name' => 'Remote - A56 second', 'variation_attributes' => array( 'Model' => 'A56' ) ),
+	),
+);
+$_REQUEST['nonce'] = 'valid'; $_POST['local_code'] = $local_reference; $_POST['remote_code'] = $remote_reference;
+try { TCAS_Ajax::match_variations(); $ambiguous_response = null; } catch ( TCAS_JSON_Response $caught ) { $ambiguous_response = $caught; }
+$ambiguous_issues = $ambiguous_response && $ambiguous_response->success ? $ambiguous_response->data['ambiguous'] : array();
+$local_issue      = isset( $ambiguous_issues[0] ) ? $ambiguous_issues[0] : array();
+$remote_issue     = isset( $ambiguous_issues[1] ) ? $ambiguous_issues[1] : array();
+smart_integration_test( 'هم‌برچسب‌های سمت مقابل در مسیر AJAX هیچ جفتی نمی‌سازند', $ambiguous_response && $ambiguous_response->success && 0 === count( $ambiguous_response->data['matches'] ), $ambiguous_response ? json_encode( $ambiguous_response->data['matches'], JSON_UNESCAPED_UNICODE ) : 'no response' );
+smart_integration_test( 'Variation محلی با دو همتای هم‌برچسب دلیل «چند گزینه» و دو کاندید ID می‌گیرد', 'multiple_candidates' === $local_issue['reason'] && 2 === $local_issue['candidate_count'] && 2 === count( $local_issue['candidates'] ) && 'label' === $local_issue['candidates'][0]['key'] && 0 === strpos( (string) $local_issue['candidates'][0]['reference'], 'ID:' . $remote_parent_id . '/' ), json_encode( $local_issue, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'همتای سمت مقابل با کلید مشترک و شاهد محلی علامت می‌خورد', 'shared_key' === $remote_issue['reason'] && 1 === $remote_issue['candidate_count'] && 'ID:' . $ambiguous_local_id === $remote_issue['candidates'][0]['reference'], json_encode( $remote_issue, JSON_UNESCAPED_UNICODE ) );
+
+$flagged = 0;
+$exact   = 0;
+foreach ( $matches as $match ) {
+	if ( 'exact' === $match['confidence'] ) { $exact++; } else { $flagged++; }
+	if ( ! in_array( $match['matched_by'], array( 'sku', 'label', 'tokens' ), true ) ) { $exact = -999; }
+}
+smart_integration_test( 'تطبیق‌های خروجی نوع کلید و اطمینان را مشخص می‌کنند', $exact + $flagged === count( $matches ) && 0 === $exact && 8 === $flagged, json_encode( array( 'exact' => $exact, 'flagged' => $flagged ) ) );
+
+// سناریوی سوم: همان دادهٔ واقعی کاربر — نگارش متفاوت برند و برچسب چندمدلی.
+$GLOBALS['local_ids'] = array( $local_parent_id + 301, $local_parent_id + 302, $local_parent_id + 303 );
+$family_local = array(
+	$local_parent_id + 301 => 'Redmi Note 11 Pro/12 Pro 4G',
+	$local_parent_id + 302 => 'Redmi Note 11 4G',
+	$local_parent_id + 303 => 'Redmi Note 14 Pro 4G',
+);
+foreach ( $family_local as $variation_id => $label ) {
+	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, '', array( 'Model' => $label ), array(), $local_parent_id );
+}
+// والد تازه فقط همان سه Variation را دارد تا Fixture قبلی در نتیجه اثر نگذارد.
+$GLOBALS['integration_products'][ $local_parent_id ] = new TCAS_Integration_Product(
+	$local_parent_id, 'variable', 'Local parent (family)', 'LOCAL-PARENT', array( array( 'name' => 'Model', 'options' => array_values( $family_local ) ) ), array_keys( $family_local )
+);
+TCAS_Api::$product = array(
+	'remote_id' => $remote_parent_id, 'parent_remote_id' => 0, 'code' => '', 'name' => 'Remote parent', 'type' => 'variable',
+	'variations' => array(
+		array( 'remote_id' => $remote_parent_id + 401, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 14 Pro (4G / 5G)', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 14 Pro (4G / 5G)' ) ),
+		array( 'remote_id' => $remote_parent_id + 402, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 11 Pro / Note 11s / Note 12s', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 11 Pro / Note 11s / Note 12s' ) ),
+		array( 'remote_id' => $remote_parent_id + 403, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 11 Pro / Note 12 Pro (4G)' ) ),
+	),
+);
+try { TCAS_Ajax::match_variations(); $family_response = null; } catch ( TCAS_JSON_Response $caught ) { $family_response = $caught; }
+$family_matches = $family_response && $family_response->success ? $family_response->data['matches'] : array();
+$family_pairs   = array();
+foreach ( $family_matches as $match ) {
+	$family_pairs[ $match['local_label'] ] = array( $match['remote_label'], $match['confidence'] );
+}
+smart_integration_test( 'در مسیر AJAX هر سه Variation با نگارش متفاوت برند جفت می‌شوند', 3 === count( $family_matches ), json_encode( $family_pairs, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'Note 11 Pro/12 Pro 4G با Note 11 Pro / Note 12 Pro (4G) خانواده‌ای می‌شود', isset( $family_pairs['Redmi Note 11 Pro/12 Pro 4G'] ) && 'family' === $family_pairs['Redmi Note 11 Pro/12 Pro 4G'][1] && false !== strpos( $family_pairs['Redmi Note 11 Pro/12 Pro 4G'][0], 'Note 12 Pro' ) );
+smart_integration_test( 'Note 14 Pro 4G با نسخهٔ (4G / 5G) جفت می‌شود', isset( $family_pairs['Redmi Note 14 Pro 4G'] ) && false !== strpos( $family_pairs['Redmi Note 14 Pro 4G'][0], '4G / 5G' ) );
+smart_integration_test( 'برچسب کوتاه Note 11 4G به‌صورت پیشنهاد خانوادگی وصل می‌شود', isset( $family_pairs['Redmi Note 11 4G'] ) && 'suggested' === $family_pairs['Redmi Note 11 4G'][1] );
+smart_integration_test( 'خلاصهٔ پاسخ AJAX شمارش خانواده و پیشنهاد را برمی‌گرداند', $family_response && 2 === $family_response->data['summary']['family'] && 1 === $family_response->data['summary']['suggested'] && array() === $family_response->data['unmatched'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );
