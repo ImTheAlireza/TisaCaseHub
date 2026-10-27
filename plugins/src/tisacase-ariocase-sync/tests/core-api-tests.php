@@ -52,7 +52,7 @@ function call_build_url( $code, $kind, $settings ) {
 
 $codes = TCAS_Core::parse_codes( "CH1،CH2\nCH1; CH3, CH4" );
 api_test( 'ورودی کدها یکتا و مرتب می‌شود', array( 'CH1', 'CH2', 'CH3', 'CH4' ) === $codes, json_encode( $codes ) );
-api_test( 'سقف ۵۰ کد اعمال می‌شود', 50 === count( TCAS_Core::parse_codes( range( 1, 80 ) ) ) );
+api_test( 'سقف قبلی ۵۰ کد حذف شده و ۸۰ کد پذیرفته می‌شود', 80 === count( TCAS_Core::parse_codes( range( 1, 80 ) ) ) );
 $pairs = TCAS_Core::parse_pairs( "AR120 - AR22\nLOCAL-A - REMOTE-B\nAR120 - AR22" );
 api_test( 'جفت دو کد با فاصله و خط جدید خوانده و تکراری حذف می‌شود', 2 === count( $pairs ) && 'AR120' === $pairs[0]['local_code'] && 'AR22' === $pairs[0]['remote_code'] && 'LOCAL-A' === $pairs[1]['local_code'] );
 $malformed = TCAS_Core::parse_pairs( 'AR120 - AR22 - EXTRA' );
@@ -298,6 +298,21 @@ api_test( 'تضاد Parent ID ذخیره‌شده پیش از HTTP رد می‌�
 configure( $actual );
 $variation_type_mismatch = TCAS_Api::fetch_stock( 'ID:700/701', array( 'type' => 'simple', 'remote_id' => 701, 'parent_remote_id' => 700 ) );
 api_test( 'مرجع Variation برای نگاشت محصول ساده پذیرفته نمی‌شود', is_wp_error( $variation_type_mismatch ) && 'tcas_variation_type_mismatch' === $variation_type_mismatch->get_error_code() && 0 === count( $GLOBALS['requests'] ) );
+
+// --- بدون سقف: محصولات متغیر می‌توانند صدها Variation داشته باشند ---
+$many = array();
+for ( $i = 1; $i <= 250; $i++ ) {
+	$many[] = 'SKU-' . $i . ' - ID:9/' . $i;
+}
+$parsed = TCAS_Core::parse_pairs( implode( "\n", $many ) );
+api_test( 'همهٔ ۲۵۰ جفت (بدون محدودیت ۵۰تایی) پذیرفته می‌شوند', 250 === count( $parsed ) );
+api_test( 'آخرین جفت هم با شناسهٔ درست خوانده می‌شود', 'SKU-250' === $parsed[249]['local_code'] && 'ID:9/250' === $parsed[249]['remote_code'] && '' === $parsed[249]['error'] );
+$codes = array();
+for ( $i = 1; $i <= 300; $i++ ) {
+	$codes[] = 'CODE' . $i;
+}
+api_test( 'فهرست کدها هم از سقف قبلی ۵۰ عبور می‌کند', 300 === count( TCAS_Core::parse_codes( implode( ' ', $codes ) ) ) );
+api_test( 'سقف ایمنی بالا (۲۰۰۰) تعریف شده است', 2000 === TCAS_Core::MAX_CODES );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) { exit( $fail ? 1 : 0 ); }

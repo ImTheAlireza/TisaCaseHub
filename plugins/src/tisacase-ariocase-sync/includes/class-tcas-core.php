@@ -16,7 +16,8 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		const OPTION_SETTINGS_VERSION = 'tcas_ariocase_settings_version';
 		const SETTINGS_VERSION        = 2;
 		const OPTION_LOGS            = 'tcas_ariocase_logs';
-		const MAX_CODES              = 50;
+		/** سقف ایمنی بسیار بالا؛ عملاً محدودیتی برای تعداد Variationها اعمال نمی‌شود. */
+		const MAX_CODES              = 2000;
 
 		private static $instance = null;
 		private static $settings_override = null;

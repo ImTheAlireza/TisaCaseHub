@@ -33,7 +33,7 @@ function makeDom(entryCount = 1) {
 		<div id="tcas-connect-progress" class="tcas-progress" hidden><progress max="100" value="0"></progress><span>۰٪</span></div></section>
 		<input id="tcas-test-code"><button id="tcas-test-connection">تست</button><div id="tcas-test-result"></div>
 	</body></html>`, { url: 'https://tisa.test/wp-admin/admin.php?page=tcas', runScripts: 'outside-only' });
-	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', restUrl: 'https://tisa.test/wp-json/tcas/v1/do', restNonce: 'rest-nonce', stepSize: 5, nonce: 'nonce', maxPairs: 50, partnerLabel: 'ArioCase', mappingsUrl: '/wp-admin/admin.php?page=tcas-mappings', strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
+	dom.window.TCAS_ADMIN = { ajaxUrl: '/wp-admin/admin-ajax.php', restUrl: 'https://tisa.test/wp-json/tcas/v1/do', restNonce: 'rest-nonce', stepSize: 5, nonce: 'nonce', partnerLabel: 'ArioCase', mappingsUrl: '/wp-admin/admin.php?page=tcas-mappings', strings: { working: '...', selectRows: 'select', disconnect: 'confirm' } };
 	return dom;
 }
 async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!fn()) { if (Date.now() - start > timeout) throw new Error('waitFor timeout'); await new Promise((resolve) => setTimeout(resolve, 10)); } }
@@ -642,6 +642,60 @@ function type(entry, field, value) {
 	card.querySelector('.tcas-local-code').value = 'TSY';
 	card.querySelector('.tcas-local-code').dispatchEvent(new window.Event('input'));
 	ok('ویرایش دستی، رکورد ذخیره‌شدهٔ قبلی را پاک می‌کند', Object.keys(JSON.parse(window.localStorage.getItem('tcas:cards:ariocase') || '{}')).length === 0);
+	dom.window.close();
+}
+
+// ---------- ۷ف) بدون سقف: همهٔ Variationها (حتی ۲۵۰ مورد) کارت می‌گیرند ----------
+{
+	const dom = makeDom(0); const { window } = dom;
+	const matches = [];
+	for (let i = 0; i < 250; i++) {
+		matches.push({ local_code: 'ID:' + (1000 + i), remote_code: 'ID:9/' + (2000 + i), local_label: 'مدل ' + i, remote_label: 'مدل ' + i, confidence: 'exact', matched_by: 'sku', score: 100 });
+	}
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') === 'tcas_match_variations') return reply({ matches, ambiguous: [], unmatched: [], local: { name: 'L', reference: 'ID:0', count: 250 }, remote: { name: 'R', reference: 'ID:9', count: 250 } });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 250, 20000);
+	ok('همهٔ ۲۵۰ جفت ساخته می‌شوند و هیچ‌کدام به‌خاطر سقف حذف نمی‌شود', window.document.querySelectorAll('.tcas-pair-entry').length === 250);
+	ok('دکمهٔ «دسته بعد» لازم نیست و مخفی می‌ماند', window.document.getElementById('tcas-smart-next').hidden);
+	ok('پیام وضعیت، تعداد واقعی را گزارش می‌کند', window.document.getElementById('tcas-smart-status').textContent.includes('250'));
+	ok('شمارندهٔ کارت‌ها تعداد را نشان می‌دهد', !window.document.getElementById('tcas-pair-count') || window.document.getElementById('tcas-pair-count').textContent.includes('کارت'));
+	ok('افزودن کارت دستی هم محدود نمی‌شود', !window.document.getElementById('tcas-pair-add').disabled);
+	dom.window.close();
+}
+
+// ---------- ۷ص) دسته‌بندی گام‌ها با تعداد زیاد بزرگ‌تر می‌شود ----------
+{
+	const dom = makeDom(0); const { window } = dom; const sizes = [];
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		if (action === 'tcas_match_variations') {
+			const matches = [];
+			for (let i = 0; i < 250; i++) matches.push({ local_code: 'ID:' + (3000 + i), remote_code: 'ID:8/' + (4000 + i), confidence: 'exact', matched_by: 'sku', score: 100 });
+			return reply({ matches, ambiguous: [], unmatched: [], local: { name: 'L', reference: 'ID:0', count: 250 }, remote: { name: 'R', reference: 'ID:8', count: 250 } });
+		}
+		if (action === 'tcas_preview_start') return reply({ token: 'n'.repeat(32), total: 250 });
+		if (action === 'tcas_preview_step') {
+			sizes.push(Number(body.get('size')));
+			const from = Number(body.get('from'));
+			return reply({ done: from + Number(body.get('size')) >= 250, processed: Math.min(250, from + Number(body.get('size'))), total: 250, rows: [] });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:8';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 250, 20000);
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => sizes.length > 0, 8000);
+	ok('برای کار بزرگ، هر درخواست دستهٔ بزرگ‌تری می‌فرستد (کاهش تعداد درخواست)', sizes[0] >= 12);
+	ok('تعداد درخواست‌های لازم برای ۲۵۰ جفت کم می‌ماند', sizes.length <= 30, String(sizes.length));
 	dom.window.close();
 }
 

@@ -37,7 +37,8 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 	<div class="tcas-card-head">
 		<div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>
 		<div class="tcas-pairs-actions">
-			<span class="tcas-muted">حداکثر <?php echo (int) TCAS_Core::MAX_CODES; ?> جفت</span>
+			<span class="tcas-muted">بدون محدودیت تعداد جفت</span>
+			<span id="tcas-pair-count" class="tcas-muted" hidden></span>
 			<button type="button" id="tcas-select-valid" class="button">انتخاب همه</button>
 			<button type="button" id="tcas-preview-start" class="button">بررسی شناسه‌ها (بدون اتصال)</button>
 			<button type="button" id="tcas-pair-add" class="button">افزودن جفت</button>

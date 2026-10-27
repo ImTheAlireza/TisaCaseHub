@@ -12,7 +12,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 	final class TCAS_Ajax {
 		/** هر درخواست چند جفت را بررسی می‌کند تا تعداد درخواست‌ها به هاست کم شود. */
 		const STEP_SIZE = 5;
-		const STEP_MAX  = 10;
+		const STEP_MAX  = 20;
 
 		public static function init() {
 			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs' );

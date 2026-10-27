@@ -946,13 +946,18 @@
 
 	function refreshPairEntries() {
 		const entries = pairEntries();
-		const max = Number(cfg.maxPairs) || 50;
 		entries.forEach((entry) => {
 			const remove = entry.querySelector('.tcas-remove-pair');
 			if (remove) remove.disabled = entries.length === 1;
 		});
+		// بدون محدودیت تعداد: محصولات متغیر می‌توانند صدها Variation داشته باشند.
 		const add = $('tcas-pair-add');
-		if (add) add.disabled = entries.length >= max;
+		if (add) add.disabled = false;
+		const counter = $('tcas-pair-count');
+		if (counter) {
+			counter.textContent = entries.length ? entries.length.toLocaleString('fa-IR') + ' کارت' : '';
+			counter.hidden = !entries.length;
+		}
 		updateConnectAvailability();
 	}
 
@@ -1034,8 +1039,7 @@
 	function addPairEntry(localCode, remoteCode, focusInput, targetList, confidence) {
 		const template = $('tcas-pair-entry-template');
 		const list = targetList || $('tcas-pair-entries');
-		const max = Number(cfg.maxPairs) || 50;
-		if (!template || !list || pairEntries().length >= max) return null;
+		if (!template || !list) return null;
 		const entry = template.content.firstElementChild.cloneNode(true);
 		list.appendChild(entry);
 		const local = entry.querySelector('.tcas-local-code');
@@ -1225,9 +1229,9 @@
 			text('tcas-smart-status', 'محصول والد تغییر کرده است؛ دوباره تطبیق بدهید.', true);
 			return;
 		}
-		const max = Number(cfg.maxPairs) || 50;
 		const start = state.smartOffset;
-		const batch = state.smartMatches.slice(start, start + max);
+		// هیچ سقفی اعمال نمی‌شود؛ همهٔ Variationهای یافت‌شده (حتی ۲۰۰–۳۰۰ مورد) یک‌جا ساخته می‌شوند.
+		const batch = state.smartMatches.slice(start);
 		const issues = 0 === start ? state.smartIssues : [];
 		if (!batch.length && !issues.length) {
 			text('tcas-smart-status', 'جفت دیگری برای این تطبیق نمانده است.');
@@ -1290,7 +1294,7 @@
 			});
 			orphans++;
 		});
-		if (pairEntries().length !== Math.min(batch.length, max) + orphans) {
+		if (pairEntries().length !== batch.length + orphans) {
 			resetSmart();
 			text('tcas-smart-status', 'ساخت کارت‌های جفت کامل نشد؛ دوباره تلاش کنید.', true);
 			return;
@@ -1375,9 +1379,17 @@
 		return data && data.row ? [data.row] : [];
 	}
 
-	function stepSize() {
-		const size = Number(cfg.stepSize);
-		return Number.isFinite(size) && size > 0 ? size : 3;
+	/**
+	 * اندازهٔ هر دسته: برای کارهای بزرگ‌تر (صدها Variation) دسته بزرگ‌تر می‌شود تا
+	 * تعداد درخواست‌ها کم بماند و هاست پشت فایروال مسدود نشود.
+	 */
+	function stepSize(total) {
+		const base = Number(cfg.stepSize) || 5;
+		const count = Number(total) || 0;
+		if (count >= 240) return Math.max(base, 16);
+		if (count >= 120) return Math.max(base, 12);
+		if (count >= 40) return Math.max(base, 8);
+		return base;
 	}
 
 	/**
@@ -1393,7 +1405,7 @@
 		while (!done && guard++ < 4000) {
 			let data;
 			try {
-				data = await request('preview_step', { token: job.token, from, size: stepSize() }, { retries: 2, backoff: 900 });
+				data = await request('preview_step', { token: job.token, from, size: stepSize(total) }, { retries: 2, backoff: 900 });
 			} catch (error) {
 				failures++;
 				if (failures > 2 || from >= total) throw error;
@@ -1553,7 +1565,7 @@
 			while (!finished && guard2++ < 4000) {
 				let data;
 				try {
-					data = await request('connect_step', { token: job.token, from, size: stepSize() }, { retries: 2, backoff: 900 });
+					data = await request('connect_step', { token: job.token, from, size: stepSize(connect.total) }, { retries: 2, backoff: 900 });
 				} catch (error) {
 					failures++;
 					if (failures > 2 || from >= (Number(connect.total) || 0)) throw error;
