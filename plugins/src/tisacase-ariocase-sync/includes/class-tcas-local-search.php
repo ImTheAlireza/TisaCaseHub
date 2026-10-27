@@ -32,6 +32,9 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 		const MAX_LIMIT = 40;
 		/** عمر کوتاه کش نتیجه؛ محصول تازه‌ساخته باید سریع دیده شود. */
 		const CACHE_TTL = 120;
+		/** سقف ردیف‌های فهرست محلی (جست‌وجوی صفر-تأخیر در مرورگر). */
+		const INDEX_LIMIT = 12000;
+		const INDEX_TTL   = 300;
 		const CACHE_KEY = 'tcas_psearch_';
 
 		/**
@@ -564,11 +567,14 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 			if ( ! $ids ) {
 				return array();
 			}
+			$rel    = isset( $wpdb->term_relationships ) ? $wpdb->term_relationships : $wpdb->prefix . 'term_relationships';
+			$tax    = isset( $wpdb->term_taxonomy ) ? $wpdb->term_taxonomy : $wpdb->prefix . 'term_taxonomy';
+			$terms  = isset( $wpdb->terms ) ? $wpdb->terms : $wpdb->prefix . 'terms';
 			$placeholders = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
 			$sql          = "SELECT tr.object_id AS object_id, t.slug AS slug
-				FROM {$wpdb->term_relationships} tr
-				INNER JOIN {$wpdb->term_taxonomy} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
-				INNER JOIN {$wpdb->terms} t ON t.term_id = tt.term_id
+				FROM {$rel} tr
+				INNER JOIN {$tax} tt ON tt.term_taxonomy_id = tr.term_taxonomy_id AND tt.taxonomy = 'product_type'
+				INNER JOIN {$terms} t ON t.term_id = tt.term_id
 				WHERE tr.object_id IN ( {$placeholders} )";
 			$prepared     = call_user_func_array( array( $wpdb, 'prepare' ), array_merge( array( $sql ), $ids ) );
 			$found        = $wpdb->get_results( $prepared );
@@ -736,6 +742,104 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 			}
 			self::$tables[ 'cols:' . $table ] = $columns;
 			return $columns;
+		}
+
+		/**
+		 * فهرست فشردهٔ همهٔ محصولات و Variationهای منتشرشده برای جست‌وجوی محلی در مرورگر.
+		 *
+		 * یک کوئری محدود با JOIN روی کلید اصلی جدول ایندکس ووکامرس (نه روی postmeta)
+		 * و بدون LIKE؛ نتیجه ۵ دقیقه کش می‌شود. بعد از آن، مرورگر بدون هیچ درخواستی
+		 * فیلتر می‌کند و نتیجه همان لحظه می‌آید.
+		 *
+		 * قالب هر ردیف: [ id, sku, title, parent_id, type, quantity, stock_status ]
+		 *
+		 * @param int $limit سقف ردیف‌ها.
+		 * @return array{rows:array<int,array<int,mixed>>,more:bool,v:string,ms:float,source:string}
+		 */
+		public static function index( $limit = 0 ) {
+			$started = microtime( true );
+			$limit   = (int) $limit;
+			if ( $limit < 1 || $limit > self::INDEX_LIMIT ) {
+				$limit = self::INDEX_LIMIT;
+			}
+			$cache_key = 'tcas_pindex_' . $limit;
+			if ( function_exists( 'get_transient' ) ) {
+				$cached = get_transient( $cache_key );
+				if ( is_array( $cached ) && isset( $cached['rows'] ) ) {
+					self::$last_source = 'index-cache';
+					self::$last_ms     = ( microtime( true ) - $started ) * 1000;
+					$cached['ms']      = self::$last_ms;
+					$cached['source']  = 'cache';
+					return $cached;
+				}
+			}
+			$rows = array();
+			$more = false;
+			if ( self::db_ready() ) {
+				global $wpdb;
+				$lookup = self::lookup_table();
+				$join   = '' !== $lookup ? " LEFT JOIN {$lookup} l ON l.product_id = p.ID" : '';
+				$select = '' !== $lookup ? 'l.sku, l.stock_quantity, l.stock_status' : "'' AS sku, NULL AS stock_quantity, '' AS stock_status";
+				$sql    = "SELECT p.ID, p.post_title, p.post_type, p.post_parent, {$select}
+					FROM {$wpdb->posts} p{$join}
+					WHERE p.post_type IN ('product','product_variation') AND p.post_status = 'publish'
+					ORDER BY p.ID DESC
+					LIMIT %d";
+				$found  = self::query_rows( $sql, array( (int) $limit + 1 ) );
+				if ( count( $found ) > $limit ) {
+					$more = true;
+					$found = array_slice( $found, 0, $limit );
+				}
+				foreach ( $found as $row ) {
+					$row = (array) $row;
+					$id  = isset( $row['ID'] ) ? (int) $row['ID'] : 0;
+					if ( ! $id ) {
+						continue;
+					}
+					$quantity = isset( $row['stock_quantity'] ) && '' !== $row['stock_quantity'] && null !== $row['stock_quantity'] && is_numeric( $row['stock_quantity'] )
+						? (float) $row['stock_quantity']
+						: null;
+					$rows[] = array(
+						$id,
+						isset( $row['sku'] ) ? (string) $row['sku'] : '',
+						isset( $row['post_title'] ) ? (string) $row['post_title'] : '',
+						isset( $row['post_parent'] ) ? (int) $row['post_parent'] : 0,
+						'product_variation' === ( isset( $row['post_type'] ) ? $row['post_type'] : '' ) ? 'variation' : 'product',
+						$quantity,
+						isset( $row['stock_status'] ) ? (string) $row['stock_status'] : '',
+					);
+				}
+			}
+			$result = array(
+				'rows'   => $rows,
+				'more'   => $more,
+				'v'      => ( $rows ? (string) $rows[0][0] : '0' ) . '-' . count( $rows ) . '-' . ( $more ? 'more' : 'all' ),
+				'ms'     => ( microtime( true ) - $started ) * 1000,
+				'source' => 'index',
+			);
+			if ( function_exists( 'set_transient' ) && $rows ) {
+				// فهرست ناقص هم کوتاه‌مدت کش می‌شود تا در فروشگاه‌های بزرگ این کوئری
+				// سنگین در هر بارگذاریٔ صفحه تکرار نشود.
+				set_transient( $cache_key, $result, $more ? 60 : self::INDEX_TTL );
+			}
+			self::$last_source = 'index';
+			self::$last_ms     = $result['ms'];
+			return $result;
+		}
+
+		/**
+		 * یک کوئری با prepare امن و بازگرداندن آرایهٔ ردیف‌های خام.
+		 *
+		 * @param string $sql    کوئری.
+		 * @param array  $values مقادیر.
+		 * @return array<int,mixed>
+		 */
+		private static function query_rows( $sql, $values ) {
+			global $wpdb;
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- مقادیر با prepare و نام جدول از $wpdb.
+			$prepared = call_user_func_array( array( $wpdb, 'prepare' ), array_merge( array( $sql ), $values ) );
+			$found    = $wpdb->get_results( $prepared, 'ARRAY_A' );
+			return is_array( $found ) ? $found : array();
 		}
 
 		/**

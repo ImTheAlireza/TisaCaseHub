@@ -547,15 +547,161 @@
 		return labels[type] || (type || 'محصول');
 	}
 
+	/**
+	 * جست‌وجو در صف بررسی کارت‌ها نمی‌نشیند؛ اگر سروری لازم شد، درخواست تازه
+	 * جای درخواست قبلی را می‌گیرد و منتظر کارهای دیگر نمی‌ماند.
+	 */
 	function searchFetch(term) {
 		const cached = searchMemoGet(term);
 		if (cached) return Promise.resolve(cached);
-		return enqueuePreview(() => request('search_products', { term })).then((data) => {
+		return request('search_products', { term }, { retries: 0 }).then((data) => {
 			const rows = Array.isArray(data.rows) ? data.rows : [];
 			// فقط نتیجهٔ غیرخالی کش می‌شود تا محصول تازه‌ساخته پنهان نماند.
 			if (rows.length) searchMemoSet(term, data);
 			return data;
 		});
+	}
+
+	// ---- فهرست محلی محصولات: فیلتر در خود مرورگر، بدون هیچ درخواستی هنگام تایپ ----
+	const SEARCH_INDEX_KEY = 'tcas:pindex:' + (cfg.partnerId || 'ariocase');
+	const SEARCH_INDEX_TTL = 15 * 60 * 1000;
+	let searchIndexState = { rows: null, more: false, v: '', at: 0, loading: null };
+
+	/** یکسان‌سازی متن فارسی/عربی برای مقایسه: ی/ك، ا، اعداد و نیم‌فاصله. */
+	function normalizeFa(value) {
+		return String(value || '')
+			.replace(/[\u0623\u0625\u0622]/g, '\u0627')
+			.replace(/[\u064A\u0649]/g, '\u06CC')
+			.replace(/\u0643/g, '\u06A9')
+			.replace(/\u0629/g, '\u0647')
+			// «شیائومی» و «شیاومی» یکسان دیده شوند.
+			.replace(/[\u0621\u0626\u0624]/g, '')
+			.replace(/[\u200c\u200e\u200f]/g, ' ')
+			.replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+			.replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+			.toLowerCase()
+			.replace(/\s+/g, ' ')
+			.trim();
+	}
+
+	function readStoredIndex() {
+		try {
+			const raw = window.localStorage ? window.localStorage.getItem(SEARCH_INDEX_KEY) : '';
+			const parsed = raw ? JSON.parse(raw) : null;
+			if (!parsed || !Array.isArray(parsed.rows)) return null;
+			if (!parsed.at || Date.now() - Number(parsed.at) > SEARCH_INDEX_TTL) return null;
+			return parsed;
+		} catch (error) {
+			return null;
+		}
+	}
+
+	function storeIndex(data) {
+		try {
+			if (!window.localStorage) return;
+			window.localStorage.setItem(SEARCH_INDEX_KEY, JSON.stringify({
+				rows: data.rows, more: Boolean(data.more), v: data.v || '', at: Date.now()
+			}));
+		} catch (error) {
+			/* حافظهٔ مرورگر پر است؛ فهرست در حافظهٔ همین صفحه می‌ماند. */
+		}
+	}
+
+	function applyIndex(data) {
+		const rows = Array.isArray(data && data.rows) ? data.rows : [];
+		searchIndexState = {
+			rows: rows.map((row) => ({
+				id: Number(row[0]) || 0,
+				sku: String(row[1] || ''),
+				title: String(row[2] || ''),
+				parent: Number(row[3]) || 0,
+				type: 'variation' === row[4] ? 'variation' : 'product',
+				quantity: null === row[5] || 'undefined' === typeof row[5] ? null : Number(row[5]),
+				status: String(row[6] || ''),
+				key: normalizeFa([row[2], row[1]].join(' '))
+			})).filter((row) => row.id),
+			more: Boolean(data && data.more),
+			v: String((data && data.v) || ''),
+			at: Date.now(),
+			loading: null
+		};
+	}
+
+	function searchIndexReady() {
+		if (searchIndexState.rows) return Promise.resolve(searchIndexState);
+		if (searchIndexState.loading) return searchIndexState.loading;
+		const stored = readStoredIndex();
+		if (stored) {
+			applyIndex(stored);
+			// تازه‌سازی بی‌صدا در پس‌زمینه؛ رابط از فهرست ذخیره‌شده استفاده می‌کند.
+			window.setTimeout(() => { fetchSearchIndex(true); }, 1200);
+			return Promise.resolve(searchIndexState);
+		}
+		return fetchSearchIndex(false);
+	}
+
+	function fetchSearchIndex(force) {
+		if (searchIndexState.loading) return searchIndexState.loading;
+		searchIndexState.loading = request('search_index', {}, { retries: 0 })
+			.then((data) => {
+				applyIndex(data);
+				if (!data.more) storeIndex(data);
+				return searchIndexState;
+			})
+			.catch(() => {
+				// اگر فهرست نیامد، جست‌وجوی سروری قبلی جای آن را می‌گیرد.
+				searchIndexState.loading = null;
+				searchIndexState.rows = searchIndexState.rows || [];
+				return searchIndexState;
+			});
+		if (!force) return searchIndexState.loading;
+		return searchIndexState.loading;
+	}
+
+	/** فیلتر فوری فهرست محلی؛ خروجی همان قالب ردیف‌های سرور است. */
+	function localSearch(term) {
+		const rows = searchIndexState.rows || [];
+		if (!rows.length) return null;
+		const tokens = normalizeFa(term).split(' ').filter(Boolean);
+		if (!tokens.length) return [];
+		const needle = tokens.join(' ');
+		const byId = new Map();
+		rows.forEach((row) => { if ('product' === row.type) byId.set(row.id, row); });
+		const exact = [];
+		const prefix = [];
+		const rest = [];
+		rows.forEach((row) => {
+			for (let i = 0; i < tokens.length; i++) {
+				if (row.key.indexOf(tokens[i]) === -1) return;
+			}
+			const parent = row.parent ? byId.get(row.parent) : null;
+			const name = 'variation' === row.type ? (parent ? parent.title : '') : row.title;
+			const label = 'variation' === row.type ? row.title : '';
+			const reference = 'variation' === row.type ? 'ID:' + row.id : (row.sku || 'ID:' + row.id);
+			const item = {
+				reference,
+				product_id: row.id,
+				parent_id: row.parent,
+				type: row.type,
+				sku: row.sku,
+				name: name || row.title || reference,
+				label,
+				stock: { quantity: row.quantity, status: row.status }
+			};
+			const sku = row.sku ? row.sku.toLowerCase() : '';
+			if (sku && sku === needle) exact.push(item);
+			else if (sku.indexOf(needle) === 0 || row.key.indexOf(needle) === 0) prefix.push(item);
+			else rest.push(item);
+			return;
+		});
+		return exact.concat(prefix, rest);
+	}
+
+	function prefetchSearchIndex() {
+		if (searchIndexState.rows || searchIndexState.loading) return;
+		const run = () => { searchIndexReady().catch(() => null); };
+		if (window.requestIdleCallback) window.requestIdleCallback(run, { timeout: 1200 });
+		else window.setTimeout(run, 400);
 	}
 
 	/** منبع پاسخ را برای شفافیت نشان می‌دهد؛ فقط در پیشخوان مدیر. */
@@ -667,8 +813,42 @@
 				return;
 			}
 			const current = ++seq;
+			const now = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+			// ۱) فهرست محلی: اگر آماده باشد، همان لحظه و بدون هیچ درخواستی فیلتر می‌شود.
+			const ready = searchIndexState.rows ? searchIndexState : null;
+			if (ready && !ready.more) {
+				const local = localSearch(term);
+				if (null !== local) {
+					const list = local.filter((row) => (typeof opts.filter === 'function' ? opts.filter(row) : true));
+					if (!list.length) {
+						render([], opts.emptyHint || 'محصولی با این نام یا SKU پیدا نشد.');
+						return;
+					}
+					const spent = Math.max(0, ((typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()) - now));
+					render(list.slice(0, 12), list.length.toLocaleString('fa-IR') + ' نتیجه · ' + spent.toFixed(1) + ' میلی‌ثانیه · از فهرست محلی');
+					return;
+				}
+			}
 			render([], 'در حال جست‌وجوی «' + term + '»…');
 			try {
+				if (!ready) {
+					// ۲) اولین بار: فهرست یک‌بار خوانده می‌شود و همان جست‌وجو از آن جواب می‌گیرد.
+					const index = await searchIndexReady();
+					if (current !== seq) return;
+					if (index && index.rows && index.rows.length && !index.more) {
+						const local = localSearch(term);
+						if (null !== local) {
+							const list = local.filter((row) => (typeof opts.filter === 'function' ? opts.filter(row) : true));
+							if (!list.length) {
+								render([], opts.emptyHint || 'محصولی با این نام یا SKU پیدا نشد.');
+								return;
+							}
+							render(list.slice(0, 12), list.length.toLocaleString('fa-IR') + ' نتیجه · از فهرست محلی');
+							return;
+						}
+					}
+				}
+				// ۳) فهرست بزرگ‌تر از سقف بود: همان جست‌وجوی سروری.
 				const data = await searchFetch(term);
 				if (current !== seq) return;
 				const list = (Array.isArray(data.rows) ? data.rows : []).filter((row) => (typeof opts.filter === 'function' ? opts.filter(row) : true));
@@ -1950,6 +2130,8 @@
 		sku: $('tcas-map-sku') ? $('tcas-map-sku').value : '',
 		remote_code: $('tcas-map-code') ? $('tcas-map-code').value : ''
 	}, 'tcas-map-status'));
+	// فهرست جست‌وجوی محلی در زمان بی‌کاری خوانده می‌شود تا اولین تایپ هم فوری باشد.
+	prefetchSearchIndex();
 	// هیچ خواندن خودکار موجودی‌ای در بارگذاری صفحه انجام نمی‌شود؛ فقط وضعیت ذخیره‌شده بازگردانده می‌شود.
 	pairEntries().forEach((entry) => {
 		const codes = entryCodes(entry);

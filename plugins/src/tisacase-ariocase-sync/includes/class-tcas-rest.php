@@ -43,7 +43,7 @@ if ( ! class_exists( 'TCAS_Rest' ) ) {
 
 		/** actionهای مجاز؛ همان فهرست AJAX. */
 		public static function allowed() {
-			return array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
+			return array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
 		}
 
 		/**

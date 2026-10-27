@@ -2,7 +2,15 @@
 /** جست‌وجوی محلی محصول: ساخت مرجع، محدودیت طول، حذف تکراری و رتبه‌بندی. */
 define( 'ABSPATH', __DIR__ . '/' );
 class WP_Error { private $message; public function __construct( $code = '', $message = '' ) { $this->message = $message; } public function get_error_message() { return $this->message; } }
+$GLOBALS['tc_transients'] = array();
+function get_transient( $key ) { return isset( $GLOBALS['tc_transients'][ $key ] ) ? $GLOBALS['tc_transients'][ $key ] : false; }
+function set_transient( $key, $value, $ttl = 0 ) { $GLOBALS['tc_transients'][ $key ] = $value; return true; }
 require_once dirname( __DIR__ ) . '/includes/class-tcas-local-search.php';
+/** بین سناریوها کش سرور و حافظهٔ درون‌درخواستی پاک می‌شود. */
+function reset_search_env() {
+	$GLOBALS['tc_transients'] = array();
+	TCAS_Local_Search::flush_cache();
+}
 $pass = 0; $fail = 0;
 function search_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
 
@@ -12,6 +20,9 @@ class TCAS_Test_Search_DB {
 	public $postmeta = 'wp_postmeta';
 	public $prefix = 'wp_';
 	public $wc_product_meta_lookup = 'wp_wc_product_meta_lookup';
+	public $term_relationships = 'wp_term_relationships';
+	public $term_taxonomy = 'wp_term_taxonomy';
+	public $terms = 'wp_terms';
 	public $queries = array();
 	public $columns = array(
 		'wp_wc_product_meta_lookup' => array( 'product_id', 'sku', 'stock_quantity', 'stock_status', 'min_price' ),
@@ -92,7 +103,7 @@ $GLOBALS['wpdb']->tables = array(
 	},
 );
 TCAS_Local_Search::$finder = null;
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $fast = TCAS_Local_Search::search( 'TS0100' );
 search_test( 'SKU دقیق در یک کوئری ایندکس‌شده پیدا می‌شود', 1 === count( $fast ) && 'TS0100' === $fast[0]['reference'] && 'sku' === TCAS_Local_Search::$last_source );
 search_test( 'هیچ کوئری‌ای روی postmeta زده نمی‌شود', ! $GLOBALS['wpdb']->seen( 'wp_postmeta' ), implode( ' | ', $GLOBALS['wpdb']->queries ) );
@@ -122,7 +133,7 @@ $GLOBALS['wpdb']->tables = array(
 		return array();
 	},
 );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $fibo = TCAS_Local_Search::search( 'پروانه' );
 search_test( 'با ایندکس FiboSearch، جست‌وجو از همان ایندکس انجام می‌شود', 2 === count( $fibo ) && 'fibo' === TCAS_Local_Search::$last_source );
 search_test( 'کوئری FiboSearch روی نام/SKU همان جدول است و JOIN روی postmeta ندارد', $GLOBALS['wpdb']->seen( 'FROM wp_dgwt_wcas_index WHERE ( name LIKE' ) && $GLOBALS['wpdb']->seen( 'sku_variations LIKE' ) && ! $GLOBALS['wpdb']->seen( 'wp_postmeta' ) );
@@ -152,7 +163,7 @@ $GLOBALS['wpdb']->tables = array(
 		return array();
 	},
 );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $prefix = TCAS_Local_Search::search( 'TS01' );
 search_test( 'پیشوند SKU با کلید یکتا پیدا می‌شود', 1 === count( $prefix ) && 'TS0100' === $prefix[0]['reference'] && 'sku' === TCAS_Local_Search::$last_source );
 
@@ -180,7 +191,7 @@ $GLOBALS['wpdb']->tables = array(
 		return array();
 	},
 );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $by_title = TCAS_Local_Search::search( 'پروانه' );
 search_test( 'جست‌وجوی عنوان اول پیشوند و بعد «شامل» را امتحان می‌کند', 2 === count( $title_queries ) && 1 === count( $by_title ) && 'title' === TCAS_Local_Search::$last_source );
 search_test( 'کوئری عنوان بدون JOIN روی postmeta است', $GLOBALS['wpdb']->seen( 'FROM wp_posts' ) && ! $GLOBALS['wpdb']->seen( 'wp_postmeta' ) );
@@ -204,7 +215,7 @@ $GLOBALS['wpdb']->tables = array(
 		return array();
 	},
 );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $variation_rows = TCAS_Local_Search::search( '91' );
 search_test( 'Variation مرجع ID یکتا و نام والد می‌گیرد', 1 === count( $variation_rows ) && 'ID:91' === $variation_rows[0]['reference'] && 'قاب سامسونگ' === $variation_rows[0]['name'] && 'مشکی' === $variation_rows[0]['label'] && 'outofstock' === $variation_rows[0]['stock']['status'] );
 
@@ -227,9 +238,48 @@ $GLOBALS['wpdb']->tables = array(
 		return array( 'hits' );
 	},
 );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 $fallback = TCAS_Local_Search::search( '99' );
 search_test( 'نبود جدول ایندکس ووکامرس به مسیر پشتیبان ووکامرس می‌رود', 1 === count( $fallback ) && 'TS99' === $fallback[0]['reference'] );
+
+// --- فهرست محلی (جست‌وجوی صفر-تأخیر در مرورگر) ---
+$GLOBALS['wpdb'] = new TCAS_Test_Search_DB();
+$GLOBALS['wpdb']->tables = array(
+	'wp_posts p' => function ( $query ) {
+		return array(
+			array( 'ID' => 300, 'post_title' => 'A52s ـ قاب چرم', 'post_type' => 'product_variation', 'post_parent' => 120, 'sku' => 'SHARED', 'stock_quantity' => '0', 'stock_status' => 'outofstock' ),
+			array( 'ID' => 120, 'post_title' => 'قاب سامسونگ', 'post_type' => 'product', 'post_parent' => 0, 'sku' => 'TS120', 'stock_quantity' => null, 'stock_status' => 'instock' ),
+		);
+	},
+);
+reset_search_env();
+$index = TCAS_Local_Search::index();
+search_test( 'فهرست محلی ردیف‌های فشرده می‌دهد', 2 === count( $index['rows'] ) && 300 === $index['rows'][0][0] && 'variation' === $index['rows'][0][4] && 120 === $index['rows'][0][3] );
+search_test( 'موجودی و وضعیت در فهرست هست و مقادیر تهی null می‌مانند', 0.0 === $index['rows'][0][5] && 'outofstock' === $index['rows'][0][6] && null === $index['rows'][1][5] );
+search_test( 'فهرست کامل، پرچم more ندارد و نسخه دارد', false === $index['more'] && '' !== $index['v'] );
+search_test( 'فهرست محلی با JOIN روی کلید اصلی و بدون postmeta است', $GLOBALS['wpdb']->seen( 'LEFT JOIN wp_wc_product_meta_lookup l ON l.product_id = p.ID' ) && ! $GLOBALS['wpdb']->seen( 'wp_postmeta' ) && ! $GLOBALS['wpdb']->seen( 'LIKE' ) );
+$second = TCAS_Local_Search::index();
+search_test( 'فهرست از کش خوانده می‌شود', 'index-cache' === TCAS_Local_Search::$last_source && 2 === count( $second['rows'] ) );
+
+// سقف: یک ردیف بیشتر خوانده می‌شود تا وجود ادامه مشخص شود
+$GLOBALS['wpdb'] = new TCAS_Test_Search_DB();
+$GLOBALS['wpdb']->tables = array(
+	'wp_posts p' => function ( $query ) {
+		if ( false !== strpos( $query, 'LIMIT 3' ) ) {
+			return array(
+				array( 'ID' => 3, 'post_title' => 'سه', 'post_type' => 'product', 'post_parent' => 0, 'sku' => 'S3', 'stock_quantity' => 1, 'stock_status' => 'instock' ),
+				array( 'ID' => 2, 'post_title' => 'دو', 'post_type' => 'product', 'post_parent' => 0, 'sku' => 'S2', 'stock_quantity' => 1, 'stock_status' => 'instock' ),
+				array( 'ID' => 1, 'post_title' => 'یک', 'post_type' => 'product', 'post_parent' => 0, 'sku' => 'S1', 'stock_quantity' => 1, 'stock_status' => 'instock' ),
+			);
+		}
+		return array();
+	},
+);
+reset_search_env();
+$trimmed = TCAS_Local_Search::index( 2 );
+search_test( 'وقتی ردیف بیشتری هست، more روشن و فهرست بریده می‌شود', true === $trimmed['more'] && 2 === count( $trimmed['rows'] ) && 'more' === substr( $trimmed['v'], -4 ) );
+$again = TCAS_Local_Search::index( 2 );
+search_test( 'فهرست ناقص هم کوتاه‌مدت کش می‌شود تا کوئری سنگین تکرار نشود', 'index-cache' === TCAS_Local_Search::$last_source && true === $again['more'] );
 
 // --- قواعد ساخت مرجع ---
 $simple = TCAS_Local_Search::row( array( 'product_id' => 41, 'type' => 'simple', 'sku' => 'TS0100', 'name' => 'قاب شیائومی' ) );
@@ -295,7 +345,7 @@ search_test( 'سقف درخواستی هرگز از حداکثر مجاز بیش
 search_test( 'سقف کوچک‌تر رعایت می‌شود', 3 === count( TCAS_Local_Search::search( 'محصول', 3 ) ) );
 TCAS_Local_Search::$finder = null;
 unset( $GLOBALS['wpdb'] );
-TCAS_Local_Search::flush_cache();
+reset_search_env();
 search_test( 'نبود دیتابیس و ووکامرس به خطا تبدیل نمی‌شود', array() === TCAS_Local_Search::search( 'محصول' ) );
 $detail = TCAS_Local_Search::detail( 0 );
 search_test( 'درخواست جزئیات بدون شناسه معتبر رد می‌شود', $detail instanceof WP_Error );

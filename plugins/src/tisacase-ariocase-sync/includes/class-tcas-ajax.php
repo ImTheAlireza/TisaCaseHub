@@ -15,7 +15,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		const STEP_MAX  = 20;
 
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -277,6 +277,20 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				'source' => TCAS_Local_Search::$last_source,
 				'ms'     => round( (float) TCAS_Local_Search::$last_ms, 1 ),
 			) );
+		}
+
+		/**
+		 * فهرست فشردهٔ محصولات برای جست‌وجوی صفر-تأخیر در مرورگر.
+		 * بعد از اولین دریافت، فیلتر در خود مرورگر انجام می‌شود و درخواستی زده نمی‌شود.
+		 */
+		public static function search_index() {
+			self::auth();
+			if ( ! class_exists( 'TCAS_Local_Search' ) || ! method_exists( 'TCAS_Local_Search', 'index' ) ) {
+				wp_send_json_error( array( 'message' => 'فهرست جست‌وجو در این نصب فعال نیست.' ), 501 );
+			}
+			$limit = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 0;
+			$data  = TCAS_Local_Search::index( $limit );
+			wp_send_json_success( $data );
 		}
 
 		public static function resolve_link() {

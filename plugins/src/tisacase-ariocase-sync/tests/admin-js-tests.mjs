@@ -516,6 +516,68 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۷ز۳) فهرست محلی: تایپ بدون هیچ درخواستی و همان لحظه ----------
+{
+	const dom = makeDom(); const { window } = dom; const calls = [];
+	const indexRows = [
+		[300, '', 'A52s ـ قاب چرم', 120, 'variation', 0, 'outofstock'],
+		[120, 'TS120', 'قاب سامسونگ', 0, 'product', null, 'instock'],
+		[121, 'TS121', 'قاب شیائومی', 0, 'product', 4, 'instock'],
+		[NaN, '', '', 0, 'product', null, ''],
+	];
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		calls.push({ action, term: body.get('term') });
+		if (action === 'tcas_search_index') return reply({ rows: indexRows, more: false, v: '300-3-all' });
+		if (action === 'tcas_search_products') return reply({ rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	await waitFor(() => calls.some((call) => 'tcas_search_index' === call.action), 8000);
+	const searchesAfterPrefetch = calls.filter((call) => 'tcas_search_products' === call.action).length;
+	ok('فهرست جست‌وجو یک‌بار و بدون دخالت کاربر خوانده می‌شود', 1 === calls.filter((call) => 'tcas_search_index' === call.action).length);
+	const input = window.document.getElementById('tcas-link-input');
+	input.value = 'قاب';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelectorAll('.tcas-search-row').length === 3, 8000);
+	const firstTerms = calls.filter((call) => 'tcas_search_products' === call.action).length;
+	ok('تایپ روی فهرست محلی، هیچ درخواست جست‌وجویی نمی‌فرستد', firstTerms === searchesAfterPrefetch, JSON.stringify(calls));
+	ok('زیر فهرست نوشته می‌شود نتیجه از فهرست محلی و چند میلی‌ثانیه بوده', window.document.querySelector('.tcas-search-note').textContent.includes('فهرست محلی'));
+	ok('ردیف Variation نام والد و برچسب خودش را دارد', Array.from(window.document.querySelectorAll('.tcas-search-row')).some((row) => row.textContent.includes('قاب سامسونگ') && row.textContent.includes('A52s')));
+	ok('ردیف بدون شناسه حذف می‌شود', !Array.from(window.document.querySelectorAll('.tcas-search-row')).some((row) => '0' === row.dataset.reference));
+	// یکسان‌سازی فارسی: «ك» عربی و «ي» عربی هم پیدا می‌شوند
+	input.value = 'قاب شياومي';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelector('.tcas-search-row') && window.document.querySelector('.tcas-search-row').dataset.reference === 'TS121', 8000);
+	ok('«ي» و «ك» عربی با «ی» و «ک» فارسی یکی گرفته می‌شوند', window.document.querySelector('.tcas-search-row').dataset.reference === 'TS121');
+	// برچسب/عنوان Variation با نرمال‌سازی جست‌وجو می‌شود
+	input.value = 'a52s';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelector('.tcas-search-row') && window.document.querySelector('.tcas-search-row').dataset.reference === 'ID:300', 8000);
+	ok('Variation با برچسب خودش پیدا می‌شود و مرجعش ID است', window.document.querySelector('.tcas-search-row').dataset.reference === 'ID:300');
+	ok('هیچ‌کدام از این جست‌وجوها درخواست سروری نفرستاد', calls.filter((call) => 'tcas_search_products' === call.action).length === searchesAfterPrefetch);
+	dom.window.close();
+}
+
+// ---------- ۷ز۴) فهرست بزرگ‌تر از سقف: بازگشت به جست‌وجوی سروری ----------
+{
+	const dom = makeDom(); const { window } = dom; const terms = [];
+	window.fetch = async (url, options) => {
+		const body = options.body; const action = body.get('action');
+		if (action === 'tcas_search_index') return reply({ rows: [[120, 'TS120', 'قاب سامسونگ', 0, 'product', 3, 'instock']], more: true, v: 'x-more' });
+		if (action === 'tcas_search_products') { terms.push(body.get('term')); return reply({ rows: [{ reference: 'TS999', product_id: 999, type: 'product', sku: 'TS999', name: 'قاب قدیمی', label: '', stock: { quantity: 1, status: 'instock' } }], source: 'title', ms: 12 }); }
+		return reply({});
+	};
+	window.eval(script);
+	const input = window.document.getElementById('tcas-link-input');
+	input.value = 'قاب';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelectorAll('.tcas-search-row').length === 1, 8000);
+	ok('وقتی فهرست کامل نیست، جست‌وجوی سروری انجام می‌شود', 1 === terms.length && window.document.querySelector('.tcas-search-row').dataset.reference === 'TS999');
+	ok('پاسخ سروری هم تعداد و زمان را نشان می‌دهد', window.document.querySelector('.tcas-search-note').textContent.includes('میلی‌ثانیه'));
+	dom.window.close();
+}
+
 // ---------- ۷ح) لینک چسبانده‌شده همچنان کار می‌کند و جست‌وجو را فعال نمی‌کند ----------
 {
 	const dom = makeDom(); const { window } = dom; const calls = [];
