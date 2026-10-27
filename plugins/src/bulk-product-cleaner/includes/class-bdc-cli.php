@@ -76,8 +76,7 @@ class BDC_CLI {
 			return;
 		}
 
-		$ids = BDC_Query::get_ids( $filters, min( $limit, 5000 ), 0 );
-		$ids = array_slice( $ids, 0, $limit );
+		$process_total = min( $total, $limit );
 
 		$plugin  = bdc();
 		$deleter = $plugin->deleter();
@@ -89,7 +88,8 @@ class BDC_CLI {
 		}
 
 		if ( $dry ) {
-			$preview = $deleter->preview( array_slice( $ids, 0, 500 ), $mode );
+			$preview_ids = BDC_Query::get_ids_after( $filters, min( 500, $process_total ), 0 );
+			$preview = $deleter->preview( $preview_ids, $mode );
 			WP_CLI::log( sprintf( 'Products: %d', $preview['products'] ) );
 			WP_CLI::log( sprintf( 'Variations: %d', $preview['variations'] ) );
 			WP_CLI::log( sprintf( 'Images removable: %d', $preview['images'] ) );
@@ -99,7 +99,7 @@ class BDC_CLI {
 			return;
 		}
 
-		WP_CLI::confirm( sprintf( 'Process %d product(s) in mode "%s"?', count( $ids ), $mode ), $assoc_args );
+		WP_CLI::confirm( sprintf( 'Process %d product(s) in mode "%s"?', $process_total, $mode ), $assoc_args );
 
 		$run_id = '';
 
@@ -120,7 +120,7 @@ class BDC_CLI {
 			WP_CLI::log( sprintf( 'Backup run: %s (kept %d days)', $run_id, BDC_Backup::retention_days() ) );
 		}
 
-		$progress = \WP_CLI\Utils\make_progress_bar( 'Cleaning', count( $ids ) );
+		$progress = \WP_CLI\Utils\make_progress_bar( 'Cleaning', $process_total );
 		$totals   = array(
 			'ok'      => 0,
 			'fail'    => 0,
@@ -128,13 +128,22 @@ class BDC_CLI {
 			'bytes'   => 0,
 		);
 
-		foreach ( array_chunk( $ids, $batch ) as $chunk ) {
-			$result = $deleter->delete_batch( $chunk, $mode, 'trash' !== $mode );
+		$after_id  = 0;
+		$processed = 0;
+		while ( $processed < $process_total ) {
+			$want  = min( $batch, $process_total - $processed );
+			$chunk = BDC_Query::get_ids_after( $filters, $want, $after_id );
+			if ( empty( $chunk ) ) {
+				break;
+			}
+			$after_id = (int) end( $chunk );
+			$result   = $deleter->delete_batch( $chunk, $mode, 'trash' !== $mode );
 
 			$totals['ok']      += $result['ok'];
 			$totals['fail']    += $result['fail'];
 			$totals['skipped'] += $result['skipped'];
 			$totals['bytes']   += $result['bytes'];
+			$processed        += count( $chunk );
 
 			foreach ( $chunk as $unused ) {
 				$progress->tick();

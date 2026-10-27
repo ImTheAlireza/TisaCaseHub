@@ -974,12 +974,13 @@ class BDC_Admin {
 				matchState.textContent = ' ' + ( t.collecting || '' );
 				var collected = [];
 
-				function pull( offset ) {
-					return post( 'bdc_collect_ids', { filters: currentFilters(), offset: offset } )
+				var filters = currentFilters();
+				function pull( afterId ) {
+					return post( 'bdc_collect_ids', { filters: filters, after_id: afterId } )
 						.then( function ( data ) {
 							collected = collected.concat( data.ids );
 							if ( ! data.done ) {
-								return pull( data.offset );
+								return pull( data.after_id );
 							}
 							return collected;
 						} );

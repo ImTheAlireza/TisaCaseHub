@@ -6,7 +6,7 @@ Tested up to: 6.6
 Requires PHP: 7.4
 WC requires at least: 5.0
 WC tested up to: 9.2
-Stable tag: 1.4.2
+Stable tag: 1.4.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -43,6 +43,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 3. Access the plugin via WooCommerce → موجودی TisaCase (یا Products → موجودی انبوه)، و از کارت هاب TisaCase.
 
 == Changelog ==
+
+= 1.4.3 =
+* جست‌وجوی پیشوند SKU از جدول lookup ووکامرس (در صورت وجود) انجام می‌شود؛ حالت contains برای حفظ تطبیق کامل روی postmeta می‌ماند و به‌دلیل wildcard ابتدایی همچنان غیرقابل‌استفاده برای range scan است. کارایی واقعی باید با query plan/slow log فروشگاه تأیید شود. سقف‌ها و رفتار دسته‌ای اعمال تغییر نکرده‌اند.
 
 = 1.4.2 =
 * **هر صفحهٔ فهرست گروهی ۳۰۰ متغیر می‌آورد** (قبلاً ۱۵۰ بود؛ سقف `MAX_MODEL_ROWS`). با کش‌گذاری یک‌جای فهرست (۱٫۴٫۰) آوردن ۳۰۰ ردیف همان چند کوئری کل است و روی هاست اشتراکی هم سبک می‌ماند؛ برای مدل‌هایی مثل «iPhone 12 Mini» که صدها محصول دارند، تعداد رفت‌وبرگشت «نمایش موارد بعدی» نصف می‌شود. سقف هر بار اعمال همان ۲۰۰۰ متغیر و دسته‌های اعمال همان ۳۰۰تایی‌اند.

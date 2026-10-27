@@ -13,6 +13,7 @@ define('MINUTE_IN_SECONDS', 60);
 define('HOUR_IN_SECONDS', 3600);
 define('DAY_IN_SECONDS', 86400);
 define('WEEK_IN_SECONDS', 604800);
+define('ARRAY_A', 'ARRAY_A');
 
 /* ---------- حافظهٔ تست ---------- */
 
@@ -329,6 +330,9 @@ class WCTO_Fake_WPDB {
     public function esc_like($text) { return addcslashes((string) $text, '_%\\'); }
     public function query($sql) { $this->queries[] = $sql; return 1; }
     public function prepare($sql, ...$args) {
+        if (count($args) === 1 && is_array($args[0])) {
+            $args = $args[0];
+        }
         if (empty($args)) {
             return $sql;
         }
@@ -352,7 +356,7 @@ class WCTO_Fake_WPDB {
         return 0;
     }
     public function get_col($sql = null) { return []; }
-    public function get_results($sql = null, $output = 'OBJECT') { return []; }
+    public function get_results($sql = null, $output = 'OBJECT') { $this->queries[] = (string) $sql; return []; }
     public function get_orders_table_name() { return 'wp_wc_orders'; }
 }
 $GLOBALS['wpdb'] = new WCTO_Fake_WPDB();

@@ -510,7 +510,26 @@ foreach (['orders', 'products', 'stats'] as $tb) {
 }
 unset($_GET['tab']);
 
-echo "--- 16) جلوگیری از ارسال تکراری گزارش روزانه ---\n";
+echo "--- 16) گزارش روزانه با aggregate و جزئیات محدود ---\n";
+
+$p = setup(['daily_pin' => 'no']);
+$report_rows = [];
+for ($i = 0; $i < 205; $i++) {
+    $report_rows[] = [
+        'number' => (string) (1000 + $i), 'name' => 'خریدار ' . $i, 'total' => 100,
+        'refunded' => 0, 'status' => 'processing', 'items' => 1, 'pay' => 'درگاه تست',
+    ];
+}
+$report = $p->build_daily_report($report_rows, time() - DAY_IN_SECONDS, time());
+t('گزارش تعداد کل را از aggregate نمایش می‌دهد', strpos($report, 'تعداد سفارش‌ها: 205') !== false);
+t('جزئیات با جدیدترین سفارش شروع می‌شود و پیام محدود می‌ماند', strpos($report, '#1204') !== false && mb_strlen($report) < 4000);
+t('وقتی جزئیاتِ واجدشرط بیشتر از ظرفیت پیام است، تعداد باقی‌مانده اعلام می‌شود', strpos($report, 'سفارش دیگر') !== false);
+$GLOBALS['wpdb']->queries = [];
+$p->call('get_day_order_page', [time() - DAY_IN_SECONDS, time(), ['date' => '2026-01-02 03:04:05', 'id' => 77], 100]);
+$page_sql = end($GLOBALS['wpdb']->queries);
+t('خواندن گزارش روزانه با cursor ترکیبی تاریخ/شناسه و بدون OFFSET انجام می‌شود', strpos($page_sql, 'post_date <') !== false && strpos($page_sql, 'ID < 77') !== false && strpos($page_sql, 'ORDER BY post_date DESC, ID DESC LIMIT 100') !== false && strpos($page_sql, 'OFFSET') === false);
+
+echo "--- 17) جلوگیری از ارسال تکراری گزارش روزانه ---\n";
 
 $p = setup(['daily_pin' => 'no']);
 $auto_first = $p->send_daily_report();

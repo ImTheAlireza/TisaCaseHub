@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ارسال سفارش‌ها به تلگرام ووکامرس
  * Description:       ارسال خودکار سفارش‌های جدید ووکامرس به تلگرام با فرمت فارسی دلخواه + گزارش روزانه فروش (با سنجاق خودکار) + اعلان کمبود موجودی محصولات + سیستم لاگ رویدادها در پنل.
- * Version:           1.14.2
+ * Version:           1.14.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            علیرضا شعبان زاده
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_TELEGRAM_ORDERS_VERSION', '1.14.2');
+define('WC_TELEGRAM_ORDERS_VERSION', '1.14.3');
 define('WC_TELEGRAM_ORDERS_OPTION', 'wc_telegram_orders_settings');
 define('WC_TELEGRAM_ORDERS_FILE', __FILE__);
 
@@ -3131,14 +3131,10 @@ class WC_Telegram_Orders {
         if (!function_exists('wc_get_orders')) {
             return ['ok' => false, 'message' => 'ووکامرس فعال نیست.'];
         }
-        $tz = $this->plugin_timezone();
         if ($day_start === null) {
-            // بازهٔ گزارشِ خودکار: از پایانِ «گزارش خودکار قبلی» تا همین لحظه.
-            // گزارش‌های دستی این نقطه را جابه‌جا نمی‌کنند (تغییرِ ۱.۱۰.۲) — پس هر چند بار
-            // هم که گزارش دستی بگیرید، گزارش شبانه کلِ ۲۴ ساعت را پوشش می‌دهد.
+            // Keep the established automatic/manual default window semantics;
+            // the paged reader only changes how those orders are fetched.
             $last = (int) get_option(self::LAST_REPORT_OPTION, 0);
-            // اگر نقطه‌ای نداریم یا خیلی قدیمی است (سایت مدتی خاموش بوده)،
-            // بازهٔ پشتیبان = ۲۴ ساعت گذشته (قابل تغییر با فیلتر)
             $window = (int) apply_filters('wc_telegram_daily_fallback_window', DAY_IN_SECONDS);
             $fallback = time() - max(HOUR_IN_SECONDS, $window);
             if ($last <= 0 || $last < $fallback || $last > time()) {
@@ -3154,37 +3150,80 @@ class WC_Telegram_Orders {
             return ['ok' => true, 'message' => 'بازه گزارش خالی است؛ چیزی ارسال نشد.'];
         }
 
-        // فقط شناسه سفارش‌های بازه با یک کوئری سبک گرفته می‌شود
-        // (بارگذاری همه سفارش‌ها با limit=-1 حافظه را تمام می‌کند)
-        $this->maybe_raise_memory();
-        $ids = $this->get_day_order_ids($day_start, $day_end);
+        // پیمایش نزولیِ صفحه‌ای؛ در حافظه فقط aggregateها، یک صفحه ID و حداکثر ۲۰۰ جزئیات می‌ماند.
+        $page_size    = 100;
+        $detail_limit = 200;
+        $settings     = $this->get_settings();
+        $paid_statuses = apply_filters('wc_telegram_daily_paid_statuses', ['processing', 'completed']);
+        $paid_only    = !empty($settings['daily_paid_only']) && $settings['daily_paid_only'] === 'yes';
+        $summary      = [
+            'total'        => 0,
+            'counts'       => [],
+            'revenue'      => 0.0,
+            'refunded'     => 0.0,
+            'items'        => 0,
+            'pay'          => [],
+            'details'      => [],
+            'detail_total' => 0,
+        ];
+        $cursor = null;
 
-        // استخراج اطلاعات لازم از هر سفارش و آزادسازی فوری شیء — حافظه در حد یک سفارش می‌ماند
-        $rows = [];
-        foreach ($ids as $oid) {
-            $o = wc_get_order($oid);
-            if (!$o instanceof WC_Order) {
-                continue;
+        do {
+            $page = $this->get_day_order_page($day_start, $day_end, $cursor, $page_size);
+            if (!$page) {
+                break;
             }
-            $rows[] = [
-                'number'   => $o->get_order_number(),
-                'name'     => trim($o->get_formatted_billing_full_name()),
-                'total'    => (float) $this->order_amounts($o)['grand'],
-                'refunded' => (float) $o->get_total_refunded(),
-                'status'   => $o->get_status(),
-                'items'    => $o->get_item_count(),
-                'pay'      => $o->get_payment_method_title() ? $o->get_payment_method_title() : 'نامشخص',
-            ];
-            unset($o);
-            $this->clean_order_cache($oid);
-        }
+            foreach ($page as $order_row) {
+                $order_id = (int) $order_row['id'];
+                $cursor   = ['date' => $order_row['cursor_date'], 'id' => $order_id];
+                $order    = wc_get_order($order_id);
+                if (!$order instanceof WC_Order) {
+                    continue;
+                }
 
-        $message = $this->build_daily_report($rows, $day_start, $day_end);
-        $result = $this->send_long_to_all_chats($message);
+                $row = [
+                    'number'   => $order->get_order_number(),
+                    'name'     => trim($order->get_formatted_billing_full_name()),
+                    'total'    => (float) $this->order_amounts($order)['grand'],
+                    'refunded' => (float) $order->get_total_refunded(),
+                    'status'   => $order->get_status(),
+                    'items'    => $order->get_item_count(),
+                    'pay'      => $order->get_payment_method_title() ? $order->get_payment_method_title() : 'نامشخص',
+                ];
 
-        // پایان بازه فقط برای گزارشِ «خودکار» ذخیره می‌شود تا گزارش بعدی دقیقاً از همین‌جا ادامه یابد.
-        // گزارشِ دستی آن را جابه‌جا نمی‌کند — وگرنه گزارش شبانه فقط از لحظهٔ آخرین
-        // گزارش دستی به بعد را پوشش می‌داد و بخش بزرگی از روز جا می‌ماند.
+                $summary['total']++;
+                $status = $row['status'];
+                $summary['counts'][$status] = isset($summary['counts'][$status]) ? $summary['counts'][$status] + 1 : 1;
+                $summary['refunded'] += $row['refunded'];
+                if (in_array($status, $paid_statuses, true)) {
+                    $summary['revenue'] += $row['total'];
+                    $summary['items'] += (int) $row['items'];
+                    $method = $row['pay'] ? $row['pay'] : 'نامشخص';
+                    if (!isset($summary['pay'][$method])) {
+                        $summary['pay'][$method] = ['c' => 0, 's' => 0.0];
+                    }
+                    $summary['pay'][$method]['c']++;
+                    $summary['pay'][$method]['s'] += $row['total'];
+                }
+
+                if (!$paid_only || in_array($status, $paid_statuses, true)) {
+                    $summary['detail_total']++;
+                    if (count($summary['details']) < $detail_limit) {
+                        // Query is newest-first, so the retained details are also the newest.
+                        $summary['details'][] = $row;
+                    }
+                }
+                unset($order);
+                $this->clean_order_cache($order_id);
+            }
+            $page_count = count($page);
+            unset($page);
+        } while ($page_count === $page_size);
+
+        $message = $this->format_daily_report_summary($summary, $day_start, $day_end, $paid_only);
+        $result  = $this->send_long_to_all_chats($message);
+
+        // پایان بازه فقط برای گزارش خودکار ذخیره می‌شود تا گزارش بعدی دقیقاً از همین‌جا ادامه یابد.
         if (!empty($result['ok'])) {
             if (!$manual) {
                 $prev = (int) get_option(self::LAST_REPORT_OPTION, 0);
@@ -3193,16 +3232,14 @@ class WC_Telegram_Orders {
                 }
             }
             $this->log('success', 'daily', $manual ? 'manual_report_sent' : 'report_sent',
-                sprintf('گزارش %s با %d سفارش ارسال شد.', $manual ? 'دستی' : 'روزانه', count($rows)),
-                ['orders' => count($rows), 'from' => $day_start, 'to' => $day_end, 'manual' => (bool) $manual, 'chats' => array_keys(isset($result['sent']) ? $result['sent'] : [])], 0);
+                sprintf('گزارش %s با %d سفارش ارسال شد.', $manual ? 'دستی' : 'روزانه', $summary['total']),
+                ['orders' => $summary['total'], 'details_retained' => count($summary['details']), 'from' => $day_start, 'to' => $day_end, 'manual' => (bool) $manual, 'chats' => array_keys(isset($result['sent']) ? $result['sent'] : [])], 0);
         } else {
-            $this->log('error', 'daily', 'report_failed', 'ارسال گزارش روزانه ناموفق بود: ' . (isset($result['message']) ? $result['message'] : 'خطای نامشخص'), ['orders' => count($rows), 'from' => $day_start, 'to' => $day_end, 'manual' => (bool) $manual], 0);
+            $this->log('error', 'daily', 'report_failed', 'ارسال گزارش روزانه ناموفق بود: ' . (isset($result['message']) ? $result['message'] : 'خطای نامشخص'), ['orders' => $summary['total'], 'from' => $day_start, 'to' => $day_end, 'manual' => (bool) $manual], 0);
         }
 
-        // سنجاق خودکار گزارش (اختیاری) — فقط برای گزارش خودکار؛
-        // گزارش دستی سنجاقِ گزارش شبانه را عوض نمی‌کند
-        $s = $this->get_settings();
-        if (!$manual && !empty($result['ok']) && !empty($s['daily_pin']) && $s['daily_pin'] === 'yes' && !empty($result['sent'])) {
+        // سنجاق خودکار گزارش (اختیاری) — فقط برای گزارش خودکار.
+        if (!$manual && !empty($result['ok']) && !empty($settings['daily_pin']) && $settings['daily_pin'] === 'yes' && !empty($result['sent'])) {
             $pin = $this->pin_report_messages($result['sent']);
             if (!empty($pin['message'])) {
                 $result['message'] .= ' ' . $pin['message'];
@@ -3211,36 +3248,52 @@ class WC_Telegram_Orders {
         return $result;
     }
 
-    // شناسه سفارش‌های یک روز — یک کوئری سبک، سازگار با HPOS و حالت قدیمی
-    private function get_day_order_ids($day_start, $day_end) {
+    /** یک صفحه از سفارش‌ها، با cursor مرکب (تاریخ، شناسه) و بدون OFFSET. */
+    private function get_day_order_page($day_start, $day_end, $cursor, $limit) {
         global $wpdb;
+        $limit = max(1, min(500, (int) $limit));
         $hpos = class_exists(\Automattic\WooCommerce\Utilities\OrderUtil::class)
              && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
 
         if ($hpos && method_exists(\Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore::class, 'get_orders_table_name')) {
-            // HPOS: تاریخ‌ها به وقت UTC ذخیره می‌شوند
             $table = \Automattic\WooCommerce\Internal\DataStores\Orders\OrdersTableDataStore::get_orders_table_name();
             $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
             if ($exists === $table) {
-                return array_map('intval', (array) $wpdb->get_col($wpdb->prepare(
-                    "SELECT id FROM {$table} WHERE type = %s AND status NOT IN ('trash','checkout-draft','auto-draft') AND date_created_gmt >= %s AND date_created_gmt <= %s ORDER BY date_created_gmt ASC",
-                    'shop_order',
-                    gmdate('Y-m-d H:i:s', $day_start),
-                    gmdate('Y-m-d H:i:s', $day_end)
-                )));
+                $after = '';
+                $params = ['shop_order', gmdate('Y-m-d H:i:s', $day_start), gmdate('Y-m-d H:i:s', $day_end)];
+                if (is_array($cursor) && !empty($cursor['date'])) {
+                    $after = ' AND (date_created_gmt < %s OR (date_created_gmt = %s AND id < %d))';
+                    $params[] = $cursor['date'];
+                    $params[] = $cursor['date'];
+                    $params[] = (int) $cursor['id'];
+                }
+                $params[] = $limit;
+                $sql = "SELECT id, date_created_gmt AS cursor_date FROM {$table}
+                        WHERE type = %s AND status NOT IN ('trash','checkout-draft','auto-draft')
+                          AND date_created_gmt >= %s AND date_created_gmt <= %s {$after}
+                        ORDER BY date_created_gmt DESC, id DESC LIMIT %d";
+                return (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
             }
         }
 
-        // حالت قدیمی (CPT): post_date به وقت محلی «وردپرس» ذخیره می‌شود (نه منطقه زمانی پلاگین)
+        // CPT: post_date محلی وردپرس است.
         $ltz = wp_timezone();
         $after_local  = (new \DateTime('@' . $day_start))->setTimezone($ltz)->format('Y-m-d H:i:s');
         $before_local = (new \DateTime('@' . $day_end))->setTimezone($ltz)->format('Y-m-d H:i:s');
-        return array_map('intval', (array) $wpdb->get_col($wpdb->prepare(
-            "SELECT ID FROM {$wpdb->posts} WHERE post_type = %s AND post_status NOT IN ('trash','auto-draft') AND post_date >= %s AND post_date <= %s ORDER BY post_date ASC",
-            'shop_order',
-            $after_local,
-            $before_local
-        )));
+        $cursor_sql = '';
+        $params = ['shop_order', $after_local, $before_local];
+        if (is_array($cursor) && !empty($cursor['date'])) {
+            $cursor_sql = ' AND (post_date < %s OR (post_date = %s AND ID < %d))';
+            $params[] = $cursor['date'];
+            $params[] = $cursor['date'];
+            $params[] = (int) $cursor['id'];
+        }
+        $params[] = $limit;
+        $sql = "SELECT ID AS id, post_date AS cursor_date FROM {$wpdb->posts}
+                WHERE post_type = %s AND post_status NOT IN ('trash','auto-draft')
+                  AND post_date >= %s AND post_date <= %s {$cursor_sql}
+                ORDER BY post_date DESC, ID DESC LIMIT %d";
+        return (array) $wpdb->get_results($wpdb->prepare($sql, $params), ARRAY_A);
     }
 
     // اگر سقف حافظه هاست کم است، موقتاً تا ۵۱۲ مگ بالا ببر (اگر هاست اجازه دهد)
@@ -3280,12 +3333,47 @@ class WC_Telegram_Orders {
 
     // ورودی: آرایه‌های سبک ['number','name','total','refunded','status','items','pay']
     public function build_daily_report($rows, $day_start, $day_end = null) {
+        $rows = array_values((array) $rows);
         if ($day_end === null) {
             $day_end = $day_start + DAY_IN_SECONDS - 1;
         }
         $paid_statuses = apply_filters('wc_telegram_daily_paid_statuses', ['processing', 'completed']);
+        $settings      = $this->get_settings();
+        $paid_only     = !empty($settings['daily_paid_only']) && $settings['daily_paid_only'] === 'yes';
+        $summary       = [
+            'total' => count($rows), 'counts' => [], 'revenue' => 0.0, 'refunded' => 0.0,
+            'items' => 0, 'pay' => [], 'details' => [], 'detail_total' => 0,
+        ];
+        foreach ($rows as $row) {
+            $status = $row['status'];
+            $summary['counts'][$status] = isset($summary['counts'][$status]) ? $summary['counts'][$status] + 1 : 1;
+            $summary['refunded'] += (float) $row['refunded'];
+            if (in_array($status, $paid_statuses, true)) {
+                $summary['revenue'] += (float) $row['total'];
+                $summary['items'] += (int) $row['items'];
+                $method = $row['pay'] ? $row['pay'] : 'نامشخص';
+                if (!isset($summary['pay'][$method])) {
+                    $summary['pay'][$method] = ['c' => 0, 's' => 0.0];
+                }
+                $summary['pay'][$method]['c']++;
+                $summary['pay'][$method]['s'] += (float) $row['total'];
+            }
+            if (!$paid_only || in_array($status, $paid_statuses, true)) {
+                $summary['detail_total']++;
+            }
+        }
+        // ورودی قدیمی به ترتیب زمانی صعودی است؛ فقط جدیدترین ۲۰۰ مورد حفظ می‌شوند.
+        for ($i = count($rows) - 1; $i >= 0 && count($summary['details']) < 200; $i--) {
+            $row = $rows[$i];
+            if (!$paid_only || in_array($row['status'], $paid_statuses, true)) {
+                $summary['details'][] = $row;
+            }
+        }
+        return $this->format_daily_report_summary($summary, $day_start, $day_end, $paid_only);
+    }
 
-        // بازه در یک روز تقویمی؟ فقط همان تاریخ؛ وگرنه بازه کامل (کرون دیر → بازه چندروزه)
+    /** قالب‌بندی از aggregateهای محدود؛ جزئیات این مسیر از جدیدترین به قدیمی‌ترین هستند. */
+    private function format_daily_report_summary($summary, $day_start, $day_end, $paid_only) {
         if ($this->format_date('Y-m-d', $day_start) === $this->format_date('Y-m-d', $day_end)) {
             $date_str = $this->format_date(get_option('date_format'), $day_start);
             if (($day_end - $day_start) < DAY_IN_SECONDS - 1) {
@@ -3295,100 +3383,50 @@ class WC_Telegram_Orders {
             $date_str = $this->format_date(get_option('date_format'), $day_start)
                       . ' تا ' . $this->format_date(get_option('date_format'), $day_end);
         }
-
-        $msg = "📊 <b>گزارش فروش</b>\n"
-             . "📅 " . $date_str . "\n"
-             . "--------------------------\n";
-
-        if (empty($rows)) {
-            $msg .= "امروز سفارشی ثبت نشده است. 🎉\n";
-            return $msg;
+        $msg = "📊 <b>گزارش فروش</b>\n📅 " . $date_str . "\n--------------------------\n";
+        if (empty($summary['total'])) {
+            return $msg . "امروز سفارشی ثبت نشده است. 🎉\n";
         }
 
-        $counts = [];
-        $revenue = 0.0;
-        $refunded = 0.0;
-        $items = 0;
-        $pay = [];
-        foreach ($rows as $r) {
-            $st = $r['status'];
-            $counts[$st] = isset($counts[$st]) ? $counts[$st] + 1 : 1;
-            $refunded += (float) $r['refunded'];
-            if (in_array($st, $paid_statuses, true)) {
-                $revenue += (float) $r['total'];
-                $items += (int) $r['items'];
-                $pm = $r['pay'] ? $r['pay'] : 'نامشخص';
-                if (!isset($pay[$pm])) {
-                    $pay[$pm] = ['c' => 0, 's' => 0.0];
-                }
-                $pay[$pm]['c']++;
-                $pay[$pm]['s'] += (float) $r['total'];
-            }
+        $paid_statuses = apply_filters('wc_telegram_daily_paid_statuses', ['processing', 'completed']);
+        $msg .= "🧾 تعداد سفارش‌ها: " . (int) $summary['total'] . "\n";
+        foreach ($summary['counts'] as $status => $count) {
+            $msg .= $this->status_emoji($status) . ' ' . wc_get_order_status_name($status) . ': ' . (int) $count . "\n";
         }
-
-        $msg .= "🧾 تعداد سفارش‌ها: " . count($rows) . "\n";
-        foreach ($counts as $st => $c) {
-            $msg .= $this->status_emoji($st) . ' ' . wc_get_order_status_name($st) . ': ' . $c . "\n";
+        $msg .= "💵 <b>جمع فروش (پرداخت‌شده): " . $this->money($summary['revenue']) . "</b>\n";
+        if ($summary['refunded'] > 0) {
+            $msg .= "↩️ مجموع استرداد: " . $this->money($summary['refunded']) . "\n";
         }
-        $msg .= "💵 <b>جمع فروش (پرداخت‌شده): " . $this->money($revenue) . "</b>\n";
-        if ($refunded > 0) {
-            $msg .= "↩️ مجموع استرداد: " . $this->money($refunded) . "\n";
-        }
-        $msg .= "📦 آیتم‌های فروخته‌شده: " . $items . "\n";
-
-        if (!empty($pay)) {
+        $msg .= "📦 آیتم‌های فروخته‌شده: " . (int) $summary['items'] . "\n";
+        if (!empty($summary['pay'])) {
             $msg .= "💳 تفکیک روش پرداخت:\n";
-            foreach ($pay as $method => $d) {
-                $msg .= "▪️ " . $method . ': ' . $d['c'] . ' سفارش — ' . $this->money($d['s']) . "\n";
+            foreach ($summary['pay'] as $method => $data) {
+                $msg .= "▪️ " . $method . ': ' . (int) $data['c'] . ' سفارش — ' . $this->money($data['s']) . "\n";
             }
         }
 
-        // لیست فشرده و جمع‌شونده: فقط پرداخت‌شده‌ها (اختیاری)، خط‌های کوتاه، داخل یک پیام
-        $ds = $this->get_settings();
-        $list = $rows;
-        $filtered_note = '';
-        if (!empty($ds['daily_paid_only']) && $ds['daily_paid_only'] === 'yes') {
-            $list = array_values(array_filter($rows, function ($r) use ($paid_statuses) {
-                return in_array($r['status'], $paid_statuses, true);
-            }));
-            if (count($list) < count($rows)) {
-                $filtered_note = ' (فقط پرداخت‌شده‌ها)';
-            }
-        }
-
-        // جدیدترین سفارش اول
-        $list = array_reverse($list);
-
-        // راهنمای ایموجی‌ها — فقط وضعیت‌های موجود در همین لیست
+        $list = isset($summary['details']) ? $summary['details'] : [];
+        $detail_total = isset($summary['detail_total']) ? (int) $summary['detail_total'] : count($list);
+        $filtered_note = $paid_only && $detail_total < (int) $summary['total'] ? ' (فقط پرداخت‌شده‌ها)' : '';
         $legend = [];
-        foreach ($list as $r) {
-            if (!isset($legend[$r['status']])) {
-                $legend[$r['status']] = $this->status_emoji($r['status']) . ' ' . wc_get_order_status_name($r['status']);
+        foreach ($list as $row) {
+            if (!isset($legend[$row['status']])) {
+                $legend[$row['status']] = $this->status_emoji($row['status']) . ' ' . wc_get_order_status_name($row['status']);
             }
         }
-
         $msg .= "--------------------------\n🧾 <b>جزئیات سفارش‌ها" . $filtered_note . ":</b>\n";
         if ($legend) {
             $msg .= 'راهنما: ' . implode(' • ', $legend) . "\n";
         }
-        $msg .= "مبالغ به تومان است. 👇 برای دیدن لیست باز کنید:\n";
-        $msg .= "<blockquote expandable>\n";
-
+        $msg .= "مبالغ به تومان است. 👇 برای دیدن لیست باز کنید:\n<blockquote expandable>\n";
         $all_lines = [];
-        $n = 0;
-        foreach ($list as $r) {
-            $n++;
-            $name = trim((string) $r['name']);
-            if ($name === '') {
-                $name = '—';
-            }
-            $name = htmlspecialchars($name, ENT_QUOTES, 'UTF-8');
-            $all_lines[] = $n . '. #' . $r['number'] . ' | ' . $name . ' | '
-                         . number_format(round((float) $r['total']), 0, '.', ',') . ' | '
-                         . $this->status_emoji($r['status']) . ' ' . wc_get_order_status_name($r['status']);
+        foreach ($list as $index => $row) {
+            $name = trim((string) $row['name']);
+            $name = htmlspecialchars($name === '' ? '—' : $name, ENT_QUOTES, 'UTF-8');
+            $all_lines[] = ($index + 1) . '. #' . $row['number'] . ' | ' . $name . ' | '
+                         . number_format(round((float) $row['total']), 0, '.', ',') . ' | '
+                         . $this->status_emoji($row['status']) . ' ' . wc_get_order_status_name($row['status']);
         }
-
-        // به‌اندازه‌ای خط بردار که کل پیام داخل یک پیام تلگرام جا شود
         $budget = 3400 - mb_strlen($msg);
         $body = '';
         $shown = 0;
@@ -3401,13 +3439,13 @@ class WC_Telegram_Orders {
             $shown++;
         }
         $msg .= $body . "\n";
-        $rest = count($all_lines) - $shown;
+        $rest = max(0, $detail_total - $shown);
         if ($rest > 0) {
             $msg .= '… و ' . $rest . ' سفارش دیگر.' . "\n";
         }
-        $msg .= "</blockquote>";
-        $msg .= "\n--------------------------\n🕐 تولید: " . $this->format_date(get_option('date_format') . ' ' . get_option('time_format'), time()) . ' (نسخه ' . WC_TELEGRAM_ORDERS_VERSION . ')';
-
+        $msg .= "</blockquote>\n--------------------------\n🕐 تولید: "
+             . $this->format_date(get_option('date_format') . ' ' . get_option('time_format'), time())
+             . ' (نسخه ' . WC_TELEGRAM_ORDERS_VERSION . ')';
         return $msg;
     }
 
@@ -3958,19 +3996,39 @@ class WC_Telegram_Orders {
         $threshold = max(1, (int) $s['stock_threshold']);
         $this->maybe_raise_memory();
 
-        // محصولات و متغیرهایی که خودشان موجودی را مدیریت می‌کنند و زیر آستانه‌اند
-        $ids = $wpdb->get_col($wpdb->prepare(
-            "SELECT p.ID FROM {$wpdb->posts} p
-             INNER JOIN {$wpdb->postmeta} ms ON ms.post_id = p.ID AND ms.meta_key = '_manage_stock' AND ms.meta_value = 'yes'
-             INNER JOIN {$wpdb->postmeta} st ON st.post_id = p.ID AND st.meta_key = '_stock'
-             WHERE p.post_type IN ('product', 'product_variation')
-               AND p.post_status IN ('publish', 'private')
-               AND st.meta_value <> ''
-               AND CAST(st.meta_value AS DECIMAL(20,4)) < %d
-             ORDER BY CAST(st.meta_value AS DECIMAL(20,4)) ASC, p.ID ASC
-             LIMIT 500",
-            $threshold
-        ));
+        // When WooCommerce's product lookup is present, filter/sort using its
+        // numeric stock_quantity column instead of CAST() on postmeta. Fall back
+        // for older/incompletely migrated stores. This is structurally cheaper,
+        // but the production query plan still needs validation on the store DB.
+        $lookup_table = $wpdb->prefix . 'wc_product_meta_lookup';
+        $has_lookup   = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $lookup_table)) === $lookup_table;
+        if ($has_lookup) {
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} ms ON ms.post_id = p.ID AND ms.meta_key = '_manage_stock' AND ms.meta_value = 'yes'
+                 INNER JOIN {$lookup_table} stock_lookup ON stock_lookup.product_id = p.ID
+                 WHERE p.post_type IN ('product', 'product_variation')
+                   AND p.post_status IN ('publish', 'private')
+                   AND stock_lookup.stock_quantity IS NOT NULL
+                   AND stock_lookup.stock_quantity < %d
+                 ORDER BY stock_lookup.stock_quantity ASC, p.ID ASC
+                 LIMIT 500",
+                $threshold
+            ));
+        } else {
+            $ids = $wpdb->get_col($wpdb->prepare(
+                "SELECT p.ID FROM {$wpdb->posts} p
+                 INNER JOIN {$wpdb->postmeta} ms ON ms.post_id = p.ID AND ms.meta_key = '_manage_stock' AND ms.meta_value = 'yes'
+                 INNER JOIN {$wpdb->postmeta} st ON st.post_id = p.ID AND st.meta_key = '_stock'
+                 WHERE p.post_type IN ('product', 'product_variation')
+                   AND p.post_status IN ('publish', 'private')
+                   AND st.meta_value <> ''
+                   AND CAST(st.meta_value AS DECIMAL(20,4)) < %d
+                 ORDER BY CAST(st.meta_value AS DECIMAL(20,4)) ASC, p.ID ASC
+                 LIMIT 500",
+                $threshold
+            ));
+        }
 
         $out = [];
         $low = [];

@@ -3,7 +3,7 @@
  * Plugin Name:          Bulk Product Cleaner (Drafts + Images)
  * Plugin URI:           https://example.com/bulk-product-cleaner
  * Description:          حذف دسته‌جمعی محصولات پیش‌نویس همراه با تصاویر، به‌همراه پشتیبان‌گیری کامل و بازیابی تا ۹۰ روز.
- * Version:              12.6.2
+ * Version:              12.6.3
  * Requires at least:    6.0
  * Requires PHP:         7.4
  * Author:               علیرضا شعبان زاده
@@ -20,7 +20,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'BDC_VERSION', '12.6.2' );
+define( 'BDC_VERSION', '12.6.3' );
 define( 'BDC_FILE', __FILE__ );
 define( 'BDC_DIR', plugin_dir_path( __FILE__ ) );
 define( 'BDC_URL', plugin_dir_url( __FILE__ ) );
