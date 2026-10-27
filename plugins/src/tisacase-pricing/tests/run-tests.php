@@ -8,6 +8,7 @@
 
 require_once __DIR__ . '/stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-settings.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcp-jalali.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-round.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-ops.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-db.php';
@@ -579,6 +580,8 @@ $r202 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 202 ) 
 t( 'شناسه غیرفعال (LP) قانون ندارد؛ به سراسری (۳۰٪) می‌افتد', $r202 && 30.0 === (float) $r202['increase'], var_export( $r202, true ) );
 $r204 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 204 ) ) );
 t( 'اولویت: قانون تکی محصول (۱۰٪) بر قانون شناسه CH (۴۰٪) برنده است', $r204 && 10.0 === (float) $r204['increase'] );
+
+require __DIR__ . '/jalali-tests.php';
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );

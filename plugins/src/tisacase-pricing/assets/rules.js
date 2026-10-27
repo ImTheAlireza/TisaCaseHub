@@ -152,7 +152,9 @@
         parts.push(modeLabel(rule.mode));
         const subs = [];
         if (rule.from || rule.to) {
-            subs.push('بازه: ' + (rule.from || '…') + ' تا ' + (rule.to || '…'));
+            var jFrom = rule.from ? window.TCPJalali.toJalaliText(rule.from) : '…';
+            var jTo = rule.to ? window.TCPJalali.toJalaliText(rule.to) : '…';
+            subs.push('بازه: ' + jFrom + ' تا ' + jTo);
         }
         const hasMin = rule.min !== '' && Number(rule.min) > 0;
         const hasMax = rule.max !== '' && Number(rule.max) > 0;
@@ -681,8 +683,8 @@
             increase: $('#tcp-m-increase').val() || '0',
             sale: $('#tcp-m-sale').val() || '0',
             mode: $('#tcp-m-mode').val() || 'round',
-            from: $('#tcp-m-from').val() || '',
-            to: $('#tcp-m-to').val() || '',
+            from: $('#tcp-m-from-g').val() || '',
+            to: $('#tcp-m-to-g').val() || '',
             min: $('#tcp-m-min').val() || '',
             max: $('#tcp-m-max').val() || '',
             enabled: $('#tcp-m-enabled').is(':checked'),
@@ -705,8 +707,8 @@
         $('#tcp-m-increase').val(rule.increase);
         $('#tcp-m-sale').val(rule.sale);
         $('#tcp-m-mode').val(rule.mode);
-        $('#tcp-m-from').val(rule.from);
-        $('#tcp-m-to').val(rule.to);
+        window.TCPJalali.setGregorian('#tcp-m-from', rule.from);
+        window.TCPJalali.setGregorian('#tcp-m-to', rule.to);
         $('#tcp-m-min').val(rule.min);
         $('#tcp-m-max').val(rule.max);
         $('#tcp-m-enabled').prop('checked', rule.enabled);

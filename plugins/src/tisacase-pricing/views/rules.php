@@ -54,6 +54,21 @@ $tcp_rule_summary = static function ( $rule ) use ( $tcp_modes ) {
 	return implode( ' · ', $parts );
 };
 
+/** فیلد تاریخ شمسی با تقویم جلالی؛ ذخیره‌سازی میلادی می‌ماند (name روی فیلد متنی است). */
+$tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
+	$gregorian = TCP_Jalali::normalize_date_input( $gregorian );
+	$jalali    = TCP_Jalali::gregorian_to_text( $gregorian );
+	?>
+	<span class="tcp-jdate" data-tcp-jdate>
+		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08"<?php echo $name ? ' name="' . esc_attr( $name ) . '"' : ''; ?> value="<?php echo esc_attr( $jalali ); ?>">
+		<input type="hidden" class="tcp-jdate__value"<?php echo $hidden_id ? ' id="' . esc_attr( $hidden_id ) . '"' : ''; ?> value="<?php echo esc_attr( $gregorian ); ?>">
+		<button type="button" class="tcp-jdate__toggle" tabindex="-1" aria-label="باز کردن تقویم شمسی">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+		</button>
+	</span>
+	<?php
+};
+
 /** خط دوم جزئیات (بازه/کف‌سقف)؛ خالی یعنی چیزی برای نمایش نیست. */
 $tcp_rule_sub = static function ( $rule ) {
 	if ( ! empty( $rule['exclude'] ) ) {
@@ -61,7 +76,9 @@ $tcp_rule_sub = static function ( $rule ) {
 	}
 	$parts = array();
 	if ( '' !== $rule['from'] || '' !== $rule['to'] ) {
-		$parts[] = 'بازه: ' . ( '' !== $rule['from'] ? $rule['from'] : '…' ) . ' تا ' . ( '' !== $rule['to'] ? $rule['to'] : '…' );
+		$from  = '' !== $rule['from'] ? TCP_Jalali::gregorian_to_text( $rule['from'] ) : '…';
+		$to    = '' !== $rule['to'] ? TCP_Jalali::gregorian_to_text( $rule['to'] ) : '…';
+		$parts[] = 'بازه: ' . $from . ' تا ' . $to;
 	}
 	if ( ! empty( $rule['min'] ) || ! empty( $rule['max'] ) ) {
 		$parts[] = 'کف/سقف: ' . ( ! empty( $rule['min'] ) ? number_format_i18n( $rule['min'] ) : '…' ) . ' تا ' . ( ! empty( $rule['max'] ) ? number_format_i18n( $rule['max'] ) : '…' );
@@ -488,8 +505,8 @@ $tcp_ex_count = array(
 				</label>
 			</div>
 			<div class="tcp-grid-4 tcp-field">
-				<label class="tcp-stack">از تاریخ <input type="date" class="tisa-input" name="global[from]" value="<?php echo esc_attr( $tcp_rules['global']['from'] ); ?>"></label>
-				<label class="tcp-stack">تا تاریخ <input type="date" class="tisa-input" name="global[to]" value="<?php echo esc_attr( $tcp_rules['global']['to'] ); ?>"></label>
+			<label class="tcp-stack">از تاریخ <?php $tcp_jdate( 'global[from]', $tcp_rules['global']['from'] ); ?></label>
+			<label class="tcp-stack">تا تاریخ <?php $tcp_jdate( 'global[to]', $tcp_rules['global']['to'] ); ?></label>
 				<label class="tcp-stack">کف قیمت جدید <input type="number" class="tisa-input" min="0" step="1000" name="global[min]" value="<?php echo esc_attr( $tcp_rules['global']['min'] ? $tcp_rules['global']['min'] : '' ); ?>" placeholder="خالی = بدون کف"></label>
 				<label class="tcp-stack">سقف قیمت جدید <input type="number" class="tisa-input" min="0" step="1000" name="global[max]" value="<?php echo esc_attr( $tcp_rules['global']['max'] ? $tcp_rules['global']['max'] : '' ); ?>" placeholder="خالی = بدون سقف"></label>
 			</div>
@@ -588,8 +605,8 @@ $tcp_ex_count = array(
 				</label>
 			</div>
 			<div class="tcp-modal__grid tcp-modal__grid--2">
-				<label>از تاریخ <input type="date" class="tisa-input" id="tcp-m-from"></label>
-				<label>تا تاریخ <input type="date" class="tisa-input" id="tcp-m-to"></label>
+			<label>از تاریخ <?php $tcp_jdate( '', '', 'tcp-m-from', 'tcp-m-from-g' ); ?></label>
+			<label>تا تاریخ <?php $tcp_jdate( '', '', 'tcp-m-to', 'tcp-m-to-g' ); ?></label>
 				<label>کف قیمت جدید <input type="number" class="tisa-input" min="0" step="1000" id="tcp-m-min" placeholder="خالی = بدون کف"></label>
 				<label>سقف قیمت جدید <input type="number" class="tisa-input" min="0" step="1000" id="tcp-m-max" placeholder="خالی = بدون سقف"></label>
 			</div>

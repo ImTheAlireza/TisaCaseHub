@@ -23,6 +23,7 @@ define( 'TCP_URL', plugin_dir_url( __FILE__ ) );
 define( 'TCP_WHOLESALE_META', '_tisacase_wholesale_price' );
 
 require_once TCP_DIR . 'includes/class-tcp-settings.php';
+require_once TCP_DIR . 'includes/class-tcp-jalali.php';
 require_once TCP_DIR . 'includes/class-tcp-db.php';
 require_once TCP_DIR . 'includes/class-tcp-round.php';
 require_once TCP_DIR . 'includes/class-tcp-ops.php';

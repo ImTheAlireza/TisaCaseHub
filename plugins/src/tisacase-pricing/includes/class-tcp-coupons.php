@@ -107,7 +107,9 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 				'status'        => $status,
 				'usage'         => $usage,
 				'limit'         => $limit,
-				'expires'       => $expires ? $expires->date_i18n( 'Y/m/d' ) : '',
+				'expires'           => $expires ? TCP_Jalali::format( 'Y/m/d', $expires->getTimestamp() ) : '',
+				// مقدار میلادی برای فیلد مخفی فرم ویرایش (ذخیره‌سازی همیشه میلادی می‌ماند).
+				'expires_gregorian' => $expires ? $expires->date_i18n( 'Y-m-d' ) : '',
 				'free_shipping' => (bool) $c->get_free_shipping(),
 				'round'         => 'yes' === $c->get_meta( self::META_ROUND ),
 				'batch'         => (string) $c->get_meta( self::META_BATCH ),
@@ -181,8 +183,10 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$c->set_individual_use( ! empty( $p['individual_use'] ) );
 			$c->set_exclude_sale_items( ! empty( $p['exclude_sale_items'] ) );
 
+			// مقدار فرم می‌تواند شمسی (تقویم جلالی) یا میلادی Y-m-d باشد؛ هر دو نرمال می‌شوند.
 			$exp = isset( $p['expires'] ) ? trim( (string) $p['expires'] ) : '';
-			$c->set_date_expires( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $exp ) ? strtotime( $exp . ' 23:59:59' ) : null );
+			$exp = TCP_Jalali::normalize_date_input( $exp );
+			$c->set_date_expires( '' !== $exp ? strtotime( $exp . ' 23:59:59' ) : null );
 
 			$min = TCP_Ops::number( isset( $p['minimum_amount'] ) ? $p['minimum_amount'] : '' );
 			$max = TCP_Ops::number( isset( $p['maximum_amount'] ) ? $p['maximum_amount'] : '' );

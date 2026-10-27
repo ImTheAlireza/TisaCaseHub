@@ -641,3 +641,54 @@ body.tcp-modal-open { overflow: hidden; }
 .tcp-phone-reset-one label { display: flex; flex-direction: column; gap: 6px; flex: 1 1 200px; font-size: 12px; font-weight: 600; color: var(--tisa-muted, #77828A); }
 .tcp-phone-reset-all { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
 .tcp-phone-reset-all p { margin: 0; font-size: 13px; color: var(--tisa-muted, #77828A); }
+
+/* ---------------- تقویم شمسی (TCP_Jalali / jalali.js) ---------------- */
+
+.tcp-jdate { position: relative; display: flex; width: 100%; align-items: stretch; }
+.tcp-jdate__text { flex: 1 1 auto; min-width: 0; padding-inline-end: 34px; text-align: left; font-variant-numeric: tabular-nums lining-nums; }
+.tcp-jdate__toggle {
+	position: absolute; inset-inline-end: 4px; align-self: center;
+	display: inline-flex; align-items: center; justify-content: center;
+	width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
+	background: transparent; color: var(--tisa-muted, #77828A); cursor: pointer;
+	transition: background var(--tisa-t, .15s ease), color var(--tisa-t, .15s ease);
+}
+.tcp-jdate__toggle:hover { background: var(--tisa-surface-3, #EFEBE1); color: var(--tisa-primary, #0E7C6B); }
+.tcp-jdate__text.is-invalid { border-color: var(--tisa-danger, #B5453A); box-shadow: var(--tisa-ring-danger, 0 0 0 3px rgba(181, 69, 58, .2)); }
+
+.tcp-jcal {
+	position: fixed; z-index: 100020; width: 276px; padding: 10px;
+	background: var(--tisa-surface, #fff); border: 1px solid var(--tisa-border, #E3E1DA);
+	border-radius: var(--tisa-r-lg, 18px); box-shadow: var(--tisa-shadow-lg, 0 20px 60px rgba(31, 42, 46, .25));
+	font-size: var(--tisa-fs-control, 13px); color: var(--tisa-ink, #1F2A2E);
+}
+.tcp-jcal[hidden] { display: none; }
+.tcp-jcal__head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.tcp-jcal__title { font-weight: 800; font-size: var(--tisa-fs-h3, 16px); color: var(--tisa-ink, #1F2A2E); }
+.tcp-jcal__nav {
+	width: 30px; height: 30px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 8px;
+	background: var(--tisa-surface, #fff); color: var(--tisa-primary-ink, #0A5F52);
+	font-size: 18px; line-height: 1; cursor: pointer;
+}
+.tcp-jcal__nav:hover { background: var(--tisa-primary-soft, #E8F0EE); border-color: var(--tisa-border-strong, #C9DCD7); }
+.tcp-jcal__weekrow, .tcp-jcal__days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.tcp-jcal__week { padding: 4px 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--tisa-muted, #77828A); }
+.tcp-jcal__day {
+	height: 32px; padding: 0; border: 0; border-radius: 8px; background: transparent;
+	color: var(--tisa-ink, #1F2A2E); font-size: 12.5px; cursor: pointer;
+	font-variant-numeric: tabular-nums lining-nums;
+}
+.tcp-jcal__day:hover { background: var(--tisa-surface-3, #EFEBE1); }
+.tcp-jcal__day.is-outside { color: var(--tisa-muted, #77828A); opacity: .45; }
+.tcp-jcal__day.is-today { box-shadow: inset 0 0 0 1px var(--tisa-primary, #0E7C6B); color: var(--tisa-primary-ink, #0A5F52); font-weight: 800; }
+.tcp-jcal__day.is-selected { background: var(--tisa-primary, #0E7C6B); color: var(--tisa-on-primary, #fff); font-weight: 800; }
+.tcp-jcal__day.is-selected.is-today { box-shadow: inset 0 0 0 1px var(--tisa-primary-bright, #17A088); }
+.tcp-jcal__foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--tisa-border, #E3E1DA); }
+.tcp-jcal__today, .tcp-jcal__clear {
+	border: 0; background: transparent; cursor: pointer; padding: 6px 10px; border-radius: 8px;
+	font-size: 12.5px; font-weight: 700; font-family: inherit;
+}
+.tcp-jcal__today { color: var(--tisa-primary-ink, #0A5F52); }
+.tcp-jcal__today:hover { background: var(--tisa-primary-soft, #E8F0EE); }
+.tcp-jcal__clear { color: var(--tisa-danger, #B5453A); }
+.tcp-jcal__clear:hover { background: var(--tisa-danger-soft, #FBECEA); }

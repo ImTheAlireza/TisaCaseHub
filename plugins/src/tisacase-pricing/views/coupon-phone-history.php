@@ -60,8 +60,8 @@ $tcp_action_fields = static function () use ( $tcp_pc ) {
 			<thead><tr><th>شماره</th><th>سفارش</th><th>زمان خرید</th><th>سهمیه</th><th>زمان ریست / مدیر</th></tr></thead><tbody>
 			<?php foreach ( $tcp_history as $tcp_use ) : $tcp_order = wc_get_order( $tcp_use->order_id ); ?>
 			<tr><td dir="ltr"><?php echo esc_html( $tcp_use->phone ); ?></td><td><?php if ( $tcp_order ) : ?><a href="<?php echo esc_url( $tcp_order->get_edit_order_url() ); ?>">#<?php echo esc_html( $tcp_use->order_id ); ?></a><?php else : echo esc_html( '#' . $tcp_use->order_id ); endif; ?></td>
-			<td><?php echo esc_html( wp_date( 'Y-m-d H:i', $tcp_use->used_at ) ); ?></td><td><?php echo $tcp_use->released ? 'آزادشده با ریست' : 'مصرف‌شده'; ?></td>
-			<td><?php echo $tcp_use->reset_at ? esc_html( wp_date( 'Y-m-d H:i', $tcp_use->reset_at ) . ' / #' . $tcp_use->reset_by ) : '—'; ?></td></tr>
+			<td><?php echo esc_html( TCP_Jalali::format( 'Y/m/d H:i', (int) $tcp_use->used_at ) ); ?></td><td><?php echo $tcp_use->released ? 'آزادشده با ریست' : 'مصرف‌شده'; ?></td>
+			<td><?php echo $tcp_use->reset_at ? esc_html( TCP_Jalali::format( 'Y/m/d H:i', (int) $tcp_use->reset_at ) . ' / #' . $tcp_use->reset_by ) : '—'; ?></td></tr>
 			<?php endforeach; ?>
 			<?php if ( ! $tcp_history ) : ?><tr><td colspan="5">سابقه‌ای در این صفحه ثبت نشده است.</td></tr><?php endif; ?>
 		</tbody></table></div>

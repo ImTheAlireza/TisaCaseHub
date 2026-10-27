@@ -67,10 +67,30 @@ $tcp_prod_select = static function ( $name, $selected ) {
 	<?php
 };
 
+/**
+ * فیلد تاریخ شمسی با تقویم جلالی.
+ *
+ * ورودی همیشه میلادی Y-m-d است (فرمت ذخیره‌سازی)؛ فیلد متنی نمای شمسی را نشان
+ * می‌دهد و بک‌اند با TCP_Jalali::normalize_date_input هر دو فرمت را می‌پذیرد.
+ */
+$tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
+	$gregorian = TCP_Jalali::normalize_date_input( $gregorian );
+	$jalali    = TCP_Jalali::gregorian_to_text( $gregorian );
+	?>
+	<span class="tcp-jdate" data-tcp-jdate>
+		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $jalali ); ?>">
+		<input type="hidden" class="tcp-jdate__value"<?php echo $hidden_id ? ' id="' . esc_attr( $hidden_id ) . '"' : ''; ?> value="<?php echo esc_attr( $gregorian ); ?>">
+		<button type="button" class="tcp-jdate__toggle" tabindex="-1" aria-label="باز کردن تقویم شمسی">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+		</button>
+	</span>
+	<?php
+};
+
 /** بدنهٔ مشترک فرم (ساخت تکی و انبوه). */
-$tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tcp_toggle, $tcp_cat_select, $tcp_prod_select, $tcp_cur ) {
-	$d = wp_parse_args( (array) $d, array( 'type' => 'percent', 'amount' => 10, 'expires' => '', 'min' => 0, 'max' => 0, 'limit' => 0, 'per_user' => 0, 'free_shipping' => false, 'individual' => false, 'excl_sale' => false, 'round' => true, 'products' => array(), 'excl_products' => array(), 'cats' => array(), 'excl_cats' => array(), 'emails' => array(), 'description' => '' ) );
-	$exp = $d['expires'] ? gmdate( 'Y-m-d', strtotime( str_replace( '/', '-', $d['expires'] ) ) ) : '';
+$tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tcp_toggle, $tcp_cat_select, $tcp_prod_select, $tcp_cur, $tcp_jdate ) {
+	$d = wp_parse_args( (array) $d, array( 'type' => 'percent', 'amount' => 10, 'expires' => '', 'expires_gregorian' => '', 'min' => 0, 'max' => 0, 'limit' => 0, 'per_user' => 0, 'free_shipping' => false, 'individual' => false, 'excl_sale' => false, 'round' => true, 'products' => array(), 'excl_products' => array(), 'cats' => array(), 'excl_cats' => array(), 'emails' => array(), 'description' => '' ) );
+	$exp = $d['expires_gregorian'] ? $d['expires_gregorian'] : TCP_Jalali::normalize_date_input( $d['expires'] );
 	?>
 	<div class="tcp-grid-3">
 		<label class="tcp-stack">نوع تخفیف
@@ -84,7 +104,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 			<input type="number" class="tisa-input" name="amount" min="0" step="0.01" value="<?php echo esc_attr( $d['amount'] ); ?>" required>
 		</label>
 		<label class="tcp-stack">تاریخ انقضا <span class="tcp-muted">(خالی = بدون انقضا)</span>
-			<input type="date" class="tisa-input" name="expires" value="<?php echo esc_attr( $exp ); ?>">
+			<?php $tcp_jdate( 'expires', $exp ); ?>
 		</label>
 	</div>
 

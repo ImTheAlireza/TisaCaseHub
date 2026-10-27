@@ -69,6 +69,7 @@ class TestDB {
 		return $out;
 	}
 }
+require dirname( __DIR__ ) . '/includes/class-tcp-jalali.php';
 require dirname( __DIR__ ) . '/includes/class-tcp-coupon-phones.php';
 $wpdb = new TestDB();
 $pass = 0; $fail = 0;
