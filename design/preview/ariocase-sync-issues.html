@@ -603,6 +603,21 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
           <div class="tcas-pair-stock" hidden></div>
           <small class="tcas-pair-message">هر دو کارت با «اتصال انتخاب‌شده‌ها» یک‌جا متصل می‌شوند و بعد از آن، موجودی این کد خودکار روی هر دو Variation می‌نشیند.</small>
         </article>
+        <article class="tcas-pair-entry is-settled is-saved" data-state="done" data-confidence="list" data-saved-done="1">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-ok">قبلاً متصل · بدون درخواست دوباره</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" disabled><span>انتخاب</span></label>
+          </div>
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:407472"><small class="tcas-variation-title">Samsung A52</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46922" placeholder="SKU / ID:123"><small class="tcas-variation-title">Samsung A52 / A52s</small></label>
+          </div>
+          <div class="tcas-pair-stock" hidden></div>
+          <small class="tcas-pair-message">این Variation از قبل به همین مرجع وصل است؛ تطبیق دوباره آن را بررسی یا ارسال نمی‌کند. برای تغییر، کد را دستی ویرایش کنید.</small>
+        </article>
         <article class="tcas-pair-entry is-orphan" data-state="incomplete" data-confidence="incomplete">
           <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
           <div class="tcas-pair-top">
@@ -622,7 +637,7 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
       </div>
       <div class="tcas-pair-actions">
         <button type="button" class="button button-primary">اتصال انتخاب‌شده‌ها</button>
-        <span class="tcas-status">۱ قطعی · ۳ نیاز به بررسی (۲ کارت فهرست مدل با یک مرجع) · ۱ کارت ناقص</span>
+        <span class="tcas-status">۱ از قبل متصل · ۳ نیاز به بررسی (۲ کارت فهرست مدل با یک مرجع) · ۱ کارت ناقص</span>
       </div>
     </section>
     <section class="tcas-card">

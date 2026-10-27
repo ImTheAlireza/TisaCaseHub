@@ -499,6 +499,8 @@
 
 	/** وضعیت ذخیره‌شدهٔ همین جفت را بدون هیچ درخواستی روی کارت می‌نشاند. */
 	function restoreCard(entry) {
+		// کارت از قبل متصل یا در اجرای قبلی تمام‌شده دست نمی‌خورد.
+		if ('1' === entry.dataset.savedDone) return true;
 		const codes = entryCodes(entry);
 		if (codes.local && codes.remote) {
 			const saved = loadCardStore()[cardId(codes)];
@@ -933,6 +935,18 @@
 		// مرجع مشترک: کارت‌های همان فهرست مدل، همه به یک Variation همکار وصل می‌شوند.
 		entry.dataset.sharedRemote = match.shared_remote ? '1' : '';
 		const parts = entryParts(entry);
+		// از قبل متصل: نه بررسی دوباره، نه درخواست تازه به همکار.
+		if (match.connected) {
+			entry.dataset.savedDone = '1';
+			if (parts.stock) parts.stock.hidden = true;
+			setEntryState(entry, 'done', {
+				flag: 'قبلاً متصل · بدون درخواست دوباره',
+				tone: 'ok',
+				text: 'این Variation از قبل به همین مرجع وصل است؛ دوباره بررسی یا ارسال نمی‌شود. برای تغییر، کد را دستی ویرایش کنید.'
+			});
+			setEntrySelectable(entry, false);
+			return;
+		}
 		const shared = Array.isArray(match.shared) ? match.shared.map(String) : [];
 		const extra = Array.isArray(match.extra) ? match.extra.map(String) : [];
 		if (parts.note) {
@@ -1340,6 +1354,7 @@
 		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
 		const listCount = batch.filter((match) => match && 'list' === match.confidence).length;
 		const sharedRemotes = new Set(batch.filter((match) => match && match.shared_remote).map((match) => String(match.remote_code))).size;
+		const alreadyConnected = batch.filter((match) => match && match.connected).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
 		const smartParts = [];
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
@@ -1348,6 +1363,7 @@
 		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «نیاز به بررسی» علامت خورد.';
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
+		if (alreadyConnected) message += ' ' + String(alreadyConnected) + ' کارت از قبل متصل بود و دوباره بررسی یا ارسال نمی‌شود.';
 		if (orphans) message += ' ' + String(orphans) + ' کارت قرمز برای Variationهای بدون همتا ساخته شد.';
 		if (skippedOrphans) message += ' ' + String(skippedOrphans) + ' مورد به‌خاطر ظرفیت یا نبود مرجع کارت نگرفت.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' هیچ درخواستی برای موجودی زده نشد؛ با «اتصال انتخاب‌شده‌ها» موجودی خوانده و متصل می‌شود.';

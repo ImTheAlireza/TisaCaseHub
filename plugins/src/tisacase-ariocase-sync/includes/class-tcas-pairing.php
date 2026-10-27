@@ -53,6 +53,58 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			return array( 'id' => (int) $local_id, 'product' => $product );
 		}
 
+		/** شناسهٔ محصول محلی از روی مرجع کارت («ID:123» یا SKU). */
+		private static function reference_local_id( $reference ) {
+			$reference = trim( (string) $reference );
+			$id        = self::local_reference_id( $reference );
+			if ( $id ) {
+				return $id;
+			}
+			if ( '' === $reference || ! class_exists( 'TCAS_Mapping' ) ) {
+				return 0;
+			}
+			$lookup = TCAS_Mapping::local_by_sku( $reference );
+			return is_wp_error( $lookup ) ? 0 : absint( $lookup );
+		}
+
+		/**
+		 * کارت‌هایی را علامت می‌زند که همین Variation از قبل به همان مرجع وصل و فعال
+		 * است تا رابط آن‌ها را دوباره بررسی/ارسال نکند. فقط نگاشت داخلی همین سایت
+		 * خوانده می‌شود؛ هیچ درخواستی به همکار نمی‌رود.
+		 */
+		public static function mark_connected( $matches, $partner_id = 'ariocase' ) {
+			$matches    = array_values( (array) $matches );
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
+			$count      = 0;
+			if ( ! class_exists( 'TCAS_Mapping' ) ) {
+				return array( 'matches' => $matches, 'connected' => 0 );
+			}
+			foreach ( $matches as $index => $match ) {
+				if ( ! is_array( $match ) ) {
+					continue;
+				}
+				$local_id = self::reference_local_id( isset( $match['local_code'] ) ? $match['local_code'] : '' );
+				if ( ! $local_id ) {
+					continue;
+				}
+				$code = TCAS_Mapping::remote_code( $local_id );
+				if ( '' === $code || ! TCAS_Mapping::is_enabled( $local_id ) ) {
+					continue;
+				}
+				if ( TCAS_Mapping::partner_id( $local_id ) !== $partner_id ) {
+					continue;
+				}
+				// اگر مرجع ذخیره‌شده با مرجع تازه یکی نباشد، کارت باید دوباره بررسی شود.
+				if ( $code !== (string) ( isset( $match['remote_code'] ) ? $match['remote_code'] : '' ) ) {
+					continue;
+				}
+				$matches[ $index ]['connected']      = true;
+				$matches[ $index ]['connected_code'] = $code;
+				$count++;
+			}
+			return array( 'matches' => $matches, 'connected' => $count );
+		}
+
 		/**
 		 * آیا Variation همکار خودش چند مدل را فهرست کرده («Samsung A52 / A52s») و این
 		 * محصول یکی از همان مدل‌هاست؟ ملاک اصلی «مرجع مشترک» همین است، چون پرچم مرورگر
@@ -112,6 +164,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به همکار دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}
 			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
+			// قبلاً متصل شده و همان مرجع است: هیچ درخواستی به همکار زده نمی‌شود.
+			if ( ! $is_url && '' !== $current && $current === $reference && TCAS_Mapping::is_enabled( $local_id ) ) {
+				return array(
+					'row'      => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است؛ برای پرهیز از درخواست تکراری دوباره خوانده نمی‌شود.', $extra ),
+					'remote'   => null,
+					'local_id' => $local_id,
+				);
+			}
 			if ( ! $is_url && '' !== $current && $current !== $reference ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}

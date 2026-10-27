@@ -344,11 +344,22 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				}
 			}
 			$result = TCAS_Matcher::match( $local['variations'], $remote_variations );
+			// Variationهایی که از قبل به همین مرجع وصل‌اند علامت می‌خورند تا کارتشان
+			// دوباره بررسی/ارسال نشود؛ این کار فقط نگاشت داخلی را می‌خواند.
+			$connected = 0;
+			if ( class_exists( 'TCAS_Pairing' ) && method_exists( 'TCAS_Pairing', 'mark_connected' ) ) {
+				$annotated         = TCAS_Pairing::mark_connected( $result['matches'], $partner_id );
+				$result['matches'] = $annotated['matches'];
+				$connected         = (int) $annotated['connected'];
+			}
+			$summary                   = $result['summary'];
+			$summary['connected']      = $connected;
 			wp_send_json_success( array(
 				'matches'   => $result['matches'],
 				'ambiguous' => $result['ambiguous'],
 				'unmatched' => $result['unmatched'],
-				'summary'   => $result['summary'],
+				'summary'   => $summary,
+				'connected' => $connected,
 				'local'     => array( 'name' => $local['name'], 'reference' => $local['reference'], 'count' => count( $local['variations'] ) ),
 				'remote'    => array( 'name' => $remote['name'], 'reference' => $remote['reference'], 'count' => count( $remote['variations'] ) ),
 			) );

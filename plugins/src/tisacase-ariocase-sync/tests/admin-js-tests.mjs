@@ -235,6 +235,43 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۷) کارت از قبل متصل: نه بررسی، نه درخواست ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = [];
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		bodies.push({ action, body: options.body });
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:407472', remote_code: 'ID:46922/46978', local_label: 'A52', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52'], extra: ['a52s'], shared_remote: true, connected: true, connected_code: 'ID:46922/46978' },
+				{ local_code: 'ID:407473', remote_code: 'ID:46922/46978', local_label: 'A52s', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52s'], extra: ['a52'], shared_remote: true }
+			],
+			ambiguous: [], unmatched: [], connected: 1,
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		if (action === 'tcas_preview_start') return reply({ token: 'g'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('کارت از قبل متصل سبز و «بدون درخواست دوباره» علامت می‌خورد', entries[0].dataset.state === 'done' && entries[0].querySelector('.tcas-pair-flag').textContent.includes('قبلاً متصل') && entries[0].classList.contains('is-settled'));
+	ok('کارت از قبل متصل انتخاب‌نشده و غیرقابل‌انتخاب می‌ماند', !entries[0].querySelector('.tcas-row-select').checked && entries[0].querySelector('.tcas-row-select').disabled && '1' === entries[0].dataset.savedDone);
+	ok('گزارش تطبیق، تعداد کارت‌های از قبل متصل را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('از قبل متصل بود'));
+	ok('بعد از تطبیق هیچ درخواست موجودی برای کارت‌های از قبل متصل زده نمی‌شود', !bodies.some((item) => 'tcas_preview_pair' === item.action) && !bodies.some((item) => 'tcas_preview_start' === item.action));
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => bodies.some((item) => 'tcas_preview_start' === item.action), 8000);
+	const start = bodies.filter((item) => 'tcas_preview_start' === item.action).pop();
+	const lines = String(start.body.get('pairs') || '').split('\n').filter(Boolean);
+	ok('اتصال فقط کارت متصل‌نشده را می‌فرستد (یک جفت، نه دو)', 1 === lines.length && lines[0].includes('ID:407473'), lines.join('|'));
+	ok('نمایهٔ مرجع مشترک با همان یک جفت هم‌ترتیب می‌ماند', start.body.getAll('shared[]').join(',') === '0');
+	dom.window.close();
+}
+
 // ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];

@@ -204,6 +204,26 @@ pair_test( 'کارت دوم همان مرجع مشترک را می‌گیرد و
 $not_in_list = TCAS_Pairing::preview( pair_of( 'ID:74', 'MERGED-LABEL' ) );
 pair_test( 'مدلی که در فهرست برچسب همکار نیست همچنان مرجع تکراری می‌گیرد', 'error' === $not_in_list['row']['status'] && false !== strpos( $not_in_list['row']['message'], '#72' ) && '' === TCAS_Mapping::remote_code( 74 ) );
 
+// --- کارت‌های از قبل متصل: بدون درخواست تازه ---
+$before_recheck = count( TCAS_Api::$calls );
+$recheck = TCAS_Pairing::preview( pair_of( 'ID:72', 'MERGED-LABEL' ) );
+pair_test( 'جفت از قبل متصل بدون هیچ درخواستی به همکار Connected برمی‌گردد', 'connected' === $recheck['row']['status'] && ! $recheck['row']['selectable'] && $before_recheck === count( TCAS_Api::$calls ) && false !== strpos( $recheck['row']['message'], 'تکراری' ) );
+
+$marked = TCAS_Pairing::mark_connected( array(
+	array( 'local_code' => 'ID:72', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ),
+	array( 'local_code' => 'ID:900', 'remote_code' => 'MERGED-LABEL' ),
+), 'ariocase' );
+pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked['matches'][0]['connected'] ) && empty( $marked['matches'][1]['connected'] ) && ! empty( $marked['matches'][2]['connected'] ) && empty( $marked['matches'][3]['connected'] ) );
+
+TCAS_Mapping::map( 73, 'MERGED-LABEL', false, 'ariocase', true );
+$disabled_marked = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ) ), 'ariocase' );
+pair_test( 'نگاشت غیرفعال دوباره ارسال می‌شود (از قبل متصل حساب نمی‌شود)', 0 === $disabled_marked['connected'] );
+
+$other_code = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:70', 'remote_code' => 'SOMETHING-ELSE' ) ), 'ariocase' );
+pair_test( 'اگر مرجع تازه با مرجع ذخیره‌شده یکی نباشد، کارت دوباره بررسی می‌شود', 0 === $other_code['connected'] );
+
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );
 $flag_product = local_product( 60, 'FLAG-1' );
