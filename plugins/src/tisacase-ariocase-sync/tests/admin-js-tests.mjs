@@ -269,6 +269,38 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 {
 	const dom = makeDom(); const { window } = dom;
 	window.fetch = async () => reply({
+		matches: [
+			{ local_code: 'ID:401477', remote_code: 'ID:45969/46045', local_label: 'Redmi Note 11 Pro/12 Pro 4G', remote_label: 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', score: 88, matched_by: 'model', confidence: 'family' },
+			{ local_code: 'ID:401476', remote_code: 'ID:45969/46044', local_label: 'Redmi Note 11 4G', remote_label: 'Xiaomi Note 11 Pro / Note 11s / Note 12s', score: 80, matched_by: 'family', confidence: 'suggested', shared: ['11', 'note'], extra: ['11s', '12s', 'pro'] },
+			{ local_code: 'ID:401481', remote_code: 'ID:45969/46049', local_label: 'Redmi Note 14 Pro 4G', remote_label: 'Xiaomi Note 14 Pro (4G / 5G)', score: 88, matched_by: 'model', confidence: 'family' },
+		],
+		ambiguous: [{ shop: 'tisacase', reference: 'ID:401490', label: 'Note 12 4G', index: 3, reason: 'multiple_families', candidate_count: 2, usable_count: 2, candidates: [{ shop: 'ariocase', reference: 'ID:45969/46051', label: 'Note 12 4G / 5G', score: 80, key: 'family', usable: true }, { shop: 'ariocase', reference: 'ID:45969/46052', label: 'Note 12 Pro / Note 12s', score: 80, key: 'family', usable: true }] }],
+		unmatched: [],
+		local: { name: 'Redmi cases', reference: 'ID:401470', count: 4 }, remote: { name: 'Xiaomi cases', reference: 'ID:45969', count: 3 },
+	});
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:401470';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:45969';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 3);
+	const cards = window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry');
+	ok('برچسب هم‌معنی با نام برند متفاوت در کارت جفت ساخته می‌شود', cards[0].querySelector('.tcas-local-code').value === 'ID:401477' && cards[0].querySelector('.tcas-remote-code').value === 'ID:45969/46045' && cards[2].querySelector('.tcas-remote-code').value === 'ID:45969/46049');
+	ok('تطبیق خانوادهٔ مدل با نشان «بررسی · خانوادهٔ مدل» علامت می‌خورد', cards[0].querySelector('.tcas-pair-flag').textContent === 'بررسی · خانوادهٔ مدل' && cards[0].querySelector('.tcas-pair-flag').classList.contains('is-family') && !cards[0].querySelector('.tcas-pair-flag-note'));
+	const suggested = cards[1].querySelector('.tcas-pair-flag');
+	ok('جفت پیشنهادی خانواده با نشان جداگانه «پیشنهاد» دیده می‌شود', suggested.textContent === 'پیشنهاد · خانوادهٔ مدل' && suggested.classList.contains('is-suggested'));
+	ok('مدل مشترک و مدل‌های فقط در برچسب مقابل زیر همان کارت نوشته می‌شود', cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('مدل مشترک: 11، note') && cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('11s') && cards[1].querySelector('.tcas-pair-flag-note').textContent.includes('فقط در برچسب مقابل'));
+	ok('وضعیت، تعداد جفت‌های خانواده و پیشنهاد را جدا گزارش می‌کند', window.document.getElementById('tcas-smart-status').textContent.includes('2 جفت از خانوادهٔ مدل') && window.document.getElementById('tcas-smart-status').textContent.includes('1 پیشنهاد خانوادگی'));
+	const familyIssue = window.document.querySelector('#tcas-smart-issue-list [role="listitem"]');
+	ok('ابهام چندخانواده‌ای با دلیل و هر دو کاندید دیده می‌شود', familyIssue.textContent.includes('چند خانواده') && familyIssue.textContent.includes('2 برچسب چندمدلی') && familyIssue.querySelectorAll('.tcas-smart-issue-candidate').length === 2 && familyIssue.textContent.includes('خانوادهٔ مدل'));
+	const localInput = cards[1].querySelector('.tcas-local-code');
+	localInput.value = 'ID:401476-EDIT'; localInput.dispatchEvent(new window.Event('input'));
+	ok('ویرایش دستی کد، هم نشان پیشنهاد و هم توضیح مدل‌ها را پاک می‌کند', !cards[1].querySelector('.tcas-pair-flag') && !cards[1].querySelector('.tcas-pair-flag-note'));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async () => reply({
 		matches: [],
 		ambiguous: [{ shop: 'ariocase', reference: 'ID:70/73', label: 'S24', index: 0, reason: 'no_candidate', candidate_count: 0, usable_count: 0, candidates: [] }],
 		unmatched: [{ shop: 'tisacase', reference: 'ID:53', label: 'Duplicate', index: 1, reason: 'duplicate_reference', duplicate_count: 2, twins: [], candidate_count: 0, usable_count: 0, candidates: [] }],
@@ -300,6 +332,7 @@ ok('Selector و استایل جمع‌وجور Variation در View واقعی و
 ok('چیدمان قدیمی و فلش حذف و نتیجهٔ واقعی پیش‌فرض مخفی است', pairsView.includes('tcas-converter-flow') && pairsView.includes('id="tcas-link-result" class="tcas-converter-result" hidden') && !pairsView.includes('tcas-converter-layout') && !pairsView.includes('tcas-converter-arrow') && !uiCss.includes('.tcas-converter-arrow') && !uiCss.includes('.tcas-input-action'));
 ok('کارت تطبیق و کنترل دستهٔ بعد در View و CSS واقعی وجود دارد', pairsView.includes('id="tcas-smart-local"') && pairsView.includes('id="tcas-smart-remote"') && pairsView.includes('id="tcas-smart-next" class="button" hidden') && uiCss.includes('.tcas-smart-grid'));
 ok('فهرست موارد مشکل‌دار، فیلتر و دلیل دقیق در View و CSS واقعی وجود دارد', pairsView.includes('id="tcas-smart-issue-filters"') && pairsView.includes('id="tcas-smart-issue-list"') && pairsView.includes('بررسی دستی') && uiCss.includes('.tcas-smart-issue-filter') && uiCss.includes('.tcas-smart-issue[hidden]') && uiCss.includes('.tcas-smart-issue-candidate') && uiCss.includes('.tcas-pair-flag'));
+ok('نشان‌های خانوادهٔ مدل و پیشنهاد در CSS واقعی وجود دارد', uiCss.includes('.tcas-pair-flag.is-family') && uiCss.includes('.tcas-pair-flag.is-suggested') && uiCss.includes('.tcas-pair-flag-note') && uiCss.includes('.tcas-smart-issue-multiple_families'));
 ok('جفت‌های تازه با کارت والد و شبکهٔ Variation سه‌ستونی ساخته می‌شوند', script.includes('tcas-fresh-product-group') && script.includes('tcas-pair-entries-grouped') && uiCss.includes('.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr))'));
 ok('محصولات متصل آکارئونی و کارت‌های Variation سه‌ستونی با موجودی دارند', linkedGroupsView.includes('<details class="tcas-linked-group">') && linkedGroupsView.includes('tcas-linked-variation-card') && linkedGroupsView.includes("$row['quantity']") && uiCss.includes('.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr))'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

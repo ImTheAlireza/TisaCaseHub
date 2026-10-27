@@ -33,12 +33,24 @@
 			flag: 'بدون مرجع',
 			reason: () => 'این Variation مرجع SKU/ID ندارد؛ پیش از اتصال باید مرجع بگیرد.'
 		},
+		multiple_families: {
+			flag: 'چند خانواده',
+			reason: (item) => String(Number(item.candidate_count) || 0) + ' برچسب چندمدلی از همان خانواده در سمت مقابل هست؛ برای پرهیز از اتصال اشتباه، خودکار انتخاب نمی‌شود.'
+		},
 		no_candidate: {
 			flag: 'بدون همتا',
 			reason: () => 'هیچ Variation هم‌ارزی در سمت مقابل پیدا نشد (نه با SKU و نه با برچسب)؛ اگر این مدل در فروشگاه مقابل وجود ندارد، این مورد طبیعی است.'
 		}
 	};
-	const issueKeyLabels = { sku: 'SKU', label: 'برچسب', tokens: 'الگو' };
+	const issueKeyLabels = { sku: 'SKU', label: 'برچسب', tokens: 'الگو', family: 'خانوادهٔ مدل', model: 'مدل' };
+
+	// نشان‌های تطبیق: فقط SKU یکتا بی‌نشان است؛ بقیه باید پیش از اتصال دیده شوند.
+	const matchFlags = {
+		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
+		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
+		label: { text: 'بررسی · تطبیق از برچسب', cls: '', hint: 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.' },
+		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' }
+	};
 
 	function text(id, value, isError) {
 		const node = $(id);
@@ -153,17 +165,26 @@
 		return label;
 	}
 
-	// جفت‌هایی که با SKU یکتا تطبیق نشده‌اند با نشان «بررسی» علامت می‌خورند.
+	// جفت‌هایی که با SKU یکتا تطبیق نشده‌اند با نشان «بررسی» یا «پیشنهاد» علامت می‌خورند.
 	function flagMatchEntry(entry, match) {
 		if (!entry || !match) return;
 		const confidence = match.confidence ? String(match.confidence) : '';
 		if (!confidence || 'exact' === confidence) return;
-		const kind = 'tokens' === match.matched_by ? 'تطبیق الگویی' : 'تطبیق از برچسب';
-		const badge = node('span', 'tcas-pair-flag', 'بررسی · ' + kind);
-		badge.title = 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.';
+		const info = matchFlags[confidence] || matchFlags[match.matched_by] || matchFlags.label;
+		const badge = node('span', 'tcas-pair-flag ' + info.cls, info.text);
+		badge.title = info.hint;
 		const fields = entry.querySelector('.tcas-pair-fields');
 		if (fields) entry.insertBefore(badge, fields);
 		else entry.appendChild(badge);
+		const shared = Array.isArray(match.shared) ? match.shared.map(String) : [];
+		const extra = Array.isArray(match.extra) ? match.extra.map(String) : [];
+		if (shared.length || extra.length) {
+			const details = [];
+			if (shared.length) details.push('مدل مشترک: ' + shared.join('، '));
+			if (extra.length) details.push('فقط در برچسب مقابل: ' + extra.join('، '));
+			const note = node('small', 'tcas-pair-flag-note', details.join(' · '));
+			if (badge.parentNode) badge.parentNode.insertBefore(note, badge.nextSibling);
+		}
 	}
 
 	function pairFields(localCode, remoteCode, localTitle, remoteTitle) {
@@ -236,6 +257,8 @@
 			setVariationTitle(input.closest('.tcas-shop-field'), '');
 			const flag = entry.querySelector('.tcas-pair-flag');
 			if (flag) flag.remove();
+			const flagNote = entry.querySelector('.tcas-pair-flag-note');
+			if (flagNote) flagNote.remove();
 			invalidatePreview();
 			resetSmart();
 		}));
@@ -481,8 +504,14 @@
 		invalidatePreview();
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
 		const flagged = batch.filter((match) => match && match.confidence && 'exact' !== match.confidence).length;
+		const familyCount = batch.filter((match) => match && 'family' === match.confidence).length;
+		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
-		if (flagged) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد.';
+		const smartParts = [];
+		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
+		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
+		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «بررسی»/«پیشنهاد» علامت خورد.';
+		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
 		text('tcas-smart-status', message);

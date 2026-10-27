@@ -10,9 +10,11 @@ defined( 'ABSPATH' ) || exit;
 if ( ! class_exists( 'TCAS_Matcher' ) ) {
 
 	final class TCAS_Matcher {
-		const SCORE_SKU   = 100;
-		const SCORE_LABEL = 95;
-		const SCORE_TOKEN = 90;
+		const SCORE_SKU        = 100;
+		const SCORE_LABEL      = 95;
+		const SCORE_TOKEN      = 90;
+		const SCORE_FAMILY     = 88;
+		const SCORE_SUGGESTION = 80;
 
 		private static function unicode_text( $value ) {
 			$value = trim( (string) $value );
@@ -94,6 +96,286 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			}
 			sort( $expanded, SORT_STRING );
 			return implode( '', $expanded );
+		}
+
+		/** شبکهٔ نسل (4G/5G) از توکن‌های مدل جدا می‌شود تا اشتباه 4G با 5G رخ ندهد. */
+		private static function is_net_token( $token ) {
+			return in_array( $token, array( '2g', '3g', '4g', '5g', 'lte' ), true );
+		}
+
+		/**
+		 * پروفایل مدل یک Variation: توکن‌های مدل (بدون شبکه)، نسل شبکه، ارقام مدل
+		 * و این‌که برچسب چند مدل جایگزین را با هم فهرست کرده است یا نه (A / B / C).
+		 */
+		private static function profile( $variation ) {
+			$raw    = isset( $variation['label'] ) ? (string) $variation['label'] : '';
+			$tokens = self::label_tokens( $raw );
+			$models = array();
+			$nets   = array();
+			$digits = array();
+			foreach ( $tokens as $token ) {
+				if ( self::is_net_token( $token ) ) {
+					$nets[ $token ] = true;
+					continue;
+				}
+				$models[ $token ] = true;
+				if ( preg_match_all( '/[0-9]+/', $token, $found ) ) {
+					foreach ( $found[0] as $number ) {
+						$digits[ $number ] = true;
+					}
+				}
+			}
+			// کلیدهای عددی PHP به int تبدیل می‌شوند؛ برای مقایسه و خروجی یکدست، رشته می‌مانند.
+			$models = array_map( 'strval', array_keys( $models ) );
+			$nets   = array_map( 'strval', array_keys( $nets ) );
+			$digits = array_map( 'strval', array_keys( $digits ) );
+			sort( $models, SORT_STRING );
+			sort( $nets, SORT_STRING );
+			sort( $digits, SORT_STRING );
+			$multi = (bool) preg_match( '#[/+|&،]#u', $raw )
+				|| (bool) preg_match( '/(?:^|\s)(?:و|یا|or|and)(?:\s|$)/u', $raw );
+			return array(
+				'models' => $models,
+				'nets'   => $nets,
+				'digits' => $digits,
+				'multi'  => $multi,
+				'key'    => implode( '|', $models ),
+			);
+		}
+
+		private static function contains_all( $needle, $haystack ) {
+			if ( ! $needle ) {
+				return false;
+			}
+			foreach ( $needle as $item ) {
+				if ( ! in_array( $item, $haystack, true ) ) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		/**
+		 * نسل شبکه فقط وقتی سازگار است که برابر باشد یا یک طرف هر دو نسل را فهرست کند.
+		 * در مسیر «پیشنهاد» نبودِ نسل در یک برچسب، نامشخص حساب می‌شود نه ناسازگار؛
+		 * ولی 4G در برابر 5G هرگز سازگار نیست.
+		 */
+		private static function nets_compatible( $first, $second, $allow_unspecified = false ) {
+			if ( $first === $second ) {
+				return true;
+			}
+			if ( $allow_unspecified && ( ! $first || ! $second ) ) {
+				return true;
+			}
+			return self::contains_all( $first, $second ) || self::contains_all( $second, $first );
+		}
+
+		/** دست‌کم یک توکن غیرعددی (نام خانواده مثل note/ultra/pro) لازم است. */
+		private static function has_family_word( $tokens ) {
+			foreach ( (array) $tokens as $token ) {
+				if ( ! preg_match( '/^[0-9]+$/u', (string) $token ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private static function profile_ready( $variation, $index, $duplicates ) {
+			if ( isset( $duplicates[ $index ] ) ) {
+				return false;
+			}
+			$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
+			return '' !== $reference;
+		}
+
+		private static function family_entry( $local, $local_id, $remote, $remote_id, $score, $matched_by, $confidence ) {
+			return array(
+				'local_code'   => (string) $local['reference'],
+				'remote_code'  => (string) $remote['reference'],
+				'local_label'  => self::label( $local, '#' . ( $local_id + 1 ) ),
+				'remote_label' => self::label( $remote, '#' . ( $remote_id + 1 ) ),
+				'score'        => (int) $score,
+				'matched_by'   => $matched_by,
+				'confidence'   => $confidence,
+				'local_index'  => (int) $local_id,
+				'remote_index' => (int) $remote_id,
+				'_local_index' => (int) $local_id,
+			);
+		}
+
+		/**
+		 * پاس «خانوادهٔ مدل»: دو برچسب با مجموعهٔ توکن مدل یکسان و نسل سازگار
+		 * (مثل «Redmi Note 11 Pro/12 Pro 4G» و «Xiaomi Note 11 Pro / Note 12 Pro (4G)»
+		 * یا «Note 14 Pro 4G» و «Note 14 Pro (4G / 5G)») یک‌به‌یک جفت می‌شوند.
+		 */
+		private static function family_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, &$matched_local, &$matched_remote ) {
+			$local_groups  = array();
+			$remote_groups = array();
+			foreach ( $local_variations as $index => $variation ) {
+				if ( isset( $matched_local[ $index ] ) || ! self::profile_ready( $variation, $index, $duplicate_local ) ) {
+					continue;
+				}
+				$profile = self::profile( $variation );
+				if ( ! $profile['models'] ) {
+					continue;
+				}
+				$local_groups[ $profile['key'] ][] = array( 'index' => (int) $index, 'profile' => $profile );
+			}
+			foreach ( $remote_variations as $index => $variation ) {
+				if ( isset( $matched_remote[ $index ] ) || ! self::profile_ready( $variation, $index, $duplicate_remote ) ) {
+					continue;
+				}
+				$profile = self::profile( $variation );
+				if ( ! $profile['models'] ) {
+					continue;
+				}
+				$remote_groups[ $profile['key'] ][] = array( 'index' => (int) $index, 'profile' => $profile );
+			}
+			$found = array();
+			foreach ( $local_groups as $key => $local_entries ) {
+				if ( ! isset( $remote_groups[ $key ] ) ) {
+					continue;
+				}
+				$remote_entries = $remote_groups[ $key ];
+				if ( 1 !== count( $local_entries ) || 1 !== count( $remote_entries ) ) {
+					continue;
+				}
+				$local_entry  = $local_entries[0];
+				$remote_entry = $remote_entries[0];
+				if ( ! self::nets_compatible( $local_entry['profile']['nets'], $remote_entry['profile']['nets'] ) ) {
+					continue;
+				}
+				$found[] = self::family_entry(
+					$local_variations[ $local_entry['index'] ], $local_entry['index'],
+					$remote_variations[ $remote_entry['index'] ], $remote_entry['index'],
+					self::SCORE_FAMILY, 'model', 'family'
+				);
+				$matched_local[ $local_entry['index'] ]   = true;
+				$matched_remote[ $remote_entry['index'] ] = true;
+			}
+			return $found;
+		}
+
+		/**
+		 * پاس «پیشنهاد خانوادگی»: وقتی یک طرف چند مدل را با هم فهرست می‌کند
+		 * (Note 11 Pro / Note 11s / Note 12s) و طرف دیگر تنها یکی از همان خانواده است
+		 * (Note 11 4G)، جفت پیشنهادی ساخته می‌شود؛ فقط اگر انتخاب دوطرفه یکتا باشد.
+		 */
+		private static function suggestion_pairs( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, &$matched_local, &$matched_remote ) {
+			$locals  = array();
+			$remotes = array();
+			foreach ( $local_variations as $index => $variation ) {
+				if ( isset( $matched_local[ $index ] ) || ! self::profile_ready( $variation, $index, $duplicate_local ) ) {
+					continue;
+				}
+				$profile = self::profile( $variation );
+				if ( ! $profile['models'] ) {
+					continue;
+				}
+				$locals[ (int) $index ] = $profile;
+			}
+			foreach ( $remote_variations as $index => $variation ) {
+				if ( isset( $matched_remote[ $index ] ) || ! self::profile_ready( $variation, $index, $duplicate_remote ) ) {
+					continue;
+				}
+				$profile = self::profile( $variation );
+				if ( ! $profile['models'] ) {
+					continue;
+				}
+				$remotes[ (int) $index ] = $profile;
+			}
+			$local_candidates  = array();
+			$remote_candidates = array();
+			foreach ( $locals as $local_id => $local ) {
+				foreach ( $remotes as $remote_id => $remote ) {
+					$pair = self::family_candidate( $local, $remote );
+					if ( ! $pair ) {
+						continue;
+					}
+					$local_candidates[ $local_id ][ $remote_id ]  = $pair;
+					$remote_candidates[ $remote_id ][ $local_id ] = $pair;
+				}
+			}
+			$found = array();
+			foreach ( $local_candidates as $local_id => $candidates ) {
+				if ( 1 !== count( $candidates ) ) {
+					continue;
+				}
+				$remote_id = (int) array_key_first( $candidates );
+				if ( empty( $remote_candidates[ $remote_id ] ) || 1 !== count( $remote_candidates[ $remote_id ] ) ) {
+					continue;
+				}
+				$pair   = $candidates[ $remote_id ];
+				$entry  = self::family_entry(
+					$local_variations[ $local_id ], $local_id,
+					$remote_variations[ $remote_id ], $remote_id,
+					self::SCORE_SUGGESTION, 'family', 'suggested'
+				);
+				$entry['shared'] = $pair['shared'];
+				$entry['extra']  = $pair['extra'];
+				$found[] = $entry;
+				$matched_local[ $local_id ]   = true;
+				$matched_remote[ $remote_id ] = true;
+			}
+			return $found;
+		}
+
+		/** آیا این دو پروفایل یک خانوادهٔ مدل با یک طرف چندمدلی هستند؟ */
+		private static function family_candidate( $local, $remote ) {
+			if ( ! $local['multi'] && ! $remote['multi'] ) {
+				return null;
+			}
+			if ( ! self::nets_compatible( $local['nets'], $remote['nets'], true ) ) {
+				return null;
+			}
+			$pairs = array( array( $local, $remote ), array( $remote, $local ) );
+			foreach ( $pairs as $pair ) {
+				$small = $pair[0];
+				$big   = $pair[1];
+				if ( ! $small['multi'] ) {
+					// یک توکن تنها (مثل «11») خانوادهٔ مدل نمی‌سازد؛ دست‌کم نام خانواده + شماره لازم است.
+					if ( count( $small['models'] ) < 2 || ! self::has_family_word( $small['models'] ) ) {
+						continue;
+					}
+					if ( ! self::contains_all( $small['models'], $big['models'] ) ) {
+						continue;
+					}
+					if ( count( $big['models'] ) <= count( $small['models'] ) ) {
+						continue;
+					}
+					$extra = array_values( array_diff( $big['models'], $small['models'] ) );
+					return array( 'shared' => $small['models'], 'extra' => $extra );
+				}
+				// هر دو طرف چندمدلی‌اند: مدل‌های یک طرف باید زیرمجموعهٔ دیگری باشد.
+				if ( self::contains_all( $small['models'], $big['models'] ) && count( $big['models'] ) > count( $small['models'] ) ) {
+					return array( 'shared' => $small['models'], 'extra' => array_values( array_diff( $big['models'], $small['models'] ) ) );
+				}
+			}
+			return null;
+		}
+
+		/** کاندیدهای خانوادگی یک Variation برای توضیح «چند خانواده» در فهرست بررسی. */
+		private static function family_issue_candidates( $others, $other_shop, $self_profile, $limit = 5 ) {
+			$found = array();
+			foreach ( $others as $index => $other ) {
+				$profile = self::profile( $other );
+				if ( ! $profile['models'] || ! self::family_candidate( $self_profile, $profile ) ) {
+					continue;
+				}
+				$found[] = array(
+					'shop'      => $other_shop,
+					'index'     => (int) $index,
+					'reference' => isset( $other['reference'] ) ? (string) $other['reference'] : '',
+					'label'     => self::label( $other, '#' . ( $index + 1 ) ),
+					'score'     => self::SCORE_SUGGESTION,
+					'key'       => 'family',
+					'usable'    => '' !== ( isset( $other['reference'] ) ? trim( (string) $other['reference'] ) : '' ),
+				);
+				if ( count( $found ) >= $limit ) {
+					break;
+				}
+			}
+			return $found;
 		}
 
 		private static function keys( $variation ) {
@@ -234,15 +516,18 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 		}
 
 		/** ساخت یک ردیف «نیازمند بررسی» با دلیل مشخص و شواهد قابل‌دیدن. */
-		private static function issue( $shop, $variations, $index, $other_shop, $other_variations, $other_index, $other_duplicates, $counts, $possible ) {
+		private static function issue( $shop, $variations, $index, $other_shop, $other_variations, $other_index, $other_duplicates, $counts, $possible, $family = array() ) {
 			$variation = $variations[ $index ];
 			$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
 			$duplicate = '' !== $reference && isset( $counts[ $reference ] ) && $counts[ $reference ] > 1;
 			$found     = self::issue_candidates( $variation, $other_shop, $other_variations, $other_index, $other_duplicates );
+			$family = array_values( (array) $family );
 			if ( '' === $reference ) {
 				$reason = 'missing_reference';
 			} elseif ( $duplicate ) {
 				$reason = 'duplicate_reference';
+			} elseif ( count( $family ) > 1 ) {
+				$reason = 'multiple_families';
 			} elseif ( 0 === $found['total'] ) {
 				$reason = 'no_candidate';
 			} elseif ( 0 === $found['usable'] ) {
@@ -254,6 +539,20 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			} else {
 				$reason = 'counterpart_unusable';
 			}
+		if ( 'multiple_families' === $reason ) {
+			return array(
+				'shop'            => $shop,
+				'index'           => (int) $index,
+				'reference'       => $reference,
+				'label'           => self::label( $variation, '#' . ( $index + 1 ) ),
+				'reason'          => $reason,
+				'duplicate_count' => 1,
+				'twins'           => array(),
+				'candidate_count' => count( $family ),
+				'usable_count'    => count( array_filter( $family, function( $candidate ) { return ! empty( $candidate['usable'] ); } ) ),
+				'candidates'      => $family,
+			);
+		}
 			return array(
 				'shop'            => $shop,
 				'index'           => (int) $index,
@@ -363,6 +662,18 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				$matched_local[ $local_id ]   = true;
 				$matched_remote[ $remote_id ] = true;
 			}
+
+			// پاس دوم: خانوادهٔ مدل (برچسب‌های هم‌معنی با نگارش متفاوت).
+			$family_matches = array();
+			foreach ( self::family_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, $matched_local, $matched_remote ) as $entry ) {
+				$family_matches[] = $entry;
+			}
+			// پاس سوم: پیشنهاد خانوادگی برای برچسب‌های چندمدلی (پس از مصرف پاس‌های قبلی).
+			$suggested = array();
+			foreach ( self::suggestion_pairs( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, $matched_local, $matched_remote ) as $entry ) {
+				$suggested[] = $entry;
+			}
+			$matches = array_merge( $matches, $family_matches, $suggested );
 			usort( $matches, function( $a, $b ) {
 				return $a['_local_index'] <=> $b['_local_index'];
 			} );
@@ -377,8 +688,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_local[ $index ] ) ) {
 					continue;
 				}
-				$item = self::issue( 'tisacase', $local_variations, $index, 'ariocase', $remote_variations, $remote_diagnostic, $duplicate_remote, $local_counts, $possible_local );
-				if ( isset( $duplicate_local[ $index ] ) || isset( $possible_local[ $index ] ) ) {
+				$item = self::issue( 'tisacase', $local_variations, $index, 'ariocase', $remote_variations, $remote_diagnostic, $duplicate_remote, $local_counts, $possible_local, self::family_issue_candidates( $remote_variations, 'ariocase', self::profile( $local_variations[ $index ] ) ) );
+				if ( isset( $duplicate_local[ $index ] ) || isset( $possible_local[ $index ] ) || 'multiple_families' === $item['reason'] ) {
 					$ambiguous[] = $item;
 				} else {
 					$unmatched[] = $item;
@@ -388,17 +699,23 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_remote[ $index ] ) ) {
 					continue;
 				}
-				$item = self::issue( 'ariocase', $remote_variations, $index, 'tisacase', $local_variations, $local_diagnostic, $duplicate_local, $remote_counts, $possible_remote );
-				if ( isset( $duplicate_remote[ $index ] ) || isset( $possible_remote[ $index ] ) ) {
+				$item = self::issue( 'ariocase', $remote_variations, $index, 'tisacase', $local_variations, $local_diagnostic, $duplicate_local, $remote_counts, $possible_remote, self::family_issue_candidates( $local_variations, 'tisacase', self::profile( $remote_variations[ $index ] ) ) );
+				if ( isset( $duplicate_remote[ $index ] ) || isset( $possible_remote[ $index ] ) || 'multiple_families' === $item['reason'] ) {
 					$ambiguous[] = $item;
 				} else {
 					$unmatched[] = $item;
 				}
 			}
-			$exact  = 0;
-			$fuzzy  = 0;
+			$exact     = 0;
+			$fuzzy     = 0;
+			$family    = 0;
+			$suggested_count = 0;
 			foreach ( $matches as $match ) {
-				if ( 'exact' === $match['confidence'] ) {
+				if ( 'suggested' === $match['confidence'] ) {
+					$suggested_count++;
+				} elseif ( 'family' === $match['confidence'] ) {
+					$family++;
+				} elseif ( 'exact' === $match['confidence'] ) {
 					$exact++;
 				} else {
 					$fuzzy++;
@@ -408,7 +725,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				'matches'   => $matches,
 				'ambiguous' => $ambiguous,
 				'unmatched' => $unmatched,
-				'summary'   => array( 'exact' => $exact, 'fuzzy' => $fuzzy ),
+				'summary'   => array( 'exact' => $exact, 'fuzzy' => $fuzzy, 'family' => $family, 'suggested' => $suggested_count ),
 			);
 		}
 	}

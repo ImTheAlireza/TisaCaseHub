@@ -252,6 +252,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				'matches'   => $result['matches'],
 				'ambiguous' => $result['ambiguous'],
 				'unmatched' => $result['unmatched'],
+				'summary'   => $result['summary'],
 				'local'     => array( 'name' => $local['name'], 'reference' => $local['reference'], 'count' => count( $local['variations'] ) ),
 				'remote'    => array( 'name' => $remote['name'], 'reference' => $remote['reference'], 'count' => count( $remote['variations'] ) ),
 			) );

@@ -317,6 +317,10 @@
 .tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
 .tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
+.tcas-pair-flag.is-family { border-style:solid; border-color:var(--tisa-primary-soft,#E8F0EE); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-pair-flag.is-suggested { border-style:dashed; border-color:var(--tisa-info,#246B8E); background:#EAF3F8; color:#1C556F; }
+.tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 7px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
+.tcas-smart-issue-multiple_families { border-right-color:#C58A19; }
 .tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
 .tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
 .tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }

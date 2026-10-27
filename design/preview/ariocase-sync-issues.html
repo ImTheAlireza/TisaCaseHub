@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>پیش‌نمایش فلگ موارد مشکل‌دار — همگام‌سازی موجودی</title>
+<title>پیش‌نمایش تطبیق هوشمند و فلگ موارد مشکل‌دار — همگام‌سازی موجودی</title>
 <style>
 body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-serif;}
 .tcas-wrap {
@@ -325,6 +325,10 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
 .tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
 .tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
+.tcas-pair-flag.is-family { border-style:solid; border-color:var(--tisa-primary-soft,#E8F0EE); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-pair-flag.is-suggested { border-style:dashed; border-color:var(--tisa-info,#246B8E); background:#EAF3F8; color:#1C556F; }
+.tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 7px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
+.tcas-smart-issue-multiple_families { border-right-color:#C58A19; }
 .tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
 .tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
 .tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }
@@ -443,60 +447,59 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
 </head>
 <body>
 <div class="wrap tisa-wrap tcas-wrap" dir="rtl">
-  <header class="tcas-hero"><div class="tcas-brand"><span class="tcas-brand-mark" aria-hidden="true">↔</span><div><h1>همگام‌سازی موجودی با همکار</h1><p>TisaCase ↔ ArioCase</p></div></div><div class="tcas-hero-badges"><span class="tcas-badge is-ok">پیش‌نمایش ایستا · دادهٔ نمونه</span><span class="tcas-badge">v1.14.0</span></div></header>
+  <header class="tcas-hero"><div class="tcas-brand"><span class="tcas-brand-mark" aria-hidden="true">↔</span><div><h1>همگام‌سازی موجودی با همکار</h1><p>TisaCase ↔ ArioCase</p></div></div><div class="tcas-hero-badges"><span class="tcas-badge is-ok">پیش‌نمایش ایستا · دادهٔ نمونه</span><span class="tcas-badge">v1.15.0</span></div></header>
   <main class="tcas-main">
     <section class="tcas-card tcas-smart-card">
       <div class="tcas-card-head"><div><span class="tcas-step">⌁</span><h2>تطبیق خودکار Variationها</h2></div><span class="tcas-tag">مرجع دقیق</span></div>
-      <div class="tcas-smart-grid"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4820" readonly></label><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130" readonly></label><div class="tcas-smart-actions"><button type="button" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button></div></div>
-      <div class="tcas-status is-success">TisaCase: 41 · ArioCase: 41 — 38 جفت آماده شد (38/38). 4 جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد. 6 مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد. پیش‌نمایش را بزنید.</div>
+      <div class="tcas-smart-grid"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401470" readonly></label><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969" readonly></label><div class="tcas-smart-actions"><button type="button" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button></div></div>
+      <div class="tcas-status is-success">TisaCase: 41 · ArioCase: 41 — 38 جفت آماده شد (38/38). 2 جفت از خانوادهٔ مدل و 1 پیشنهاد خانوادگی تشخیص داده شد و با نشان «بررسی»/«پیشنهاد» علامت خورد. 6 مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد. پیش‌نمایش را بزنید.</div>
       <section class="tcas-smart-issues" aria-live="polite">
         <div class="tcas-smart-issues-head"><h3>موارد نیازمند بررسی</h3><span class="tcas-smart-issues-count">6 مورد</span></div>
-        <p class="tcas-smart-issues-help">هر Variation رد‌شده با دلیل دقیق مشکلش علامت خورده است: مرجع تکراری، چند گزینهٔ محتمل، کلید مشترک، همتای نامعتبر، نبود مرجع یا نبود همتا. با «بررسی دستی» یک کارت جفت با همان مرجع ساخته می‌شود تا سمت مقابل را خودتان کامل کنید.</p>
+        <p class="tcas-smart-issues-help">هر Variation رد‌شده با دلیل دقیق مشکلش علامت خورده است: مرجع تکراری، چند گزینهٔ محتمل، چند خانواده، کلید مشترک، همتای نامعتبر، نبود مرجع یا نبود همتا. با «بررسی دستی» یک کارت جفت با همان مرجع ساخته می‌شود تا سمت مقابل را خودتان کامل کنید.</p>
         <div class="tcas-smart-issue-filters" role="group" aria-label="فیلتر موارد نیازمند بررسی"><button type="button" class="button tcas-smart-issue-filter is-active" data-filter="all" aria-pressed="true">همه 6</button><button type="button" class="button tcas-smart-issue-filter" data-filter="ambiguous" aria-pressed="false">مبهم 3</button><button type="button" class="button tcas-smart-issue-filter" data-filter="unmatched" aria-pressed="false">بدون تطبیق 3</button></div>
         <div class="tcas-smart-issue-list" role="list">
-          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-duplicate_reference" data-kind="ambiguous" role="listitem">
-            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">مرجع تکراری</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
-            <strong class="tcas-smart-issue-label">قاب سیلیکونی S25 Ultra مشکی</strong>
-            <code class="tcas-smart-issue-reference">ID:4821</code>
-            <small class="tcas-smart-issue-reason">مرجع این Variation در همین فروشگاه 2 بار تکرار شده است؛ تا یکتاشدن مرجع، جفت خودکار ساخته نمی‌شود.</small>
-            <div class="tcas-smart-issue-twins"><span class="tcas-smart-issue-twins-title">همین مرجع در همین فروشگاه:</span><span class="tcas-smart-issue-twin">قاب سیلیکونی S25 Ultra آبی · ID:4821</span></div>
-            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate is-unusable">ArioCase · S25 Ultra · مشکی · ID:9130/4412 · SKU · غیرقابل‌اتصال</span></div>
-            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
-          </article>
           <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-multiple_candidates" data-kind="ambiguous" role="listitem">
             <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">چند گزینه</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
-            <strong class="tcas-smart-issue-label">قاب مگ‌سیف Samsung A56</strong>
-            <code class="tcas-smart-issue-reference">ID:4827</code>
+            <strong class="tcas-smart-issue-label">Redmi Note 12 4G</strong>
+            <code class="tcas-smart-issue-reference">ID:401492</code>
             <small class="tcas-smart-issue-reason">2 Variation محتمل در سمت مقابل پیدا شد؛ انتخاب خودکار دلخواه انجام نمی‌شود.</small>
-            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (2):</span><span class="tcas-smart-issue-candidate">ArioCase · A56 · ID:9131/4501 · برچسب</span><span class="tcas-smart-issue-candidate">ArioCase · A56 Plus · ID:9131/4502 · برچسب</span></div>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (2):</span><span class="tcas-smart-issue-candidate">ArioCase · Xiaomi Note 12 4G · ID:45969/46055 · برچسب</span><span class="tcas-smart-issue-candidate">ArioCase · Xiaomi Note 12 / Note 12s · ID:45969/46056 · برچسب</span></div>
             <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
           </article>
-          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-shared_key" data-kind="ambiguous" role="listitem">
-            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">کلید مشترک</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
-            <strong class="tcas-smart-issue-label">A55 5G</strong>
-            <code class="tcas-smart-issue-reference">ID:9132/4610</code>
-            <small class="tcas-smart-issue-reason">کلید تطبیق (SKU یا برچسب) با چند Variation دیگر مشترک است؛ اتصال خودکار امن نیست.</small>
-            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate">TisaCase · قاب A55 · ID:4839 · برچسب</span></div>
+          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-multiple_families" data-kind="ambiguous" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">چند خانواده</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
+            <strong class="tcas-smart-issue-label">Redmi Note 12 5G</strong>
+            <code class="tcas-smart-issue-reference">ID:401493</code>
+            <small class="tcas-smart-issue-reason">2 برچسب چندمدلی از همان خانواده در سمت مقابل هست؛ برای پرهیز از اتصال اشتباه، خودکار انتخاب نمی‌شود.</small>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (2):</span><span class="tcas-smart-issue-candidate">ArioCase · Xiaomi Note 12 4G / 5G · ID:45969/46057 · خانوادهٔ مدل</span><span class="tcas-smart-issue-candidate">ArioCase · Xiaomi Note 12 Pro / Note 12s · ID:45969/46058 · خانوادهٔ مدل</span></div>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-duplicate_reference" data-kind="ambiguous" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">مرجع تکراری</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
+            <strong class="tcas-smart-issue-label">Xiaomi Note 13 Pro</strong>
+            <code class="tcas-smart-issue-reference">ID:45969/46061</code>
+            <small class="tcas-smart-issue-reason">مرجع این Variation در همین فروشگاه 2 بار تکرار شده است؛ تا یکتاشدن مرجع، جفت خودکار ساخته نمی‌شود.</small>
+            <div class="tcas-smart-issue-twins"><span class="tcas-smart-issue-twins-title">همین مرجع در همین فروشگاه:</span><span class="tcas-smart-issue-twin">Xiaomi Note 13 Pro 5G · ID:45969/46061</span></div>
             <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
           </article>
           <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-counterpart_unusable" data-kind="unmatched" role="listitem">
             <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">همتای نامعتبر</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
-            <strong class="tcas-smart-issue-label">قاب کریستالی iPhone 15 Pro</strong>
-            <code class="tcas-smart-issue-reference">ID:4844</code>
+            <strong class="tcas-smart-issue-label">Redmi Note 13 5G</strong>
+            <code class="tcas-smart-issue-reference">ID:401497</code>
             <small class="tcas-smart-issue-reason">همتای محتمل پیدا شد، اما مرجع Variation مقابل تکراری یا خالی است و قابل اتصال نیست.</small>
-            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate is-unusable">ArioCase · iPhone 15 Pro · بدون مرجع · برچسب · غیرقابل‌اتصال</span></div>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate is-unusable">ArioCase · Xiaomi Note 13 Pro · بدون مرجع · خانوادهٔ مدل · غیرقابل‌اتصال</span></div>
             <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
           </article>
           <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-no_candidate" data-kind="unmatched" role="listitem">
             <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">بدون همتا</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
-            <strong class="tcas-smart-issue-label">Samsung Galaxy Note 20</strong>
-            <code class="tcas-smart-issue-reference">ID:9133/4702</code>
+            <strong class="tcas-smart-issue-label">Xiaomi Note 11T Pro</strong>
+            <code class="tcas-smart-issue-reference">ID:45969/46064</code>
             <small class="tcas-smart-issue-reason">هیچ Variation هم‌ارزی در سمت مقابل پیدا نشد (نه با SKU و نه با برچسب)؛ اگر این مدل در فروشگاه مقابل وجود ندارد، این مورد طبیعی است.</small>
             <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
           </article>
           <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-missing_reference" data-kind="unmatched" role="listitem">
             <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">بدون مرجع</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
-            <strong class="tcas-smart-issue-label">قاب چرمی Pixel 9</strong>
+            <strong class="tcas-smart-issue-label">Xiaomi Note 15 Pro</strong>
             <code class="tcas-smart-issue-reference">مرجع ثبت نشده</code>
             <small class="tcas-smart-issue-reason">این Variation مرجع SKU/ID ندارد؛ پیش از اتصال باید مرجع بگیرد.</small>
             <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
@@ -506,13 +509,19 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
     </section>
     <section class="tcas-card">
       <div class="tcas-card-head"><div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div><span class="tcas-muted">حداکثر 50 جفت</span></div>
-      <details class="tcas-fresh-product-group" open><summary class="tcas-fresh-product-summary"><span class="tcas-fresh-product-names"><strong class="tcas-shop-local-text">TisaCase · قاب گوشی سامسونگ</strong><span class="tcas-pair-link">↔</span><strong class="tcas-shop-remote-text">ArioCase · Samsung cases</strong></span><span class="tcas-fresh-product-count">2 Variation</span></summary><div class="tcas-pair-entries tcas-pair-entries-grouped">
+      <details class="tcas-fresh-product-group" open><summary class="tcas-fresh-product-summary"><span class="tcas-fresh-product-names"><strong class="tcas-shop-local-text">TisaCase · قاب گوشی شیائومی</strong><span class="tcas-pair-link">↔</span><strong class="tcas-shop-remote-text">ArioCase · Xiaomi cases</strong></span><span class="tcas-fresh-product-count">3 Variation</span></summary><div class="tcas-pair-entries tcas-pair-entries-grouped">
         <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
-          <span class="tcas-pair-flag" title="این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.">بررسی · تطبیق از برچسب</span>
-          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4822" readonly><small class="tcas-variation-title">S25 Ultra مشکی</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130/4410" readonly><small class="tcas-variation-title">S25 Ultra Black</small></label></div>
+          <span class="tcas-pair-flag is-family" title="برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.">بررسی · خانوادهٔ مدل</span>
+          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401477" readonly><small class="tcas-variation-title">Redmi Note 11 Pro/12 Pro 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46045" readonly><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 12 Pro (4G)</small></label></div>
         </article>
         <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
-          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4823" readonly><small class="tcas-variation-title">S25 Ultra آبی</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130/4411" readonly><small class="tcas-variation-title">S25 Ultra Blue</small></label></div>
+          <span class="tcas-pair-flag is-suggested" title="یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.">پیشنهاد · خانوادهٔ مدل</span>
+          <small class="tcas-pair-flag-note">مدل مشترک: 11، note · فقط در برچسب مقابل: pro، 11s، 12s</small>
+          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401476" readonly><small class="tcas-variation-title">Redmi Note 11 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46044" readonly><small class="tcas-variation-title">Xiaomi Note 11 Pro / Note 11s / Note 12s</small></label></div>
+        </article>
+        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <span class="tcas-pair-flag is-family" title="برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.">بررسی · خانوادهٔ مدل</span>
+          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:401481" readonly><small class="tcas-variation-title">Redmi Note 14 Pro 4G</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:45969/46049" readonly><small class="tcas-variation-title">Xiaomi Note 14 Pro (4G / 5G)</small></label></div>
         </article>
       </div></details>
     </section>
@@ -530,9 +539,7 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
         item.classList.toggle('is-active', active);
         item.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
-      rows.forEach(function (row) {
-        row.hidden = filter !== 'all' && row.dataset.kind !== filter;
-      });
+      rows.forEach(function (row) { row.hidden = filter !== 'all' && row.dataset.kind !== filter; });
     });
   });
 }());

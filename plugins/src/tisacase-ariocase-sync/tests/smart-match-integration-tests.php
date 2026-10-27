@@ -192,5 +192,40 @@ foreach ( $matches as $match ) {
 	if ( ! in_array( $match['matched_by'], array( 'sku', 'label', 'tokens' ), true ) ) { $exact = -999; }
 }
 smart_integration_test( 'تطبیق‌های خروجی نوع کلید و اطمینان را مشخص می‌کنند', $exact + $flagged === count( $matches ) && 0 === $exact && 8 === $flagged, json_encode( array( 'exact' => $exact, 'flagged' => $flagged ) ) );
+
+// سناریوی سوم: همان دادهٔ واقعی کاربر — نگارش متفاوت برند و برچسب چندمدلی.
+$GLOBALS['local_ids'] = array( $local_parent_id + 301, $local_parent_id + 302, $local_parent_id + 303 );
+$family_local = array(
+	$local_parent_id + 301 => 'Redmi Note 11 Pro/12 Pro 4G',
+	$local_parent_id + 302 => 'Redmi Note 11 4G',
+	$local_parent_id + 303 => 'Redmi Note 14 Pro 4G',
+);
+foreach ( $family_local as $variation_id => $label ) {
+	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, '', array( 'Model' => $label ), array(), $local_parent_id );
+}
+// والد تازه فقط همان سه Variation را دارد تا Fixture قبلی در نتیجه اثر نگذارد.
+$GLOBALS['integration_products'][ $local_parent_id ] = new TCAS_Integration_Product(
+	$local_parent_id, 'variable', 'Local parent (family)', 'LOCAL-PARENT', array( array( 'name' => 'Model', 'options' => array_values( $family_local ) ) ), array_keys( $family_local )
+);
+TCAS_Api::$product = array(
+	'remote_id' => $remote_parent_id, 'parent_remote_id' => 0, 'code' => '', 'name' => 'Remote parent', 'type' => 'variable',
+	'variations' => array(
+		array( 'remote_id' => $remote_parent_id + 401, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 14 Pro (4G / 5G)', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 14 Pro (4G / 5G)' ) ),
+		array( 'remote_id' => $remote_parent_id + 402, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 11 Pro / Note 11s / Note 12s', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 11 Pro / Note 11s / Note 12s' ) ),
+		array( 'remote_id' => $remote_parent_id + 403, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', 'variation_attributes' => array( 'Model' => 'Xiaomi Note 11 Pro / Note 12 Pro (4G)' ) ),
+	),
+);
+try { TCAS_Ajax::match_variations(); $family_response = null; } catch ( TCAS_JSON_Response $caught ) { $family_response = $caught; }
+$family_matches = $family_response && $family_response->success ? $family_response->data['matches'] : array();
+$family_pairs   = array();
+foreach ( $family_matches as $match ) {
+	$family_pairs[ $match['local_label'] ] = array( $match['remote_label'], $match['confidence'] );
+}
+smart_integration_test( 'در مسیر AJAX هر سه Variation با نگارش متفاوت برند جفت می‌شوند', 3 === count( $family_matches ), json_encode( $family_pairs, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'Note 11 Pro/12 Pro 4G با Note 11 Pro / Note 12 Pro (4G) خانواده‌ای می‌شود', isset( $family_pairs['Redmi Note 11 Pro/12 Pro 4G'] ) && 'family' === $family_pairs['Redmi Note 11 Pro/12 Pro 4G'][1] && false !== strpos( $family_pairs['Redmi Note 11 Pro/12 Pro 4G'][0], 'Note 12 Pro' ) );
+smart_integration_test( 'Note 14 Pro 4G با نسخهٔ (4G / 5G) جفت می‌شود', isset( $family_pairs['Redmi Note 14 Pro 4G'] ) && false !== strpos( $family_pairs['Redmi Note 14 Pro 4G'][0], '4G / 5G' ) );
+smart_integration_test( 'برچسب کوتاه Note 11 4G به‌صورت پیشنهاد خانوادگی وصل می‌شود', isset( $family_pairs['Redmi Note 11 4G'] ) && 'suggested' === $family_pairs['Redmi Note 11 4G'][1] );
+smart_integration_test( 'خلاصهٔ پاسخ AJAX شمارش خانواده و پیشنهاد را برمی‌گرداند', $family_response && 2 === $family_response->data['summary']['family'] && 1 === $family_response->data['summary']['suggested'] && array() === $family_response->data['unmatched'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -159,5 +159,80 @@ $result = TCAS_Matcher::match(
 );
 matcher_test( 'تطبیق از روی Token هم Fuzzy و قابل‌بررسی علامت می‌خورد', 'tokens' === $result['matches'][0]['matched_by'] && 'fuzzy' === $result['matches'][0]['confidence'] );
 
+
+// ---- تطبیق هوشمند خانوادهٔ مدل (برچسب‌های هم‌معنی با نگارش متفاوت) ----
+$result = TCAS_Matcher::match(
+	array(
+		matcher_variation( 'ID:401477', 'Redmi Note 11 Pro/12 Pro 4G', '' ),
+		matcher_variation( 'ID:401476', 'Redmi Note 11 4G', '' ),
+		matcher_variation( 'ID:401481', 'Redmi Note 14 Pro 4G', '' ),
+	),
+	array(
+		matcher_variation( 'ID:45969/46049', 'Xiaomi Note 14 Pro (4G / 5G)', '' ),
+		matcher_variation( 'ID:45969/46044', 'Xiaomi Note 11 Pro / Note 11s / Note 12s', '' ),
+		matcher_variation( 'ID:45969/46045', 'Xiaomi Note 11 Pro / Note 12 Pro (4G)', '' ),
+	)
+);
+matcher_test( 'برچسب هم‌معنی با نام برند متفاوت از راه خانوادهٔ مدل جفت می‌شود', in_array( 'ID:401477=ID:45969/46045', matcher_refs( $result ), true ) && 'family' === $result['matches'][0]['confidence'] && 'model' === $result['matches'][0]['matched_by'], json_encode( matcher_refs( $result ), JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'نسل شبکهٔ چندگانه (4G / 5G) مانع جفت‌شدن با 4G نمی‌شود', in_array( 'ID:401481=ID:45969/46049', matcher_refs( $result ), true ) && 'family' === $result['matches'][2]['confidence'] );
+matcher_test( 'برچسب کوتاه خانواده با برچسب چندمدلی به‌عنوان پیشنهاد جفت می‌شود', in_array( 'ID:401476=ID:45969/46044', matcher_refs( $result ), true ) && 'suggested' === $result['matches'][1]['confidence'] && 'family' === $result['matches'][1]['matched_by'], json_encode( $result['matches'][1], JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'پیشنهاد خانوادگی مدل‌های مشترک و اضافه را برای بازبینی نشان می‌دهد', array( '11', 'note' ) === $result['matches'][1]['shared'] && in_array( '11s', $result['matches'][1]['extra'], true ) && in_array( '12s', $result['matches'][1]['extra'], true ) );
+matcher_test( 'خلاصهٔ تطبیق تعداد خانواده و پیشنهاد را جدا می‌شمارد', 2 === $result['summary']['family'] && 1 === $result['summary']['suggested'] && 0 === $result['summary']['exact'] && 3 === count( $result['matches'] ) && array() === $result['ambiguous'] && array() === $result['unmatched'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 11s', '' ), matcher_variation( 'ID:9/2', 'Note 11 Pro / Note 12s', '' ) )
+);
+matcher_test( 'دو خانوادهٔ چندمدلی برای یک Variation، پیشنهاد خودکار نمی‌سازد و مبهم می‌ماند', 0 === count( $result['matches'] ) && 'multiple_families' === $result['ambiguous'][0]['reason'] && 2 === $result['ambiguous'][0]['candidate_count'], json_encode( $result['ambiguous'][0], JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A34 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A34 5G', '' ) )
+);
+matcher_test( 'خانوادهٔ مدل هم 4G را به 5G وصل نمی‌کند', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 13 Pro 4G', '' ) )
+);
+matcher_test( 'مدل متفاوت در همان خانواده جفت نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', 'SKU-A' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ), matcher_variation( 'ID:9/2', 'SKU-A', 'SKU-A' ) )
+);
+matcher_test( 'اولویت SKU یکتا بر خانوادهٔ مدل حفظ می‌شود', array( 'ID:1=ID:9/2' ) === matcher_refs( $result ) && 'sku' === $result['matches'][0]['matched_by'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ), matcher_variation( 'ID:1', 'Note 11 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'مرجع تکراری هرگز از راه خانوادهٔ مدل جفت نمی‌شود', 0 === count( $result['matches'] ) && 'duplicate_reference' === $result['ambiguous'][0]['reason'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ), matcher_variation( '', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'Variation بدون مرجع از خانوادهٔ مدل کنار گذاشته می‌شود', array( 'ID:1=ID:9/1' ) === matcher_refs( $result ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Note 11 Pro/12 Pro 4G', '' ), matcher_variation( 'ID:2', 'Note 11 Pro/12 Pro 4G', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 12 Pro 4G', '' ) )
+);
+matcher_test( 'خانوادهٔ مدل یک‌به‌یک است و دو Local به یک Remote وصل نمی‌شوند', 0 === count( $result['matches'] ) );
+
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'iPhone 11', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Note 11 Pro / Note 11s', '' ) )
+);
+matcher_test( 'برچسب تک‌توکنی (iPhone 11) با خانوادهٔ مدلی دیگر پیشنهاد نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A56', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A56 / A56s', '' ) )
+);
+matcher_test( 'مدل تک‌توکنی بدون نام خانواده، پیشنهاد خانوادگی نمی‌سازد', 0 === count( $result['matches'] ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );
