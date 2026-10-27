@@ -1,1 +1,58 @@
-(function($){'use strict';function copy(text){if(navigator.clipboard&&window.isSecureContext)return navigator.clipboard.writeText(text);var t=$('<textarea>').val(text).css({position:'fixed',top:'-1000px'}).appendTo('body');t[0].select();try{document.execCommand('copy')}catch(e){}t.remove();return $.Deferred().resolve()}$(document).on('click','.wcspb-chip',function(e){e.preventDefault();var b=$(this),url=new URL(window.location.href),prefix=b.data('prefix');url.searchParams.set('post_type','product');url.searchParams.set('s',prefix);url.searchParams.set('orderby','sku');url.searchParams.set('order','desc');url.searchParams.delete('paged');window.location.assign(url.toString())});$(document).on('click','#wcspb-refresh',function(e){e.preventDefault();var b=$('#wcspb-bar').addClass('loading');$.post(WCSPB.ajax,{action:'wcspb_refresh',nonce:WCSPB.nonce},function(r){if(r&&r.success)b.replaceWith(r.data.html);else b.removeClass('loading')}).fail(function(){b.removeClass('loading')})});})(jQuery);jQuery(function($){function rescue(){var b=$('.wcspb-bar').first();if(!b.length)return;$('.wcspb-bar').slice(1).remove();if(b.closest('#wp__notice-list,.woocommerce-layout__notice-list-hide,[style*="display: none"],[style*="display:none"]').length||b[0].getBoundingClientRect().height===0){var a=$('.tablenav.top').first();if(!a.length)a=$('#posts-filter').first();if(!a.length)a=$('.wrap > h1,.wrap > .wp-heading-inline').first();if(a.length)b.detach().insertBefore(a)}b.css({display:'flex',visibility:'visible',opacity:1})}rescue();setTimeout(rescue,400);setTimeout(rescue,1500)});
+(function ($) {
+    'use strict';
+
+    function requestSummary() {
+        $.post(WCSPB.ajax, { action: 'wcspb_summary', nonce: WCSPB.nonce, surface: 'bar' }).done(function (response) {
+            if (!response || !response.success || !response.data) {
+                window.setTimeout(requestSummary, 1500);
+                return;
+            }
+            var data = response.data;
+            var current = $('#wcspb-bar');
+            if (current.length && data.html) current.replaceWith(data.html);
+            if (data.error) window.setTimeout(requestSummary, 1500);
+            else if (!data.done) window.setTimeout(requestSummary, 180);
+        }).fail(function () {
+            window.setTimeout(requestSummary, 1500);
+        });
+    }
+
+    function copy(text) {
+        if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+        var textarea = $('<textarea>').val(text).css({ position: 'fixed', top: '-1000px' }).appendTo('body');
+        textarea[0].select();
+        try { document.execCommand('copy'); } catch (error) { /* clipboard fallback is best effort */ }
+        textarea.remove();
+        return $.Deferred().resolve();
+    }
+
+    $(document).on('click', '.wcspb-chip', function (event) {
+        event.preventDefault();
+        var url = new URL(window.location.href);
+        url.searchParams.set('post_type', 'product');
+        url.searchParams.set('s', $(this).data('prefix'));
+        url.searchParams.set('orderby', 'sku');
+        url.searchParams.set('order', 'desc');
+        url.searchParams.delete('paged');
+        window.location.assign(url.toString());
+    });
+
+    $(document).on('click', '#wcspb-refresh', function (event) {
+        event.preventDefault();
+        var button = $('#wcspb-bar').addClass('loading');
+        $.post(WCSPB.ajax, { action: 'wcspb_refresh', nonce: WCSPB.nonce }, function (response) {
+            if (response && response.success && response.data.html) {
+                button.replaceWith(response.data.html);
+                if (response.data.building) requestSummary();
+            } else {
+                button.removeClass('loading');
+            }
+        }).fail(function () {
+            button.removeClass('loading');
+        });
+    });
+
+    $(function () {
+        if ($('#wcspb-bar').attr('data-building') === '1') requestSummary();
+    });
+}(jQuery));

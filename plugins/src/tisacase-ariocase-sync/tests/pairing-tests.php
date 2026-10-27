@@ -5,6 +5,7 @@ class WP_Error { private $code; private $message; public function __construct( $
 function is_wp_error( $v ) { return $v instanceof WP_Error; }
 function wp_parse_args( $a, $d ) { return array_merge( $d, (array) $a ); }
 function sanitize_text_field( $v ) { return trim( (string) $v ); }
+function sanitize_key( $v ) { return preg_replace( '/[^a-z0-9_\\-]/', '', strtolower( (string) $v ) ); }
 function absint( $v ) { return abs( (int) $v ); }
 function get_post_meta( $id, $key, $single = true ) { return isset( $GLOBALS['meta'][ $id ][ $key ] ) ? $GLOBALS['meta'][ $id ][ $key ] : ''; }
 function update_post_meta( $id, $key, $value ) { $GLOBALS['meta'][ $id ][ $key ] = $value; return true; }
@@ -153,6 +154,13 @@ $shared_sku = TCAS_Pairing::preview( pair_of( 'SB193', 'ID:700/703' ) );
 pair_test( 'ورود دستی SKU مشترک بدون API و با راهنمای ID رد می‌شود', 'error' === $shared_sku['row']['status'] && false !== strpos( $shared_sku['row']['message'], 'ID' ) && $before_shared_sku_calls === count( TCAS_Api::$calls ) );
 $missing_local_id = TCAS_Pairing::preview( pair_of( 'ID:999', 'ID:700/704' ) );
 pair_test( 'ID ناموجود تیساکیس محصول جعلی نمی‌سازد', 'error' === $missing_local_id['row']['status'] && 0 === $missing_local_id['local_id'] && ! isset( $GLOBALS['products'][999] ) );
+
+local_product( 301, 'LOCAL-PARTNER-A' ); local_product( 302, 'LOCAL-PARTNER-B' );
+$map_a = TCAS_Mapping::map( 301, 'SAME-REMOTE-REF', true, 'vendor_a' );
+$map_b = TCAS_Mapping::map( 302, 'SAME-REMOTE-REF', true, 'ariocase' );
+pair_test( 'همان مرجع ریموت می‌تواند در providerهای جدا به محصولات متفاوت متصل شود', true === $map_a && true === $map_b && array( 301 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'vendor_a' ) && array( 302 ) === TCAS_Mapping::ids_by_remote_code( 'SAME-REMOTE-REF', 'ariocase' ) );
+$cross_provider_remap = TCAS_Mapping::map( 301, 'OTHER-REF', true, 'vendor_b' );
+pair_test( 'یک محصول برای جلوگیری از تداخل موجودی هم‌زمان به provider دوم منتقل نمی‌شود', is_wp_error( $cross_provider_remap ) && 'vendor_a' === TCAS_Mapping::partner_id( 301 ) );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

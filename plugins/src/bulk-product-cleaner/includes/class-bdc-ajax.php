@@ -304,16 +304,17 @@ class BDC_Ajax {
 	private function collect_ids() {
 		$filters = $this->read_filters();
 		// phpcs:ignore WordPress.Security.NonceVerification.Missing -- verified in route().
-		$offset = isset( $_POST['offset'] ) ? absint( wp_unslash( $_POST['offset'] ) ) : 0;
+		$after_id = isset( $_POST['after_id'] ) ? absint( wp_unslash( $_POST['after_id'] ) ) : 0;
 
 		$chunk = 2000;
-		$ids   = BDC_Query::get_ids( $filters, $chunk, $offset );
+		$ids   = BDC_Query::get_ids_after( $filters, $chunk, $after_id );
+		$last_id = empty( $ids ) ? $after_id : (int) end( $ids );
 
 		wp_send_json_success(
 			array(
-				'ids'    => $ids,
-				'offset' => $offset + count( $ids ),
-				'done'   => count( $ids ) < $chunk,
+				'ids'      => $ids,
+				'after_id' => $last_id,
+				'done'     => count( $ids ) < $chunk,
 			)
 		);
 	}

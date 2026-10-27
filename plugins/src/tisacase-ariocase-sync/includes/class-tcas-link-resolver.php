@@ -253,6 +253,29 @@ if ( ! class_exists( 'TCAS_Link_Resolver' ) ) {
 			return is_wp_error( $product ) ? $product : self::remote_result( $product );
 		}
 
+		/** Resolve a local-store product URL without ever attempting a remote API request. */
+		public static function resolve_local_link( $url ) {
+			$url = trim( (string) $url );
+			if ( '' === $url || strlen( $url ) > 2048 || ! preg_match( '#^https?://#i', $url ) ) {
+				return self::error( 'tcas_invalid_link', 'یک لینک کامل و معتبر وارد کنید.' );
+			}
+			$parts = wp_parse_url( $url );
+			if ( ! is_array( $parts ) || empty( $parts['host'] ) || empty( $parts['scheme'] ) ) {
+				return self::error( 'tcas_invalid_link', 'ساختار لینک معتبر نیست.' );
+			}
+			$allow_http = defined( 'TISACASE_ARIOCASE_ALLOW_HTTP' ) && TISACASE_ARIOCASE_ALLOW_HTTP;
+			$scheme = strtolower( (string) $parts['scheme'] );
+			if ( ( 'https' !== $scheme && ! ( $allow_http && 'http' === $scheme ) ) || isset( $parts['user'] ) || isset( $parts['pass'] ) || isset( $parts['port'] ) ) {
+				return self::error( 'tcas_insecure_link', 'لینک باید HTTPS و بدون اطلاعات ورود یا Port باشد.' );
+			}
+			$host = strtolower( (string) $parts['host'] );
+			$local_hosts = self::hosts_for( array( home_url(), site_url() ) );
+			if ( ! in_array( $host, $local_hosts, true ) ) {
+				return self::error( 'tcas_not_local_shop', 'این لینک متعلق به فروشگاه محلی نیست.' );
+			}
+			return self::resolve_local( $url, $parts );
+		}
+
 		public static function resolve( $url ) {
 			$url = trim( (string) $url );
 			if ( '' === $url || strlen( $url ) > 2048 || ! preg_match( '#^https?://#i', $url ) ) {

@@ -48,7 +48,8 @@ if ( ! class_exists( 'TCBV_Frontend' ) ) {
 		 * @return bool
 		 */
 		public static function product_in_scope( $product_id ) {
-			$settings = self::settings();
+			$product_id = (int) $product_id;
+			$settings   = self::settings();
 
 			// «حالت تست» بر همهٔ دامنه‌ها اولویت دارد: تا وقتی روشن است فقط
 			// محصول‌های انتخاب‌شده دیده می‌شوند و بقیهٔ فروشگاه دست‌نخورده است.
@@ -58,8 +59,13 @@ if ( ! class_exists( 'TCBV_Frontend' ) ) {
 
 			$scope = isset( $settings['advanced']['products_scope'] ) ? $settings['advanced']['products_scope'] : 'all';
 
-			if ( 'all' === $scope || ! $product_id ) {
+			if ( 'all' === $scope ) {
 				return true;
+			}
+			// در scopeهای دسته‌ای، نبودن شناسه نباید به معنی «اجرا روی همه» باشد.
+			// بدون زمینهٔ قطعی محصول، امن‌ترین رفتار عدم‌تغییر است.
+			if ( $product_id <= 0 ) {
+				return false;
 			}
 
 			$terms = TCBV_Settings::lines( $settings['advanced']['categories'] );
@@ -237,6 +243,12 @@ if ( ! class_exists( 'TCBV_Frontend' ) ) {
 		 * @return string
 		 */
 		public static function dropdown_html( $html, $args ) {
+			// افزونه فقط روی صفحهٔ تکی محصول اثر می‌گذارد؛ dropdownهای آرشیو،
+			// ابزارک‌ها و سایر صفحات فروشگاه باید کاملاً دست‌نخورده بمانند.
+			if ( ! function_exists( 'is_product' ) || ! is_product() ) {
+				return $html;
+			}
+
 			$settings = self::settings();
 
 			if ( empty( $settings['enabled'] ) || 'off' === $settings['ui']['mode'] ) {

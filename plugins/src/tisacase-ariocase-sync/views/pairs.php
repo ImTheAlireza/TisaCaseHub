@@ -5,7 +5,7 @@ $connected_groups = TCAS_Mapping::group_rows( $all_mappings );
 $recent_groups = array_slice( $connected_groups, 0, 4 );
 ?>
 <section class="tcas-card tcas-converter-card">
-	<div class="tcas-card-head"><div><span class="tcas-step">↗</span><h2>تبدیل لینک به شناسه</h2></div><span class="tcas-tag">TisaCase + ArioCase</span></div>
+	<div class="tcas-card-head"><div><span class="tcas-step">↗</span><h2>تبدیل لینک به شناسه</h2></div><span class="tcas-tag">TisaCase + <?php echo esc_html( $partner_label ); ?></span></div>
 	<div class="tcas-converter-flow">
 		<label class="tcas-converter-source"><span class="tcas-shop-label">لینک محصول</span><span class="tcas-converter-input-row"><input id="tcas-link-input" type="url" dir="ltr" placeholder="https://..." autocomplete="off"><button type="button" id="tcas-link-resolve" class="button button-primary tcas-btn-primary">تبدیل</button></span></label>
 		<div id="tcas-link-result" class="tcas-converter-result" hidden>
@@ -21,10 +21,15 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 	<div class="tcas-card-head"><div><span class="tcas-step">⌁</span><h2>تطبیق خودکار Variationها</h2></div><span class="tcas-tag">مرجع دقیق</span></div>
 	<div class="tcas-smart-grid">
 		<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input id="tcas-smart-local" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
-		<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input id="tcas-smart-remote" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
+		<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input id="tcas-smart-remote" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
 		<div class="tcas-smart-actions"><button type="button" id="tcas-smart-match" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button><button type="button" id="tcas-smart-next" class="button" hidden>دسته بعد</button></div>
 	</div>
 	<div id="tcas-smart-status" class="tcas-status" role="status" aria-live="polite">موارد مبهم و بدون تطبیق وصل نمی‌شوند.</div>
+	<section id="tcas-smart-issues" class="tcas-smart-issues" aria-live="polite" hidden>
+		<div class="tcas-smart-issues-head"><h3>موارد نیازمند بررسی</h3><span id="tcas-smart-issues-count" class="tcas-smart-issues-count"></span></div>
+		<p class="tcas-smart-issues-help">این Variationها به‌دلیل ابهام یا نبود تطبیق یکتا خودکار به جفت‌ها اضافه نمی‌شوند.</p>
+		<div id="tcas-smart-issue-list" class="tcas-smart-issue-list" role="list"></div>
+	</section>
 </section>
 
 <section class="tcas-card">
@@ -38,7 +43,7 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
-				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="SKU / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
 		</article>
 	</div>
@@ -48,7 +53,7 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 			<div class="tcas-pair-fields">
 				<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" placeholder="TS0100 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 				<span class="tcas-pair-link" aria-hidden="true">+</span>
-				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">آریوکیس <bdi>ArioCase</bdi></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="AR22 / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
+				<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input class="tcas-remote-code" type="text" dir="ltr" placeholder="SKU / ID:123" maxlength="190" autocomplete="off" spellcheck="false"></label>
 			</div>
 		</article>
 	</template>
@@ -75,7 +80,7 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 </section>
 
 <section class="tcas-card">
-	<div class="tcas-card-head"><div><span class="tcas-step">↻</span><h2>اتصال‌های اخیر</h2></div><a class="tcas-card-link" href="<?php echo esc_url( admin_url( 'admin.php?page=' . TCAS_Core::PAGE . '&tab=mappings' ) ); ?>">مشاهده همه</a></div>
+	<div class="tcas-card-head"><div><span class="tcas-step">↻</span><h2>اتصال‌های اخیر</h2></div><a class="tcas-card-link" href="<?php echo esc_url( admin_url( 'admin.php?page=' . TCAS_Core::PAGE . '&tab=mappings&partner_id=' . rawurlencode( $partner_id ) ) ); ?>">مشاهده همه</a></div>
 	<div id="tcas-sync-status" class="tcas-status" role="status" aria-live="polite"></div>
 	<?php $groups = $recent_groups; require TCAS_PATH . 'views/linked-groups.php'; ?>
 </section>

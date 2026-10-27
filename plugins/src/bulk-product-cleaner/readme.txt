@@ -6,7 +6,7 @@ Tested up to: 6.7
 Requires PHP: 7.4
 WC requires at least: 7.0
 WC tested up to: 9.5
-Stable tag: 12.4.0
+Stable tag: 12.6.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -85,6 +85,11 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 `define( 'BDC_DELETE_BACKUPS_ON_UNINSTALL', true );`
 
 == Changelog ==
+
+= 12.6.3 =
+* پیمایش «انتخاب همهٔ منطبق» و CLI با keyset و شناسهٔ محصول انجام می‌شود؛ CLI شناسه‌های کل کار را یک‌جا نگه نمی‌دارد.
+* شمارش gallery در صفحه‌های ۲٬۰۰۰تایی meta_id خوانده می‌شود تا یک آرایهٔ ۲۰٬۰۰۰ردیفی یک‌باره ساخته نشود؛ سقف ایمنی ۲۰٬۰۰۰ ردیف حفظ شده است و شمارش دقیق، شناسه‌های یکتای یافت‌شده را در حافظه نگه می‌دارد.
+* در شمارش تصویر شاخص، CAST حذف شد؛ REGEXP برای نادیده‌گرفتن متای خراب باقی است. query plan و هزینهٔ واقعی نیازمند دیتابیس فروشگاه است.
 
 = 12.4.0 =
 * سرعت عملیات دسته‌جمعی: اندازهٔ هر دسته از ۱۰ به ۴۰ افزایش یافت و به‌صورت خودکار با سرعت سرور تنظیم می‌شود (تا سقف ۲۰۰).

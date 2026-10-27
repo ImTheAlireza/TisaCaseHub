@@ -11,6 +11,8 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 
 	final class TCBVM_DB {
 
+		const MAX_VARIATIONS_PER_PRODUCT = 3000;
+
 		/**
 		 * نرمال‌سازی کاراکترهای فارسی و عربی (ی، ک، نیم‌فاصله).
 		 */
@@ -31,106 +33,129 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 		 * @return array لیست شناسه‌های یکتا و مرتب‌شده محصولات.
 		 */
 		public static function query_product_ids( array $filters ) {
-			$mode = isset( $filters['mode'] ) ? sanitize_key( $filters['mode'] ) : 'filters';
+			$page = self::query_product_ids_page( $filters, 0, 50 );
+			return $page['ids'];
+		}
 
-			// اگر کاربر شناسه‌ها را به صورت مستقیم وارد کرده باشد
+		/**
+		 * جستجوی keyset؛ در هر درخواست فقط یک صفحه محدود از شناسه‌ها خوانده می‌شود.
+		 * cursor برای محصولات مرتب‌شده، ID آخرین ردیف مصرف‌شده است؛ برای فهرست دستی
+		 * cursor اندیس ورودی است.
+		 *
+		 * @return array{ids:array,next_cursor:int,has_more:bool,scanned:int}
+		 */
+		public static function query_product_ids_page( array $filters, $cursor = 0, $limit = 50 ) {
+			$cursor = max( 0, absint( $cursor ) );
+			$limit  = min( 50, max( 1, absint( $limit ) ) );
+			$mode   = isset( $filters['mode'] ) ? sanitize_key( $filters['mode'] ) : 'filters';
+
 			if ( 'manual' === $mode || ! empty( $filters['manual_ids'] ) ) {
-				$raw_ids = is_array( $filters['manual_ids'] )
-					? $filters['manual_ids']
-					: explode( ',', (string) $filters['manual_ids'] );
-				$ids = array_values( array_filter( array_map( 'absint', $raw_ids ) ) );
-				if ( ! empty( $ids ) ) {
-					return self::filter_valid_products( $ids, $filters );
-				}
+				$raw_ids = is_array( $filters['manual_ids'] ) ? $filters['manual_ids'] : explode( ',', str_replace( array( '،', "\n", "\r", '|' ), ',', (string) $filters['manual_ids'] ) );
+				$raw_ids = array_values( array_unique( array_filter( array_map( 'absint', $raw_ids ) ) ) );
+				$truncated = count( $raw_ids ) > 5000;
+				$raw_ids = array_slice( $raw_ids, 0, 5000 );
+				$input_page = array_slice( $raw_ids, $cursor, $limit + 1 );
+				$has_more   = count( $input_page ) > $limit;
+				if ( $has_more ) array_pop( $input_page );
+				$ids = self::filter_valid_products( $input_page, $filters );
+				return array( 'ids' => $ids, 'next_cursor' => $cursor + count( $input_page ), 'has_more' => $has_more, 'scanned' => count( $input_page ), 'truncated' => $truncated );
 			}
 
-			// اگر فیلتر اختصاصی بر اساس شناسه / کد محصول (SKU) باشد
 			if ( 'sku' === $mode && ! empty( $filters['sku'] ) ) {
 				$sku_mode = isset( $filters['sku_mode'] ) ? sanitize_key( $filters['sku_mode'] ) : 'starts_with';
-				$sku_ids  = self::query_product_ids_by_sku( $filters['sku'], $sku_mode );
-				if ( empty( $sku_ids ) ) {
-					return array();
-				}
-				$sku_ids = self::filter_valid_products( $sku_ids, $filters );
-				// فیلتر کلمهٔ عنوان در حالت SKU هم اعمال شود (مثلاً CH + «قاب»).
+				$page     = self::query_sku_product_ids_page( $filters['sku'], $sku_mode, $cursor, $limit );
+				$ids      = self::filter_valid_products( $page['ids'], $filters );
 				if ( ! empty( $filters['keywords'] ) || ! empty( $filters['exclude_keywords'] ) || ! empty( $filters['model_term'] ) ) {
-					$sku_ids = self::refine_product_ids( $sku_ids, $filters );
+					$ids = self::refine_product_ids( $ids, $filters );
 				}
-				return $sku_ids;
+				$page['ids'] = $ids;
+				return $page;
 			}
 
-			$post_types = array( 'product' );
 			$post_statuses = isset( $filters['statuses'] ) && is_array( $filters['statuses'] )
-				? array_map( 'sanitize_key', $filters['statuses'] )
+				? array_values( array_filter( array_map( 'sanitize_key', $filters['statuses'] ) ) )
 				: array( 'publish', 'draft', 'private' );
-
-			$tax_query = array( 'relation' => 'AND' );
-
-			// فیلتر دسته‌بندی
-			if ( ! empty( $filters['category_ids'] ) ) {
-				$cat_ids = array_values( array_filter( array_map( 'absint', (array) $filters['category_ids'] ) ) );
-				if ( ! empty( $cat_ids ) ) {
-					$include_children = ! empty( $filters['include_children'] );
-					$tax_query[] = array(
-						'taxonomy'         => 'product_cat',
-						'field'            => 'term_id',
-						'terms'            => $cat_ids,
-						'include_children' => $include_children,
-						'operator'         => 'IN',
-					);
-				}
-			}
-
-			// فیلتر نوع محصول (به طور پیش‌فرض متغیر و ساده)
 			$product_types = isset( $filters['product_types'] ) && is_array( $filters['product_types'] )
 				? array_map( 'sanitize_key', $filters['product_types'] )
 				: array( 'variable', 'simple' );
-
-			if ( ! empty( $product_types ) && ! in_array( 'all', $product_types, true ) ) {
-				$tax_query[] = array(
-					'taxonomy' => 'product_type',
-					'field'    => 'slug',
-					'terms'    => $product_types,
-					'operator' => 'IN',
-				);
+			$tax_query = array( 'relation' => 'AND' );
+			if ( ! empty( $filters['category_ids'] ) ) {
+				$cat_ids = array_values( array_filter( array_map( 'absint', (array) $filters['category_ids'] ) ) );
+				if ( $cat_ids ) {
+					$tax_query[] = array(
+						'taxonomy' => 'product_cat', 'field' => 'term_id', 'terms' => $cat_ids,
+						'include_children' => ! empty( $filters['include_children'] ), 'operator' => 'IN',
+					);
+				}
+			}
+			if ( $product_types && ! in_array( 'all', $product_types, true ) ) {
+				$tax_query[] = array( 'taxonomy' => 'product_type', 'field' => 'slug', 'terms' => $product_types, 'operator' => 'IN' );
 			}
 
 			$query_args = array(
-				'post_type'              => $post_types,
-				'post_status'            => $post_statuses,
-				'fields'                 => 'ids',
-				'posts_per_page'         => -1,
-				'orderby'                => 'ID',
-				'order'                  => 'DESC',
-				'ignore_sticky_posts'    => true,
-				'no_found_rows'          => true,
-				'update_post_meta_cache' => false,
-				'update_post_term_cache' => false,
+				'post_type' => 'product', 'post_status' => $post_statuses, 'fields' => 'ids',
+				'posts_per_page' => $limit + 1, 'orderby' => 'ID', 'order' => 'DESC',
+				'ignore_sticky_posts' => true, 'no_found_rows' => true,
+				'update_post_meta_cache' => false, 'update_post_term_cache' => false,
+				'suppress_filters' => false, 'tcbvm_keyset_cursor' => $cursor,
 			);
-
-			if ( count( $tax_query ) > 1 ) {
-				$query_args['tax_query'] = $tax_query;
-			}
-
-			$wp_query = new WP_Query( $query_args );
-			$raw_ids  = array_map( 'absint', (array) $wp_query->posts );
-
-			if ( empty( $raw_ids ) ) {
-				return array();
-			}
-
-			// اگر فیلتر SKU در کنار سایر فیلترها تعیین شده بود
-			if ( ! empty( $filters['sku'] ) ) {
-				$sku_mode = isset( $filters['sku_mode'] ) ? sanitize_key( $filters['sku_mode'] ) : 'starts_with';
-				$sku_ids  = self::query_product_ids_by_sku( $filters['sku'], $sku_mode );
-				$raw_ids  = array_values( array_intersect( $raw_ids, $sku_ids ) );
-				if ( empty( $raw_ids ) ) {
-					return array();
+			if ( count( $tax_query ) > 1 ) $query_args['tax_query'] = $tax_query;
+			$cursor_filter = static function( $where, $query ) use ( $cursor ) {
+				if ( $query->get( 'tcbvm_keyset_cursor' ) && $cursor > 0 ) {
+					global $wpdb;
+					$where .= $wpdb->prepare( " AND {$wpdb->posts}.ID < %d", $cursor );
 				}
+				return $where;
+			};
+			add_filter( 'posts_where', $cursor_filter, 10, 2 );
+			try {
+				$query = new WP_Query( $query_args );
+			} finally {
+				remove_filter( 'posts_where', $cursor_filter, 10 );
 			}
+			$raw_ids  = array_map( 'absint', (array) $query->posts );
+			$has_more = count( $raw_ids ) > $limit;
+			if ( $has_more ) array_pop( $raw_ids );
+			$next_cursor = $raw_ids ? (int) end( $raw_ids ) : $cursor;
+			$scanned    = count( $raw_ids );
 
-			// اعمال فیلترهای کلمات کلیدی، استثناها و ویژگی‌ها
-			return self::refine_product_ids( $raw_ids, $filters );
+			if ( ! empty( $filters['sku'] ) && $raw_ids ) {
+				$sku_mode = isset( $filters['sku_mode'] ) ? sanitize_key( $filters['sku_mode'] ) : 'starts_with';
+				$sku_ids  = self::query_sku_ids_for_products( $raw_ids, $filters['sku'], $sku_mode );
+				$raw_ids  = array_values( array_intersect( $raw_ids, $sku_ids ) );
+			}
+			$ids = self::refine_product_ids( $raw_ids, $filters );
+			return array( 'ids' => $ids, 'next_cursor' => $next_cursor, 'has_more' => $has_more, 'scanned' => $scanned );
+		}
+
+		private static function query_sku_product_ids_page( $sku_text, $mode, $cursor, $limit ) {
+			global $wpdb;
+			$sku_text = trim( (string) $sku_text );
+			if ( '' === $sku_text ) return array( 'ids' => array(), 'next_cursor' => 0, 'has_more' => false, 'scanned' => 0 );
+			if ( 'exact' === $mode ) { $operator = '='; $pattern = $sku_text; }
+			elseif ( 'contains' === $mode ) { $operator = 'LIKE'; $pattern = '%' . $wpdb->esc_like( $sku_text ) . '%'; }
+			else { $operator = 'LIKE'; $pattern = $wpdb->esc_like( $sku_text ) . '%'; }
+			$sql = "SELECT matched.pid FROM (SELECT DISTINCT IF(p.post_type='product_variation',p.post_parent,p.ID) AS pid FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID=pm.post_id WHERE p.post_type IN ('product','product_variation') AND p.post_status NOT IN ('trash','auto-draft') AND pm.meta_key='_sku' AND pm.meta_value {$operator} %s) matched INNER JOIN {$wpdb->posts} parent ON parent.ID=matched.pid WHERE parent.post_type='product' AND parent.post_status NOT IN ('trash','auto-draft')";
+			$args = array( $pattern );
+			if ( $cursor > 0 ) { $sql .= ' AND matched.pid < %d'; $args[] = $cursor; }
+			$sql .= ' ORDER BY matched.pid DESC LIMIT %d'; $args[] = $limit + 1;
+			$ids = array_map( 'absint', (array) $wpdb->get_col( $wpdb->prepare( $sql, $args ) ) );
+			$has_more = count( $ids ) > $limit;
+			if ( $has_more ) array_pop( $ids );
+			return array( 'ids' => $ids, 'next_cursor' => $ids ? (int) end( $ids ) : $cursor, 'has_more' => $has_more, 'scanned' => count( $ids ) );
+		}
+
+		private static function query_sku_ids_for_products( array $product_ids, $sku_text, $mode ) {
+			global $wpdb;
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $product_ids ) ) ) );
+			if ( ! $ids ) return array();
+			if ( 'exact' === $mode ) { $operator = '='; $pattern = (string) $sku_text; }
+			elseif ( 'contains' === $mode ) { $operator = 'LIKE'; $pattern = '%' . $wpdb->esc_like( (string) $sku_text ) . '%'; }
+			else { $operator = 'LIKE'; $pattern = $wpdb->esc_like( (string) $sku_text ) . '%'; }
+			$ph = implode( ',', array_fill( 0, count( $ids ), '%d' ) );
+			$sql = "SELECT DISTINCT IF(p.post_type='product_variation',p.post_parent,p.ID) AS pid FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON p.ID=pm.post_id WHERE p.post_type IN ('product','product_variation') AND p.post_status NOT IN ('trash','auto-draft') AND pm.meta_key='_sku' AND pm.meta_value {$operator} %s AND ((p.post_type='product' AND p.ID IN ($ph)) OR (p.post_type='product_variation' AND p.post_parent IN ($ph)))";
+			$args = array_merge( array( $pattern ), $ids, $ids );
+			return array_map( 'absint', (array) $wpdb->get_col( $wpdb->prepare( $sql, $args ) ) );
 		}
 
 		/**
@@ -141,35 +166,25 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 		 * @param string $mode     حالت تطبیق: starts_with یا contains یا exact.
 		 * @return array لیست شناسه‌های یکتا.
 		 */
-		public static function query_product_ids_by_sku( $sku_text, $mode = 'starts_with' ) {
+		/** Count existing variations with bounded result memory. */
+		public static function get_variation_counts( array $product_ids ) {
 			global $wpdb;
-			$sku_text = trim( (string) $sku_text );
-			if ( '' === $sku_text ) {
-				return array();
+			$counts = array();
+			$ids = array_values( array_unique( array_filter( array_map( 'absint', $product_ids ) ) ) );
+			foreach ( $ids as $id ) $counts[ $id ] = 0;
+			foreach ( array_chunk( $ids, 400 ) as $chunk ) {
+				$ph = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
+				// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+				$rows = (array) $wpdb->get_results( $wpdb->prepare( "SELECT post_parent, COUNT(ID) AS variation_count FROM {$wpdb->posts} WHERE post_type='product_variation' AND post_status IN ('publish','private') AND post_parent IN ($ph) GROUP BY post_parent", $chunk ) );
+				foreach ( $rows as $row ) $counts[ (int) $row->post_parent ] = (int) $row->variation_count;
 			}
+			return $counts;
+		}
 
-			if ( 'exact' === $mode ) {
-				$sku_pattern = $sku_text;
-				$operator    = '=';
-			} elseif ( 'contains' === $mode ) {
-				$sku_pattern = '%' . $wpdb->esc_like( $sku_text ) . '%';
-				$operator    = 'LIKE';
-			} else { // starts_with
-				$sku_pattern = $wpdb->esc_like( $sku_text ) . '%';
-				$operator    = 'LIKE';
-			}
-
-			$sql = "SELECT DISTINCT IF(p.post_type = 'product_variation', p.post_parent, p.ID) AS pid
-					FROM {$wpdb->postmeta} pm
-					INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
-					WHERE p.post_type IN ('product', 'product_variation')
-					  AND p.post_status NOT IN ('trash', 'auto-draft')
-					  AND pm.meta_key = '_sku'
-					  AND pm.meta_value {$operator} %s";
-
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$ids = $wpdb->get_col( $wpdb->prepare( $sql, $sku_pattern ) );
-			return array_values( array_filter( array_map( 'absint', (array) $ids ) ) );
+		public static function query_product_ids_by_sku( $sku_text, $mode = 'starts_with' ) {
+			// Compatibility wrapper: deliberately return only one bounded page.
+			$page = self::query_sku_product_ids_page( $sku_text, $mode, 0, 50 );
+			return $page['ids'];
 		}
 
 		/**
@@ -586,9 +601,12 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 				);
 			}
 
+			$limit      = min( 50, max( 1, absint( $limit ) ) );
+			$offset     = max( 0, absint( $offset ) );
 			$total      = count( $ids );
 			$slice_ids  = array_slice( $ids, $offset, $limit );
 			$items      = array();
+			$variation_counts = self::get_variation_counts( $slice_ids );
 
 			// پرایم گروهی کش پست/متا/ترم تا صفحه‌های بزرگ (۳۰۰تایی) هم با چند کوئری
 			// لود شوند و به سقف زمان سرور نرسند.
@@ -610,8 +628,7 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 				$current_models  = array();
 
 				if ( $product->is_type( 'variable' ) ) {
-					$variation_ids = $product->get_children();
-					$variation_count = count( $variation_ids );
+					$variation_count = isset( $variation_counts[ $pid ] ) ? (int) $variation_counts[ $pid ] : 0;
 
 					// خواندن نام مدل‌ها از ویژگی‌ها
 					$attributes = $product->get_attributes();
@@ -699,13 +716,18 @@ if ( ! class_exists( 'TCBVM_DB' ) ) {
 			if ( empty( $product_ids ) ) {
 				return $map;
 			}
+			$variation_counts = self::get_variation_counts( $product_ids );
+			$eligible_ids = array();
 			foreach ( $product_ids as $pid ) {
-				$map[ $pid ] = array( 'children' => array(), 'attrs' => array() );
+				$too_many = isset( $variation_counts[ $pid ] ) && $variation_counts[ $pid ] > self::MAX_VARIATIONS_PER_PRODUCT;
+				$map[ $pid ] = array( 'children' => array(), 'attrs' => array(), 'too_many' => $too_many, 'variation_count' => isset( $variation_counts[ $pid ] ) ? (int) $variation_counts[ $pid ] : 0 );
+				if ( ! $too_many ) $eligible_ids[] = $pid;
 			}
+			if ( ! $eligible_ids ) return $map;
 
-			// ۱) شناسهٔ variationهای هر محصول.
+			// ۱) فقط برای محصولات زیر سقف، شناسه‌های variation خوانده می‌شود.
 			$variation_ids = array();
-			foreach ( array_chunk( $product_ids, 400 ) as $chunk ) {
+			foreach ( array_chunk( $eligible_ids, 400 ) as $chunk ) {
 				$ph = implode( ',', array_fill( 0, count( $chunk ), '%d' ) );
 				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 				$rows = (array) $wpdb->get_results(

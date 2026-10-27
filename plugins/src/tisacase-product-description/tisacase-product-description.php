@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — قوانین توضیحات محصول
  * Plugin URI:        https://tisachap.com
  * Description:       اعمال خودکار قوانین توضیحات محصولات (محصولات چاپی و قاب گوشی) در ووکامرس، همراه با پنل مدیریت شیک و ابزار اصلاح انبوه.
- * Version:           1.6.1
+ * Version:           1.6.2
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * WC requires at least: 6.0
@@ -21,7 +21,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'TISACASE_DESC_VERSION', '1.6.1' );
+define( 'TISACASE_DESC_VERSION', '1.6.2' );
 define( 'TISACASE_DESC_FILE', __FILE__ );
 define( 'TISACASE_DESC_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TISACASE_DESC_URL', plugin_dir_url( __FILE__ ) );

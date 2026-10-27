@@ -15,6 +15,7 @@ function makeDom() {
 	const dom = new JSDOM(`<!doctype html><html><body>
 		<div class="tcas-converter-flow"><label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button></span></label><div id="tcas-link-result" class="tcas-converter-result" hidden><div class="tcas-converter-result-meta"><span id="tcas-link-shop"></span><small id="tcas-link-product"></small></div><label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><select id="tcas-link-variation"></select></label><span class="tcas-converter-reference"><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button></span></div><span id="tcas-link-status"></span></div>
 		<input id="tcas-smart-local"><input id="tcas-smart-remote"><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span>
+		<section id="tcas-smart-issues" hidden><h3>موارد نیازمند بررسی</h3><span id="tcas-smart-issues-count"></span><div id="tcas-smart-issue-list" role="list"></div></section>
 		<div id="tcas-pair-entries">${entryMarkup()}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template><button id="tcas-pair-add">افزودن</button>
 		<button id="tcas-preview-start">بررسی</button><span id="tcas-preview-status"></span>
 		<div id="tcas-preview-progress" hidden><progress max="100" value="0"><span></span></div>
@@ -209,6 +210,10 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	ok('بلافاصله بعد از تطبیق، عنوان هر Variation زیر فیلد خودش دیده می‌شود', entries[0].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'S25 Ultra' && entries[0].querySelector('.tcas-shop-remote .tcas-variation-title').textContent === 's25ultra' && entries[1].querySelector('.tcas-shop-local .tcas-variation-title').textContent === 'Blue');
 	ok('تطبیق فقط یک AJAX می‌گیرد و خودکار Preview/Connect نمی‌کند', calls.length === 1 && calls[0].get('action') === 'tcas_match_variations');
 	ok('تعداد موارد مبهم و بدون تطبیق در Status دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('2 مورد'));
+	const issuePanel = window.document.getElementById('tcas-smart-issues');
+	const issueRows = issuePanel.querySelectorAll('[role="listitem"]');
+	ok('موارد مبهم و بدون تطبیق در فهرست جداگانه نمایش داده می‌شوند', !issuePanel.hidden && issueRows.length === 2 && window.document.getElementById('tcas-smart-issues-count').textContent === '2 مورد');
+	ok('هر مورد با نوع مشکل، فروشگاه، عنوان و مرجع خودش فلگ می‌شود', issueRows[0].textContent.includes('مبهم') && issueRows[0].textContent.includes('TisaCase') && issueRows[0].textContent.includes('Duplicate') && issueRows[0].textContent.includes('ID:53') && issueRows[1].textContent.includes('بدون تطبیق') && issueRows[1].textContent.includes('ArioCase') && issueRows[1].textContent.includes('ID:70/73'));
 	ok('تعداد Variationهای Load شدهٔ هر دو فروشگاه دیده می‌شود', window.document.getElementById('tcas-smart-status').textContent.includes('TisaCase: 3') && window.document.getElementById('tcas-smart-status').textContent.includes('ArioCase: 3'));
 	const group = window.document.querySelector('#tcas-pair-entries details.tcas-fresh-product-group');
 	ok('جفت‌های متغیر زیر یک کارت آکارئونی برای دو محصول والد جمع می‌شوند', Boolean(group) && group.querySelector('summary').textContent.includes('Local product') && group.querySelector('summary').textContent.includes('Remote product'));
@@ -241,7 +246,7 @@ async function waitFor(fn, timeout = 2000) { const start = Date.now(); while (!f
 	window.fetch = async () => { requests++; return reply({ matches: [], ambiguous: [{ label: 'A' }, { label: 'B' }], unmatched: [{ label: 'C' }] }); };
 	window.eval(script); window.document.getElementById('tcas-smart-local').value = 'ID:50'; window.document.getElementById('tcas-smart-remote').value = 'ID:70'; window.document.getElementById('tcas-smart-match').click();
 	await waitFor(() => window.document.getElementById('tcas-smart-status').textContent.includes('جفت یکتایی پیدا نشد'));
-	ok('نتیجهٔ مبهم هیچ کارتی برای اتصال نمی‌سازد', window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 1 && window.document.querySelector('.tcas-local-code').value === '');
+	ok('نتیجهٔ مبهم هیچ کارت اتصال نمی‌سازد اما هر سه مورد مشکل‌دار را فهرست می‌کند', window.document.querySelectorAll('#tcas-pair-entries .tcas-pair-entry').length === 1 && window.document.querySelector('.tcas-local-code').value === '' && !window.document.getElementById('tcas-smart-issues').hidden && window.document.querySelectorAll('#tcas-smart-issue-list [role="listitem"]').length === 3);
 	ok('نبود تطبیق یکتا خطای قابل‌مشاهده دارد', window.document.getElementById('tcas-smart-status').classList.contains('is-error') && requests === 1);
 	dom.window.close();
 }

@@ -5,7 +5,7 @@ Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
 WC requires at least: 5.0
-Stable tag: 1.5.3
+Stable tag: 1.5.4
 License: GPL-2.0-or-later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -45,6 +45,11 @@ Yes — Advanced tab → product scope (all / only these categories / all except
 Test mode (the card at the top of the settings page) is on by default. Add the products you want to try, save, and only those products are grouped on the frontend. No other product, category or template output changes while Test mode is on.
 
 == Changelog ==
+
+= 1.5.4 =
+* Product category scopes now fail closed when no product ID is available, instead of accidentally treating an unknown product as in scope.
+* Server-side dropdown grouping is restricted to single-product pages; shop/category archives and unrelated storefront dropdowns remain untouched.
+* Added regression coverage for include/exclude scope, missing IDs, test mode and non-product pages.
 
 = 1.5.3 =
 * The search box "clear" (×) button escaped the field on themes that force `position`/`float`/`margin` on buttons: it is now pinned inside the input with `!important` physical *and* logical offsets, with an explicit RTL rule (left side in RTL, right side in LTR).

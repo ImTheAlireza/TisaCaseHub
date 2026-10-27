@@ -22,6 +22,8 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				'local_name'   => '',
 				'remote_name'  => '',
 				'local_type'   => '',
+				'partner_id'   => isset( $pair['partner_id'] ) ? sanitize_key( $pair['partner_id'] ) : 'ariocase',
+				'partner_label'=> isset( $pair['partner_label'] ) ? (string) $pair['partner_label'] : 'ArioCase',
 				'stock'        => null,
 			), $extra );
 		}
@@ -50,8 +52,11 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			return array( 'id' => (int) $local_id, 'product' => $product );
 		}
 
-		public static function preview( $pair ) {
+		public static function preview( $pair, $partner_id = 'ariocase' ) {
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
 			$pair = wp_parse_args( is_array( $pair ) ? $pair : array(), array( 'local_code' => '', 'remote_code' => '', 'error' => '' ) );
+			$pair['partner_id'] = $partner_id;
+			$pair['partner_label'] = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase';
 			if ( '' !== $pair['error'] ) {
 				return array( 'row' => self::row( $pair, 'error', $pair['error'] ), 'remote' => null, 'local_id' => 0 );
 			}
@@ -67,20 +72,27 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				'local_type' => $product->get_type(),
 			);
 			$current   = TCAS_Mapping::remote_code( $local_id );
+			$current_partner = TCAS_Mapping::partner_id( $local_id );
+			$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase';
 			$reference = $pair['remote_code'];
+			$extra['partner_id'] = $partner_id;
+			$extra['partner_label'] = $partner_label;
+			if ( '' !== $current && $current_partner !== $partner_id ) {
+				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به همکار دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
+			}
 			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
 			if ( ! $is_url && '' !== $current && $current !== $reference ) {
-				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به کد ArioCase دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id );
+				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}
 			if ( ! $is_url ) {
-				foreach ( TCAS_Mapping::ids_by_remote_code( $reference ) as $mapped_id ) {
+				foreach ( TCAS_Mapping::ids_by_remote_code( $reference, $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
-						return array( 'row' => self::row( $pair, 'error', sprintf( 'کد ArioCase از قبل به محصول #%d متصل است.', $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
+						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
 					}
 				}
 			}
 
-			$remote = TCAS_Api::fetch_reference( $reference );
+			$remote = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::fetch_reference( $partner_id, $reference ) : TCAS_Api::fetch_reference( $reference );
 			if ( is_wp_error( $remote ) ) {
 				return array( 'row' => self::row( $pair, 'error', $remote->get_error_message(), $extra ), 'remote' => null, 'local_id' => $local_id );
 			}
@@ -89,21 +101,21 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( '' === $remote_key && $remote_id ) {
 				$parent_remote_id = ! empty( $remote['parent_remote_id'] ) ? absint( $remote['parent_remote_id'] ) : 0;
 				if ( isset( $remote['type'] ) && 'variation' === $remote['type'] && ! $parent_remote_id ) {
-					return array( 'row' => self::row( $pair, 'error', 'برای Variation بدون SKU، Parent ID در پاسخ ArioCase لازم است.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+					return array( 'row' => self::row( $pair, 'error', 'برای Variation بدون SKU، شناسهٔ والد باید در پاسخ همکار موجود باشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 				}
 				$remote_key = 'ID:' . ( $parent_remote_id ? $parent_remote_id . '/' : '' ) . $remote_id;
 			}
 			if ( '' === $remote_key ) {
-				return array( 'row' => self::row( $pair, 'error', 'محصول ArioCase باید SKU یا Product ID داشته باشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+				return array( 'row' => self::row( $pair, 'error', 'پاسخ همکار باید SKU یا شناسهٔ محصول داشته باشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			$pair['remote_code'] = $remote_key;
 			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
-				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به کد ArioCase دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			if ( $is_url ) {
-				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'] ) as $mapped_id ) {
+				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'], $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
-						return array( 'row' => self::row( $pair, 'error', sprintf( 'کد ArioCase از قبل به محصول #%d متصل است.', $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
+						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
 					}
 				}
 			}
@@ -116,13 +128,13 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return array( 'row' => self::row( $pair, 'error', 'نوع دو محصول برای اتصال یکسان نیست؛ ساده با ساده و Variation با Variation جفت کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			if ( ! TCAS_Stock::valid( $remote['stock'] ) ) {
-				return array( 'row' => self::row( $pair, 'error', 'موجودی معتبر در پاسخ ArioCase نیست؛ اتصالی ساخته نشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
+				return array( 'row' => self::row( $pair, 'error', 'موجودی نرمال‌شده و معتبر از همکار دریافت نشد؛ اتصالی ساخته نشد.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			if ( $current === $pair['remote_code'] && TCAS_Mapping::is_enabled( $local_id ) ) {
 				return array( 'row' => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
 			return array(
-				'row'      => self::row( $pair, 'connect', 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ArioCase خوانده و اعمال می‌شود.', $extra ),
+				'row'      => self::row( $pair, 'connect', 'دو محصول موجود جفت می‌شوند؛ فقط موجودی از ' . $partner_label . ' خوانده و اعمال می‌شود.', $extra ),
 				'remote'   => $remote,
 				'local_id' => $local_id,
 			);
@@ -138,7 +150,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return new WP_Error( 'tcas_not_connectable', $message );
 			}
 			if ( empty( $preview['remote'] ) ) {
-				return new WP_Error( 'tcas_preview_missing', 'پاسخ ArioCase برای این جفت در دسترس نیست.' );
+				return new WP_Error( 'tcas_preview_missing', 'پاسخ همکار برای این جفت در دسترس نیست.' );
 			}
 			$local = self::local_product( $row['local_code'] );
 			if ( is_wp_error( $local ) ) {
@@ -150,9 +162,11 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$product           = $local['product'];
 			$local_id          = $local['id'];
 			$remote            = $preview['remote'];
+			$partner_id        = isset( $row['partner_id'] ) ? sanitize_key( $row['partner_id'] ) : 'ariocase';
 			$previous_code     = TCAS_Mapping::remote_code( $local_id );
 			$previous_enabled  = TCAS_Mapping::is_enabled( $local_id );
-			$mapped            = TCAS_Mapping::map( $local_id, $row['remote_code'], true );
+			$previous_partner  = TCAS_Mapping::partner_id( $local_id );
+			$mapped            = TCAS_Mapping::map( $local_id, $row['remote_code'], true, $partner_id );
 			if ( is_wp_error( $mapped ) ) {
 				return $mapped;
 			}
@@ -161,7 +175,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$applied = TCAS_Stock::apply( $product, $remote['stock'] );
 			if ( is_wp_error( $applied ) ) {
 				if ( '' !== $previous_code ) {
-					TCAS_Mapping::map( $local_id, $previous_code, $previous_enabled );
+					TCAS_Mapping::map( $local_id, $previous_code, $previous_enabled, $previous_partner );
 				} else {
 					TCAS_Mapping::forget( $local_id );
 				}

@@ -55,6 +55,23 @@
 		return tisa.i18n.error;
 	}
 
+	function readCheckpoint( key ) {
+		try {
+			var value = window.sessionStorage.getItem( key );
+			return value ? JSON.parse( value ) : null;
+		} catch ( e ) {
+			return null;
+		}
+	}
+
+	function writeCheckpoint( key, value ) {
+		try { window.sessionStorage.setItem( key, JSON.stringify( value ) ); } catch ( e ) { /* Storage can be disabled or full. */ }
+	}
+
+	function clearCheckpoint( key ) {
+		try { window.sessionStorage.removeItem( key ); } catch ( e ) { /* Storage can be disabled. */ }
+	}
+
 	// True when the response is a valid success object.
 	function isOk( res ) {
 		return !!res && typeof res === 'object' && res.success === true;
@@ -72,18 +89,23 @@
 		var $wrap = $( '#tc-progress-wrap' );
 		var dry = $( '#tc-dry' ).is( ':checked' );
 
-		if ( ! window.confirm( tisa.i18n.confirm ) ) {
-			return;
+		var checkpointKey = 'tisacase-desc-repair-' + ( dry ? 'dry' : 'live' );
+		var checkpoint = readCheckpoint( checkpointKey );
+		var resume = checkpoint && window.confirm( 'یک اصلاح ناتمام در همین زبانه پیدا شد. ادامه از آخرین نقطهٔ ذخیره‌شده؟ (لغو = شروع تازه)' );
+		if ( ! resume ) {
+			if ( checkpoint ) { clearCheckpoint( checkpointKey ); }
+			if ( ! window.confirm( tisa.i18n.confirm ) ) { return; }
 		}
 
 		$btn.prop( 'disabled', true );
 		$wrap.prop( 'hidden', false );
 
-		var total = 0;
-		var processed = 0;
-		var changed = 0;
-		var page = 0;
-		var snapshot = '';
+		var total = resume ? ( Number( checkpoint.total ) || 0 ) : 0;
+		var processed = resume ? ( Number( checkpoint.processed ) || 0 ) : 0;
+		var changed = resume ? ( Number( checkpoint.changed ) || 0 ) : 0;
+		var page = resume ? ( Number( checkpoint.page ) || 0 ) : 0;
+		var offset = resume ? ( Number( checkpoint.offset ) || 0 ) : 0;
+		var snapshot = resume ? ( checkpoint.snapshot || '' ) : '';
 
 		function fail( msg ) {
 			$text.text( msg || tisa.i18n.error );
@@ -97,6 +119,7 @@
 				action: 'tisacase_desc_repair',
 				nonce: tisa.nonce,
 				page: page,
+				offset: offset,
 				dry: dry ? 1 : 0,
 				snapshot: snapshot
 			} ).done( function ( res ) {
@@ -119,19 +142,23 @@
 				$fill.css( 'width', pct + '%' );
 
 				if ( d.done ) {
+					clearCheckpoint( checkpointKey );
 					$fill.css( 'width', '100%' );
 					$text.text( tisa.i18n.done + ' — ' + fmt( changed ) );
 					$btn.prop( 'disabled', false );
 					return;
 				}
 
-				page = d.next;
+				page = ( typeof d.next_page === 'number' ) ? d.next_page : d.next;
+				offset = Number( d.next_offset ) || 0;
+				writeCheckpoint( checkpointKey, { page: page, offset: offset, snapshot: snapshot, total: total, processed: processed, changed: changed } );
 				step();
 			} ).fail( function ( xhr ) {
 				fail( ajaxFailText( xhr ) );
 			} );
 		}
 
+		writeCheckpoint( checkpointKey, { page: page, offset: offset, snapshot: snapshot, total: total, processed: processed, changed: changed } );
 		step();
 	}
 
@@ -195,7 +222,8 @@
 		total: 0,
 		processed: 0,
 		filter: 'all',
-		mismatches: []
+		mismatches: [],
+		truncated: false
 	};
 
 	// Minimal sanitising before inserting stored HTML into the DOM.
@@ -351,6 +379,7 @@
 		scan.processed = 0;
 		scan.filter = 'all';
 		scan.mismatches = [];
+		scan.truncated = false;
 
 		$( '#tc-scan-result' ).prop( 'hidden', true );
 		$( '#tc-scan-progress-wrap' ).prop( 'hidden', false );
@@ -358,6 +387,7 @@
 		$( '#tc-scan-progress-text' ).text( tisa.i18n.scanRunning );
 
 		var page = 0;
+		var offset = 0;
 
 		function fail( msg ) {
 			$( '#tc-scan-progress-text' ).text( msg || tisa.i18n.error );
@@ -367,7 +397,7 @@
 
 		function finish() {
 			$( '#tc-scan-progress-fill' ).css( 'width', '100%' );
-			$( '#tc-scan-progress-text' ).text( tisa.i18n.scanDone );
+			$( '#tc-scan-progress-text' ).text( tisa.i18n.scanDone + ( scan.truncated ? ' · فقط ۱۰۰۰ مورد نخست برای نمایش نگه داشته شد.' : '' ) );
 			$( '#tc-scan' ).prop( 'disabled', false );
 			scan.running = false;
 			scanRender();
@@ -378,7 +408,8 @@
 			$.post( tisa.ajax, {
 				action: 'tisacase_desc_scan',
 				nonce: tisa.nonce,
-				page: page
+				page: page,
+				offset: offset
 			} ).done( function ( res ) {
 				if ( ! isOk( res ) ) {
 					fail( isAuthFailure( res ) ? tisa.i18n.sessionExpired : serverMsg( res ) );
@@ -387,7 +418,10 @@
 				var d = res.data;
 				scan.total = d.total || scan.total;
 				scan.processed += d.processed || 0;
-				scan.mismatches = scan.mismatches.concat( d.mismatches || [] );
+				var incoming = d.mismatches || [];
+				var room = Math.max( 0, 1000 - scan.mismatches.length );
+				scan.mismatches = scan.mismatches.concat( incoming.slice( 0, room ) );
+				if ( incoming.length > room || scan.mismatches.length >= 1000 ) { scan.truncated = true; }
 
 				var pct = scan.total > 0 ? Math.min( 100, Math.round( ( scan.processed / scan.total ) * 100 ) ) : 100;
 				$( '#tc-scan-progress-fill' ).css( 'width', pct + '%' );
@@ -399,7 +433,8 @@
 					finish();
 					return;
 				}
-				page = d.next;
+				page = ( typeof d.next_page === 'number' ) ? d.next_page : d.next;
+				offset = Number( d.next_offset ) || 0;
 				step();
 			} ).fail( function ( xhr ) {
 				fail( ajaxFailText( xhr ) );
@@ -411,66 +446,87 @@
 
 	function runApply() {
 		if ( ! tisaReady() ) { return; }
-		var ids = [];
-		$( '#tc-scan-list .tc-scan-select:checked' ).each( function () {
-			ids.push( parseInt( $( this ).closest( '.tc-scan-row' ).data( 'id' ), 10 ) );
-		} );
+		var checkpointKey = 'tisacase-desc-selective-apply';
+		var checkpoint = readCheckpoint( checkpointKey );
+		var resume = checkpoint && window.confirm( 'یک اصلاح انتخابی ناتمام پیدا شد. از نقطهٔ ذخیره‌شده ادامه بدهم؟ (لغو = شروع تازه)' );
+		var ids = resume ? ( checkpoint.ids || [] ) : [];
+		var offset = resume ? ( Number( checkpoint.offset ) || 0 ) : 0;
+		var snapshot = resume ? ( checkpoint.snapshot || '' ) : '';
+		var changed = resume ? ( Number( checkpoint.changed ) || 0 ) : 0;
+		var unchanged = resume ? ( Number( checkpoint.unchanged ) || 0 ) : 0;
 
-		if ( ! ids.length ) {
-			return;
+		if ( ! resume ) {
+			if ( checkpoint ) { clearCheckpoint( checkpointKey ); }
+			$( '#tc-scan-list .tc-scan-select:checked' ).each( function () {
+				ids.push( parseInt( $( this ).closest( '.tc-scan-row' ).data( 'id' ), 10 ) );
+			} );
+			if ( ! ids.length || ! window.confirm( tisa.i18n.applyConfirm.replace( '{n}', fmt( ids.length ) ) ) ) {
+				return;
+			}
+			writeCheckpoint( checkpointKey, { ids: ids, offset: offset, snapshot: snapshot, changed: changed, unchanged: unchanged } );
 		}
-		if ( ! window.confirm( tisa.i18n.applyConfirm.replace( '{n}', fmt( ids.length ) ) ) ) {
-			return;
-		}
+		if ( ! ids.length ) { clearCheckpoint( checkpointKey ); return; }
 
 		var $btn = $( '#tc-apply' ).prop( 'disabled', true );
-
-		$.post( tisa.ajax, {
-			action: 'tisacase_desc_apply',
-			nonce: tisa.nonce,
-			ids: ids
-		} ).done( function ( res ) {
-			if ( isOk( res ) ) {
-				var d = res.data;
-				var set = {};
-				ids.forEach( function ( id ) { set[ id ] = 1; } );
-				scan.mismatches = scan.mismatches.filter( function ( p ) { return ! set[ p.id ]; } );
-
-				$( '#tc-scan-note' ).html(
-					'<div class="tc-notice tc-notice--success"><span class="tc-notice-icon">✔</span> ' +
-					esc( tisa.i18n.applied.replace( '{changed}', fmt( d.changed ) ).replace( '{unchanged}', fmt( d.unchanged ) ) ) +
-					'</div>'
+		function fail( message ) {
+			alert( message || tisa.i18n.error );
+			$btn.prop( 'disabled', false );
+			scanUpdateApply();
+		}
+		function finish() {
+			clearCheckpoint( checkpointKey );
+			var set = {};
+			ids.forEach( function ( id ) { set[ id ] = 1; } );
+			scan.mismatches = scan.mismatches.filter( function ( p ) { return ! set[ p.id ]; } );
+			$( '#tc-scan-note' ).html(
+				'<div class="tc-notice tc-notice--success"><span class="tc-notice-icon">✔</span> ' +
+				esc( tisa.i18n.applied.replace( '{changed}', fmt( changed ) ).replace( '{unchanged}', fmt( unchanged ) ) ) +
+				'</div>'
+			);
+			if ( scan.mismatches.length === 0 ) {
+				$( '#tc-scan-list' ).html(
+					'<div class="tc-notice tc-notice--success"><span class="tc-notice-icon">✔</span> ' + esc( tisa.i18n.allDone ) + '</div>'
 				);
-
-				if ( scan.mismatches.length === 0 ) {
-					$( '#tc-scan-list' ).html(
-						'<div class="tc-notice tc-notice--success"><span class="tc-notice-icon">✔</span> ' + esc( tisa.i18n.allDone ) + '</div>'
-					);
-					$( '#tc-scan-summary' ).empty();
-					$( '#tc-scan-filters' ).prop( 'hidden', true );
-					$( '#tc-scan-selectall-wrap' ).prop( 'hidden', true );
-					$( '#tc-scan-selectall' ).prop( 'checked', false );
-				} else {
-					$( '#tc-scan-list .tc-scan-row' ).each( function () {
-						var id = $( this ).data( 'id' );
-						if ( set[ id ] ) {
-							$( this ).remove();
-						}
-					} );
-					scanUpdateSummary();
-					scanUpdateSelectAll();
-				}
-				scanUpdateApply();
+				$( '#tc-scan-summary' ).empty();
+				$( '#tc-scan-filters' ).prop( 'hidden', true );
+				$( '#tc-scan-selectall-wrap' ).prop( 'hidden', true );
+				$( '#tc-scan-selectall' ).prop( 'checked', false );
 			} else {
-				alert( isAuthFailure( res ) ? tisa.i18n.sessionExpired : serverMsg( res ) );
+				$( '#tc-scan-list .tc-scan-row' ).each( function () {
+					var id = $( this ).data( 'id' );
+					if ( set[ id ] ) { $( this ).remove(); }
+				} );
+				scanUpdateSummary();
+				scanUpdateSelectAll();
 			}
 			$btn.prop( 'disabled', false );
 			scanUpdateApply();
-		} ).fail( function ( xhr ) {
-			alert( ajaxFailText( xhr ) );
-			$btn.prop( 'disabled', false );
-			scanUpdateApply();
-		} );
+		}
+		function step() {
+			$.post( tisa.ajax, {
+				action: 'tisacase_desc_apply',
+				nonce: tisa.nonce,
+				ids: ids,
+				offset: offset,
+				snapshot: snapshot
+			} ).done( function ( res ) {
+				if ( ! isOk( res ) ) {
+					fail( isAuthFailure( res ) ? tisa.i18n.sessionExpired : serverMsg( res ) );
+					return;
+				}
+				var d = res.data;
+				changed += d.changed || 0;
+				unchanged += d.unchanged || 0;
+				snapshot = d.snapshot || snapshot;
+				if ( d.done ) { finish(); return; }
+				offset = Number( d.next_offset ) || 0;
+				writeCheckpoint( checkpointKey, { ids: ids, offset: offset, snapshot: snapshot, changed: changed, unchanged: unchanged } );
+				step();
+			} ).fail( function ( xhr ) {
+				fail( ajaxFailText( xhr ) );
+			} );
+		}
+		step();
 	}
 
 	/* ------------------------------------------------------------ */
@@ -534,7 +590,8 @@
 					setTimeout( function () { window.location.reload(); }, 1600 );
 					return;
 				}
-				page = d.next;
+				page = ( typeof d.next_page === 'number' ) ? d.next_page : d.next;
+				offset = Number( d.next_offset ) || 0;
 				step();
 			} ).fail( function ( xhr ) {
 				fail( ajaxFailText( xhr ) );
@@ -613,8 +670,12 @@
 		if ( ! tisaReady() ) { return; }
 		var $btn = $( '#tc-prep-apply' );
 
-		if ( ! window.confirm( tisa.i18n.prepApplyConfirm ) ) {
-			return;
+		var checkpointKey = 'tisacase-desc-prep-apply';
+		var checkpoint = readCheckpoint( checkpointKey );
+		var resume = checkpoint && window.confirm( 'یک اجرای زمان آماده‌سازی ناتمام پیدا شد. از آخرین نقطه ادامه بدهم؟ (لغو = شروع تازه)' );
+		if ( ! resume ) {
+			if ( checkpoint ) { clearCheckpoint( checkpointKey ); }
+			if ( ! window.confirm( tisa.i18n.prepApplyConfirm ) ) { return; }
 		}
 
 		var $wrap = $( '#tc-prep-progress' ).prop( 'hidden', false );
@@ -622,16 +683,17 @@
 		var $text = $( '#tc-prep-text' );
 		$btn.prop( 'disabled', true );
 
-		var page = 0;
-		var snapshot = '';
-		var processed = 0;
-		var changed = 0;
+		var page = resume ? ( Number( checkpoint.page ) || 0 ) : 0;
+		var offset = resume ? ( Number( checkpoint.offset ) || 0 ) : 0;
+		var snapshot = resume ? ( checkpoint.snapshot || '' ) : '';
+		var processed = resume ? ( Number( checkpoint.processed ) || 0 ) : 0;
+		var changed = resume ? ( Number( checkpoint.changed ) || 0 ) : 0;
 
 		// Send the current form values too, so the button works even
 		// before pressing "ذخیره تنظیمات".
-		var formKey = $( '#tc-prep-key' ).val() || '';
-		var formVal = $( '#tc-prep-value' ).val() || '';
-		var onlyEmpty = $( '#tc-prep-onlyempty' ).is( ':checked' ) ? 1 : 0;
+		var formKey = resume ? checkpoint.formKey : ( $( '#tc-prep-key' ).val() || '' );
+		var formVal = resume ? checkpoint.formVal : ( $( '#tc-prep-value' ).val() || '' );
+		var onlyEmpty = resume ? Number( checkpoint.onlyEmpty ) || 0 : ( $( '#tc-prep-onlyempty' ).is( ':checked' ) ? 1 : 0 );
 
 		function fail( msg ) {
 			$text.text( msg || tisa.i18n.error );
@@ -645,6 +707,7 @@
 				action: 'tisacase_desc_prep_apply',
 				nonce: tisa.nonce,
 				page: page,
+				offset: offset,
 				snapshot: snapshot,
 				prep_meta_key: formKey,
 				prep_value: formVal,
@@ -660,18 +723,22 @@
 				snapshot = d.snapshot || snapshot;
 
 				if ( d.done ) {
+					clearCheckpoint( checkpointKey );
 					$fill.css( 'width', '100%' );
 					$text.text( tisa.i18n.prepDone.replace( '{n}', fmt( changed ) ) );
 					$btn.prop( 'disabled', false );
 					return;
 				}
-				page = d.next;
+				page = ( typeof d.next_page === 'number' ) ? d.next_page : d.next;
+				offset = Number( d.next_offset ) || 0;
+				writeCheckpoint( checkpointKey, { page: page, offset: offset, snapshot: snapshot, processed: processed, changed: changed, formKey: formKey, formVal: formVal, onlyEmpty: onlyEmpty } );
 				step();
 			} ).fail( function ( xhr ) {
 				fail( ajaxFailText( xhr ) );
 			} );
 		}
 
+		writeCheckpoint( checkpointKey, { page: page, offset: offset, snapshot: snapshot, processed: processed, changed: changed, formKey: formKey, formVal: formVal, onlyEmpty: onlyEmpty } );
 		step();
 	}
 
@@ -680,6 +747,10 @@
 	/* ------------------------------------------------------------ */
 
 	$( function () {
+		if ( readCheckpoint( 'tisacase-desc-selective-apply' ) ) {
+			$( '#tc-apply' ).prop( 'disabled', false );
+			$( '#tc-apply-hint' ).text( 'اصلاح انتخابی ناتمام است؛ برای ادامه روی دکمه کلیک کنید.' );
+		}
 		$( document )
 			.on( 'click', '#tc-run', runRepair )
 			.on( 'click', '#tc-preview-run', runPreview )

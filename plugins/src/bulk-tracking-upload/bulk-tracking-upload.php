@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Bulk Tracking Code Upload for WooCommerce
  * Description: آپلود انبوه کد رهگیری از اکسل و نمایش اطلاعات کامل سفارش + لینک پیگیری پست
- * Version: 2.5.0
+ * Version: 2.6.0
  * Author: علیرضا شعبان زاده
  */
 
@@ -10,16 +10,21 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '2.5.0');
+define('BWT_VERSION', '2.6.0');
 define('BWT_UPLOAD_MAX_SIZE', 5 * 1024 * 1024);
 define('BWT_UPLOAD_BATCH_SIZE', 50);
 define('BWT_UPLOAD_BATCH_SECONDS', 4);
 define('BWT_UPLOAD_MAX_ERROR_DETAILS', 500);
+define('BWT_CLEANUP_BATCH_SIZE', 500);
+define('BWT_CLEANUP_SELECTED_BATCH_SIZE', 50);
+define('BWT_CLEANUP_MAX_SELECTED', 1000);
 
 // ========== 1. افزودن منو به پیشخوان ==========
 add_action('admin_menu', 'bwt_add_admin_menu');
 add_action('wp_ajax_bwt_upload_batch', 'bwt_ajax_upload_batch');
 add_action('wp_ajax_bwt_upload_status', 'bwt_ajax_upload_status');
+add_action('wp_ajax_bwt_cleanup_batch', 'bwt_ajax_cleanup_batch');
+add_action('wp_ajax_bwt_cleanup_status', 'bwt_ajax_cleanup_status');
 add_action('bwt_cleanup_upload_temp_files', 'bwt_cleanup_stale_upload_files');
 function bwt_add_admin_menu() {
     add_submenu_page(
@@ -53,11 +58,12 @@ function bwt_admin_assets($hook) {
         wp_style_is('tisacase-ui', 'registered') ? array('tisacase-ui') : array(),
         BWT_VERSION
     );
-    if ($hook === 'woocommerce_page_bulk-tracking-upload') {
+    if ($hook === 'woocommerce_page_bulk-tracking-upload' || $hook === 'woocommerce_page_bwt-cleanup') {
+        $is_cleanup = $hook === 'woocommerce_page_bwt-cleanup';
         wp_enqueue_script('bwt-admin', plugin_dir_url(__FILE__) . 'assets/admin.js', array(), BWT_VERSION, true);
         wp_localize_script('bwt-admin', 'BWTAdmin', array(
             'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce('bwt_upload_batch'),
+            'nonce' => wp_create_nonce($is_cleanup ? 'bwt_cleanup_batch' : 'bwt_upload_batch'),
             'retryLabel' => 'تلاش دوباره / ادامه پردازش',
         ));
     }
@@ -366,46 +372,28 @@ function bwt_process_csv_batch_handle($handle, $offset = 0, $row_num = 0, $has_h
     );
 }
 
-/** پردازش کامل برای سازگاری فراخوان‌های قدیمی؛ پنل مدیریت از Jobهای دسته‌ای استفاده می‌کند. */
-function bwt_process_uploaded_file($file_path, $original_name = '') {
-    if (!is_readable($file_path)) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'file_error' => 'فایل قابل خواندن نیست.');
+/**
+ * پردازش سازگارِ محدود برای فراخوان‌های قدیمی؛ هر فراخوان فقط یک دسته را اجرا می‌کند.
+ * برای ادامه، offset/row_num/has_header برگشتی را در فراخوان بعدی ارسال کنید.
+ */
+function bwt_process_uploaded_file($file_path, $original_name = '', $offset = 0, $row_num = 0, $has_header = false) {
+    $size = @filesize($file_path);
+    if (!is_readable($file_path) || false === $size) {
+        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'فایل قابل خواندن نیست.');
     }
-    $handle = fopen($file_path, 'rb');
+    if ($size > BWT_UPLOAD_MAX_SIZE) {
+        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'حجم فایل بیش از حد مجاز است (حداکثر ۵ مگابایت).');
+    }
+    $handle = @fopen($file_path, 'rb');
     if ($handle === false) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'file_error' => 'خطا در باز کردن فایل. لطفاً از فرمت CSV استفاده کنید.');
+        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'خطا در باز کردن فایل. لطفاً از فرمت CSV استفاده کنید.');
     }
-
-    $updated = 0;
-    $errors = 0;
-    $details = array();
-    $offset = 0;
-    $row_num = 0;
-    $has_header = false;
-    $file_error = '';
-    do {
-        $batch = bwt_process_csv_batch_handle($handle, $offset, $row_num, $has_header);
-        if (!empty($batch['file_error'])) {
-            $file_error = $batch['file_error'];
-            break;
-        }
-        $updated += (int) $batch['updated'];
-        $errors += (int) $batch['errors'];
-        $details = array_merge($details, $batch['details']);
-        $offset = (int) $batch['offset'];
-        $row_num = (int) $batch['row_num'];
-        $has_header = !empty($batch['has_header']);
-        $done = !empty($batch['done']);
-    } while (!$done);
+    $batch = bwt_process_csv_batch_handle($handle, $offset, $row_num, $has_header, BWT_UPLOAD_BATCH_SIZE, BWT_UPLOAD_BATCH_SECONDS);
     fclose($handle);
-
-    if ($file_error !== '') {
-        return array('updated' => $updated, 'errors' => $errors, 'details' => $details, 'file_error' => $file_error);
+    if (!empty($batch['done']) && empty($batch['file_error']) && ((int) $batch['row_num'] === 0 || ((int) $batch['row_num'] === 1 && !empty($batch['has_header']))) ) {
+        $batch['file_error'] = 'فایل خالی است یا فقط شامل هدر است. داده‌ای برای پردازش یافت نشد.';
     }
-    if ($row_num === 0 || ($has_header && $updated === 0 && $errors === 0)) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'file_error' => 'فایل خالی است یا فقط شامل هدر است. داده‌ای برای پردازش یافت نشد.');
-    }
-    return array('updated' => $updated, 'errors' => $errors, 'details' => $details, 'file_error' => '');
+    return $batch;
 }
 
 function bwt_path_is_within_root($path, $root) {
@@ -983,119 +971,155 @@ function bwt_tracking_search_form() {
     return ob_get_clean();
 }
 
-// ========== 5. صفحه پاک کردن کدها ==========
-function bwt_cleanup_page() {
-    if (!current_user_can('manage_options')) {
-        wp_die('دسترسی غیر مجاز');
-    }
+// ========== 5. صفحه پاک کردن کدها (کارهای قابل ادامه و batch شده) ==========
+function bwt_cleanup_job_key($job_id) {
+    return 'bwt_cleanup_job_' . md5((string) $job_id);
+}
 
-    // پردازش قبل از نمایش فرم
-    $message = '';
-    if (isset($_POST['bwt_delete_all'])) {
-        if (!isset($_POST['bwt_cleanup_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_cleanup_nonce'])), 'bwt_cleanup_action')) {
-            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>خطای امنیتی: نانس نامعتبر.</p></div>';
-        } else {
-            $message = bwt_delete_all_tracking_codes();
-        }
-    } elseif (isset($_POST['bwt_delete_selected'])) {
-        if (!isset($_POST['bwt_cleanup_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_cleanup_nonce'])), 'bwt_cleanup_action')) {
-            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>خطای امنیتی: نانس نامعتبر.</p></div>';
-        } elseif (empty($_POST['order_ids'])) {
-            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>لطفاً حداقل یک شماره سفارش وارد کنید.</p></div>';
-        } else {
-            $raw = sanitize_text_field(wp_unslash($_POST['order_ids']));
-            // تبدیل اعداد فارسی به انگلیسی
-            $raw = bwt_normalize_digits($raw);
-            $parts = array_filter(array_map('trim', explode(',', $raw)));
-            $order_ids = array();
-            foreach ($parts as $p) {
-                if (ctype_digit($p)) {
-                    $order_ids[] = intval($p);
+function bwt_get_cleanup_job($job_id) {
+    $job_id = bwt_sanitize_upload_job_id($job_id);
+    return $job_id !== '' ? get_transient(bwt_cleanup_job_key($job_id)) : false;
+}
+
+function bwt_create_cleanup_job($mode, $order_ids = array()) {
+    if (!current_user_can('manage_options')) {
+        return array('job_id' => '', 'error' => 'دسترسی غیرمجاز است.');
+    }
+    if ($mode !== 'all' && $mode !== 'selected') {
+        return array('job_id' => '', 'error' => 'نوع پاک‌سازی نامعتبر است.');
+    }
+    $ids = array();
+    if ($mode === 'selected') {
+        $examined = 0;
+        foreach ((array) $order_ids as $id) {
+            if (++$examined > BWT_CLEANUP_MAX_SELECTED) {
+                break;
+            }
+            $id = (int) $id;
+            if ($id > 0 && !isset($ids[$id])) {
+                $ids[$id] = $id;
+                if (count($ids) >= BWT_CLEANUP_MAX_SELECTED) {
+                    break;
                 }
             }
-            if (empty($order_ids)) {
-                $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>شماره سفارش معتبری یافت نشد.</p></div>';
-            } else {
-                $message = bwt_delete_selected_tracking_codes($order_ids);
-            }
+        }
+        $ids = array_values($ids);
+        if (!$ids) {
+            return array('job_id' => '', 'error' => 'شماره سفارش معتبری یافت نشد.');
         }
     }
-
-    ?>
-    <div class="wrap tisa-wrap bwt-wrap" dir="rtl">
-        <?php bwt_render_hero('cleanup'); ?>
-
-        <?php echo wp_kses_post($message); ?>
-
-        <form method="post" class="bwt-grid">
-            <?php wp_nonce_field('bwt_cleanup_action', 'bwt_cleanup_nonce'); ?>
-
-            <section class="bwt-card">
-                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پاک کردن انتخابی</h2><p>کد رهگیری فقط از سفارش‌هایی که وارد می‌کنید حذف می‌شود.</p></div></div>
-                <div class="bwt-card-body">
-                    <label for="bwt_order_ids" class="bwt-label">شماره سفارش‌ها (با کاما جدا کنید)</label>
-                    <input type="text" id="bwt_order_ids" name="order_ids" class="tisa-input bwt-ids" dir="ltr" inputmode="numeric" placeholder="123,124,125" />
-                    <div class="bwt-actions">
-                        <button type="submit" name="bwt_delete_selected" class="tisa-btn tisa-btn--secondary" onclick="return confirm('کد رهگیری سفارش‌های انتخابی پاک میشه؟')">پاک کردن انتخابی</button>
-                    </div>
-                </div>
-            </section>
-
-            <section class="bwt-card bwt-card--danger">
-                <div class="bwt-card-head"><span class="bwt-dot bwt-dot--bad"></span><div><h2>پاک کردن همهٔ کدها</h2><p>غیرقابل بازگشت — از همهٔ سفارش‌ها. قبل از انجام بکاپ بگیرید.</p></div></div>
-                <div class="bwt-card-body">
-                    <div class="bwt-actions">
-                        <button type="submit" name="bwt_delete_all" class="tisa-btn tisa-btn--danger" onclick="return confirm('همه کدهای رهگیری پاک می‌شه! مطمئنی؟ این کار برگشت نداره!')">پاک کردن همه کدهای رهگیری</button>
-                    </div>
-                </div>
-            </section>
-        </form>
-    </div>
-    <?php
-}
-
-function bwt_delete_all_tracking_codes() {
-    if (!current_user_can('manage_options')) {
-        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
+    try {
+        $job_id = function_exists('wp_generate_uuid4') ? str_replace('-', '', wp_generate_uuid4()) : bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        return array('job_id' => '', 'error' => 'ساخت شناسهٔ امن برای پاک‌سازی ممکن نشد.');
     }
-    global $wpdb;
-    // حذف از postmeta
-    $deleted = $wpdb->delete(
-        $wpdb->postmeta,
-        array('meta_key' => '_tracking_code'),
-        array('%s')
+    $job_id = bwt_sanitize_upload_job_id($job_id);
+    if ($job_id === '') {
+        return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار پاک‌سازی ناموفق بود.');
+    }
+    $job = array(
+        'user_id' => (int) get_current_user_id(),
+        'mode' => $mode,
+        'ids' => $ids,
+        'offset' => 0,
+        'processed' => 0,
+        'deleted' => 0,
+        'not_found' => 0,
+        'invalid' => 0,
+        'details' => array(),
+        'details_truncated' => 0,
+        'table_index' => 0,
+        'done' => false,
+        'file_error' => '',
+        'created_at' => time(),
     );
-    // برای HPOS (جدول سفارشات جدید) هم پاک کن اگر وجود داشت
-    $orders_table = $wpdb->prefix . 'wc_orders_meta';
-    $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $orders_table));
-    $deleted_hpos = 0;
-    if ($table_exists === $orders_table) {
-        $deleted_hpos = $wpdb->delete($orders_table, array('meta_key' => '_tracking_code'), array('%s'));
+    if (!set_transient(bwt_cleanup_job_key($job_id), $job, 3 * HOUR_IN_SECONDS)) {
+        return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت پاک‌سازی ممکن نشد؛ دوباره تلاش کنید.');
     }
-    $total = intval($deleted) + intval($deleted_hpos);
-    if ($total > 0) {
-        return '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($total) . '</strong> کد رهگیری با موفقیت حذف شد.</p></div>';
+    if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_event') && !wp_next_scheduled('bwt_cleanup_upload_temp_files')) {
+        wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', 'bwt_cleanup_upload_temp_files');
     }
-    return '<div class="tisa-notice tisa-notice--warning bwt-notice"><p>کدی برای حذف یافت نشد.</p></div>';
+    return array('job_id' => $job_id, 'error' => '');
 }
 
-function bwt_delete_selected_tracking_codes($order_ids) {
-    if (!current_user_can('manage_options')) {
-        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
-    }
-    $order_ids = array_map('intval', $order_ids);
-    $order_ids = array_unique(array_filter($order_ids));
+function bwt_cleanup_job_payload($job) {
+    $selected = isset($job['mode']) && $job['mode'] === 'selected';
+    $total = $selected && isset($job['ids']) && is_array($job['ids']) ? count($job['ids']) : 0;
+    $processed = max(0, (int) $job['processed']);
+    $progress = !empty($job['done']) ? 100 : ($selected && $total > 0 ? min(99, (int) floor(100 * $processed / $total)) : min(99, (int) $job['table_index'] * 50));
+    return array(
+        'mode' => $selected ? 'selected' : 'all',
+        'done' => !empty($job['done']),
+        'progress' => $progress,
+        'processed' => $processed,
+        'total' => $total,
+        'deleted' => max(0, (int) $job['deleted']),
+        'not_found' => max(0, (int) $job['not_found']),
+        'invalid' => max(0, (int) $job['invalid']),
+        'details' => isset($job['details']) && is_array($job['details']) ? array_slice($job['details'], 0, 20) : array(),
+        'details_truncated' => max(0, (int) $job['details_truncated']),
+        'file_error' => isset($job['file_error']) ? (string) $job['file_error'] : '',
+    );
+}
 
-    $deleted = 0;
-    $not_found = 0;
-    $invalid = 0;
-    $details = array();
-    
-    foreach ($order_ids as $order_id) {
+function bwt_cleanup_job_authorize() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_cleanup_batch', 'nonce');
+    $job_id = isset($_POST['job_id']) ? bwt_sanitize_upload_job_id(wp_unslash($_POST['job_id'])) : '';
+    $job = $job_id !== '' ? bwt_get_cleanup_job($job_id) : false;
+    if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+        wp_send_json_error(array('message' => 'کار پاک‌سازی پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
+    }
+    return array($job_id, $job);
+}
+
+function bwt_cleanup_ajax_lock($job_id) {
+    $dir = bwt_upload_temp_dir();
+    if ($dir === '') {
+        return false;
+    }
+    $path = $dir . bwt_upload_temp_prefix() . 'cleanup-' . $job_id . '.lock';
+    $handle = @fopen($path, 'c');
+    if (!$handle) {
+        return false;
+    }
+    @chmod($path, 0600);
+    if (!flock($handle, LOCK_EX | LOCK_NB)) {
+        fclose($handle);
+        return false;
+    }
+    return $handle;
+}
+
+/** محدود به حداکثر ۵۰۰ ردیف در هر دستور؛ نام جدول فقط از فهرست داخلی می‌آید. */
+function bwt_delete_tracking_meta_batch($table, $limit = BWT_CLEANUP_BATCH_SIZE) {
+    global $wpdb;
+    if (!isset($wpdb->postmeta) || !isset($wpdb->prefix)) {
+        return false;
+    }
+    $allowed = array($wpdb->postmeta, $wpdb->prefix . 'wc_orders_meta');
+    if (!in_array($table, $allowed, true)) {
+        return false;
+    }
+    $limit = max(1, min(BWT_CLEANUP_BATCH_SIZE, (int) $limit));
+    $sql = $wpdb->prepare("DELETE FROM {$table} WHERE meta_key = %s LIMIT %d", '_tracking_code', $limit);
+    $result = $wpdb->query($sql);
+    return false === $result ? false : (int) $result;
+}
+
+function bwt_process_selected_cleanup_batch(&$job, $batch_size = BWT_CLEANUP_SELECTED_BATCH_SIZE) {
+    $ids = isset($job['ids']) && is_array($job['ids']) ? $job['ids'] : array();
+    $batch_size = max(1, min(BWT_CLEANUP_SELECTED_BATCH_SIZE, (int) $batch_size));
+    $end = min(count($ids), (int) $job['offset'] + $batch_size);
+    for ($i = (int) $job['offset']; $i < $end; $i++) {
+        $order_id = (int) $ids[$i];
         $order = wc_get_order($order_id);
         if (!$order) {
-            $invalid++;
-            $details[] = '#' . $order_id . ' (سفارش یافت نشد)';
+            $job['invalid']++;
+            if (count($job['details']) < 20) $job['details'][] = '#' . $order_id . ' (سفارش یافت نشد)';
+            else $job['details_truncated']++;
             continue;
         }
         $meta_exists = get_post_meta($order_id, '_tracking_code', true);
@@ -1110,27 +1134,208 @@ function bwt_delete_selected_tracking_codes($order_ids) {
                 $ok2 = $order->save();
             }
             if ($ok1 || $ok2) {
-                $deleted++;
+                $job['deleted']++;
             } else {
-                $not_found++;
+                $job['not_found']++;
             }
         } else {
-            $not_found++;
-            $details[] = '#' . $order_id . ' (کد نداشت)';
+            $job['not_found']++;
+            if (count($job['details']) < 20) $job['details'][] = '#' . $order_id . ' (کد نداشت)';
+            else $job['details_truncated']++;
         }
     }
-    
-    $msg = '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($deleted) . '</strong> کد رهگیری حذف شد. ';
-    if ($not_found > 0) {
-        $msg .= '<strong>' . esc_html($not_found) . '</strong> سفارش کد رهگیری نداشت. ';
+    $processed = max(0, $end - (int) $job['offset']);
+    $job['offset'] = $end;
+    $job['processed'] += $processed;
+    $job['done'] = $end >= count($ids);
+    return $processed;
+}
+
+function bwt_ajax_cleanup_status() {
+    list($job_id, $job) = bwt_cleanup_job_authorize();
+    wp_send_json_success(bwt_cleanup_job_payload($job));
+}
+
+function bwt_ajax_cleanup_batch() {
+    list($job_id, $job) = bwt_cleanup_job_authorize();
+    if (!empty($job['done'])) {
+        wp_send_json_success(bwt_cleanup_job_payload($job));
     }
-    if ($invalid > 0) {
-        $msg .= '<strong>' . esc_html($invalid) . '</strong> شماره نامعتبر بود.';
+    $lock = bwt_cleanup_ajax_lock($job_id);
+    if (!$lock) {
+        wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
     }
+    $job = bwt_get_cleanup_job($job_id);
+    if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+        flock($lock, LOCK_UN);
+        fclose($lock);
+        wp_send_json_error(array('message' => 'کار پاک‌سازی پیدا نشد یا منقضی شده است.'), 404);
+    }
+    if (empty($job['done'])) {
+        if ($job['mode'] === 'selected') {
+            bwt_process_selected_cleanup_batch($job, BWT_CLEANUP_SELECTED_BATCH_SIZE);
+        } else {
+            global $wpdb;
+            $tables = array($wpdb->postmeta, $wpdb->prefix . 'wc_orders_meta');
+            $job['file_error'] = '';
+            while ((int) $job['table_index'] < count($tables)) {
+                $table = $tables[(int) $job['table_index']];
+                if ($table === $tables[1]) {
+                    $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+                    if ($exists !== $table) {
+                        $job['table_index']++;
+                        continue;
+                    }
+                }
+                $deleted = bwt_delete_tracking_meta_batch($table, BWT_CLEANUP_BATCH_SIZE);
+                if (false === $deleted) {
+                    $job['file_error'] = 'حذف دسته‌ای از جدول اطلاعات سفارش ناموفق بود؛ دوباره تلاش کنید.';
+                    break;
+                }
+                $job['deleted'] += $deleted;
+                $job['processed'] += $deleted;
+                if ($deleted < BWT_CLEANUP_BATCH_SIZE) {
+                    $job['table_index']++;
+                }
+                break;
+            }
+            $job['done'] = (int) $job['table_index'] >= count($tables);
+        }
+        $batch_error = isset($job['file_error']) ? (string) $job['file_error'] : '';
+        $job['file_error'] = '';
+        set_transient(bwt_cleanup_job_key($job_id), $job, 3 * HOUR_IN_SECONDS);
+    } else {
+        $batch_error = '';
+    }
+    flock($lock, LOCK_UN);
+    fclose($lock);
+    if ($batch_error !== '') {
+        wp_send_json_error(array('message' => $batch_error), 500);
+    }
+    wp_send_json_success(bwt_cleanup_job_payload($job));
+}
+
+function bwt_cleanup_page() {
+    if (!current_user_can('manage_options')) {
+        wp_die('دسترسی غیر مجاز');
+    }
+    $message = '';
+    $cleanup_job_id = '';
+    if (isset($_POST['bwt_delete_all']) || isset($_POST['bwt_delete_selected'])) {
+        if (!isset($_POST['bwt_cleanup_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_cleanup_nonce'])), 'bwt_cleanup_action')) {
+            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>خطای امنیتی: نانس نامعتبر.</p></div>';
+        } else {
+            $mode = isset($_POST['bwt_delete_all']) ? 'all' : 'selected';
+            $order_ids = array();
+            if ($mode === 'selected') {
+                $raw = isset($_POST['order_ids']) ? sanitize_text_field(wp_unslash($_POST['order_ids'])) : '';
+                if (strlen($raw) > 24000) {
+                    $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>فهرست شماره سفارش‌ها بیش از حد بزرگ است. حداکثر ۱۰۰۰ شماره در هر اجرا وارد کنید.</p></div>';
+                } else {
+                    $parts = array_filter(array_map('trim', explode(',', bwt_normalize_digits($raw))));
+                    foreach ($parts as $part) {
+                        if ($part !== '' && ctype_digit($part) && (int) $part > 0) {
+                            $order_ids[] = (int) $part;
+                            if (count($order_ids) > BWT_CLEANUP_MAX_SELECTED) break;
+                        }
+                    }
+                    $order_ids = array_values(array_unique($order_ids));
+                    if (count($order_ids) > BWT_CLEANUP_MAX_SELECTED) {
+                        $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>حداکثر ۱۰۰۰ شماره سفارش در هر پاک‌سازی انتخابی مجاز است.</p></div>';
+                    } elseif (!$order_ids) {
+                        $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>شماره سفارش معتبری یافت نشد.</p></div>';
+                    }
+                }
+            }
+            if ($message === '') {
+                $created = bwt_create_cleanup_job($mode, $order_ids);
+                if (empty($created['job_id'])) {
+                    $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>' . esc_html($created['error']) . '</p></div>';
+                } else {
+                    $cleanup_job_id = $created['job_id'];
+                }
+            }
+        }
+    }
+    if (isset($_GET['bwt_cleanup_job'])) {
+        $requested_id = bwt_sanitize_upload_job_id(wp_unslash($_GET['bwt_cleanup_job']));
+        $requested_job = $requested_id !== '' ? bwt_get_cleanup_job($requested_id) : false;
+        if ($requested_job && (int) $requested_job['user_id'] === (int) get_current_user_id()) {
+            $cleanup_job_id = $requested_id;
+        } else {
+            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>کار پاک‌سازی پیدا نشد یا منقضی شده است.</p></div>';
+        }
+    }
+    ?>
+    <div class="wrap tisa-wrap bwt-wrap" dir="rtl">
+        <?php bwt_render_hero('cleanup'); ?>
+        <?php echo wp_kses_post($message); ?>
+        <?php if ($cleanup_job_id !== '') : ?>
+            <section id="bwt-cleanup-progress" class="bwt-card bwt-upload-progress" data-job-id="<?php echo esc_attr($cleanup_job_id); ?>" aria-live="polite">
+                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پاک‌سازی کدهای رهگیری</h2><p data-bwt-cleanup-status>در حال آماده‌سازی پاک‌سازی دسته‌ای…</p></div></div>
+                <div class="bwt-card-body">
+                    <progress class="bwt-progress-bar" data-bwt-cleanup-progress max="100" value="0" aria-label="پیشرفت پاک‌سازی"></progress>
+                    <div class="bwt-progress-meta" data-bwt-cleanup-counters></div>
+                    <button type="button" class="tisa-btn tisa-btn--secondary" data-bwt-cleanup-resume hidden>ادامهٔ پاک‌سازی</button>
+                    <div data-bwt-cleanup-result></div>
+                    <noscript><p class="bwt-hint">برای اجرای پاک‌سازی دسته‌ای، جاوااسکریپت مرورگر را فعال کنید.</p></noscript>
+                </div>
+            </section>
+        <?php endif; ?>
+        <form method="post" class="bwt-grid">
+            <?php wp_nonce_field('bwt_cleanup_action', 'bwt_cleanup_nonce'); ?>
+            <section class="bwt-card">
+                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پاک کردن انتخابی</h2><p>کد رهگیری فقط از سفارش‌هایی که وارد می‌کنید حذف می‌شود؛ حداکثر ۱۰۰۰ شماره در هر اجرا.</p></div></div>
+                <div class="bwt-card-body">
+                    <label for="bwt_order_ids" class="bwt-label">شماره سفارش‌ها (با کاما جدا کنید)</label>
+                    <input type="text" id="bwt_order_ids" name="order_ids" class="tisa-input bwt-ids" dir="ltr" inputmode="numeric" placeholder="123,124,125" />
+                    <div class="bwt-actions"><button type="submit" name="bwt_delete_selected" class="tisa-btn tisa-btn--secondary" onclick="return confirm('کد رهگیری سفارش‌های انتخابی پاک میشه؟')">پاک کردن انتخابی</button></div>
+                </div>
+            </section>
+            <section class="bwt-card bwt-card--danger">
+                <div class="bwt-card-head"><span class="bwt-dot bwt-dot--bad"></span><div><h2>پاک کردن همهٔ کدها</h2><p>غیرقابل بازگشت — از همهٔ سفارش‌ها. قبل از انجام بکاپ بگیرید.</p></div></div>
+                <div class="bwt-card-body"><div class="bwt-actions"><button type="submit" name="bwt_delete_all" class="tisa-btn tisa-btn--danger" onclick="return confirm('همه کدهای رهگیری پاک می‌شه! مطمئنی؟ این کار برگشت نداره!')">پاک کردن همه کدهای رهگیری</button></div></div>
+            </section>
+        </form>
+    </div>
+    <?php
+}
+
+/** سازگاری محدود: حداکثر ۵۰۰ meta از هر جدول در هر فراخوان. */
+function bwt_delete_all_tracking_codes() {
+    if (!current_user_can('manage_options')) {
+        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
+    }
+    global $wpdb;
+    $deleted = bwt_delete_tracking_meta_batch($wpdb->postmeta, BWT_CLEANUP_BATCH_SIZE);
+    $deleted = false === $deleted ? 0 : $deleted;
+    $orders_table = $wpdb->prefix . 'wc_orders_meta';
+    $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $orders_table));
+    $deleted_hpos = $exists === $orders_table ? bwt_delete_tracking_meta_batch($orders_table, BWT_CLEANUP_BATCH_SIZE) : 0;
+    $total = $deleted + (false === $deleted_hpos ? 0 : $deleted_hpos);
+    $suffix = $total >= BWT_CLEANUP_BATCH_SIZE ? ' پاک‌سازی دسته‌ای را برای ادامه اجرا کنید.' : '';
+    return '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($total) . '</strong> کد رهگیری در این دسته حذف شد.' . esc_html($suffix) . '</p></div>';
+}
+
+/** اجرای سازگار محدود به ۵۰ سفارش؛ رابط مدیریت از Job قابل ادامه استفاده می‌کند. */
+function bwt_delete_selected_tracking_codes($order_ids) {
+    if (!current_user_can('manage_options')) {
+        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
+    }
+    $ids = array();
+    $examined = 0;
+    foreach ((array) $order_ids as $id) {
+        if (++$examined > BWT_CLEANUP_SELECTED_BATCH_SIZE) break;
+        $id = (int) $id;
+        if ($id > 0 && !isset($ids[$id])) $ids[$id] = $id;
+        if (count($ids) >= BWT_CLEANUP_SELECTED_BATCH_SIZE) break;
+    }
+    $job = array('ids' => array_values($ids), 'offset' => 0, 'processed' => 0, 'deleted' => 0, 'not_found' => 0, 'invalid' => 0, 'details' => array(), 'details_truncated' => 0, 'done' => false);
+    bwt_process_selected_cleanup_batch($job, BWT_CLEANUP_SELECTED_BATCH_SIZE);
+    $msg = '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($job['deleted']) . '</strong> کد رهگیری در این دسته حذف شد. ' . esc_html($job['not_found']) . ' سفارش کد نداشت و ' . esc_html($job['invalid']) . ' سفارش یافت نشد.';
+    if (count((array) $order_ids) > count($ids)) $msg .= ' برای ادامه، سفارش‌های باقی‌مانده را در اجرای بعدی وارد کنید.';
     $msg .= '</p>';
-    if (!empty($details) && ($not_found + $invalid) > 0) {
-        $msg .= '<p class="bwt-hint">جزئیات: ' . esc_html(implode('، ', array_slice($details, 0, 20))) . (count($details) > 20 ? ' و...' : '') . '</p>';
-    }
+    if ($job['details']) $msg .= '<p class="bwt-hint">جزئیات: ' . esc_html(implode('، ', array_slice($job['details'], 0, 20))) . '</p>';
     $msg .= '</div>';
     return $msg;
 }

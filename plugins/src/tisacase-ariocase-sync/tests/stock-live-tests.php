@@ -10,6 +10,7 @@ class WP_Error {
 function is_wp_error( $value ) { return $value instanceof WP_Error; }
 function wp_parse_args( $args, $defaults ) { return array_merge( $defaults, (array) $args ); }
 function sanitize_text_field( $value ) { return trim( (string) $value ); }
+function sanitize_key( $value ) { return preg_replace( '/[^a-z0-9_\\-]/', '', strtolower( (string) $value ) ); }
 function absint( $value ) { return abs( (int) $value ); }
 function get_option( $key, $default = false ) { return isset( $GLOBALS['options'][ $key ] ) ? $GLOBALS['options'][ $key ] : $default; }
 function add_option( ...$args ) { $GLOBALS['options'][ $args[0] ] = $args[1]; return true; }

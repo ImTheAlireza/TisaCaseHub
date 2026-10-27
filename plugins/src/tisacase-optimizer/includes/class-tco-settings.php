@@ -23,6 +23,9 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 		/** @var string[]|null کش پوشه‌های محافظت‌شده در همین درخواست */
 		private static $cache_folders = null;
 
+		/** @var string هشدار در صورت ناموفق‌بودن فعال‌سازی/پاک‌سازی WebP delivery */
+		private static $delivery_warning = '';
+
 		const OPTION_SETTINGS = 'tisacase_optimizer_settings';
 		const OPTION_STATS    = 'tisacase_optimizer_stats';
 		const OPTION_PINNED   = 'tisacase_optimizer_pinned_ids';
@@ -126,6 +129,11 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 			self::$cache_settings = null;
 			self::$cache_pinned   = null;
 			self::$cache_folders  = null;
+		}
+
+		/** پیام آخرین تلاش همگام‌سازی تحویل تصویری در همین درخواست. */
+		public static function delivery_warning() {
+			return self::$delivery_warning;
 		}
 
 		/**
@@ -318,19 +326,29 @@ if ( ! class_exists( 'TisaCase_Optimizer_Settings' ) ) {
 				$clean['seo_title_pattern'] = '' !== $ttl ? $ttl : '{product_title}';
 			}
 
+			self::$delivery_warning = '';
+			$should_sync_delivery   = array_key_exists( 'delivery_method', $raw );
+			$has_delivery_class     = $should_sync_delivery && class_exists( 'TisaCase_Optimizer_WebP_Delivery' );
+			$sync_ok                = false;
+			if ( $has_delivery_class ) {
+				$sync_ok = TisaCase_Optimizer_WebP_Delivery::sync_htaccess( 'htaccess' === $clean['delivery_method'] );
+			}
+
+			// اگر وب‌سرور قوانین را نپذیرد، تنظیم را بی‌صدا روی حالتی نگذار
+			// که عملاً هیچ فایلی تحویل نمی‌دهد؛ در عوض از picture به‌عنوان مسیر امن استفاده کن.
+			if ( $should_sync_delivery && 'htaccess' === $clean['delivery_method'] && ( ! $has_delivery_class || ! $sync_ok ) ) {
+				$clean['delivery_method'] = 'picture';
+				self::$delivery_warning = $has_delivery_class
+					? __( 'قوانین تحویل وب‌سرور در uploads/.htaccess نوشته نشد؛ روش امن <picture> جایگزین شد. دسترسی نوشتن پوشه و فایل .htaccess را بررسی کنید.', 'tisacase-optimizer' )
+					: __( 'کلاس تحویل تصویر بارگذاری نشد؛ روش امن <picture> جایگزین شد.', 'tisacase-optimizer' );
+			} elseif ( $should_sync_delivery && 'htaccess' !== $clean['delivery_method'] && $has_delivery_class && ! $sync_ok ) {
+				self::$delivery_warning = __( 'پاک‌کردن قوانین قبلی از uploads/.htaccess ممکن نشد؛ ممکن است روش قبلی تحویل تصویر هنوز روی وب‌سرور فعال باشد.', 'tisacase-optimizer' );
+			}
+
 			// ذخیره بدون بار تحمیلی روی autoload فرانت‌اند در صورت عدم نیاز.
 			$needs_frontend = ! empty( $clean['delivery_method'] ) && 'picture' === $clean['delivery_method'];
 			update_option( self::OPTION_SETTINGS, $clean, $needs_frontend );
 			self::$cache_settings = null;
-
-			// همگام‌سازی قوانین .htaccess در صورت انتخاب سرو از طریق وب‌سرور.
-			if ( class_exists( 'TisaCase_Optimizer_WebP_Delivery' ) ) {
-				if ( 'htaccess' === $clean['delivery_method'] ) {
-					TisaCase_Optimizer_WebP_Delivery::sync_htaccess( true );
-				} else {
-					TisaCase_Optimizer_WebP_Delivery::sync_htaccess( false );
-				}
-			}
 
 			return $clean;
 		}

@@ -269,21 +269,31 @@ class BDC_Query {
 	 *
 	 * @param array $filters Sanitized filters.
 	 * @param int   $limit   Maximum rows.
-	 * @param int   $offset  Offset.
+	 * @param int   $after_id Exclusive product-ID cursor.
 	 * @return int[]
 	 */
-	public static function get_ids( array $filters, $limit, $offset = 0 ) {
+	public static function get_ids( array $filters, $limit, $after_id = 0 ) {
+		return self::get_ids_after( $filters, $limit, $after_id );
+	}
+
+	/**
+	 * Returns the next ID chunk after a product ID (keyset pagination).
+	 *
+	 * @param array $filters  Sanitized filters.
+	 * @param int   $limit    Maximum rows.
+	 * @param int   $after_id Exclusive ID cursor.
+	 * @return int[]
+	 */
+	public static function get_ids_after( array $filters, $limit, $after_id = 0 ) {
 		global $wpdb;
 
-		$limit  = max( 1, min( 5000, (int) $limit ) );
-		$offset = max( 0, (int) $offset );
-
-		$parts = self::build_where( $filters );
-		$sql   = 'SELECT DISTINCT p.ID ' . $parts['sql'] . ' ORDER BY p.ID ASC LIMIT %d OFFSET %d';
-
-		$args   = $parts['args'];
-		$args[] = $limit;
-		$args[] = $offset;
+		$limit   = max( 1, min( 5000, (int) $limit ) );
+		$after_id = max( 0, (int) $after_id );
+		$parts   = self::build_where( $filters );
+		$sql     = 'SELECT DISTINCT p.ID ' . $parts['sql'] . ' AND p.ID > %d ORDER BY p.ID ASC LIMIT %d';
+		$args    = $parts['args'];
+		$args[]  = $after_id;
+		$args[]  = $limit;
 
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 		$sql = $wpdb->prepare( $sql, $args );
@@ -295,7 +305,9 @@ class BDC_Query {
 	/**
 	 * Counts distinct images attached to matching products.
 	 *
-	 * Runs entirely in SQL so memory stays flat regardless of catalogue size.
+	 * Featured-image counting runs in SQL. Gallery metadata is scanned in small
+	 * keyset pages with the existing 20,000-row safety ceiling; only unique IDs
+	 * from those rows are retained to preserve distinct-image semantics.
 	 *
 	 * @param array $filters Sanitized filters.
 	 * @return int
@@ -308,11 +320,11 @@ class BDC_Query {
 		// Subquery over matching product IDs: keeps everything inside MySQL.
 		$inner = 'SELECT DISTINCT p.ID ' . $parts['sql'];
 
-		$sql = "SELECT COUNT( DISTINCT CAST( pm.meta_value AS UNSIGNED ) )
+		$sql = "SELECT COUNT( DISTINCT pm.meta_value )
 			FROM {$wpdb->postmeta} pm
 			WHERE pm.meta_key = '_thumbnail_id'
 			  AND pm.meta_value REGEXP '^[0-9]+$'
-			  AND CAST( pm.meta_value AS UNSIGNED ) > 0
+			  AND pm.meta_value <> '0'
 			  AND pm.post_id IN ( {$inner} )";
 
 		if ( ! empty( $parts['args'] ) ) {
@@ -323,31 +335,46 @@ class BDC_Query {
 		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
 		$featured = (int) $wpdb->get_var( $sql );
 
-		// Gallery images: counted in bounded chunks to avoid loading everything.
-		$gallery_sql = "SELECT pm.meta_value
-			FROM {$wpdb->postmeta} pm
-			WHERE pm.meta_key = '_product_image_gallery'
-			  AND pm.meta_value <> ''
-			  AND pm.post_id IN ( {$inner} )
-			LIMIT 20000";
-
-		if ( ! empty( $parts['args'] ) ) {
-			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$gallery_sql = $wpdb->prepare( $gallery_sql, $parts['args'] );
-		}
-
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
-		$rows = (array) $wpdb->get_col( $gallery_sql );
-
+		// Gallery CSV metadata stays capped at 20,000 rows, but is fetched in
+		// 2,000-row keyset pages to reduce PHP peak memory in the admin screen.
 		$gallery_ids = array();
-		foreach ( $rows as $value ) {
-			foreach ( explode( ',', (string) $value ) as $piece ) {
-				$id = (int) trim( $piece );
-				if ( $id > 0 ) {
-					$gallery_ids[ $id ] = true;
+		$after_meta_id = 0;
+		$gallery_rows_read = 0;
+		$gallery_row_limit = 20000;
+		$chunk_size = 2000;
+		do {
+			$chunk_size = min( 2000, $gallery_row_limit - $gallery_rows_read );
+			$gallery_sql = "SELECT pm.meta_id, pm.meta_value
+				FROM {$wpdb->postmeta} pm
+				WHERE pm.meta_key = '_product_image_gallery'
+				  AND pm.meta_value <> ''
+				  AND pm.post_id IN ( {$inner} )
+				  AND pm.meta_id > %d
+				ORDER BY pm.meta_id ASC
+				LIMIT %d";
+			$args = $parts['args'];
+			$args[] = $after_meta_id;
+			$args[] = $chunk_size;
+			if ( ! empty( $args ) ) {
+				// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$gallery_sql = $wpdb->prepare( $gallery_sql, $args );
+			}
+
+			// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching
+			$rows = (array) $wpdb->get_results( $gallery_sql, ARRAY_A );
+			foreach ( $rows as $row ) {
+				$after_meta_id = (int) $row['meta_id'];
+				foreach ( explode( ',', (string) $row['meta_value'] ) as $piece ) {
+					$id = (int) trim( $piece );
+					if ( $id > 0 ) {
+						$gallery_ids[ $id ] = true;
+					}
 				}
 			}
-		}
+			$page_count = count( $rows );
+			$gallery_rows_read += $page_count;
+			unset( $rows );
+		} while ( $page_count === $chunk_size && $gallery_rows_read < $gallery_row_limit );
 
 		return $featured + count( $gallery_ids );
 	}

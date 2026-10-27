@@ -20,10 +20,16 @@ if ( ! class_exists( 'TisaCase_Desc_Core' ) ) {
 		const OPTION = 'tisacase_desc_options';
 
 		public static function init() {
-			// Covers manual saves, WooCommerce admin saves and REST-created products.
-			add_action( 'woocommerce_new_product', array( __CLASS__, 'sync_product' ), 30, 1 );
-			add_action( 'woocommerce_update_product', array( __CLASS__, 'sync_product' ), 30, 1 );
-			add_action( 'save_post_product', array( __CLASS__, 'sync_post' ), 30, 3 );
+			// One canonical event covers new and updated products (admin and REST).
+			// Unlike save_post plus new/update hooks, it runs only once per WC_Data::save().
+			add_action( 'woocommerce_after_product_object_save', array( __CLASS__, 'sync_saved_product' ), 30, 2 );
+		}
+
+		/** Coalesced callback for WooCommerce's single post-save product event. */
+		public static function sync_saved_product( $product, $data_store = null ) {
+			if ( is_object( $product ) && method_exists( $product, 'get_id' ) ) {
+				self::sync_product( $product->get_id() );
+			}
 		}
 
 		/**
@@ -32,7 +38,7 @@ if ( ! class_exists( 'TisaCase_Desc_Core' ) ) {
 		public static function defaults() {
 			return array(
 				'enabled'         => 1,                               // Auto-sync on save.
-				'batch_size'      => 100,                             // Products per repair batch.
+				'batch_size'      => 50,                              // Products per bounded repair/scan request.
 				'printed_pattern' => '/^(?:CH|SB)(?:\d|$)/i',         // SKU regex for printed products.
 				'printed_url'     => 'https://TISACHAP.COM',          // Shop URL used by the {url} token.
 				'printed_desc'    => '<p>برای مشاهده محصولات چاپی بیشتر به سایت <strong><a href="{url}">TISACHAP.COM</a></strong> مراجعه کنید.</p><p>آماده سازی و تولید محصولات چاپی 7 تا 18 روزکاری زمان بر خواهد بود؛ از صبوری شما متشکریم</p>',
@@ -55,7 +61,9 @@ if ( ! class_exists( 'TisaCase_Desc_Core' ) ) {
 			if ( ! is_array( $saved ) ) {
 				$saved = array();
 			}
-			return wp_parse_args( $saved, self::defaults() );
+			$options = wp_parse_args( $saved, self::defaults() );
+			$options['batch_size'] = max( 1, min( 100, (int) $options['batch_size'] ) );
+			return $options;
 		}
 
 		public static function get_option( $key ) {
@@ -361,9 +369,7 @@ if ( ! class_exists( 'TisaCase_Desc_Core' ) ) {
 			return true;
 		}
 
-		/**
-		 * save_post_product callback.
-		 */
+		/** Legacy callback retained for compatibility; it is no longer registered. */
 		public static function sync_post( $post_id, $post, $update ) {
 			if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
 				return;

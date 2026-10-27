@@ -30,7 +30,7 @@ if ( ! class_exists( 'TCAS_Stock' ) ) {
 				return array( 'manage' => true, 'quantity' => $quantity, 'status' => $status );
 			}
 			if ( ! in_array( $status, array( 'instock', 'outofstock', 'onbackorder' ), true ) ) {
-				return new WP_Error( 'tcas_invalid_stock', 'دادهٔ موجودی ArioCase معتبر نیست.' );
+				return new WP_Error( 'tcas_invalid_stock', 'دادهٔ موجودی همکار معتبر نیست.' );
 			}
 			// در حالت Status-only، انبار عددی محلی نباید پاسخ سرویس دور را خنثی کند.
 			return array( 'manage' => false, 'quantity' => null, 'status' => $status );

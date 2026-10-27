@@ -3,12 +3,56 @@ defined( 'ABSPATH' ) || exit;
 $field = function( $key ) use ( $settings ) {
 	return isset( $settings[ $key ] ) ? (string) $settings[ $key ] : '';
 };
-?>
+$provider = TCAS_Partners::get( $partner_id );
+if ( 'ariocase' !== $partner_id ) :
+	$provider_fields = $provider ? $provider->settings_fields() : array();
+	?>
+	<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" id="tcas-settings-form">
+		<input type="hidden" name="action" value="tcas_save_settings"><input type="hidden" name="partner_id" value="<?php echo esc_attr( $partner_id ); ?>">
+		<?php wp_nonce_field( 'tcas_save_settings' ); ?>
+		<section class="tcas-card">
+			<div class="tcas-card-head"><div><span class="tcas-step">⚙</span><h2>اتصال <?php echo esc_html( $partner_label ); ?></h2></div></div>
+			<?php if ( ! $provider_fields ) : ?><p>برای این همکار، فرم تنظیمات اختصاصی در دسترس نیست؛ provider باید تنظیمات خود را با رابط settings_fields ارائه کند.</p><?php else : ?>
+				<div class="tcas-form-grid">
+					<?php foreach ( $provider_fields as $key => $definition ) :
+						$key = sanitize_key( $key );
+						$definition = is_array( $definition ) ? $definition : array();
+						$type = isset( $definition['type'] ) ? sanitize_key( $definition['type'] ) : 'text';
+						$value = isset( $settings[ $key ] ) && is_scalar( $settings[ $key ] ) ? (string) $settings[ $key ] : '';
+						$label = isset( $definition['label'] ) ? (string) $definition['label'] : $key;
+						$placeholder = isset( $definition['placeholder'] ) ? (string) $definition['placeholder'] : '';
+						$required = ! empty( $definition['required'] ) ? ' required' : '';
+						?>
+						<label class="<?php echo ! empty( $definition['wide'] ) ? 'tcas-span-2' : ''; ?>"><span class="tcas-label"><?php echo esc_html( $label ); ?></span>
+						<?php if ( 'select' === $type ) : ?>
+							<select name="tcas_settings[<?php echo esc_attr( $key ); ?>]">
+								<?php foreach ( (array) ( $definition['options'] ?? array() ) as $option_value => $option_label ) { ?>
+									<option value="<?php echo esc_attr( $option_value ); ?>" <?php selected( $value, (string) $option_value ); ?>><?php echo esc_html( $option_label ); ?></option>
+								<?php } ?>
+							</select>
+						<?php elseif ( 'checkbox' === $type ) : ?><input type="checkbox" name="tcas_settings[<?php echo esc_attr( $key ); ?>]" value="1" <?php checked( $value, '1' ); ?>>
+						<?php else : ?><input type="<?php echo esc_attr( in_array( $type, array( 'url', 'password', 'number', 'email' ), true ) ? $type : 'text' ); ?>" name="tcas_settings[<?php echo esc_attr( $key ); ?>]" value="<?php echo 'password' === $type ? '' : esc_attr( $value ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo 'password' === $type ? 'autocomplete="new-password"' : ''; ?><?php echo $required; ?>><?php endif; ?>
+						<?php if ( ! empty( $definition['description'] ) ) : ?><small><?php echo esc_html( $definition['description'] ); ?></small><?php endif; ?></label>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+		</section>
+		<section class="tcas-card"><div class="tcas-card-head"><div><span class="tcas-step">↻</span><h2>رفتار موجودی مشترک</h2></div></div><div class="tcas-settings-grid">
+			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[enabled]" <?php checked( $settings['enabled'], 'yes' ); ?>><span><strong>همگام‌سازی فعال</strong></span></label>
+			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[persist_stock]" <?php checked( $settings['persist_stock'], 'yes' ); ?>><span><strong>ذخیره در ووکامرس</strong></span></label>
+			<label class="tcas-switch-row"><input type="checkbox" name="tcas_settings[checkout_guard]" <?php checked( $settings['checkout_guard'], 'yes' ); ?>><span><strong>کنترل سبد و تسویه</strong></span></label>
+			<label><span class="tcas-label">منبع موجودی فروشگاه</span><select name="tcas_settings[live_scope]"><option value="purchase" <?php selected( $settings['live_scope'], 'purchase' ); ?>>کش محلی + تازه‌سازی پس‌زمینه؛ کنترل زنده هنگام خرید</option><option value="all" <?php selected( $settings['live_scope'], 'all' ); ?>>درخواست API برای هر Getter</option></select></label>
+		</div></section>
+		<div class="tcas-sticky-actions"><button type="submit" class="button button-primary tcas-btn-primary">ذخیره تنظیمات <?php echo esc_html( $partner_label ); ?></button></div>
+	</form>
+	<section class="tcas-card"><div class="tcas-card-head"><div><span class="tcas-step">✓</span><h2>تست اتصال</h2></div><span class="tcas-tag">فقط خواندنی</span></div><div class="tcas-inline-form"><label class="tcas-grow"><span>شناسه یا مرجع محصول در <?php echo esc_html( $partner_label ); ?></span><input id="tcas-test-code" type="text" dir="ltr" placeholder="SKU / ID / URL"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div><div id="tcas-test-result" class="tcas-test-result" role="status" aria-live="polite"></div></section>
+	<?php return; ?>
+<?php endif; ?>
 <form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" id="tcas-settings-form">
-	<input type="hidden" name="action" value="tcas_save_settings">
+	<input type="hidden" name="action" value="tcas_save_settings"><input type="hidden" name="partner_id" value="<?php echo esc_attr( $partner_id ); ?>">
 	<?php wp_nonce_field( 'tcas_save_settings' ); ?>
 	<section class="tcas-card">
-		<div class="tcas-card-head"><div><span class="tcas-step">⚙</span><h2>اتصال API</h2></div><?php if ( TCAS_Core::api_key( $settings ) ) : ?><span class="tcas-tag">کلید فعال</span><?php endif; ?></div>
+		<div class="tcas-card-head"><div><span class="tcas-step">⚙</span><h2>اتصال <?php echo esc_html( $partner_label ); ?></h2></div><?php if ( TCAS_Core::api_key( $settings ) ) : ?><span class="tcas-tag">کلید فعال</span><?php endif; ?></div>
 		<div class="tcas-form-grid">
 			<label class="tcas-span-2"><span class="tcas-label">آدرس پایهٔ API</span><input type="url" name="tcas_settings[base_url]" value="<?php echo esc_attr( $field( 'base_url' ) ); ?>" dir="ltr" placeholder="https://ariocase.com/wp-json/wc/v3" required></label>
 			<label class="tcas-span-2"><span class="tcas-label">Endpoint محصول</span><input type="text" name="tcas_settings[product_endpoint]" value="<?php echo esc_attr( $field( 'product_endpoint' ) ); ?>" dir="ltr" placeholder="products?status=publish&amp;per_page=100&amp;sku={code}" required></label>
@@ -51,11 +95,11 @@ $field = function( $key ) use ( $settings ) {
 		</div>
 	</details>
 
-	<div class="tcas-sticky-actions"><button type="submit" class="button button-primary tcas-btn-primary">ذخیره تنظیمات</button></div>
+	<div class="tcas-sticky-actions"><button type="submit" class="button button-primary tcas-btn-primary">ذخیره تنظیمات <?php echo esc_html( $partner_label ); ?></button></div>
 </form>
 
 <section class="tcas-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">✓</span><h2>تست اتصال</h2></div><span class="tcas-tag">فقط خواندنی</span></div>
-	<div class="tcas-inline-form"><label class="tcas-grow"><span>لینک، SKU یا ID در ArioCase</span><input id="tcas-test-code" type="text" dir="ltr" placeholder="https://ariocase.com/product/case-slug/"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div>
+	<div class="tcas-inline-form"><label class="tcas-grow"><span>لینک، SKU یا ID در <?php echo esc_html( $partner_label ); ?></span><input id="tcas-test-code" type="text" dir="ltr" placeholder="https://ariocase.com/product/case-slug/"></label><button type="button" id="tcas-test-connection" class="button">تست</button></div>
 	<div id="tcas-test-result" class="tcas-test-result" role="status" aria-live="polite"></div>
 </section>

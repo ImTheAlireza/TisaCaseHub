@@ -26,6 +26,12 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 		 */
 		private static $own_buffer = false;
 
+		/** Hard wall-clock ceiling for one AJAX request. */
+		const MAX_REQUEST_SECONDS = 25;
+		const MAX_VARIATION_OPERATIONS_PER_REQUEST = 12000;
+		const MAX_ESTIMATED_WORK_PER_BATCH = 6000;
+		const MAX_PRODUCTS_PER_EXECUTION_REQUEST = 2;
+
 		public static function init() {
 			add_action( 'wp_ajax_tcbvm_search_products', array( __CLASS__, 'ajax_search_products' ) );
 			add_action( 'wp_ajax_tcbvm_products_summary_page', array( __CLASS__, 'ajax_products_summary_page' ) );
@@ -34,6 +40,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			add_action( 'wp_ajax_tcbvm_preview', array( __CLASS__, 'ajax_preview' ) );
 			add_action( 'wp_ajax_tcbvm_preview_page', array( __CLASS__, 'ajax_preview_page' ) );
 			add_action( 'wp_ajax_tcbvm_start_run', array( __CLASS__, 'ajax_start_run' ) );
+			add_action( 'wp_ajax_tcbvm_next_run_batch', array( __CLASS__, 'ajax_next_run_batch' ) );
 			add_action( 'wp_ajax_tcbvm_execute_batch', array( __CLASS__, 'ajax_execute_batch' ) );
 			add_action( 'wp_ajax_tcbvm_finish_run', array( __CLASS__, 'ajax_finish_run' ) );
 			add_action( 'wp_ajax_tcbvm_get_run_details', array( __CLASS__, 'ajax_get_run_details' ) );
@@ -61,15 +68,12 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 		 * آماده‌سازی حافظه و زمان اجرا جهت پردازش ایمن بسته‌ها.
 		 */
 		private static function prepare_runtime() {
-			if ( function_exists( 'wp_raise_memory_limit' ) ) {
-				wp_raise_memory_limit( 'admin' );
-			}
 			if ( function_exists( 'set_time_limit' ) ) {
-				@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+				@set_time_limit( self::MAX_REQUEST_SECONDS ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 			}
-			@ini_set( 'max_execution_time', '0' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.PHP.IniSet.max_execution_time_Blacklist
+			@ini_set( 'max_execution_time', (string) self::MAX_REQUEST_SECONDS ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, WordPress.PHP.IniSet.max_execution_time_Blacklist
 			if ( function_exists( 'ignore_user_abort' ) ) {
-				ignore_user_abort( true );
+				ignore_user_abort( false );
 			}
 
 			if ( ! ob_get_level() ) {
@@ -146,15 +150,20 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				$filters['product_types'] = array( 'variable', 'simple' );
 			}
 
-			$ids     = TCBVM_DB::query_product_ids( $filters );
-			$total   = count( $ids );
-			$summary = TCBVM_DB::get_products_summary( $ids, 300, 0 );
+			$cursor = isset( $_POST['cursor'] ) ? absint( $_POST['cursor'] ) : 0;
+			$limit  = isset( $_POST['limit'] ) ? min( 50, max( 1, absint( $_POST['limit'] ) ) ) : 50;
+			$page   = TCBVM_DB::query_product_ids_page( $filters, $cursor, $limit );
+			$ids    = $page['ids'];
+			$summary = TCBVM_DB::get_products_summary( $ids, 50, 0 );
 
 			wp_send_json_success( array(
-				'total'   => $total,
-				'ids'     => $ids,
-				'items'   => $summary['items'],
-				'message' => sprintf( '%d محصول منطبق یافت شد.', $total ),
+				'ids'          => $ids,
+				'items'        => $summary['items'],
+				'next_cursor'  => $page['next_cursor'],
+				'has_more'     => $page['has_more'],
+				'scanned'      => $page['scanned'],
+				'truncated'    => ! empty( $page['truncated'] ),
+				'message'      => sprintf( '%d محصول در این صفحه بارگذاری شد.', count( $summary['items'] ) ),
 			) );
 		}
 
@@ -166,14 +175,13 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 		public static function ajax_products_summary_page() {
 			self::check_auth();
 
-			$ids    = isset( $_POST['ids'] ) ? array_map( 'absint', (array) $_POST['ids'] ) : array();
-			$offset = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
+			$ids    = isset( $_POST['ids'] ) ? array_slice( array_values( array_unique( array_filter( array_map( 'absint', (array) $_POST['ids'] ) ) ) ), 0, 50 ) : array();
 
 			if ( empty( $ids ) ) {
 				wp_send_json_success( array( 'items' => array() ) );
 			}
 
-			$summary = TCBVM_DB::get_products_summary( $ids, 300, $offset );
+			$summary = TCBVM_DB::get_products_summary( $ids, 50, 0 );
 
 			wp_send_json_success( array(
 				'items' => $summary['items'],
@@ -275,6 +283,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'لطفاً ابتدا حداقل یک محصول را انتخاب کنید.' ) );
 			}
+			if ( count( $product_ids ) > 5 ) wp_send_json_error( array( 'message' => 'هر درخواست پیش‌نمایش حداکثر ۵ محصول را می‌پذیرد؛ صفحه‌بندی را ادامه دهید.' ), 413 );
 
 			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
 			if ( empty( $clean_values ) ) {
@@ -318,12 +327,13 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			$only_existing_attr = ! empty( $_POST['only_existing_attr'] );
 			$operation_mode = isset( $_POST['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( wp_unslash( $_POST['operation_mode'] ) ) : TCBVM_OPS::MODE_REPLACE_ALL;
 			$offset         = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
-			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 300;
-			$limit          = min( max( $limit, 1 ), 300 );
+			$limit          = isset( $_POST['limit'] ) ? absint( $_POST['limit'] ) : 5;
+			$limit          = min( max( $limit, 1 ), 5 );
 
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'لطفاً ابتدا حداقل یک محصول را انتخاب کنید.' ) );
 			}
+			if ( count( $product_ids ) > 5 ) wp_send_json_error( array( 'message' => 'هر درخواست پیش‌نمایش حداکثر ۵ محصول را می‌پذیرد؛ صفحه‌بندی را ادامه دهید.' ), 413 );
 
 			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
 			if ( empty( $clean_values ) ) {
@@ -348,6 +358,28 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			wp_send_json_success( $preview );
 		}
 
+		/** Estimate bounded variation work and return just one next batch. */
+		private static function build_work_batch( array $product_ids, $offset, $configured_size, array $new_values, $operation_mode ) {
+			$offset = max( 0, absint( $offset ) );
+			$size   = min( self::MAX_PRODUCTS_PER_EXECUTION_REQUEST, max( 1, absint( $configured_size ) ) );
+			$candidates = array_slice( $product_ids, $offset, $size );
+			if ( ! $candidates ) return array( 'ids' => array(), 'next_offset' => $offset, 'has_more' => false, 'estimated_ops' => 0 );
+			$counts = TCBVM_DB::get_variation_counts( $candidates );
+			$target_values = count( TCBVM_OPS::sanitize_model_list( $new_values ) );
+			$batch = array();
+			$work = 0;
+			foreach ( $candidates as $product_id ) {
+				$existing = isset( $counts[ $product_id ] ) ? (int) $counts[ $product_id ] : 0;
+				$estimate = TCBVM_OPS::MODE_REMOVE_VALUES === $operation_mode ? max( 1, $existing ) : 2 * max( 1, $existing, $target_values );
+				$estimate = min( self::MAX_VARIATION_OPERATIONS_PER_REQUEST, $estimate );
+				if ( $batch && $work + $estimate > self::MAX_ESTIMATED_WORK_PER_BATCH ) break;
+				$batch[] = (int) $product_id;
+				$work += $estimate;
+			}
+			if ( ! $batch ) { $batch[] = (int) $candidates[0]; $work = self::MAX_ESTIMATED_WORK_PER_BATCH; }
+			return array( 'ids' => $batch, 'next_offset' => $offset + count( $batch ), 'has_more' => $offset + count( $batch ) < count( $product_ids ), 'estimated_ops' => $work );
+		}
+
 		/**
 		 * ایجاد نشست جدید و تقسیم‌بندی محصولات به بسته‌های اجرایی.
 		 */
@@ -369,6 +401,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			if ( empty( $product_ids ) ) {
 				wp_send_json_error( array( 'message' => 'محصولی برای اجرا انتخاب نشده است.' ) );
 			}
+			if ( count( $product_ids ) > 5000 ) wp_send_json_error( array( 'message' => 'هر اجرا حداکثر ۵٬۰۰۰ محصول می‌پذیرد؛ انتخاب را به چند اجرا تقسیم کنید.' ), 413 );
 
 			$clean_values = TCBVM_OPS::sanitize_model_list( $new_values );
 			if ( empty( $clean_values ) ) {
@@ -396,17 +429,36 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'ثبت امن نشست اجرا ناموفق بود یا قفل تاریخچه در دسترس نیست؛ اجرا آغاز نشد.' ) );
 			}
 
-			$settings   = TCBVM_Core::get_settings();
-			$batch_size = max( 1, (int) $settings['batch_size'] );
-			$batches    = array_chunk( $product_ids, $batch_size );
+			$settings = TCBVM_Core::get_settings();
+			$batch = self::build_work_batch( $product_ids, 0, (int) $settings['batch_size'], $clean_values, $operation_mode );
 
 			wp_send_json_success( array(
-				'run_id'        => $run_id,
-				'total_items'   => count( $product_ids ),
-				'batch_size'    => $batch_size,
-				'total_batches' => count( $batches ),
-				'batches'       => $batches,
+				'run_id' => $run_id,
+				'total_items' => count( $product_ids ),
+				'batch_ids' => $batch['ids'],
+				'next_offset' => $batch['next_offset'],
+				'has_more' => $batch['has_more'],
+				'estimated_ops' => $batch['estimated_ops'],
 			) );
+		}
+
+		/** Fetch exactly one workload-bounded batch from the server-side run list. */
+		public static function ajax_next_run_batch() {
+			self::check_auth();
+			$run_id = isset( $_POST['run_id'] ) ? sanitize_text_field( wp_unslash( $_POST['run_id'] ) ) : '';
+			$offset = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
+			$run = $run_id ? TCBVM_Backup::get_run( $run_id ) : false;
+			if ( ! is_array( $run ) || ! isset( $run['status'], $run['product_ids'], $run['meta'] ) || 'in_progress' !== $run['status'] || ! is_array( $run['product_ids'] ) || ! is_array( $run['meta'] ) ) {
+				wp_send_json_error( array( 'message' => 'نشست فعال یا فهرست محصولات پیدا نشد.' ), 404 );
+			}
+			if ( $offset > count( $run['product_ids'] ) ) wp_send_json_error( array( 'message' => 'موقعیت صفحهٔ بعدی از فهرست ثبت‌شده خارج است.' ), 400 );
+			$settings = TCBVM_Core::get_settings();
+			$batch = self::build_work_batch(
+				$run['product_ids'], $offset, (int) $settings['batch_size'],
+				isset( $run['meta']['new_values'] ) && is_array( $run['meta']['new_values'] ) ? $run['meta']['new_values'] : array(),
+				isset( $run['meta']['operation_mode'] ) ? TCBVM_OPS::sanitize_operation_mode( $run['meta']['operation_mode'] ) : TCBVM_OPS::MODE_REPLACE_ALL
+			);
+			wp_send_json_success( array( 'batch_ids' => $batch['ids'], 'next_offset' => $batch['next_offset'], 'has_more' => $batch['has_more'], 'estimated_ops' => $batch['estimated_ops'] ) );
 		}
 
 		/**
@@ -430,6 +482,7 @@ if ( ! class_exists( 'TCBVM_Ajax' ) ) {
 			if ( empty( $run_id ) || empty( $batch_ids ) ) {
 				wp_send_json_error( array( 'message' => 'اطلاعات بسته یا شناسه اجرا ناقص است.' ) );
 			}
+			if ( count( $batch_ids ) > self::MAX_PRODUCTS_PER_EXECUTION_REQUEST ) wp_send_json_error( array( 'message' => 'هر درخواست اجرای اصلی حداکثر دو محصول را می‌پذیرد.' ), 413 );
 
 			try {
 				$batch_result = TCBVM_OPS::execute_batch(

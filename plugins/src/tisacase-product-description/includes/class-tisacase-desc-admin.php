@@ -173,7 +173,7 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 			$opts['prep_value']      = isset( $_POST['prep_value'] )
 				? trim( sanitize_text_field( wp_unslash( $_POST['prep_value'] ) ) )
 				: '18';
-			$opts['batch_size']      = isset( $_POST['batch_size'] ) ? max( 1, min( 5000, absint( $_POST['batch_size'] ) ) ) : 100;
+			$opts['batch_size']      = isset( $_POST['batch_size'] ) ? max( 1, min( 100, absint( $_POST['batch_size'] ) ) ) : 50;
 
 			$opts['printed_pattern'] = isset( $_POST['printed_pattern'] )
 				? sanitize_text_field( wp_unslash( $_POST['printed_pattern'] ) )
@@ -231,8 +231,9 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 			}
 
 			$options = TisaCase_Desc_Core::get_options();
-			$batch   = max( 1, (int) $options['batch_size'] );
+			$batch   = self::bulk_batch_size( $options );
 			$page    = isset( $_POST['page'] ) ? absint( $_POST['page'] ) : 0;
+			$offset  = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
 			$dry     = ! empty( $_POST['dry'] );
 
 			// Snapshot (rollback point) — only created when actually writing.
@@ -244,6 +245,8 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				}
 			}
 
+			$started = microtime( true );
+			$budget  = self::ajax_budget_seconds();
 			$counted = wc_get_products( array(
 				'status'   => TisaCase_Desc_Core::statuses(),
 				'limit'    => 1,
@@ -261,15 +264,21 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				'return'  => 'ids',
 			) );
 
-			$processed = 0;
-			$changed   = 0;
+			$processed   = 0;
+			$changed     = 0;
+			$next_offset = min( $offset, count( $ids ) );
 
-			foreach ( $ids as $product_id ) {
+			for ( $index = $next_offset; $index < count( $ids ); $index++ ) {
+				if ( $processed > 0 && microtime( true ) - $started >= $budget ) {
+					break;
+				}
+				$product_id  = $ids[ $index ];
+				$next_offset = $index + 1;
+				$processed++;
 				$product = wc_get_product( $product_id );
 				if ( ! $product ) {
 					continue;
 				}
-				$processed++;
 
 				if ( $dry ) {
 					if ( null !== TisaCase_Desc_Core::computed_description( $product, $options ) ) {
@@ -282,7 +291,12 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				}
 			}
 
-			$done = count( $ids ) < $batch;
+			$page_complete = $next_offset >= count( $ids );
+			$done = $page_complete && count( $ids ) < $batch;
+			$next_page = $page_complete ? $page + 1 : $page;
+			if ( $page_complete ) {
+				$next_offset = 0;
+			}
 
 			// Drop an empty snapshot (nothing was actually changed).
 			if ( $done && ! $dry && '' !== $snapshot ) {
@@ -299,8 +313,10 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				'changed'   => $changed,
 				'total'     => $total,
 				'done'      => $done,
-				'next'      => $page + 1,
-				'snapshot'  => $snapshot,
+				'next'        => $next_page,
+				'next_page'   => $next_page,
+				'next_offset' => $next_offset,
+				'snapshot'    => $snapshot,
 			) );
 		}
 
@@ -316,9 +332,12 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 			}
 
 			$options = TisaCase_Desc_Core::get_options();
-			$batch   = max( 1, (int) $options['batch_size'] );
+			$batch   = self::bulk_batch_size( $options );
 			$page    = isset( $_POST['page'] ) ? absint( $_POST['page'] ) : 0;
+			$offset  = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
 
+			$started = microtime( true );
+			$budget  = self::ajax_budget_seconds();
 			$counted = wc_get_products( array(
 				'status'   => TisaCase_Desc_Core::statuses(),
 				'limit'    => 1,
@@ -336,9 +355,17 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				'return'  => 'ids',
 			) );
 
-			$mismatches = array();
+			$mismatches  = array();
+			$processed   = 0;
+			$next_offset = min( $offset, count( $ids ) );
 
-			foreach ( $ids as $product_id ) {
+			for ( $index = $next_offset; $index < count( $ids ); $index++ ) {
+				if ( $processed > 0 && microtime( true ) - $started >= $budget ) {
+					break;
+				}
+				$product_id  = $ids[ $index ];
+				$next_offset = $index + 1;
+				$processed++;
 				$product = wc_get_product( $product_id );
 				if ( ! $product ) {
 					continue;
@@ -366,13 +393,22 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				);
 			}
 
+			$page_complete = $next_offset >= count( $ids );
+			$done = $page_complete && count( $ids ) < $batch;
+			$next_page = $page_complete ? $page + 1 : $page;
+			if ( $page_complete ) {
+				$next_offset = 0;
+			}
+
 			wp_send_json_success( array(
-				'page'       => $page,
-				'processed'  => count( $ids ),
-				'mismatches' => $mismatches,
-				'total'      => $total,
-				'done'       => count( $ids ) < $batch,
-				'next'       => $page + 1,
+				'page'        => $page,
+				'processed'   => $processed,
+				'mismatches'  => $mismatches,
+				'total'       => $total,
+				'done'        => $done,
+				'next'        => $next_page,
+				'next_page'   => $next_page,
+				'next_offset' => $next_offset,
 			) );
 		}
 
@@ -385,35 +421,56 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 
 			$ids = isset( $_POST['ids'] ) ? (array) $_POST['ids'] : array();
 			$ids = array_values( array_filter( array_map( 'absint', $ids ) ) );
-			$ids = array_slice( array_unique( $ids ), 0, 500 );
+			$ids = array_slice( array_unique( $ids ), 0, 1000 );
 
 			if ( empty( $ids ) ) {
 				wp_send_json_error( array( 'message' => __( 'هیچ محصولی انتخاب نشده است.', 'tisacase-desc' ) ) );
 			}
 
-			$snapshot  = TisaCase_Desc_Backup::create( __( 'اصلاح انتخابی', 'tisacase-desc' ) );
-			$changed   = 0;
-			$unchanged = 0;
+			$offset = min( isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0, count( $ids ) );
+			$options = TisaCase_Desc_Core::get_options();
+			$batch = self::bulk_batch_size( $options );
+			$snapshot = isset( $_POST['snapshot'] ) ? sanitize_text_field( wp_unslash( $_POST['snapshot'] ) ) : '';
+			if ( '' === $snapshot || ! TisaCase_Desc_Backup::get( $snapshot ) ) {
+				$snapshot = TisaCase_Desc_Backup::create( __( 'اصلاح انتخابی', 'tisacase-desc' ) );
+			}
 
-			foreach ( $ids as $product_id ) {
-				if ( TisaCase_Desc_Backup::apply_with_backup( $snapshot, $product_id ) ) {
+			$started = microtime( true );
+			$budget = self::ajax_budget_seconds();
+			$processed = 0;
+			$changed = 0;
+			$unchanged = 0;
+			$next_offset = $offset;
+			for ( $index = $offset; $index < count( $ids ); $index++ ) {
+				if ( $processed >= $batch || ( $processed > 0 && microtime( true ) - $started >= $budget ) ) {
+					break;
+				}
+				$next_offset = $index + 1;
+				$processed++;
+				if ( TisaCase_Desc_Backup::apply_with_backup( $snapshot, $ids[ $index ] ) ) {
 					$changed++;
 				} else {
 					$unchanged++;
 				}
 			}
 
-			// Nothing was actually changed — remove the useless snapshot.
-			if ( 0 === $changed ) {
-				TisaCase_Desc_Backup::delete( $snapshot );
-				$snapshot = '';
+			$done = $next_offset >= count( $ids );
+			if ( $done ) {
+				$snap = TisaCase_Desc_Backup::get( $snapshot );
+				if ( $snap && empty( $snap['items'] ) ) {
+					TisaCase_Desc_Backup::delete( $snapshot );
+					$snapshot = '';
+				}
 			}
 
 			wp_send_json_success( array(
-				'changed'   => $changed,
-				'unchanged' => $unchanged,
-				'total'     => count( $ids ),
-				'snapshot'  => $snapshot,
+				'changed'     => $changed,
+				'unchanged'   => $unchanged,
+				'processed'   => $processed,
+				'total'       => count( $ids ),
+				'done'        => $done,
+				'next_offset' => $next_offset,
+				'snapshot'    => $snapshot,
 			) );
 		}
 
@@ -590,13 +647,17 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				wp_send_json_error( array( 'message' => __( 'ابتدا بخش زمان آماده‌سازی را فعال و کلید فیلد و مقدار را تعیین کنید.', 'tisacase-desc' ) ) );
 			}
 
-			$batch = max( 1, (int) $options['batch_size'] );
-			$page  = isset( $_POST['page'] ) ? absint( $_POST['page'] ) : 0;
+			$batch  = self::bulk_batch_size( $options );
+			$page   = isset( $_POST['page'] ) ? absint( $_POST['page'] ) : 0;
+			$offset = isset( $_POST['offset'] ) ? absint( $_POST['offset'] ) : 0;
 
 			$snapshot = isset( $_POST['snapshot'] ) ? sanitize_text_field( wp_unslash( $_POST['snapshot'] ) ) : '';
 			if ( '' === $snapshot || ! TisaCase_Desc_Backup::get( $snapshot ) ) {
 				$snapshot = TisaCase_Desc_Backup::create( __( 'زمان آماده‌سازی چاپی', 'tisacase-desc' ) );
 			}
+
+			$started = microtime( true );
+			$budget  = self::ajax_budget_seconds();
 
 			$ids = wc_get_products( array(
 				'status'  => TisaCase_Desc_Core::statuses(),
@@ -607,21 +668,32 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				'return'  => 'ids',
 			) );
 
-			$processed = 0;
-			$changed   = 0;
+			$processed   = 0;
+			$changed     = 0;
+			$next_offset = min( $offset, count( $ids ) );
 
-			foreach ( $ids as $product_id ) {
+			for ( $index = $next_offset; $index < count( $ids ); $index++ ) {
+				if ( $processed > 0 && microtime( true ) - $started >= $budget ) {
+					break;
+				}
+				$product_id  = $ids[ $index ];
+				$next_offset = $index + 1;
+				$processed++;
 				$product = wc_get_product( $product_id );
 				if ( ! $product ) {
 					continue;
 				}
-				$processed++;
 				if ( TisaCase_Desc_Backup::apply_prep_with_backup( $snapshot, $product_id ) ) {
 					$changed++;
 				}
 			}
 
-			$done = count( $ids ) < $batch;
+			$page_complete = $next_offset >= count( $ids );
+			$done = $page_complete && count( $ids ) < $batch;
+			$next_page = $page_complete ? $page + 1 : $page;
+			if ( $page_complete ) {
+				$next_offset = 0;
+			}
 
 			if ( $done ) {
 				$snap = TisaCase_Desc_Backup::get( $snapshot );
@@ -636,9 +708,23 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 				'processed' => $processed,
 				'changed'   => $changed,
 				'done'      => $done,
-				'next'      => $page + 1,
-				'snapshot'  => $snapshot,
+				'next'        => $next_page,
+				'next_page'   => $next_page,
+				'next_offset' => $next_offset,
+				'snapshot'    => $snapshot,
 			) );
+		}
+
+		/** Conservative hard ceiling shared by scan and bulk mutation endpoints. */
+		private static function bulk_batch_size( $options ) {
+			$size = isset( $options['batch_size'] ) ? absint( $options['batch_size'] ) : 50;
+			return max( 1, min( 100, $size ) );
+		}
+
+		/** Per-request wall-clock budget; a batch resumes from its exact item offset. */
+		private static function ajax_budget_seconds() {
+			$seconds = (int) apply_filters( 'tisacase_desc_ajax_budget_seconds', 5 );
+			return max( 1, min( 10, $seconds ) );
 		}
 
 		private static function status_label( $status ) {
@@ -844,10 +930,10 @@ if ( ! class_exists( 'TisaCase_Desc_Admin' ) ) {
 						<div class="tc-row">
 							<div class="tc-row-label">
 								<label for="tc-batch"><?php echo esc_html__( 'تعداد محصول در هر دسته', 'tisacase-desc' ); ?></label>
-								<small><?php echo esc_html__( 'برای ابزار اصلاح انبوه؛ عدد کوچک‌تر یعنی فشار کمتر روی سرور.', 'tisacase-desc' ); ?></small>
+								<small><?php echo esc_html__( 'برای اسکن، اصلاح انبوه و زمان آماده‌سازی؛ سقف ۱۰۰ و عدد کوچک‌تر یعنی فشار کمتر روی سرور.', 'tisacase-desc' ); ?></small>
 							</div>
 							<div class="tc-row-field">
-								<input type="number" name="batch_size" id="tc-batch" min="1" max="5000" step="1"
+								<input type="number" name="batch_size" id="tc-batch" min="1" max="100" step="1"
 									value="<?php echo esc_attr( $opts['batch_size'] ); ?>" class="tc-input tc-input--num">
 							</div>
 						</div>

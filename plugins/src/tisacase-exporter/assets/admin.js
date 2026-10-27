@@ -45,6 +45,16 @@
 		return numberFormat ? numberFormat.format( number ) : String( number );
 	}
 
+	function formatBytes( value ) {
+		var bytes = Number( value );
+		if ( ! Number.isFinite( bytes ) || bytes < 0 ) { return ''; }
+		var units = [ 'B', 'KB', 'MB', 'GB', 'TB' ];
+		var unit = 0;
+		while ( bytes >= 1024 && unit < units.length - 1 ) { bytes /= 1024; unit++; }
+		return ( unit ? bytes.toFixed( 1 ) : String( Math.round( bytes ) ) ) + ' ' + units[ unit ];
+	}
+
+
 	function esc( value ) {
 		var div = document.createElement( 'div' );
 		div.textContent = ( value === null || typeof value === 'undefined' ) ? '' : String( value );
@@ -272,6 +282,7 @@
 		var total     = Number( payload.total ) || 0;
 		var processed = Number( payload.processed ) || 0;
 		var percent   = total > 0 ? Math.min( 100, Math.round( ( processed / total ) * 100 ) ) : ( payload.done ? 100 : 0 );
+		if ( payload.finalizing && ! payload.done ) { percent = Math.min( 99, percent ); }
 		var shuffled  = !! payload.dedup;
 
 		var boxes = [
@@ -308,6 +319,7 @@
 		var total     = Number( payload.total ) || 0;
 		var processed = Number( payload.processed ) || 0;
 		var percent   = total > 0 ? Math.min( 100, Math.round( ( processed / total ) * 100 ) ) : ( payload.done ? 100 : 0 );
+		if ( payload.finalizing && ! payload.done ) { percent = Math.min( 99, percent ); }
 
 		var bar = $( '#tisa-exp-bar' );
 
@@ -331,6 +343,9 @@
 				text = state.files().length > 0
 					? sprintf( cfg.l10n.doneFiles, fmt( state.files().length ) )
 					: cfg.l10n.doneEmpty;
+			} else if ( payload.finalizing ) {
+				var phaseLabels = { sort: 'مرتب‌سازی تکه‌ای', merge: 'ادغام تکه‌ها', output: 'نوشتن فایل‌های نهایی' };
+				text = 'یکتاسازی خروجی: ' + ( phaseLabels[ payload.finalize_phase ] || 'در حال آماده‌سازی' );
 			} else if ( processed > 0 ) {
 				text = cfg.l10n.running;
 			} else {
@@ -349,6 +364,14 @@
 
 			if ( payload.storage ) {
 				bits.push( sprintf( cfg.l10n.storage, payload.storage ) );
+			}
+			if ( payload.disk_free_bytes !== null && typeof payload.disk_free_bytes !== 'undefined' ) {
+				var diskText = 'فضای آزاد موقت: ' + formatBytes( payload.disk_free_bytes );
+				if ( Number( payload.disk_free_bytes ) < 128 * 1024 * 1024 ) { diskText += ' (کم)'; }
+				bits.push( diskText );
+			}
+			if ( Number( payload.temp_bytes_estimate ) > 0 ) {
+				bits.push( 'فضای موقت مصرف‌شده (تقریبی): ' + formatBytes( payload.temp_bytes_estimate ) );
 			}
 
 			/*

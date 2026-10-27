@@ -1931,11 +1931,21 @@ if ( ! class_exists( 'TBSM_Stock' ) ) {
 					$params = array_merge( $params, array_map( 'absint', $term_ids ) );
 				}
 			} elseif ( 'sku' === $scope['type'] && '' !== $scope['sku'] ) {
-				$join    .= " INNER JOIN {$wpdb->postmeta} ssk ON ssk.post_id = p.ID AND ssk.meta_key = '_sku'";
-				$where   .= ' AND ssk.meta_value LIKE %s';
-				$params[] = ( 'prefix' === $scope['sku_mode'] )
+				$pattern = ( 'prefix' === $scope['sku_mode'] )
 					? $wpdb->esc_like( $scope['sku'] ) . '%'
 					: '%' . $wpdb->esc_like( $scope['sku'] ) . '%';
+				if ( 'prefix' === $scope['sku_mode'] && self::has_lookup_table() ) {
+					// WooCommerce's one-row-per-product SKU lookup is indexed, so
+					// prefix matching can use a range scan. Contains mode deliberately
+					// stays on postmeta to preserve full stored SKU semantics.
+					$lookup = $wpdb->prefix . 'wc_product_meta_lookup';
+					$join  .= " INNER JOIN {$lookup} ssk ON ssk.product_id = p.ID";
+					$where .= ' AND ssk.sku LIKE %s';
+				} else {
+					$join  .= " INNER JOIN {$wpdb->postmeta} ssk ON ssk.post_id = p.ID AND ssk.meta_key = '_sku'";
+					$where .= ' AND ssk.meta_value LIKE %s';
+				}
+				$params[] = $pattern;
 			}
 
 			return array(

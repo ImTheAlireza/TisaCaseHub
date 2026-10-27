@@ -54,21 +54,28 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			set_transient( 'tcas_job_' . $token, $job, HOUR_IN_SECONDS );
 		}
 
-		private static function pair_label( $pair ) {
-			$remote = preg_match( '#^https?://#i', (string) $pair['remote_code'] ) ? '[ArioCase URL]' : (string) $pair['remote_code'];
+		private static function pair_label( $pair, $partner_id = 'ariocase' ) {
+			$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase';
+			$remote = preg_match( '#^https?://#i', (string) $pair['remote_code'] ) ? '[' . $partner_label . ' URL]' : (string) $pair['remote_code'];
 			return trim( (string) $pair['local_code'] . ' - ' . $remote );
 		}
 
 		public static function preview_start() {
 			self::auth();
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
+			$configured = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::is_configured( $partner_id ) : TCAS_Core::is_configured();
+			if ( ! $configured ) {
+				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات اتصال همکار انتخاب‌شده را کامل کنید.' ), 422 );
+			}
 			$pairs = TCAS_Core::parse_pairs( isset( $_POST['pairs'] ) ? wp_unslash( $_POST['pairs'] ) : '' );
 			if ( ! $pairs ) {
-				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - لینک یا SKU محصول ArioCase» وارد کنید.' ), 400 );
+				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - مرجع محصول همکار» وارد کنید.' ), 400 );
 			}
 			$token = wp_generate_password( 32, false, false );
 			$job   = array(
 				'user_id' => get_current_user_id(),
 				'mode'    => 'preview',
+				'partner_id' => $partner_id,
 				'pairs'   => array_values( $pairs ),
 				'offset'  => 0,
 				'results' => array(),
@@ -85,12 +92,12 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			}
 			$index   = $job['offset'];
 			$pair    = $job['pairs'][ $index ];
-			$preview = TCAS_Pairing::preview( $pair );
+			$preview = TCAS_Pairing::preview( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' );
 			$preview['row']['index'] = $index;
 			$job['results'][ $index ]  = $preview;
 			$job['offset']++;
 			self::save_job( $token, $job );
-			TCAS_Logger::add( 'pair_preview', self::pair_label( $pair ), $preview['row']['message'] );
+			TCAS_Logger::add( 'pair_preview', self::pair_label( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' ), $preview['row']['message'] );
 			wp_send_json_success( array(
 				'token'     => $token,
 				'done'      => $job['offset'] >= count( $job['pairs'] ),
@@ -135,7 +142,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			$index   = $job['connect_indexes'][ $job['offset'] ];
 			$pair    = $job['pairs'][ $index ];
 			// فقط دادهٔ تازه؛ Snapshot پیش‌نمایش برای اتصال نهایی استفاده نمی‌شود.
-			$preview = TCAS_Pairing::preview( $pair );
+			$preview = TCAS_Pairing::preview( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' );
 			$result  = TCAS_Pairing::connect( $preview );
 			$row     = array(
 				'local_code'  => isset( $preview['row']['local_code'] ) ? $preview['row']['local_code'] : $pair['local_code'],
@@ -153,7 +160,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			$job['connect_result'][ $index ] = $row;
 			$job['offset']++;
 			self::save_job( $token, $job );
-			TCAS_Logger::add( 'pair_connect', self::pair_label( $pair ), $row['message'] );
+			TCAS_Logger::add( 'pair_connect', self::pair_label( $pair, isset( $job['partner_id'] ) ? $job['partner_id'] : 'ariocase' ), $row['message'] );
 			wp_send_json_success( array(
 				'done'      => $job['offset'] >= $total,
 				'processed' => $job['offset'],
@@ -164,12 +171,25 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 		public static function resolve_link() {
 			self::auth();
-			// URL-encoded Persian slugs must remain intact; sanitize_text_field removes %XX octets.
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
+			$configured = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::is_configured( $partner_id ) : TCAS_Core::is_configured();
+			if ( ! $configured ) {
+				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات اتصال همکار انتخاب‌شده را کامل کنید.' ), 422 );
+			}
+			// Keep percent-encoded UTF-8 slugs intact and try the local/legacy resolver first.
 			$url = self::posted_reference( 'url' );
 			if ( '' === $url ) {
 				wp_send_json_error( array( 'message' => 'لینک محصول را وارد کنید.' ), 400 );
 			}
-			$result = TCAS_Link_Resolver::resolve( $url );
+			if ( 'ariocase' === $partner_id ) {
+				$result = TCAS_Link_Resolver::resolve( $url );
+			} else {
+				// The generic provider path must never probe ArioCase as a side effect.
+				$result = TCAS_Link_Resolver::resolve_local_link( $url );
+				if ( is_wp_error( $result ) ) {
+					$result = TCAS_Partners::resolve_link( $partner_id, $url );
+				}
+			}
 			$parts  = parse_url( $url );
 			$target = is_array( $parts ) ? ( isset( $parts['host'] ) ? $parts['host'] : '' ) . rawurldecode( isset( $parts['path'] ) ? $parts['path'] : '' ) : '[invalid URL]';
 			if ( is_wp_error( $result ) ) {
@@ -193,8 +213,10 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 		public static function match_variations() {
 			self::auth();
-			if ( ! TCAS_Core::is_configured() ) {
-				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات API را کامل کنید.' ), 422 );
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
+			$configured = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::is_configured( $partner_id ) : TCAS_Core::is_configured();
+			if ( ! $configured ) {
+				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات اتصال همکار انتخاب‌شده را کامل کنید.' ), 422 );
 			}
 			$local_code  = self::posted_reference( 'local_code' );
 			$remote_code = self::posted_reference( 'remote_code' );
@@ -203,19 +225,19 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			if ( '' === $local_code || '' === $remote_code || strlen( $local_code ) > $local_limit || strlen( $remote_code ) > $remote_limit ) {
 				wp_send_json_error( array( 'message' => 'لینک یا مرجع هر دو محصول والد را وارد کنید.' ), 422 );
 			}
-			$local = preg_match( '#^https?://#i', $local_code ) ? TCAS_Link_Resolver::resolve( $local_code ) : TCAS_Link_Resolver::resolve_local_reference( $local_code );
+			$local = preg_match( '#^https?://#i', $local_code ) ? TCAS_Link_Resolver::resolve_local_link( $local_code ) : TCAS_Link_Resolver::resolve_local_reference( $local_code );
 			if ( is_wp_error( $local ) ) {
 				wp_send_json_error( array( 'message' => $local->get_error_message() ), 422 );
 			}
 			if ( empty( $local['shop'] ) || 'tisacase' !== $local['shop'] || empty( $local['type'] ) || 'variable' !== $local['type'] || empty( $local['variations'] ) ) {
 				wp_send_json_error( array( 'message' => 'مرجع TisaCase باید یک محصول متغیر با Variation باشد.' ), 422 );
 			}
-			$remote = TCAS_Link_Resolver::resolve_remote_reference( $remote_code );
+			$remote = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::resolve_link( $partner_id, $remote_code ) : TCAS_Link_Resolver::resolve_remote_reference( $remote_code );
 			if ( is_wp_error( $remote ) ) {
 				wp_send_json_error( array( 'message' => $remote->get_error_message() ), 422 );
 			}
-			if ( empty( $remote['shop'] ) || 'ariocase' !== $remote['shop'] || empty( $remote['type'] ) || 'variable' !== $remote['type'] || empty( $remote['variations'] ) ) {
-				wp_send_json_error( array( 'message' => 'مرجع ArioCase باید یک محصول متغیر با Variation باشد.' ), 422 );
+			if ( empty( $remote['shop'] ) || ( class_exists( 'TCAS_Partners' ) ? $partner_id : 'ariocase' ) !== $remote['shop'] || empty( $remote['type'] ) || 'variable' !== $remote['type'] || empty( $remote['variations'] ) ) {
+				wp_send_json_error( array( 'message' => 'مرجع ' . ( class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase' ) . ' باید یک محصول متغیر با Variation باشد.' ), 422 );
 			}
 			$remote_variations = $remote['variations'];
 			foreach ( $remote_variations as $index => $variation ) {
@@ -237,12 +259,13 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 
 		public static function test_connection() {
 			self::auth();
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
 			$code = self::posted_reference( 'code' );
 			if ( '' === $code ) {
-				wp_send_json_error( array( 'message' => 'برای تست، لینک، SKU یا ID محصول ArioCase را وارد کنید.' ), 400 );
+				wp_send_json_error( array( 'message' => 'برای تست، لینک، SKU یا ID محصول همکار را وارد کنید.' ), 400 );
 			}
-			$product = TCAS_Api::fetch_reference( $code );
-			$label   = preg_match( '#^https?://#i', $code ) ? '[ArioCase URL]' : $code;
+			$product = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::fetch_reference( $partner_id, $code ) : TCAS_Api::fetch_reference( $code );
+			$label   = preg_match( '#^https?://#i', $code ) ? '[' . ( class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase' ) . ' URL]' : $code;
 			if ( is_wp_error( $product ) ) {
 				TCAS_Logger::add( 'connection_error', $label, $product->get_error_message() );
 				wp_send_json_error( array( 'message' => $product->get_error_message() ), 400 );
@@ -267,14 +290,14 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			self::auth();
 			$pair = array(
 				'local_code'  => isset( $_POST['sku'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['sku'] ) ) ) : '',
-				'remote_code' => isset( $_POST['remote_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['remote_code'] ) ) ) : '',
+				'remote_code' => self::posted_reference( 'remote_code' ),
 				'error'       => '',
 			);
-			$result = TCAS_Pairing::connect( TCAS_Pairing::preview( $pair ) );
+			$result = TCAS_Pairing::connect( TCAS_Pairing::preview( $pair, class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase' ) );
 			if ( is_wp_error( $result ) ) {
 				wp_send_json_error( array( 'message' => $result->get_error_message() ), 400 );
 			}
-			TCAS_Logger::add( 'pair_add', self::pair_label( $pair ), 'اتصال ساخته و فقط موجودی به‌روز شد.' );
+			TCAS_Logger::add( 'pair_add', self::pair_label( $pair, class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase' ), 'اتصال ساخته و فقط موجودی به‌روز شد.' );
 			wp_send_json_success( array( 'message' => 'جفت متصل و موجودی به‌روزرسانی شد.', 'reload' => true ) );
 		}
 

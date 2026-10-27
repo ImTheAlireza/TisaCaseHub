@@ -37,9 +37,9 @@ if ( ! class_exists( 'TisaCase_Exporter' ) ) {
 		const LEGACY_DIR_NAME   = 'tisacase-private-phone-exports'; // مسیر نسخهٔ ۱.x — فقط برای پاک‌سازی.
 		const WORKING_FILE      = 'working.tsv';
 		const PART_PREFIX       = 'part-';
-		const CHUNK_LINES       = 100000;  // حداکثر خطوط هر تکهٔ مرتب‌سازی (سقف حافظهٔ Dedup).
+		const CHUNK_LINES       = 5000;    // اندازهٔ سازگار با نسخه‌های قدیمی؛ Dedup اکنون مرحله‌ای و قابل‌فیلتر است.
 		const WRITE_BUF         = 65536;   // بافر نوشتن (بایت).
-		const MIN_BATCH         = 100;
+		const MIN_BATCH         = 10;
 		const MAX_BATCH         = 2000;
 		const CLI_BATCH        = 2000;   // اندازه Batch در WP-CLI (بدون سقف زمان اجرای وب).
 		const TEXT_DOMAIN       = 'tisacase-exporter';
