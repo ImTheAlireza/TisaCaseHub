@@ -347,6 +347,8 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
 .tcas-pair-flag.is-ok { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
 .tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
 .tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
+.tcas-pair-flag.is-list { border-style:dotted; border-color:#8A6116; background:#FFFBF0; color:#6E4B08; }
+.tcas-pair-flag-note.is-list { color:#6E4B08; }
 .tcas-pair-flag-note { display:block; min-width:0; margin:-3px 0 8px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; overflow-wrap:anywhere; }
 .tcas-pair-entry { position:relative; min-width:0; padding:13px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
 .tcas-pair-entry.is-settled { border-color:var(--tisa-primary,#0f8a67); box-shadow:inset 3px 0 0 var(--tisa-primary,#0f8a67); }
@@ -519,7 +521,7 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
         <div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>
         <div class="tcas-pairs-actions"><span class="tcas-muted">بدون محدودیت تعداد جفت</span><span class="tcas-muted" id="tcas-pair-count">۲۴۰ کارت</span><button type="button" class="button">انتخاب همه</button><button type="button" class="button">بررسی همه دوباره</button><button type="button" class="button">افزودن جفت</button></div>
       </div>
-      <p class="tcas-pairs-help">هیچ موجودی‌ای پیش از اتصال خوانده نمی‌شود. سبز = جفت قطعی، زرد = نیاز به بررسی، قرمز = یک سمت پیدا نشده. با «اتصال انتخاب‌شده‌ها» موجودی خوانده و همان کارت‌ها متصل می‌شوند؛ وضعیت هر کارت ذخیره می‌شود، پس اگر وسط کار ارتباط قطع شد، بار بعد فقط کارت‌های به‌روزنشده فرستاده می‌شوند.</p>
+      <p class="tcas-pairs-help">هیچ موجودی‌ای پیش از اتصال خوانده نمی‌شود. سبز = جفت قطعی، زرد = نیاز به بررسی، قرمز = یک سمت پیدا نشده. اگر یک Variation همکار چند مدل را با هم فهرست کرده باشد، هر Variation تیساکیس کارت خودش را می‌گیرد و همه به همان یک مرجع وصل می‌شوند (نشان «پیشنهاد · فهرست مدل»). با «اتصال انتخاب‌شده‌ها» موجودی خوانده و همان کارت‌ها متصل می‌شوند؛ وضعیت هر کارت ذخیره می‌شود، پس اگر وسط کار ارتباط قطع شد، بار بعد فقط کارت‌های به‌روزنشده فرستاده می‌شوند.</p>
       <div id="tcas-pair-entries" class="tcas-pair-entries">
         <article class="tcas-pair-entry is-settled" data-state="exact" data-confidence="exact">
           <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
@@ -569,6 +571,38 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
           <div class="tcas-pair-stock" hidden></div>
           <small class="tcas-pair-message"></small>
         </article>
+        <article class="tcas-pair-entry is-review" data-state="review" data-confidence="list" data-shared-remote="1">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-list">پیشنهاد · فهرست مدل · آمادهٔ اتصال</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
+          </div>
+          <small class="tcas-pair-flag-note is-list">مدل این کارت: a52 · مدل‌های دیگر همان Variation همکار: a52s — یک مرجع روی ۲ کارت</small>
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401470"><small class="tcas-variation-title">Samsung A52</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46922" placeholder="SKU / ID:123"><small class="tcas-variation-title">Samsung A52 / A52s</small></label>
+          </div>
+          <div class="tcas-pair-stock" hidden></div>
+          <small class="tcas-pair-message">برچسب همکار چند مدل را با هم دارد؛ این کارت فقط مدل A52 را می‌گیرد و کارت بعدی A52s را. موجودی همان یک کد روی هر دو می‌نشیند.</small>
+        </article>
+        <article class="tcas-pair-entry is-review" data-state="review" data-confidence="list" data-shared-remote="1">
+          <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-top">
+            <span class="tcas-pair-flag is-list">پیشنهاد · فهرست مدل · آمادهٔ اتصال</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
+            <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
+          </div>
+          <small class="tcas-pair-flag-note is-list">مدل این کارت: a52s · مدل‌های دیگر همان Variation همکار: a52 — همان مرجع، کارت جدا</small>
+          <div class="tcas-pair-fields">
+            <label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input class="tcas-local-code" type="text" dir="ltr" value="ID:401471"><small class="tcas-variation-title">Samsung A52s</small></label>
+            <span class="tcas-pair-link" aria-hidden="true">+</span>
+            <label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input class="tcas-remote-code" type="text" dir="ltr" value="ID:45969/46922" placeholder="SKU / ID:123"><small class="tcas-variation-title">Samsung A52 / A52s</small></label>
+          </div>
+          <div class="tcas-pair-stock" hidden></div>
+          <small class="tcas-pair-message">هر دو کارت با «اتصال انتخاب‌شده‌ها» یک‌جا متصل می‌شوند و بعد از آن، موجودی این کد خودکار روی هر دو Variation می‌نشیند.</small>
+        </article>
         <article class="tcas-pair-entry is-orphan" data-state="incomplete" data-confidence="incomplete">
           <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
           <div class="tcas-pair-top">
@@ -588,7 +622,23 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
       </div>
       <div class="tcas-pair-actions">
         <button type="button" class="button button-primary">اتصال انتخاب‌شده‌ها</button>
-        <span class="tcas-status">۱ قطعی · ۱ نیاز به بررسی · ۱ کارت ناقص</span>
+        <span class="tcas-status">۱ قطعی · ۳ نیاز به بررسی (۲ کارت فهرست مدل با یک مرجع) · ۱ کارت ناقص</span>
+      </div>
+    </section>
+    <section class="tcas-card">
+      <div class="tcas-card-head"><div><span class="tcas-step">◔</span><h2>آنچه خریدار می‌بیند</h2></div><span class="tcas-tag">بدون نام همکار</span></div>
+      <p class="tcas-pairs-help">متن فروشگاه فقط از نام خود محصول ساخته می‌شود. نام همکار، «تمام‌شدن موجودی در سایت دیگر» و خطای وب‌سرویس هیچ‌جا به مشتری نشان داده نمی‌شود؛ این‌ها فقط در گزارش عملیات مدیر می‌آیند.</p>
+      <div class="tcas-smart-issues" style="gap:8px">
+        <article class="tcas-smart-issue" role="listitem">
+          <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">ناموجود</span></span><span class="tcas-smart-issue-shop">فروشگاه</span></div>
+          <strong class="tcas-smart-issue-label">«Samsung A52s» در حال حاضر ناموجود است.</strong>
+          <small class="tcas-smart-issue-reason">همین جمله وقتی موجودی Variation همکار به صفر برسد؛ بدون اشاره به منبع موجودی.</small>
+        </article>
+        <article class="tcas-smart-issue" role="listitem">
+          <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">موقتاً نامشخص</span></span><span class="tcas-smart-issue-shop">فروشگاه</span></div>
+          <strong class="tcas-smart-issue-label">موجودی «Samsung A52s» در حال حاضر قابل بررسی نیست؛ لطفاً کمی بعد دوباره تلاش کنید.</strong>
+          <small class="tcas-smart-issue-reason">فقط در حالت «توقف افزودن به سبد» هنگام خطای منبع موجودی؛ در حالت پیش‌فرض فروش با آخرین موجودی ثبت‌شده ادامه می‌یابد و همین جمله هم نمایش داده نمی‌شود.</small>
+        </article>
       </div>
     </section>
   </main>
