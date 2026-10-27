@@ -166,23 +166,98 @@
 		return node;
 	}
 
+	var ITEM_H = 32; // ارتفاع هر آیتم wheel (باید با CSS یکی باشد).
+	var WHEEL_PAD = ITEM_H * 2; // فاصلهٔ بالا/پایین برای رسیدن آیتم ابتدا/انتها به مرکز.
+	var yearRange = null;
+
+	function getYearRange() {
+		if (!yearRange) {
+			var y = todayJalali()[0];
+			yearRange = { min: y - 50, max: y + 30 };
+		}
+		return yearRange;
+	}
+
+	function wheelIndex(container, count) {
+		var idx = Math.round(container.scrollTop / ITEM_H);
+		return Math.max(0, Math.min(count - 1, idx));
+	}
+
+	/** اسکرول wheel به اندیس موردنظر و علامت‌گذاری آیتم فعال. */
+	function syncWheel(container, index) {
+		var top = index * ITEM_H;
+		if (Math.abs(container.scrollTop - top) > 1) {
+			container.scrollTop = top;
+		}
+		var items = container.querySelectorAll('.tcp-jcal__wheel-item');
+		for (var i = 0; i < items.length; i++) {
+			items[i].classList.toggle('is-active', i === index);
+		}
+	}
+
+	/**
+	 * ساخت یک wheel عمودی با اسنپ مرکزی.
+	 * onPick(index) هم با کلیک و هم با اسکرول (پس از توقف) صدا زده می‌شود.
+	 */
+	function buildWheel(container, labels, onPick) {
+		container.innerHTML = '';
+		container.appendChild(el('span', 'tcp-jcal__wheel-band'));
+		var topPad = el('div', 'tcp-jcal__wheel-spacer');
+		topPad.style.height = WHEEL_PAD + 'px';
+		container.appendChild(topPad);
+		labels.forEach(function (label, idx) {
+			var item = el('button', 'tcp-jcal__wheel-item', label);
+			item.type = 'button';
+			item.dataset.index = String(idx);
+			item.addEventListener('click', function () { onPick(idx); });
+			container.appendChild(item);
+		});
+		var bottomPad = el('div', 'tcp-jcal__wheel-spacer');
+		bottomPad.style.height = WHEEL_PAD + 'px';
+		container.appendChild(bottomPad);
+
+		var settleTimer = null;
+		container.addEventListener('scroll', function () {
+			clearTimeout(settleTimer);
+			settleTimer = setTimeout(function () {
+				onPick(wheelIndex(container, labels.length));
+			}, 90);
+		});
+	}
+
 	function ensurePopup() {
 		if (popup) { return popup; }
 		popup = el('div', 'tcp-jcal');
 		popup.setAttribute('dir', 'rtl');
 		popup.hidden = true;
 
-		var head = el('div', 'tcp-jcal__head');
-		var prev = el('button', 'tcp-jcal__nav tcp-jcal__prev', '‹');
-		prev.type = 'button';
-		var title = el('div', 'tcp-jcal__title');
-		var next = el('button', 'tcp-jcal__nav tcp-jcal__next', '›');
-		next.type = 'button';
-		head.appendChild(prev);
-		head.appendChild(title);
-		head.appendChild(next);
+		// هدر: دو wheel کنار هم برای انتخاب ماه و سال.
+		var wheels = el('div', 'tcp-jcal__wheels');
+		var monthWheel = el('div', 'tcp-jcal__wheel tcp-jcal__wheel--month');
+		var yearWheel = el('div', 'tcp-jcal__wheel tcp-jcal__wheel--year');
+		wheels.appendChild(monthWheel);
+		wheels.appendChild(yearWheel);
 
-		var grid = el('div', 'tcp-jcal__grid');
+		var yr = getYearRange();
+		var yearLabels = [];
+		for (var yy = yr.min; yy <= yr.max; yy++) {
+			yearLabels.push(toLatinDigits(yy));
+		}
+		buildWheel(monthWheel, MONTHS.slice(), function (idx) {
+			var m = idx + 1;
+			if (current && m !== current.viewM) {
+				current.viewM = m;
+				renderGrid();
+			}
+		});
+		buildWheel(yearWheel, yearLabels, function (idx) {
+			var y = yr.min + idx;
+			if (current && y !== current.viewY) {
+				current.viewY = y;
+				renderGrid();
+			}
+		});
+
 		var weekRow = el('div', 'tcp-jcal__weekrow');
 		WEEKDAYS.forEach(function (w) { weekRow.appendChild(el('span', 'tcp-jcal__week', w)); });
 
@@ -196,14 +271,12 @@
 		foot.appendChild(todayBtn);
 		foot.appendChild(clearBtn);
 
-		popup.appendChild(head);
+		popup.appendChild(wheels);
 		popup.appendChild(weekRow);
 		popup.appendChild(days);
 		popup.appendChild(foot);
 		document.body.appendChild(popup);
 
-		prev.addEventListener('click', function () { shiftMonth(-1); });
-		next.addEventListener('click', function () { shiftMonth(1); });
 		todayBtn.addEventListener('click', function () {
 			var t = todayJalali();
 			current.viewY = t[0];
@@ -217,16 +290,19 @@
 		return popup;
 	}
 
-	function shiftMonth(delta) {
-		var m = current.viewM - 1 + delta;
-		current.viewY += Math.floor(m / 12);
-		current.viewM = ((m % 12) + 12) % 12 + 1;
-		renderGrid();
+	/** هم‌گام‌سازی موقعیت wheelها با ماه/سال نمای جاری. */
+	function syncWheels() {
+		var range = getYearRange();
+		var yIndex = current.viewY - range.min;
+		yIndex = Math.max(0, Math.min(range.max - range.min, yIndex));
+		syncWheel(popup.querySelector('.tcp-jcal__wheel--month'), current.viewM - 1);
+		syncWheel(popup.querySelector('.tcp-jcal__wheel--year'), yIndex);
 	}
 
 	function renderGrid() {
 		var jy = current.viewY, jm = current.viewM;
-		popup.querySelector('.tcp-jcal__title').textContent = MONTHS[jm - 1] + ' ' + toLatinDigits(jy);
+		popup.dataset.viewY = String(jy);
+		popup.dataset.viewM = String(jm);
 
 		var days = popup.querySelector('.tcp-jcal__days');
 		days.innerHTML = '';
@@ -281,6 +357,7 @@
 			days.appendChild(btn);
 		});
 
+		syncWheels();
 		positionPopup();
 	}
 
@@ -288,8 +365,8 @@
 		var rect = current.wrapper.getBoundingClientRect();
 		popup.style.visibility = 'hidden';
 		popup.hidden = false;
-		var width = popup.offsetWidth || 272;
-		var height = popup.offsetHeight || 300;
+		var width = popup.offsetWidth || 276;
+		var height = popup.offsetHeight || 440;
 		var left = rect.left;
 		if (left + width > window.innerWidth - 8) {
 			left = Math.max(8, window.innerWidth - width - 8);
@@ -311,7 +388,9 @@
 		}
 		current = { wrapper: wrapper };
 		var init = selectedJalali(wrapper) || todayJalali();
-		current.viewY = init[0];
+		var range = getYearRange();
+		// سال‌های خارج از بازهٔ wheel (مثل کوپن‌های قدیمی ذخیره‌شده با سال نامتعارف) به بازه محدود می‌شوند.
+		current.viewY = Math.max(range.min, Math.min(range.max, init[0]));
 		current.viewM = init[1];
 		current.text = wrapper.querySelector('.tcp-jdate__text');
 		current.hidden = wrapper.querySelector('.tcp-jdate__value');
@@ -424,7 +503,15 @@
 		if (e.key === 'Escape') { closePopup(); }
 	});
 	window.addEventListener('resize', closePopup);
-	window.addEventListener('scroll', closePopup, true);
+	// اسکرول بیرون از تقویم آن را می‌بندد؛ اسکرول داخل wheelها نباید چیزی ببندد.
+	window.addEventListener('scroll', function (e) {
+		if (!popup || popup.hidden) { return; }
+		var t = e.target;
+		if (t && t.nodeType === 1 && (popup.contains(t) || (current && current.wrapper.contains(t)))) {
+			return;
+		}
+		closePopup();
+	}, true);
 
 	if (document.readyState === 'loading') {
 		document.addEventListener('DOMContentLoaded', function () { bindAll(document); });

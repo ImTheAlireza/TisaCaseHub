@@ -76,6 +76,10 @@ $tcp_prod_select = static function ( $name, $selected ) {
 $tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
 	$gregorian = TCP_Jalali::normalize_date_input( $gregorian );
 	$jalali    = TCP_Jalali::gregorian_to_text( $gregorian );
+	// مقدار میلادی خارج بازه (رکورد خراب قدیمی) هنگام باز شدن فرم خالی می‌شود تا با ذخیرهٔ بعدی اصلاح شود.
+	if ( '' !== $gregorian && '' === $jalali ) {
+		$gregorian = '';
+	}
 	?>
 	<span class="tcp-jdate" data-tcp-jdate>
 		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08" name="<?php echo esc_attr( $name ); ?>" value="<?php echo esc_attr( $jalali ); ?>">
@@ -238,7 +242,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 							<td><button type="button" class="tcp-cp-code tisa-code" data-code="<?php echo esc_attr( $r['code'] ); ?>" title="کپی"><?php echo esc_html( $r['code'] ); ?></button><?php if ( $r['batch'] ) : ?><div class="tcp-muted"><?php echo esc_html( $r['batch'] ); ?></div><?php endif; ?></td>
 							<td><?php echo esc_html( isset( $tcp_types[ $r['type'] ] ) ? $tcp_types[ $r['type'] ] : $r['type'] ); ?><br><strong><?php echo 'percent' === $r['type'] ? esc_html( number_format_i18n( $r['amount'], 2 ) . '٪' ) : esc_html( number_format_i18n( $r['amount'] ) . ' ' . $tcp_cur ); ?></strong></td>
 							<td><?php echo esc_html( number_format_i18n( $r['usage'] ) ); ?> / <?php echo $r['limit'] ? esc_html( number_format_i18n( $r['limit'] ) ) : '∞'; ?></td>
-							<td><?php echo $r['expires'] ? esc_html( $r['expires'] ) : '—'; ?></td>
+							<td><?php if ( ! empty( $r['expires_invalid'] ) ) : ?><span class="tcp-badge tcp-cp-used_up" title="تاریخ ذخیره‌شده خارج بازهٔ معتبر است؛ فرم را باز و تاریخ را دوباره انتخاب کن">تاریخ نامعتبر</span><?php elseif ( $r['expires'] ) : ?><span dir="ltr"><?php echo esc_html( $r['expires'] ); ?></span><?php else : ?>—<?php endif; ?></td>
 							<td class="tcp-cp-feats">
 								<?php if ( $r['phone_policy']['enabled'] ) : ?><span class="tcp-badge tcp-st-done">سهمیه خرید موفق / موبایل</span><?php endif; ?>
 								<?php if ( $r['round'] ) : ?><span class="tcp-badge tcp-st-done">رند ۸</span><?php endif; ?>

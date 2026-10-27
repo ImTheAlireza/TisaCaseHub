@@ -80,6 +80,13 @@ t( 'normalize: خالی = بدون تاریخ', '' === TCP_Jalali::normalize_dat
 // تبدیل نمایشی و قالب‌بندی (در محیط بدون وردپرس، لایهٔ زمان UTC است).
 t( 'gregorian_to_text: 2026-10-30 → 1405/08/08', '1405/08/08' === TCP_Jalali::gregorian_to_text( '2026-10-30' ) );
 t( 'gregorian_to_text: ورودی نامعتبر → رشتهٔ خالی', '' === TCP_Jalali::gregorian_to_text( 'not-a-date' ) );
+// رکورد خراب قدیمی (سال ۱۴۰۵ میلادی = باگ پیکر بومی) نباید متن گنگ بسازد.
+t( 'gregorian_to_text: سال میلادی نامتعارف → خالی', '' === TCP_Jalali::gregorian_to_text( '1405-08-08' ) );
+t( 'format: تایم‌استمپ سال نامتعارف → خالی', '' === TCP_Jalali::format( 'Y/m/d', strtotime( '1405-08-08 23:59:59' ) ) );
+t( 'parse_jalali: سال خارج بازه رد می‌شود (۱۰۰۰)', '' === TCP_Jalali::parse_jalali( '1000/01/01' ) );
+t( 'parse_jalali: سال خارج بازه رد می‌شود (۱۶۰۰)', '' === TCP_Jalali::parse_jalali( '1600/01/01' ) );
+t( 'normalize: میلادی خارج بازه هم برای نمایش رد می‌شود', '' === TCP_Jalali::gregorian_to_text( TCP_Jalali::normalize_date_input( '1405-08-08' ) ) );
+t( 'is_sane_jalali: مرزها', TCP_Jalali::is_sane_jalali( 1100, 1, 1 ) && TCP_Jalali::is_sane_jalali( 1500, 12, 29 ) && ! TCP_Jalali::is_sane_jalali( 1099, 12, 30 ) );
 $tcp_ts = gmmktime( 10, 11, 12, 10, 30, 2026 );
 t( 'format: تاریخ و زمان شمسی', '1405/08/08 10:11:12' === TCP_Jalali::format( 'Y/m/d H:i:s', $tcp_ts ) );
 t( 'format: توکن‌های بدون صفر (n/j/G)', '1405/8/8 10:11' === TCP_Jalali::format( 'Y/n/j G:i', $tcp_ts ) );

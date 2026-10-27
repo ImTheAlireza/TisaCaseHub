@@ -152,8 +152,10 @@
         parts.push(modeLabel(rule.mode));
         const subs = [];
         if (rule.from || rule.to) {
-            var jFrom = rule.from ? window.TCPJalali.toJalaliText(rule.from) : '…';
-            var jTo = rule.to ? window.TCPJalali.toJalaliText(rule.to) : '…';
+            // LRE/PDF دور تاریخ تا در متن RTL جابه‌جا نشود.
+            var ltr = function (s) { return '‪' + s + '‬'; };
+            var jFrom = rule.from ? ltr(window.TCPJalali.toJalaliText(rule.from)) : '…';
+            var jTo = rule.to ? ltr(window.TCPJalali.toJalaliText(rule.to)) : '…';
             subs.push('بازه: ' + jFrom + ' تا ' + jTo);
         }
         const hasMin = rule.min !== '' && Number(rule.min) > 0;

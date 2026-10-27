@@ -645,9 +645,10 @@ body.tcp-modal-open { overflow: hidden; }
 /* ---------------- تقویم شمسی (TCP_Jalali / jalali.js) ---------------- */
 
 .tcp-jdate { position: relative; display: flex; width: 100%; align-items: stretch; }
-.tcp-jdate__text { flex: 1 1 auto; min-width: 0; padding-inline-end: 34px; text-align: left; font-variant-numeric: tabular-nums lining-nums; }
+/* ورودی LTR است و متن از لبهٔ چپ شروع می‌شود؛ آیکم هم سمت چپ می‌نشیند، پس فاصله فیزیکی از چپ لازم است. */
+.tcp-jdate__text { flex: 1 1 auto; min-width: 0; padding-left: 36px; text-align: left; font-variant-numeric: tabular-nums lining-nums; }
 .tcp-jdate__toggle {
-	position: absolute; inset-inline-end: 4px; align-self: center;
+	position: absolute; left: 4px; align-self: center;
 	display: inline-flex; align-items: center; justify-content: center;
 	width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px;
 	background: transparent; color: var(--tisa-muted, #77828A); cursor: pointer;
@@ -663,14 +664,30 @@ body.tcp-modal-open { overflow: hidden; }
 	font-size: var(--tisa-fs-control, 13px); color: var(--tisa-ink, #1F2A2E);
 }
 .tcp-jcal[hidden] { display: none; }
-.tcp-jcal__head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
-.tcp-jcal__title { font-weight: 800; font-size: var(--tisa-fs-h3, 16px); color: var(--tisa-ink, #1F2A2E); }
-.tcp-jcal__nav {
-	width: 30px; height: 30px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 8px;
-	background: var(--tisa-surface, #fff); color: var(--tisa-primary-ink, #0A5F52);
-	font-size: 18px; line-height: 1; cursor: pointer;
+/* wheelهای انتخاب ماه و سال */
+.tcp-jcal__wheels { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+.tcp-jcal__wheel {
+	position: relative; height: 160px; overflow-y: auto; overscroll-behavior: contain;
+	text-align: center; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 12px;
+	background: var(--tisa-surface-3, #F7F5EF); scroll-snap-type: y mandatory; scrollbar-width: none;
+	-webkit-mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
+	mask-image: linear-gradient(to bottom, transparent, #000 28%, #000 72%, transparent);
 }
-.tcp-jcal__nav:hover { background: var(--tisa-primary-soft, #E8F0EE); border-color: var(--tisa-border-strong, #C9DCD7); }
+.tcp-jcal__wheel::-webkit-scrollbar { display: none; }
+.tcp-jcal__wheel-band {
+	position: absolute; left: 6px; right: 6px; top: 64px; height: 32px; z-index: 0;
+	border-radius: 8px; background: var(--tisa-primary-soft, #E8F0EE);
+	box-shadow: inset 0 0 0 1px var(--tisa-border-strong, #C9DCD7); pointer-events: none;
+}
+.tcp-jcal__wheel-spacer { pointer-events: none; }
+.tcp-jcal__wheel-item {
+	position: relative; z-index: 1; display: block; width: 100%; height: 32px; padding: 0;
+	border: 0; background: transparent; color: var(--tisa-muted, #77828A);
+	font-family: inherit; font-size: 12.5px; line-height: 32px; cursor: pointer; white-space: nowrap;
+	scroll-snap-align: center;
+}
+.tcp-jcal__wheel-item:hover { color: var(--tisa-primary-ink, #0A5F52); }
+.tcp-jcal__wheel-item.is-active { color: var(--tisa-primary-ink, #0A5F52); font-weight: 800; }
 .tcp-jcal__weekrow, .tcp-jcal__days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 .tcp-jcal__week { padding: 4px 0; text-align: center; font-size: 11px; font-weight: 700; color: var(--tisa-muted, #77828A); }
 .tcp-jcal__day {

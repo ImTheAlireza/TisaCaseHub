@@ -58,6 +58,10 @@ $tcp_rule_summary = static function ( $rule ) use ( $tcp_modes ) {
 $tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
 	$gregorian = TCP_Jalali::normalize_date_input( $gregorian );
 	$jalali    = TCP_Jalali::gregorian_to_text( $gregorian );
+	// مقدار میلادی خارج بازه (رکورد خراب قدیمی) هنگام باز شدن فرم خالی می‌شود تا با ذخیرهٔ بعدی اصلاح شود.
+	if ( '' !== $gregorian && '' === $jalali ) {
+		$gregorian = '';
+	}
 	?>
 	<span class="tcp-jdate" data-tcp-jdate>
 		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08"<?php echo $name ? ' name="' . esc_attr( $name ) . '"' : ''; ?> value="<?php echo esc_attr( $jalali ); ?>">
@@ -76,8 +80,10 @@ $tcp_rule_sub = static function ( $rule ) {
 	}
 	$parts = array();
 	if ( '' !== $rule['from'] || '' !== $rule['to'] ) {
-		$from  = '' !== $rule['from'] ? TCP_Jalali::gregorian_to_text( $rule['from'] ) : '…';
-		$to    = '' !== $rule['to'] ? TCP_Jalali::gregorian_to_text( $rule['to'] ) : '…';
+		// LRE/PDF دور تاریخ تا ارقام و جداکننده‌ها در متن RTL جابه‌جا نشوند.
+		$ltr = static function ( $j ) { return "\u{202A}" . $j . "\u{202C}"; };
+		$from  = '' !== $rule['from'] ? $ltr( TCP_Jalali::gregorian_to_text( $rule['from'] ) ) : '…';
+		$to    = '' !== $rule['to'] ? $ltr( TCP_Jalali::gregorian_to_text( $rule['to'] ) ) : '…';
 		$parts[] = 'بازه: ' . $from . ' تا ' . $to;
 	}
 	if ( ! empty( $rule['min'] ) || ! empty( $rule['max'] ) ) {

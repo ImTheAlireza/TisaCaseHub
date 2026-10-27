@@ -70,7 +70,7 @@ $tcp_uid           = get_current_user_id();
 						</td>
 						<td><span class="tcp-badge tcp-st-<?php echo esc_attr( $status ); ?>"><?php echo esc_html( TCP_Settings::translation( $status ) ); ?></span></td>
 						<td><?php echo esc_html( $r['user_label'] ); ?></td>
-						<td><?php echo esc_html( TCP_Jalali::from_mysql( $r['created_at'], 'Y/m/d H:i' ) ); ?></td>
+						<td><span dir="ltr"><?php echo esc_html( TCP_Jalali::from_mysql( $r['created_at'], 'Y/m/d H:i' ) ); ?></span></td>
 						<td class="tcp-run-actions">
 							<a class="button button-small" href="<?php echo esc_url( $export_url ); ?>">CSV</a>
 							<?php if ( $can_resume ) : ?><button type="button" class="button button-small tcp-act-resume">ادامه</button><?php endif; ?>

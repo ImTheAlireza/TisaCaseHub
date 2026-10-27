@@ -47,6 +47,30 @@ class TCP_Jalali {
 	private static $leap_remainders = array( 1, 5, 9, 13, 17, 22, 26, 30 );
 
 	/**
+	 * بازهٔ سال شمسی معتبر برای ورودی/نمایش.
+	 *
+	 * الگوریتم تبدیل برای بازه‌های متعارف طراحی شده و تاریخ‌های بسیار دور
+	 * (مثل باگ قدیمی ذخیرهٔ سال ۱۴۰۵ میلادی) خروجی بی‌معنا می‌دهند؛
+	 * چنین مقادیری نامعتبر شناخته می‌شوند تا قابل اصلاح باشند.
+	 */
+	const MIN_YEAR = 1100;
+	const MAX_YEAR = 1500;
+
+	/**
+	 * آیا سال/ماه/روز شمسی در بازهٔ پشتیبانی‌شده است؟
+	 *
+	 * @param int $jy سال شمسی.
+	 * @param int $jm ماه شمسی.
+	 * @param int $jd روز شمسی.
+	 * @return bool
+	 */
+	public static function is_sane_jalali( $jy, $jm = 1, $jd = 1 ) {
+		return $jy >= self::MIN_YEAR && $jy <= self::MAX_YEAR
+			&& $jm >= 1 && $jm <= 12
+			&& $jd >= 1 && $jd <= self::month_length( $jy, $jm );
+	}
+
+	/**
 	 * میلادی → شمسی.
 	 *
 	 * پورت دقیق الگوریتم مرجع پکیج jdatetime (کلاس GregorianToJalali)؛ همان الگو
@@ -207,6 +231,9 @@ class TCP_Jalali {
 		$bits = array_map( 'intval', explode( '|', (string) $parts ) );
 		list( $gy, $gm, $gd, $hour, $minute, $second ) = $bits;
 		list( $jy, $jm, $jd ) = self::to_jalali( $gy, $gm, $gd );
+		if ( $jy < self::MIN_YEAR || $jy > self::MAX_YEAR ) {
+			return ''; // تاریخ خارج بازهٔ معتبر (مثل رکورد خراب قدیمی).
+		}
 
 		$map = array(
 			'Y' => sprintf( '%04d', $jy ),
@@ -258,6 +285,9 @@ class TCP_Jalali {
 			return '';
 		}
 		list( $jy, $jm, $jd ) = self::to_jalali( $gy, $gm, $gd );
+		if ( $jy < self::MIN_YEAR || $jy > self::MAX_YEAR ) {
+			return ''; // مثل رکورد قدیمیِ ذخیره‌شده با سال ۱۴۰۵ میلادی.
+		}
 		return sprintf( '%04d/%02d/%02d', $jy, $jm, $jd );
 	}
 
@@ -294,7 +324,7 @@ class TCP_Jalali {
 		$jy = (int) $m[1];
 		$jm = (int) $m[2];
 		$jd = (int) $m[3];
-		if ( $jy < 1 || $jy > 3000 || $jm < 1 || $jm > 12 || $jd < 1 || $jd > self::month_length( $jy, $jm ) ) {
+		if ( ! self::is_sane_jalali( $jy, $jm, $jd ) ) {
 			return '';
 		}
 		list( $gy, $gm, $gd ) = self::to_gregorian( $jy, $jm, $jd );

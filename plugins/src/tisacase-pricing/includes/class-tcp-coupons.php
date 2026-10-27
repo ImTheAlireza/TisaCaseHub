@@ -108,6 +108,8 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 				'usage'         => $usage,
 				'limit'         => $limit,
 				'expires'           => $expires ? TCP_Jalali::format( 'Y/m/d', $expires->getTimestamp() ) : '',
+				// رکورد قدیمی ممکن است سال میلادی نامتعارف (مثل ۱۴۰۵ میلادی) داشته باشد؛ تبدیل شمسی‌اش نامعتبر است.
+				'expires_invalid'   => (bool) $expires && '' === TCP_Jalali::format( 'Y/m/d', $expires->getTimestamp() ),
 				// مقدار میلادی برای فیلد مخفی فرم ویرایش (ذخیره‌سازی همیشه میلادی می‌ماند).
 				'expires_gregorian' => $expires ? $expires->date_i18n( 'Y-m-d' ) : '',
 				'free_shipping' => (bool) $c->get_free_shipping(),
