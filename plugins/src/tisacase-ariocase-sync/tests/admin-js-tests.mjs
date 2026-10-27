@@ -113,24 +113,27 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
-// ---------- ۴) پاسخ قطعی از تطبیق هوشمند: کارت سبز ----------
+// ---------- ۴) تطبیق هوشمند: کارت سبز بدون هیچ خواندن موجودی ----------
 {
-	const dom = makeDom(); const { window } = dom;
+	const dom = makeDom(); const { window } = dom; const actions = [];
 	window.fetch = async (url, options) => {
-		const action = options.body.get('action');
+		const action = options.body.get('action'); actions.push(action);
 		if (action === 'tcas_match_variations') return reply({ matches: [{ local_code: 'ID:1', remote_code: 'ID:9/1', local_label: 'A', remote_label: 'A', confidence: 'exact', matched_by: 'sku', score: 100 }], ambiguous: [], unmatched: [], local: { name: 'L', reference: 'ID:0', count: 1 }, remote: { name: 'R', reference: 'ID:9', count: 1 } });
 		if (action === 'tcas_preview_start') return reply({ token: 'a'.repeat(32), total: 1 });
-		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, row: pairRow(Object.assign(codes('ID:1', 'ID:9/1'), { index: 0 })) });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('ID:1', 'ID:9/1'), { index: 0 }))] });
 		return reply({});
 	};
 	window.eval(script);
 	window.document.getElementById('tcas-smart-local').value = 'ID:0';
 	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
 	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelector('.tcas-pair-entry') && window.document.querySelector('.tcas-pair-entry').dataset.state === 'ok');
+	await waitFor(() => window.document.querySelector('.tcas-pair-entry') && window.document.querySelector('.tcas-pair-entry').dataset.state === 'ready', 8000);
 	const entry = window.document.querySelector('.tcas-pair-entry');
-	ok('تطبیق قطعی کارت را سبز و انتخاب‌شده می‌کند', entry.classList.contains('is-settled') && entry.querySelector('.tcas-pair-flag').classList.contains('is-ok') && entry.querySelector('.tcas-pair-flag').textContent === 'مشترک قطعی' && entry.querySelector('.tcas-row-select').checked);
-	ok('بعد از تطبیق، موجودی تازه روی همان کارت خوانده می‌شود', !entry.querySelector('.tcas-pair-stock').hidden && entry.querySelector('.tcas-pair-stock').textContent.includes('TisaCase'));
+	ok('تطبیق قطعی کارت را سبز و انتخاب‌شده می‌کند', entry.classList.contains('is-ready') && entry.querySelector('.tcas-pair-flag').classList.contains('is-ok') && entry.querySelector('.tcas-pair-flag').textContent === 'قطعی · آمادهٔ اتصال' && entry.querySelector('.tcas-row-select').checked);
+	ok('بعد از تطبیق هیچ درخواستی برای موجودی زده نمی‌شود', !actions.includes('tcas_preview_start') && !actions.includes('tcas_preview_pair'), actions.join(','));
+	ok('موجودی فقط بعد از اتصال نمایش داده می‌شود', entry.querySelector('.tcas-pair-stock').hidden);
+	ok('پیام کارت می‌گوید موجودی هنگام اتصال خوانده می‌شود', entry.querySelector('.tcas-pair-message').textContent.includes('اتصال')); 
+	ok('دکمهٔ اتصال با کارت آماده فعال است', !window.document.getElementById('tcas-connect-start').disabled);
 	dom.window.close();
 }
 
@@ -520,6 +523,125 @@ function type(entry, field, value) {
 	await waitFor(() => terms.length > 0, 8000);
 	ok('عبارت کاربر کامل و بدون تغییر به سرور می‌رود (شکستن واژه‌ها سمت سرور است)', terms[0] === 'قاب رویایی پروانه آبی');
 	ok('جست‌وجو روی محصولات همان سایت انجام می‌شود', window.document.querySelectorAll('.tcas-search-row').length === 0);
+	dom.window.close();
+}
+
+// ---------- ۷ن) ذخیرهٔ وضعیت کارت و ادامهٔ کار بعد از قطعی ----------
+{
+	// اجرای اول: کارت اول متصل می‌شود، اتصال کارت دوم قطع می‌شود.
+	const dom = makeDom(2); const { window } = dom; let phase = 1;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') return reply({ token: 'h'.repeat(32), total: 2 });
+		if (action === 'tcas_preview_step') {
+			const from = Number(options.body.get('from'));
+			if (2 === phase && from >= 1) throw new TypeError('Failed to fetch');
+			const rows = [];
+			for (let i = from; i < 2; i++) rows.push(pairRow(Object.assign(codes('TS' + i, 'AR' + i), { index: i })));
+			return reply({ done: true, processed: 2, total: 2, rows });
+		}
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		if (action === 'tcas_connect_start') return reply({ token: 'i'.repeat(32), total: 2 });
+		if (action === 'tcas_connect_step') {
+			const from = Number(options.body.get('from'));
+			if (1 === phase) {
+				// فقط کارت اول متصل می‌شود و بعد ارتباط قطع می‌شود.
+				if (from >= 1) throw new TypeError('Failed to fetch');
+				return reply({ done: false, processed: 1, total: 2, rows: [{ index: 0, status: 'done', message: 'متصل شد', edit_url: '/edit/1' }] });
+			}
+			return reply({ done: true, processed: 2, total: 2, rows: [{ index: 1, status: 'done', message: 'متصل شد', edit_url: '/edit/2' }] });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	const cards = window.document.querySelectorAll('.tcas-pair-entry');
+	type(cards[0], '.tcas-local-code', 'TS0');
+	type(cards[0], '.tcas-remote-code', 'AR0');
+	type(cards[1], '.tcas-local-code', 'TS1');
+	type(cards[1], '.tcas-remote-code', 'AR1');
+	await waitFor(() => !cards[0].querySelector('.tcas-row-select').disabled && !cards[1].querySelector('.tcas-row-select').disabled, 8000);
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => cards[0].dataset.state === 'done', 12000);
+	ok('کارت متصل‌شده وضعیت «قبلاً متصل» و موجودی ذخیره‌شده را نگه می‌دارد', cards[0].classList.contains('is-saved') && cards[0].querySelector('.tcas-row-select').disabled);
+	const saved = window.localStorage.getItem('tcas:cards:ariocase');
+	ok('وضعیت هر کارت در حافظهٔ مرورگر ذخیره می‌شود', Boolean(saved) && Object.keys(JSON.parse(saved)).length >= 1 && saved.includes('ts0|ar0'));
+	dom.window.close();
+
+	// اجرای دوم: همان صفحه با همان حافظه — فقط کارت به‌روزنشده فرستاده می‌شود.
+	const dom2 = makeDom(2); const { window: w2 } = dom2;
+	const sent = [];
+	w2.localStorage.setItem('tcas:cards:ariocase', saved);
+	w2.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') { sent.push(options.body.get('pairs')); return reply({ token: 'j'.repeat(32), total: 1 }); }
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS1', 'AR1'), { index: 0 }))] });
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		if (action === 'tcas_connect_start') return reply({ token: 'k'.repeat(32), total: 1 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'done', message: 'متصل شد', edit_url: '/edit/2' }] });
+		return reply({});
+	};
+	w2.eval(script);
+	const c2 = w2.document.querySelectorAll('.tcas-pair-entry');
+	type(c2[0], '.tcas-local-code', 'TS0');
+	type(c2[0], '.tcas-remote-code', 'AR0');
+	type(c2[1], '.tcas-local-code', 'TS1');
+	type(c2[1], '.tcas-remote-code', 'AR1');
+	await waitFor(() => !c2[1].querySelector('.tcas-row-select').disabled, 8000);
+	w2.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => sent.length > 0, 12000);
+	ok('بعد از بارگذاری تازه، کارت ذخیره‌شده بدون درخواست سبز و قفل است', c2[0].classList.contains('is-saved') && c2[0].querySelector('.tcas-row-select').disabled);
+	ok('فقط کارت به‌روزنشده برای اتصال فرستاده می‌شود', sent[0] === 'TS1 - AR1', String(sent[0]));
+	await waitFor(() => c2[1].dataset.state === 'done', 12000);
+	ok('کارت باقی‌مانده متصل و ذخیره می‌شود', c2[1].classList.contains('is-saved'));
+	ok('وضعیت هر دو کارت در حافظه مانده است', Object.keys(JSON.parse(w2.localStorage.getItem('tcas:cards:ariocase'))).length === 2);
+	dom2.window.close();
+}
+
+// ---------- ۷س) کارت متصل‌شده دوباره فرستاده نمی‌شود ----------
+{
+	const dom = makeDom(1); const { window } = dom; let previews = 0;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') { previews++; return reply({ token: 'l'.repeat(32), total: 1 }); }
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS5', 'AR5'), { index: 0 }))] });
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		if (action === 'tcas_connect_start') return reply({ token: 'm'.repeat(32), total: 1 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'done', message: 'متصل شد' }] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS5');
+	type(card, '.tcas-remote-code', 'AR5');
+	await waitFor(() => !card.querySelector('.tcas-row-select').disabled, 8000);
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => card.dataset.state === 'done', 12000);
+	previews = 0;
+	window.document.getElementById('tcas-connect-start').click();
+	await new Promise((resolve) => setTimeout(resolve, 250));
+	ok('زدن دوبارهٔ اتصال روی کارت متصل‌شده درخواستی نمی‌فرستد', previews === 0);
+	ok('وقتی همهٔ کارت‌ها متصل‌اند دکمهٔ اتصال غیرفعال است تا دوباره فرستاده نشوند', window.document.getElementById('tcas-connect-start').disabled && card.querySelector('.tcas-row-select').disabled);
+	dom.window.close();
+}
+
+// ---------- ۷ع) ویرایش دستی، وضعیت ذخیره‌شده را باطل می‌کند ----------
+{
+	const dom = makeDom(1); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	card.querySelector('.tcas-local-code').value = 'TSX';
+	card.querySelector('.tcas-remote-code').value = 'ARX';
+	card.querySelector('.tcas-local-code').dispatchEvent(new window.Event('input'));
+	await waitFor(() => card.dataset.state === 'review' || card.dataset.state === 'ok', 8000);
+	ok('بررسی ویرایش، نتیجه را ذخیره می‌کند', Object.keys(JSON.parse(window.localStorage.getItem('tcas:cards:ariocase') || '{}')).length === 1);
+	card.querySelector('.tcas-local-code').value = 'TSY';
+	card.querySelector('.tcas-local-code').dispatchEvent(new window.Event('input'));
+	ok('ویرایش دستی، رکورد ذخیره‌شدهٔ قبلی را پاک می‌کند', Object.keys(JSON.parse(window.localStorage.getItem('tcas:cards:ariocase') || '{}')).length === 0);
 	dom.window.close();
 }
 

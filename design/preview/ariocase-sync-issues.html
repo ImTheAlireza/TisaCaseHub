@@ -519,7 +519,7 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
         <div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div>
         <div class="tcas-pairs-actions"><span class="tcas-muted">حداکثر 50 جفت</span><button type="button" class="button">انتخاب همه</button><button type="button" class="button">بررسی همه دوباره</button><button type="button" class="button">افزودن جفت</button></div>
       </div>
-      <p class="tcas-pairs-help">هر کارت خودش را بررسی می‌کند: اسپینر، موجودی تازهٔ هر دو فروشگاه و وضعیت همان کارت. کادر سبز = جفت قطعی؛ زرد = مشکوک و نیاز به بررسی؛ قرمز = یک سمت پیدا نشده یا کد ندارد. بعد از هر ویرایش، همان کارت دوباره بررسی می‌شود.</p>
+      <p class="tcas-pairs-help">هیچ موجودی‌ای پیش از اتصال خوانده نمی‌شود. سبز = جفت قطعی، زرد = نیاز به بررسی، قرمز = یک سمت پیدا نشده. با «اتصال انتخاب‌شده‌ها» موجودی خوانده و همان کارت‌ها متصل می‌شوند؛ وضعیت هر کارت ذخیره می‌شود، پس اگر وسط کار ارتباط قطع شد، بار بعد فقط کارت‌های به‌روزنشده فرستاده می‌شوند.</p>
       <div id="tcas-pair-entries" class="tcas-pair-entries">
         <article class="tcas-pair-entry is-settled" data-state="exact" data-confidence="exact">
           <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
@@ -553,11 +553,11 @@ body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-seri
           <div class="tcas-pair-stock">TisaCase: 3 · موجود · ArioCase: 6 · موجود</div>
           <small class="tcas-pair-message">دو محصول موجود جفت می‌شوند؛ فقط موجودی از ArioCase خوانده و اعمال می‌شود.</small>
         </article>
-        <article class="tcas-pair-entry is-loading" data-state="loading" data-confidence="loading">
+        <article class="tcas-pair-entry is-ready" data-state="loading" data-confidence="loading">
           <button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
           <div class="tcas-pair-top">
-            <span class="tcas-pair-flag is-idle">در حال بررسی…</span>
-            <span class="tcas-spinner" aria-hidden="true"></span>
+            <span class="tcas-pair-flag is-ok">قطعی · آمادهٔ اتصال</span>
+            <span class="tcas-spinner" aria-hidden="true" hidden></span>
             <label class="tcas-pair-select"><input class="tcas-row-select" type="checkbox" checked><span>انتخاب</span></label>
           </div>
           <small class="tcas-pair-flag-note">مدل مشترک: 11، note · فقط در برچسب مقابل: pro، 11s، 12s</small>

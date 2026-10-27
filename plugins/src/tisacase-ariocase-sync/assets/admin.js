@@ -405,6 +405,115 @@
 		});
 	}
 
+	// ---- حافظهٔ وضعیت کارت‌ها: نتیجهٔ هر جفت ذخیره می‌شود تا اجرای نیمه‌کاره از همان‌جا ادامه یابد ----
+	const STORE_LIMIT = 400;
+
+	function storeKey() {
+		return 'tcas:cards:' + (cfg.partnerId || 'ariocase');
+	}
+
+	function cardId(codes) {
+		return (codes.local + '|' + codes.remote).toLowerCase();
+	}
+
+	function loadCardStore() {
+		try {
+			const raw = window.localStorage ? window.localStorage.getItem(storeKey()) : '';
+			const parsed = raw ? JSON.parse(raw) : null;
+			return parsed && 'object' === typeof parsed ? parsed : {};
+		} catch (error) {
+			return {};
+		}
+	}
+
+	function saveCardStore(map) {
+		try {
+			if (!window.localStorage) return;
+			const keys = Object.keys(map);
+			if (keys.length > STORE_LIMIT) {
+				keys.sort((a, b) => Number(map[a].ts || 0) - Number(map[b].ts || 0));
+				keys.slice(0, keys.length - STORE_LIMIT).forEach((key) => { delete map[key]; });
+			}
+			window.localStorage.setItem(storeKey(), JSON.stringify(map));
+		} catch (error) {
+			/* حافظهٔ مرورگر در دسترس نیست؛ بررسی همچنان کار می‌کند. */
+		}
+	}
+
+	function rememberCard(entry, row, mode) {
+		if (!entry || !row) return;
+		const codes = entryCodes(entry);
+		if (!codes.local || !codes.remote) return;
+		const store = loadCardStore();
+		const key = cardId(codes);
+		store[key] = { row, mode, ts: Date.now() };
+		entry.dataset.cardKey = key;
+		saveCardStore(store);
+	}
+
+	/** فقط رکوردی که به شناسه‌های قبلی همین کارت تعلق دارد پاک می‌شود. */
+	function forgetCard(entry) {
+		const key = entry.dataset.cardKey || '';
+		if (!key) return;
+		const store = loadCardStore();
+		if (store[key]) {
+			delete store[key];
+			saveCardStore(store);
+		}
+		entry.dataset.cardKey = '';
+	}
+
+	/**
+	 * کارت آمادهٔ بررسی است: رنگ از روی اطمینان تطبیق می‌آید و هیچ درخواستی
+	 * (و بنابراین هیچ خواندن موجودی‌ای) انجام نمی‌شود؛ موجودی فقط هنگام اتصال خوانده می‌شود.
+	 */
+	function markReady(entry) {
+		if (!entry) return;
+		const parts = entryParts(entry);
+		const { local, remote } = entryCodes(entry);
+		const confidence = entry.dataset.confidence || 'manual';
+		const hasBoth = Boolean(local && remote);
+		if (parts.stock) parts.stock.hidden = true;
+		entry.dataset.checkedFor = '';
+		if (hasBoth) {
+			const ok = 'exact' === confidence;
+			setEntrySelectable(entry, !entry.dataset.savedDone);
+			setEntryState(entry, ok ? 'ready' : 'review', {
+				flag: ok ? 'قطعی · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال',
+				tone: ok ? 'ok' : 'warn',
+				text: 'موجودی هنگام زدن «اتصال انتخاب‌شده‌ها» خوانده می‌شود.'
+			});
+			return;
+		}
+		setEntrySelectable(entry, false);
+		const missing = !local ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase');
+		setEntryState(entry, 'incomplete', {
+			flag: 'بدون همتا · ' + missing + ' خالی',
+			tone: 'danger',
+			text: 'این Variation در ' + missing + ' پیدا نشد؛ کد آن را دستی وارد کنید یا کارت را حذف کنید.'
+		});
+	}
+
+	/** وضعیت ذخیره‌شدهٔ همین جفت را بدون هیچ درخواستی روی کارت می‌نشاند. */
+	function restoreCard(entry) {
+		const codes = entryCodes(entry);
+		if (codes.local && codes.remote) {
+			const saved = loadCardStore()[cardId(codes)];
+			if (saved && saved.row) {
+				entry.dataset.cardKey = cardId(codes);
+				if ('connected' === saved.mode) {
+					entry.dataset.savedDone = '1';
+					applyConnectRow(entry, Object.assign({ index: 0 }, saved.row));
+				} else {
+					applyRow(entry, saved.row);
+				}
+				return true;
+			}
+		}
+		markReady(entry);
+		return false;
+	}
+
 	// ---- جست‌وجوی محلی محصول TisaCase: بدون درخواست بیرونی و بدون لینک در POST ----
 	const SEARCH_DEBOUNCE = 250;
 
@@ -659,6 +768,8 @@
 		entry.classList.toggle('is-orphan', 'incomplete' === state || 'orphan' === state);
 		entry.classList.toggle('is-failed', 'error' === state);
 		entry.classList.toggle('is-settled', 'ok' === state || 'done' === state);
+		entry.classList.toggle('is-ready', 'ready' === state);
+		entry.classList.toggle('is-saved', 'done' === state);
 		entry.classList.toggle('is-review', 'review' === state);
 		if (typeof opts.flag === 'string') setEntryFlag(entry, opts.flag, opts.tone || 'idle', opts.cls || '', opts.hint || '');
 		if (typeof opts.text === 'string') {
@@ -705,10 +816,16 @@
 			parts.message.textContent = row.message || '';
 			parts.message.classList.toggle('is-error', !row.selectable);
 		}
+		if ('connected' !== row.status) rememberCard(entry, row, 'preview');
 	}
 
 	async function checkEntry(entry, options) {
 		if (!entry) return;
+		// کارت متصل‌شده دوباره بررسی نمی‌شود؛ فقط ویرایش دستی آن را آزاد می‌کند.
+		if ('1' === entry.dataset.savedDone) {
+			updateConnectAvailability();
+			return;
+		}
 		const opts = options || {};
 		const { local, remote } = entryCodes(entry);
 		const parts = entryParts(entry);
@@ -735,6 +852,16 @@
 				text: 'این Variation در ' + missing + ' پیدا نشد؛ کد آن را دستی وارد کنید یا کارت را حذف کنید.',
 				hint: 'کادر قرمز یعنی یک سمت جفت وجود ندارد یا کد ندارد.'
 			});
+			updateConnectAvailability();
+			return;
+		}
+		// اگر همین جفت قبلاً متصل و ذخیره شده باشد، هیچ درخواستی زده نمی‌شود.
+		const savedCard = loadCardStore()[cardId({ local, remote })];
+		if (savedCard && 'connected' === savedCard.mode) {
+			entry.dataset.savedDone = '1';
+			entry.dataset.cardKey = cardId({ local, remote });
+			setEntryLoading(entry, false);
+			applyConnectRow(entry, Object.assign({ index: 0 }, savedCard.row));
 			updateConnectAvailability();
 			return;
 		}
@@ -837,6 +964,8 @@
 		let incomplete = 0;
 		let invalid = 0;
 		list.forEach((entry) => {
+			// کارت‌هایی که قبلاً متصل و ذخیره شده‌اند در بررسی دوباره فرستاده نمی‌شوند.
+			if ('1' === entry.dataset.savedDone) return;
 			const { local, remote } = entryCodes(entry);
 			if (!local && !remote) return;
 			if (!local || !remote) {
@@ -883,7 +1012,10 @@
 					parts.note.hidden = true;
 				}
 				if (parts.stock) parts.stock.hidden = true;
+				entry.dataset.savedDone = '';
+				forgetCard(entry);
 				setEntrySelectable(entry, false);
+				setEntryState(entry, 'edited', { flag: 'تغییر کرد · بررسی می‌شود', tone: 'idle', text: '' });
 				updateConnectAvailability();
 				// با هر ویرایش، همان کارت بعد از مکث کوتاه دوباره بررسی می‌شود.
 				scheduleEntryCheck(entry, 500);
@@ -1177,16 +1309,13 @@
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
 		if (orphans) message += ' ' + String(orphans) + ' کارت قرمز برای Variationهای بدون همتا ساخته شد.';
 		if (skippedOrphans) message += ' ' + String(skippedOrphans) + ' مورد به‌خاطر ظرفیت یا نبود مرجع کارت نگرفت.';
-		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' موجودی تازهٔ هر کارت پایین همان کارت خوانده می‌شود.';
+		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' هیچ درخواستی برای موجودی زده نشد؛ با «اتصال انتخاب‌شده‌ها» موجودی خوانده و متصل می‌شود.';
 		text('tcas-smart-status', message);
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = state.smartOffset >= state.smartMatches.length;
-		if (pairEntries().some((entry) => {
-			const codes = entryCodes(entry);
-			return codes.local && codes.remote;
-		})) {
-			await refreshAllCards($('tcas-preview-start'), { quiet: true });
-		}
+		// موجودی فقط هنگام اتصال خوانده می‌شود؛ اینجا فقط رنگ و وضعیت از حافظه/اطمینان تطبیق می‌آید.
+		pairEntries().forEach((entry) => restoreCard(entry));
+		updateConnectAvailability();
 	}
 
 	async function matchVariations() {
@@ -1354,8 +1483,10 @@
 		const parts = entryParts(entry);
 		setEntryLoading(entry, false);
 		if ('done' === row.status) {
+			entry.dataset.savedDone = '1';
 			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به‌روز شد', tone: 'ok', text: row.message || '' });
 			setEntrySelectable(entry, false);
+			rememberCard(entry, row, 'connected');
 			if (row.edit_url && parts.message) {
 				const link = node('a', 'tcas-pair-edit-link', 'بازکردن محصول تیساکیس');
 				link.href = row.edit_url;
@@ -1371,12 +1502,18 @@
 
 	async function startConnect() {
 		if (state.running) return;
-		const selected = pairEntries().filter((entry) => {
+		const checked = pairEntries().filter((entry) => {
 			const box = entry.querySelector('.tcas-row-select');
 			return box && !box.disabled && box.checked;
 		});
+		// کارت‌هایی که در اجرای قبلی متصل و ذخیره شده‌اند دوباره فرستاده نمی‌شوند؛
+		// فقط موارد به‌روزنشده (خطا، نیمه‌کاره یا تغییرکرده) ادامه پیدا می‌کنند.
+		const selected = checked.filter((entry) => 'done' !== entry.dataset.state);
+		const resumed = checked.length - selected.length;
 		if (!selected.length) {
-			text('tcas-connect-status', (cfg.strings && cfg.strings.selectRows) || 'حداقل یک کارت قابل اتصال را انتخاب کنید.', true);
+			text('tcas-connect-status', resumed
+				? 'همهٔ کارت‌های انتخابی قبلاً متصل و ذخیره شده‌اند؛ چیزی برای به‌روزرسانی نمانده است.'
+				: ((cfg.strings && cfg.strings.selectRows) || 'حداقل یک کارت قابل اتصال را انتخاب کنید.'), true);
 			return;
 		}
 		const pairs = selected.map((entry) => entryCodes(entry)).filter((codes) => codes.local && codes.remote);
@@ -1384,10 +1521,12 @@
 			text('tcas-connect-status', 'کارت‌های انتخابی شناسهٔ کامل ندارند.', true);
 			return;
 		}
+		selected.forEach((entry) => clearTimeout(entryTimers.get(entry)));
 		const button = $('tcas-connect-start');
 		state.running = true;
 		busy(button, true, 'در حال اتصال…');
-		text('tcas-connect-status', 'در حال بررسی تازهٔ موجودی و اتصال ' + pairs.length + ' جفت…');
+		text('tcas-connect-status', 'در حال خواندن موجودی و اتصال ' + pairs.length + ' جفت…'
+			+ (resumed ? ' ' + String(resumed) + ' کارت از قبل متصل و ذخیره‌شده بود و دوباره فرستاده نشد.' : ''));
 		selected.forEach((entry) => setEntryLoading(entry, true));
 		try {
 			const job = await request('preview_start', { pairs: pairs.map((codes) => codes.local + ' - ' + codes.remote).join('\n') });
@@ -1707,12 +1846,12 @@
 		sku: $('tcas-map-sku') ? $('tcas-map-sku').value : '',
 		remote_code: $('tcas-map-code') ? $('tcas-map-code').value : ''
 	}, 'tcas-map-status'));
-	if (pairEntries().some((entry) => {
+	// هیچ خواندن خودکار موجودی‌ای در بارگذاری صفحه انجام نمی‌شود؛ فقط وضعیت ذخیره‌شده بازگردانده می‌شود.
+	pairEntries().forEach((entry) => {
 		const codes = entryCodes(entry);
-		return codes.local && codes.remote;
-	})) {
-		refreshAllCards(null, { quiet: true });
-	}
+		if (codes.local && codes.remote) restoreCard(entry);
+	});
+	updateConnectAvailability();
 	document.querySelectorAll('.tcas-sync-one').forEach((button) => button.addEventListener('click', () => simpleAction(button, 'sync_mapping', { product_id: button.dataset.productId }, 'tcas-sync-status')));
 	document.querySelectorAll('.tcas-disconnect').forEach((button) => button.addEventListener('click', () => {
 		if (!window.confirm((cfg.strings && cfg.strings.disconnect) || 'ادامه؟')) return;

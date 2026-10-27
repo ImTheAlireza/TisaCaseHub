@@ -39,11 +39,11 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 		<div class="tcas-pairs-actions">
 			<span class="tcas-muted">حداکثر <?php echo (int) TCAS_Core::MAX_CODES; ?> جفت</span>
 			<button type="button" id="tcas-select-valid" class="button">انتخاب همه</button>
-			<button type="button" id="tcas-preview-start" class="button">بررسی همه دوباره</button>
+			<button type="button" id="tcas-preview-start" class="button">بررسی شناسه‌ها (بدون اتصال)</button>
 			<button type="button" id="tcas-pair-add" class="button">افزودن جفت</button>
 		</div>
 	</div>
-	<p class="tcas-pairs-help">هر کارت را خودش بررسی می‌کند: با اسپینر، موجودی تازهٔ هر دو فروشگاه و وضعیت قطعی/نیاز به بررسی همان بالا. کادر سبز یعنی جفت قطعی؛ زرد یعنی مشکوک و نیاز به بررسی؛ قرمز یعنی یک سمت پیدا نشده یا کد ندارد. بعد از هر ویرایش، همان کارت دوباره بررسی می‌شود.</p>
+	<p class="tcas-pairs-help">هیچ موجودی‌ای تا قبل از اتصال خوانده نمی‌شود. رنگ هر کارت از روی تطبیق می‌آید: سبز = قطعی، زرد = نیاز به بررسی، قرمز = یک سمت پیدا نشده یا کد ندارد. با زدن «اتصال انتخاب‌شده‌ها» موجودی خوانده و همان کارت‌ها متصل می‌شوند؛ وضعیت هر کارت ذخیره می‌شود، پس اگر وسط کار ارتباط قطع شد، بار بعد فقط کارت‌های به‌روزنشده فرستاده می‌شوند.</p>
 	<div id="tcas-pair-entries" class="tcas-pair-entries">
 		<article class="tcas-pair-entry" data-state="idle" data-confidence="manual">
 			<button type="button" class="tcas-remove-pair" aria-label="حذف جفت" disabled>×</button>

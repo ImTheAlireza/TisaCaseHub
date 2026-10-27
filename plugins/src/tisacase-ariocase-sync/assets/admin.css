@@ -411,6 +411,8 @@
 
 .tcas-pair-entry { transition:border-color .15s ease, box-shadow .15s ease, background-color .15s ease; }
 .tcas-pair-entry.is-settled { border-color:var(--tisa-primary,#0f8a67); box-shadow:inset 3px 0 0 var(--tisa-primary,#0f8a67); }
+.tcas-pair-entry.is-ready { border-color:var(--tisa-primary,#0f8a67); border-style:solid; box-shadow:inset 3px 0 0 var(--tisa-primary-soft,#E8F0EE); }
+.tcas-pair-entry.is-saved { border-color:var(--tisa-primary,#0f8a67); background:var(--tisa-primary-soft,#E8F0EE); }
 .tcas-pair-entry.is-review { border-color:#E2C98C; box-shadow:inset 3px 0 0 #C58A19; }
 .tcas-pair-entry.is-orphan { border-color:var(--tisa-danger,#B5453A); background:var(--tisa-danger-soft,#FBECEA); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
 .tcas-pair-entry.is-failed { border-color:var(--tisa-danger,#B5453A); box-shadow:inset 3px 0 0 var(--tisa-danger,#B5453A); }
