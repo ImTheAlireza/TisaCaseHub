@@ -97,5 +97,67 @@ $result = TCAS_Matcher::match(
 );
 matcher_test( 'خروجی به ترتیب Variationهای Local مرتب است', array( 'ID:2=ID:9/2', 'ID:1=ID:9/1' ) === matcher_refs( $result ) );
 
+
+// ---- تشخیص دقیق دلیل رد شدن هر Variation (فلگ‌گذاری موارد مشکل‌دار) ----
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', 'X' ), matcher_variation( 'ID:1', 'Blue', 'Y' ) ),
+	array( matcher_variation( 'ID:9/1', 'Red', 'X' ), matcher_variation( 'ID:9/2', 'Blue', 'Y' ) )
+);
+$issue = $result['ambiguous'][0];
+matcher_test( 'مرجع تکراری در همان فروشگاه با دلیل و شمارش تکرار علامت می‌خورد', 'duplicate_reference' === $issue['reason'] && 2 === $issue['duplicate_count'] && 1 === count( $issue['twins'] ) && 'Blue' === $issue['twins'][0]['label'] && 'ID:1' === $issue['twins'][0]['reference'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', 'X' ) ),
+	array( matcher_variation( 'DUP', 'Red', 'X' ), matcher_variation( 'DUP', 'Blue', 'Y' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'همتای دارای مرجع تکراری به‌عنوان کاندید غیرقابل‌اتصال نشان داده می‌شود', 'counterpart_unusable' === $issue['reason'] && 1 === $issue['candidate_count'] && 'sku' === $issue['candidates'][0]['key'] && empty( $issue['candidates'][0]['usable'] ) && 'DUP' === $issue['candidates'][0]['reference'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Samsung A56', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'A56', 'A' ), matcher_variation( 'ID:9/2', 'Samsung A56', 'B' ) )
+);
+$issue = $result['ambiguous'][0];
+matcher_test( 'چند گزینهٔ محتمل با دلیل مشخص و فهرست کاندیدها برمی‌گردد', 'multiple_candidates' === $issue['reason'] && 2 === $issue['candidate_count'] && 2 === $issue['usable_count'] && 2 === count( $issue['candidates'] ) && 'label' === $issue['candidates'][0]['key'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'کاندیدهای ابهام مرجع دقیق و فروشگاه خودشان را دارند', 'ariocase' === $issue['candidates'][0]['shop'] && in_array( $issue['candidates'][0]['reference'], array( 'ID:9/1', 'ID:9/2' ), true ) );
+matcher_test( 'کلید مشترک بدون گزینهٔ چندگانهٔ محلی هم فلگ می‌شود', 'shared_key' === $result['ambiguous'][1]['reason'] && 1 === $result['ambiguous'][1]['usable_count'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'iPhone 13', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'iPhone 14', '' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'Variation بدون همتا دلیل «بدون کاندید» و فهرست خالی دارد', 'no_candidate' === $issue['reason'] && 0 === $issue['candidate_count'] && array() === $issue['candidates'], json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'Red', '' ) ),
+	array( matcher_variation( 'DUP', 'Red', '' ), matcher_variation( 'DUP', 'Blue', '' ) )
+);
+$issue = $result['unmatched'][0];
+matcher_test( 'همتای دارای مرجع تکراری به‌عنوان «غیرقابل‌اتصال» علامت می‌خورد', 'counterpart_unusable' === $issue['reason'] && $issue['candidate_count'] > 0 && 0 === $issue['usable_count'] && empty( $issue['candidates'][0]['usable'] ), json_encode( $issue, JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( '', 'Same', 'X' ) ),
+	array( matcher_variation( 'ID:9/1', 'Same', 'X' ) )
+);
+matcher_test( 'Variation بدون مرجع دقیق دلیل «مرجع ندارد» می‌گیرد', 'missing_reference' === $result['unmatched'][0]['reason'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra', 'ABC-1' ) ),
+	array( matcher_variation( 'ID:9/1', 's25ultra', 'ABC-1' ) )
+);
+matcher_test( 'تطبیق SKU با اطمینان کامل و بدون فلگ برمی‌گردد', 'sku' === $result['matches'][0]['matched_by'] && 'exact' === $result['matches'][0]['confidence'] && 1 === $result['summary']['exact'] && 0 === $result['summary']['fuzzy'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra', '' ) ),
+	array( matcher_variation( 'ID:9/1', 's25ultra', '' ) )
+);
+matcher_test( 'تطبیق از روی Label با فلگ بررسی و شمارش جداگانه برمی‌گردد', 'label' === $result['matches'][0]['matched_by'] && 'fuzzy' === $result['matches'][0]['confidence'] && 1 === $result['summary']['fuzzy'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'S25 Ultra black', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'black s25ultra', '' ) )
+);
+matcher_test( 'تطبیق از روی Token هم Fuzzy و قابل‌بررسی علامت می‌خورد', 'tokens' === $result['matches'][0]['matched_by'] && 'fuzzy' === $result['matches'][0]['confidence'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

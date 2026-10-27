@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش فلگ موارد مشکل‌دار — همگام‌سازی موجودی</title>
+<style>
+body{margin:0;padding:16px;background:#f0f0f1;font-family:Tahoma,Arial,sans-serif;}
+.tcas-wrap {
+  --tcas-primary:var(--tisa-primary,#0f8a67);
+  --tcas-ink:var(--tisa-ink,#1F2A2E);
+  --tcas-muted:var(--tisa-muted,#77828A);
+  --tcas-border:var(--tisa-border,#E3E1DA);
+  --tcas-soft:var(--tisa-surface-2,#FAFAF8);
+  max-width:1240px;
+  margin:16px auto;
+  color:var(--tcas-ink);
+  font-family:var(--tisa-font,Tahoma,Arial,sans-serif);
+}
+.tcas-wrap * { box-sizing:border-box; }
+.tcas-wrap [hidden] { display:none!important; }
+
+.tcas-hero {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  min-height:68px;
+  padding:13px 17px;
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:var(--tisa-r,14px);
+  background:linear-gradient(120deg,var(--tisa-primary-deep,#0A5F52),var(--tisa-primary-bright,#17A088));
+  color:var(--tisa-surface,#fff);
+  box-shadow:0 5px 18px rgba(15,92,70,.12);
+}
+.tcas-brand,.tcas-brand>div { display:flex; align-items:center; }
+.tcas-brand { gap:11px; }
+.tcas-brand>div { align-items:flex-start; flex-direction:column; gap:2px; }
+.tcas-brand-mark {
+  display:grid;
+  place-items:center;
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  border:1px solid rgba(255,255,255,.24);
+  border-radius:var(--tisa-r-sm,10px);
+  background:rgba(255,255,255,.13);
+  direction:ltr;
+  font-size:var(--tisa-fs-control,13px);
+  font-weight:800;
+  letter-spacing:.02em;
+}
+.tcas-hero h1 {
+  margin:0;
+  color:var(--tisa-surface,#fff);
+  font-size:var(--tisa-fs-h1,18px);
+  line-height:1.45;
+  font-weight:700;
+}
+.tcas-hero p {
+  margin:0;
+  direction:ltr;
+  font-size:var(--tisa-fs-tiny,11px);
+  line-height:1.4;
+  opacity:.76;
+}
+.tcas-hero-badges { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:5px; }
+.tcas-badge {
+  display:inline-flex;
+  align-items:center;
+  min-height:25px;
+  padding:3px 8px;
+  border:1px solid rgba(255,255,255,.22);
+  border-radius:var(--tisa-r-pill,999px);
+  background:rgba(255,255,255,.11);
+  color:inherit;
+  font-size:var(--tisa-fs-tiny,11px);
+  white-space:nowrap;
+}
+.tcas-badge.is-ok { background:var(--tisa-success-soft,#E8F5E9); color:var(--tisa-success,#1A7F37); border-color:transparent; }
+.tcas-badge.is-warn { background:var(--tisa-warning-soft,#FFF4D6); color:var(--tisa-warning,#8A6116); border-color:transparent; }
+.tcas-badge.is-bad { background:var(--tisa-danger-soft,#FBECEA); color:var(--tisa-danger,#B5453A); border-color:transparent; }
+
+.tcas-tabs {
+  display:flex;
+  gap:4px;
+  width:max-content;
+  max-width:100%;
+  margin-top:12px;
+  padding:4px;
+  overflow:auto;
+  border:1px solid var(--tcas-border);
+  border-radius:var(--tisa-r-sm,10px);
+  background:var(--tisa-surface-3,#F6F5F1);
+}
+.tcas-tabs a {
+  padding:7px 14px;
+  border-radius:var(--tisa-r-xs,8px);
+  color:var(--tcas-muted);
+  text-decoration:none;
+  font-size:var(--tisa-fs-control,13px);
+  font-weight:600;
+  white-space:nowrap;
+}
+.tcas-tabs a:hover { color:var(--tcas-primary); }
+.tcas-tabs a.is-active { background:var(--tisa-surface,#fff); color:var(--tcas-primary); box-shadow:0 1px 5px rgba(30,65,52,.1); }
+.tcas-main { display:grid; gap:12px; margin-top:12px; }
+#tcas-settings-form { display:grid; gap:12px; }
+
+.tcas-card {
+  display:block;
+  margin:0;
+  padding:16px;
+  border:1px solid var(--tcas-border);
+  border-radius:var(--tisa-r-sm,10px);
+  background:var(--tisa-surface,#fff);
+  box-shadow:0 2px 9px rgba(26,55,45,.03);
+}
+.tcas-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+.tcas-card-head>div { display:flex; align-items:center; gap:8px; min-width:0; }
+.tcas-card h2 { display:inline; margin:0; font-size:var(--tisa-fs-h2,16px); line-height:1.5; font-weight:700; }
+.tcas-step {
+  display:inline-grid;
+  place-items:center;
+  width:26px;
+  height:26px;
+  flex:0 0 26px;
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tisa-primary-soft,#E8F0EE);
+  color:var(--tcas-primary);
+  font-size:var(--tisa-fs-meta,12.5px);
+  font-weight:700;
+}
+.tcas-muted,.tcas-help { color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-label { display:block; margin:0 0 5px; color:var(--tcas-ink); font-size:var(--tisa-fs-control,13px); font-weight:600; }
+.tcas-label small { color:var(--tcas-muted); font-weight:400; }
+.tcas-textarea { width:100%; max-width:100%; min-height:112px; padding:10px 11px; line-height:1.75; resize:vertical; }
+.tcas-code-input { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:var(--tisa-fs-meta,12.5px); }
+
+.tcas-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.tcas-btn-primary.button.button-primary {
+  min-height:34px;
+  height:auto;
+  padding:5px 15px;
+  border:0;
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tcas-primary);
+  box-shadow:none;
+  line-height:1.6;
+}
+.tcas-btn-primary.button.button-primary:hover,.tcas-btn-primary.button.button-primary:focus { background:var(--tisa-primary-deep,#0A5F52); }
+.tcas-wrap .button { min-height:32px; padding:3px 11px; border-radius:var(--tisa-r-xs,8px); line-height:1.6; }
+.tcas-status { color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-status:empty,.tcas-test-result:empty { display:none; }
+.tcas-status.is-error,.tcas-error-text { color:var(--tisa-danger,#B5453A)!important; }
+.tcas-status.is-success,.tcas-success-text { color:var(--tisa-success,#1A7F37); }
+.tcas-warning-text { color:var(--tisa-warning,#8A6116); }
+.tcas-progress { display:flex; align-items:center; gap:9px; margin-top:10px; }
+.tcas-progress progress { width:100%; height:7px; accent-color:var(--tcas-primary); }
+.tcas-progress span { min-width:38px; direction:ltr; text-align:left; font-size:var(--tisa-fs-tiny,11px); }
+
+.tcas-table-wrap { max-width:100%; overflow:auto; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); }
+.tcas-table { min-width:760px; margin:0; border:0; border-radius:0; box-shadow:none; }
+.tcas-table th,.tcas-table td { padding:8px 10px; font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-table th { background:var(--tcas-soft); color:var(--tcas-muted); font-weight:600; }
+.tcas-table td { vertical-align:middle; }
+.tcas-table td small { display:block; margin-top:3px; color:var(--tcas-muted); line-height:1.55; }
+.tcas-table .tcas-check-col { width:42px; text-align:center; }
+.tcas-code-cell { direction:rtl; text-align:right; }
+.tcas-code-cell code,.tcas-table code { direction:ltr; unicode-bidi:embed; overflow-wrap:anywhere; }
+.tcas-code-cell code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+.tcas-result-connected { opacity:.66; }
+.tcas-result-error { background:var(--tisa-danger-soft,#FBECEA); }
+.tcas-results { display:grid; gap:6px; margin-top:10px; }
+.tcas-results:empty { display:none; }
+.tcas-result-card {
+  display:flex;
+  align-items:center;
+  flex-wrap:wrap;
+  gap:8px;
+  padding:8px 10px;
+  border-right:3px solid var(--tcas-muted);
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tcas-soft);
+  font-size:var(--tisa-fs-meta,12.5px);
+}
+.tcas-result-card.is-success { border-right-color:var(--tisa-success,#1A7F37); }
+.tcas-result-card.is-error { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-result-card a { margin-right:auto; }
+
+.tcas-inline-form { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; }
+.tcas-inline-form label { display:grid; flex:0 1 220px; gap:5px; color:var(--tcas-ink); font-size:var(--tisa-fs-meta,12.5px); font-weight:600; }
+.tcas-inline-form .tcas-grow { flex:1 1 340px; }
+.tcas-inline-form input { width:100%; min-width:0; direction:ltr; }
+.tcas-inline-form .button { flex:0 0 auto; }
+.tcas-form-grid,.tcas-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 16px; }
+.tcas-form-grid label,.tcas-settings-grid label { min-width:0; }
+.tcas-form-grid input,.tcas-form-grid select,.tcas-settings-grid select { width:100%; max-width:100%; }
+.tcas-span-2,.tcas-check-line { grid-column:span 2; }
+.tcas-check-line { display:flex; align-items:center; justify-self:start; gap:7px; min-height:34px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-check-line input[type=checkbox],.tcas-switch-row input[type=checkbox],.tcas-pair-select input[type=checkbox] { width:16px; min-width:16px; height:16px; min-height:16px; flex:0 0 16px; margin:0; padding:0; }
+.tcas-switch-row {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  min-height:43px;
+  margin:0;
+  padding:9px 10px;
+  border:1px solid var(--tcas-border);
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tcas-soft);
+}
+.tcas-switch-row input { margin:0; }
+.tcas-switch-row span { display:grid; gap:2px; }
+.tcas-switch-row small { color:var(--tcas-muted); }
+.tcas-advanced { padding-top:13px; padding-bottom:13px; }
+.tcas-advanced summary { display:flex; align-items:center; justify-content:space-between; gap:12px; cursor:pointer; }
+.tcas-advanced summary span { color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); font-weight:400; }
+.tcas-advanced[open] summary { margin-bottom:14px; }
+.tcas-sticky-actions {
+  position:sticky;
+  bottom:8px;
+  z-index:5;
+  display:flex;
+  justify-content:flex-end;
+  padding:8px;
+  border:1px solid var(--tcas-border);
+  border-radius:var(--tisa-r-xs,8px);
+  background:rgba(255,255,255,.94);
+  backdrop-filter:blur(7px);
+}
+.tcas-test-result { margin-top:10px; }
+.tcas-json-preview {
+  max-height:150px;
+  margin:7px 0 0;
+  padding:9px 10px;
+  overflow:auto;
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tisa-ink,#1F2A2E);
+  color:var(--tisa-surface,#fff);
+  direction:ltr;
+  text-align:left;
+  font-size:var(--tisa-fs-tiny,11px);
+}
+.tcas-tag,.tcas-count {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-height:21px;
+  padding:2px 7px;
+  border-radius:var(--tisa-r-pill,999px);
+  background:var(--tisa-surface-3,#F6F5F1);
+  color:var(--tcas-muted);
+  font-size:var(--tisa-fs-tiny,11px);
+  font-weight:500;
+  white-space:nowrap;
+}
+.tcas-count { min-width:25px; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tcas-primary); }
+.tcas-empty { padding:22px; border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); color:var(--tcas-muted); text-align:center; }
+.tcas-row-actions { white-space:nowrap; }
+.tcas-row-actions .button { margin-left:4px; }
+.tcas-disconnect { padding:4px; border:0; background:none; color:var(--tisa-danger,#B5453A); cursor:pointer; }
+
+.tcas-wrap input[type=text],.tcas-wrap input[type=url],.tcas-wrap input[type=password],.tcas-wrap input[type=number],.tcas-wrap select,.tcas-wrap textarea {
+  min-height:34px;
+  padding:5px 8px;
+  border:1px solid var(--tisa-border-strong,#C9C7C0);
+  border-radius:var(--tisa-r-xs,8px);
+  background:var(--tisa-surface,#fff);
+  color:var(--tcas-ink);
+  box-shadow:none;
+}
+.tcas-wrap input:focus,.tcas-wrap select:focus,.tcas-wrap textarea:focus { border-color:var(--tcas-primary); box-shadow:0 0 0 1px var(--tcas-primary); }
+.tcas-wrap a:focus-visible,.tcas-wrap button:focus-visible,.tcas-wrap summary:focus-visible { outline:2px solid var(--tcas-primary); outline-offset:2px; }
+
+.tcas-converter-card { border-color:var(--tisa-primary-soft,#E8F0EE); }
+.tcas-converter-flow { display:grid; gap:10px; }
+.tcas-converter-source { display:grid; gap:6px; min-width:0; }
+.tcas-converter-input-row,.tcas-converter-reference { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; align-items:stretch; }
+.tcas-converter-input-row input,.tcas-converter-reference input { width:100%; min-width:0; }
+.tcas-converter-input-row .button,.tcas-converter-reference .button { min-width:64px; min-height:34px; }
+.tcas-converter-result { display:grid; gap:10px; min-width:0; padding:12px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-converter-result-meta { display:flex; align-items:center; justify-content:space-between; gap:12px; min-width:0; }
+.tcas-link-variation { display:grid; gap:5px; }
+.tcas-link-variation select { width:100%; min-width:0; }
+#tcas-link-product { min-width:0; overflow:hidden; color:var(--tcas-muted); text-overflow:ellipsis; white-space:nowrap; }
+#tcas-link-result[data-shop] { border-color:var(--tisa-primary-soft,#E8F0EE); }
+#tcas-link-result[data-shop] input { border-color:var(--tcas-primary); color:var(--tisa-primary-deep,#0A5F52); font-weight:700; }
+#tcas-link-result[data-shop=tisacase] .tcas-shop-label { color:var(--tisa-primary-deep,#0A5F52); }
+#tcas-link-result[data-shop=ariocase] .tcas-shop-label { color:var(--tisa-info,#246B8E); }
+
+.tcas-smart-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto; gap:10px; align-items:end; }
+.tcas-smart-actions { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.tcas-smart-card .tcas-status { margin-top:9px; }
+.tcas-smart-issues { display:grid; gap:9px; margin-top:12px; padding:12px; border:1px solid var(--tisa-warning-soft,#F4E4C6); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-warning-soft,#FFF8E8); }
+.tcas-smart-issues[hidden] { display:none; }
+.tcas-smart-issues-head { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.tcas-smart-issues-head h3 { margin:0; font-size:var(--tisa-fs-meta,13px); }
+.tcas-smart-issues-count { flex:0 0 auto; padding:3px 9px; border-radius:var(--tisa-r-pill,999px); background:#F4E4C6; color:#76520B; font-size:var(--tisa-fs-tiny,11px); font-weight:700; }
+.tcas-smart-issues-help { margin:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
+.tcas-smart-issue-filters { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.tcas-smart-issue-filters[hidden] { display:none; }
+.tcas-smart-issue-filter { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; border-color:var(--tisa-warning-soft,#F4E4C6) !important; background:var(--tisa-surface,#fff) !important; color:#76520B !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.4 !important; }
+.tcas-smart-issue-filter.is-active { border-color:#C58A19 !important; background:#F4E4C6 !important; color:#5A3D06 !important; font-weight:700; }
+.tcas-smart-issue-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.tcas-smart-issue { display:grid; gap:5px; min-width:0; padding:9px; border:1px solid var(--tcas-border); border-right:3px solid #C58A19; border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-smart-issue[hidden] { display:none; }
+.tcas-smart-issue-unmatched { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-counterpart_unusable,.tcas-smart-issue-missing_reference { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-duplicate_reference { border-right-color:#B5453A; }
+.tcas-smart-issue-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.tcas-smart-issue-flags { display:flex; align-items:center; flex-wrap:wrap; gap:4px; min-width:0; }
+.tcas-smart-issue-flag { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border-radius:var(--tisa-r-pill,999px); background:#FFF1CE; color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
+.tcas-smart-issue-unmatched .tcas-smart-issue-flag { background:var(--tisa-danger-soft,#FBECEA); color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-flag-reason { background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-smart-issue-unmatched .tcas-smart-issue-flag-reason,.tcas-smart-issue-duplicate_reference .tcas-smart-issue-flag-reason,.tcas-smart-issue-counterpart_unusable .tcas-smart-issue-flag-reason,.tcas-smart-issue-missing_reference .tcas-smart-issue-flag-reason { background:#F4E4C6; color:#76520B; }
+.tcas-smart-issue-shop { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); }
+.tcas-smart-issue-label { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12px); }
+.tcas-smart-issue-reference { min-width:0; overflow-wrap:anywhere; direction:ltr; text-align:left; }
+.tcas-smart-issue-reason { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; }
+.tcas-smart-issue-twins,.tcas-smart-issue-candidates { display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; }
+.tcas-smart-issue-twins-title,.tcas-smart-issue-candidates-title { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); font-weight:600; }
+.tcas-smart-issue-twin,.tcas-smart-issue-candidate { display:inline-flex; align-items:center; min-width:0; max-width:100%; padding:2px 7px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-pill,999px); background:var(--tcas-soft); color:var(--tcas-ink); font-size:var(--tisa-fs-tiny,10px); overflow-wrap:anywhere; }
+.tcas-smart-issue-candidate { direction:rtl; unicode-bidi:plaintext; }
+.tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
+.tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
+.tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
+.tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }
+.tcas-fresh-product-summary::before,.tcas-linked-group-summary::before { content:'＋'; display:grid; place-items:center; flex:0 0 22px; width:22px; height:22px; border-radius:50%; background:var(--tisa-primary-soft,#E8F0EE); color:var(--tcas-primary); font-weight:700; }
+.tcas-fresh-product-group[open] > .tcas-fresh-product-summary::before,.tcas-linked-group[open] > .tcas-linked-group-summary::before { content:'−'; }
+.tcas-fresh-product-names,.tcas-linked-group-title { display:flex; align-items:center; flex-wrap:wrap; gap:8px; min-width:0; flex:1; }
+.tcas-fresh-product-names strong,.tcas-linked-group-title strong { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
+.tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 10px 10px; }
+.tcas-pair-entries-grouped .tcas-pair-entry { padding:10px; }
+.tcas-linked-groups { display:grid; gap:10px; }
+.tcas-linked-variation-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:9px; padding:0 10px 10px; }
+.tcas-linked-variation-card { display:grid; align-content:start; gap:8px; min-width:0; padding:10px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-linked-variation-heading { display:grid; gap:4px; min-width:0; }
+.tcas-linked-variation-heading a { color:var(--tcas-text); font-size:var(--tisa-fs-meta,12.5px); font-weight:700; text-decoration:none; overflow-wrap:anywhere; }
+.tcas-linked-variation-heading a:hover { color:var(--tcas-primary); }
+.tcas-linked-codes { display:grid; gap:6px; min-width:0; }
+.tcas-linked-codes > div { display:grid; grid-template-columns:auto minmax(0,1fr); align-items:center; gap:4px 7px; min-width:0; }
+.tcas-linked-codes > div > span { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-codes code { min-width:0; overflow-wrap:anywhere; text-align:left; }
+.tcas-linked-codes small { grid-column:2; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-variation-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px; padding-top:7px; border-top:1px solid var(--tcas-border); }
+.tcas-linked-variation-foot > small { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-actions { display:flex; align-items:center; gap:6px; }
+.tcas-linked-actions .button { min-height:27px; padding:1px 8px; }
+.tcas-connected-groups-link { margin-inline-start:6px; color:var(--tcas-primary); font-weight:700; }
+
+.tcas-pair-entries { display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:10px; }
+.tcas-pair-entry { position:relative; min-width:0; padding:13px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); }
+.tcas-remove-pair {
+  position:absolute;
+  top:-7px;
+  left:-7px;
+  display:grid;
+  place-items:center;
+  width:23px;
+  height:23px;
+  padding:0;
+  border:1px solid var(--tcas-border);
+  border-radius:var(--tisa-r-pill,999px);
+  background:var(--tisa-surface,#fff);
+  color:var(--tcas-muted);
+  cursor:pointer;
+  line-height:1;
+}
+.tcas-remove-pair:hover { background:var(--tisa-danger-soft,#FBECEA); color:var(--tisa-danger,#B5453A); }
+.tcas-remove-pair:disabled { visibility:hidden; }
+.tcas-pair-fields { display:grid; grid-template-columns:minmax(0,1fr) 24px minmax(0,1fr); gap:8px; align-items:end; }
+.tcas-shop-field { display:grid; gap:5px; min-width:0; }
+.tcas-shop-label { display:flex; align-items:center; gap:4px; min-height:18px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); font-weight:600; }
+.tcas-shop-label bdi { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); font-weight:400; }
+.tcas-shop-local .tcas-shop-label { color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-shop-remote .tcas-shop-label { color:var(--tisa-info,#246B8E); }
+.tcas-shop-field input { width:100%; min-width:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-weight:600; }
+.tcas-shop-field input[readonly] { background:var(--tcas-soft); }
+.tcas-variation-title { display:block; min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); font-weight:400; line-height:1.55; overflow-wrap:anywhere; }
+.tcas-pair-link { display:grid; place-items:center; width:24px; height:34px; color:var(--tcas-muted); font-weight:700; }
+
+.tcas-pair-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.tcas-pair-card { min-width:0; padding:13px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-pair-card-foot { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-top:10px; padding-top:9px; border-top:1px solid var(--tcas-border); }
+.tcas-pair-card-actions { display:flex; align-items:center; gap:7px; }
+.tcas-pair-card-actions .button { min-height:28px; padding:2px 9px; }
+.tcas-pair-product { display:block; margin-top:7px; overflow:hidden; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); text-decoration:none; text-overflow:ellipsis; white-space:nowrap; }
+.tcas-pair-product:hover { color:var(--tcas-primary); }
+.tcas-stock-pill { display:inline-flex; align-items:center; min-height:23px; padding:2px 8px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); white-space:nowrap; }
+.tcas-card-link { color:var(--tcas-primary); font-size:var(--tisa-fs-meta,12.5px); text-decoration:none; }
+
+.tcas-preview-list { display:grid; gap:10px; }
+.tcas-preview-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.tcas-pair-select { display:flex; align-items:center; gap:5px; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); cursor:pointer; }
+.tcas-pair-select input { margin:0; }
+.tcas-preview-message { margin:7px 0 0; color:var(--tcas-muted); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
+.tcas-preview-card.tcas-result-error { border-color:var(--tisa-danger-soft,#FBECEA); }
+
+@media(max-width:900px) {
+  .tcas-hero { align-items:flex-start; }
+  .tcas-form-grid,.tcas-settings-grid { grid-template-columns:1fr; }
+  .tcas-span-2,.tcas-check-line { grid-column:span 1; }
+  .tcas-card-head { align-items:flex-start; }
+  .tcas-smart-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .tcas-smart-actions { grid-column:1/-1; }
+  .tcas-smart-issue-list { grid-template-columns:minmax(0,1fr); }
+  .tcas-pair-entries-grouped,.tcas-linked-variation-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:600px) {
+  .tcas-wrap { margin-top:10px; }
+  .tcas-hero { flex-direction:column; gap:10px; padding:12px; }
+  .tcas-hero-badges { justify-content:flex-start; }
+  .tcas-tabs { width:100%; }
+  .tcas-tabs a { flex:1 0 auto; padding:7px 10px; text-align:center; }
+  .tcas-card { padding:12px; }
+  .tcas-card-head { flex-wrap:wrap; }
+  .tcas-inline-form { align-items:stretch; }
+  .tcas-inline-form label,.tcas-inline-form .tcas-grow { flex:1 1 100%; }
+  .tcas-inline-form .button { align-self:flex-start; }
+  .tcas-advanced summary { align-items:flex-start; flex-direction:column; gap:3px; }
+  .tcas-converter-result-meta { flex-wrap:wrap; }
+  .tcas-pair-entries,.tcas-pair-list { grid-template-columns:minmax(0,1fr); }
+  .tcas-pair-entries-grouped,.tcas-linked-variation-grid { grid-template-columns:minmax(0,1fr); }
+  .tcas-smart-grid { grid-template-columns:minmax(0,1fr); }
+  .tcas-smart-actions { grid-column:auto; }
+}
+@media(max-width:430px) {
+  .tcas-pair-fields { grid-template-columns:1fr; }
+  .tcas-pair-link { display:none; }
+  .tcas-converter-input-row,.tcas-converter-reference { grid-template-columns:1fr; }
+  .tcas-converter-input-row .button,.tcas-converter-reference .button { justify-self:start; }
+}
+.tcas-partner-select { display:flex; align-items:center; gap:10px; margin:14px 0; }
+.tcas-partner-select select { min-width:220px; }
+
+</style>
+</head>
+<body>
+<div class="wrap tisa-wrap tcas-wrap" dir="rtl">
+  <header class="tcas-hero"><div class="tcas-brand"><span class="tcas-brand-mark" aria-hidden="true">↔</span><div><h1>همگام‌سازی موجودی با همکار</h1><p>TisaCase ↔ ArioCase</p></div></div><div class="tcas-hero-badges"><span class="tcas-badge is-ok">پیش‌نمایش ایستا · دادهٔ نمونه</span><span class="tcas-badge">v1.14.0</span></div></header>
+  <main class="tcas-main">
+    <section class="tcas-card tcas-smart-card">
+      <div class="tcas-card-head"><div><span class="tcas-step">⌁</span><h2>تطبیق خودکار Variationها</h2></div><span class="tcas-tag">مرجع دقیق</span></div>
+      <div class="tcas-smart-grid"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4820" readonly></label><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130" readonly></label><div class="tcas-smart-actions"><button type="button" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button></div></div>
+      <div class="tcas-status is-success">TisaCase: 41 · ArioCase: 41 — 38 جفت آماده شد (38/38). 4 جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد. 6 مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد. پیش‌نمایش را بزنید.</div>
+      <section class="tcas-smart-issues" aria-live="polite">
+        <div class="tcas-smart-issues-head"><h3>موارد نیازمند بررسی</h3><span class="tcas-smart-issues-count">6 مورد</span></div>
+        <p class="tcas-smart-issues-help">هر Variation رد‌شده با دلیل دقیق مشکلش علامت خورده است: مرجع تکراری، چند گزینهٔ محتمل، کلید مشترک، همتای نامعتبر، نبود مرجع یا نبود همتا. با «بررسی دستی» یک کارت جفت با همان مرجع ساخته می‌شود تا سمت مقابل را خودتان کامل کنید.</p>
+        <div class="tcas-smart-issue-filters" role="group" aria-label="فیلتر موارد نیازمند بررسی"><button type="button" class="button tcas-smart-issue-filter is-active" data-filter="all" aria-pressed="true">همه 6</button><button type="button" class="button tcas-smart-issue-filter" data-filter="ambiguous" aria-pressed="false">مبهم 3</button><button type="button" class="button tcas-smart-issue-filter" data-filter="unmatched" aria-pressed="false">بدون تطبیق 3</button></div>
+        <div class="tcas-smart-issue-list" role="list">
+          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-duplicate_reference" data-kind="ambiguous" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">مرجع تکراری</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
+            <strong class="tcas-smart-issue-label">قاب سیلیکونی S25 Ultra مشکی</strong>
+            <code class="tcas-smart-issue-reference">ID:4821</code>
+            <small class="tcas-smart-issue-reason">مرجع این Variation در همین فروشگاه 2 بار تکرار شده است؛ تا یکتاشدن مرجع، جفت خودکار ساخته نمی‌شود.</small>
+            <div class="tcas-smart-issue-twins"><span class="tcas-smart-issue-twins-title">همین مرجع در همین فروشگاه:</span><span class="tcas-smart-issue-twin">قاب سیلیکونی S25 Ultra آبی · ID:4821</span></div>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate is-unusable">ArioCase · S25 Ultra · مشکی · ID:9130/4412 · SKU · غیرقابل‌اتصال</span></div>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-multiple_candidates" data-kind="ambiguous" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">چند گزینه</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
+            <strong class="tcas-smart-issue-label">قاب مگ‌سیف Samsung A56</strong>
+            <code class="tcas-smart-issue-reference">ID:4827</code>
+            <small class="tcas-smart-issue-reason">2 Variation محتمل در سمت مقابل پیدا شد؛ انتخاب خودکار دلخواه انجام نمی‌شود.</small>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (2):</span><span class="tcas-smart-issue-candidate">ArioCase · A56 · ID:9131/4501 · برچسب</span><span class="tcas-smart-issue-candidate">ArioCase · A56 Plus · ID:9131/4502 · برچسب</span></div>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-ambiguous tcas-smart-issue-shared_key" data-kind="ambiguous" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">مبهم</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">کلید مشترک</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
+            <strong class="tcas-smart-issue-label">A55 5G</strong>
+            <code class="tcas-smart-issue-reference">ID:9132/4610</code>
+            <small class="tcas-smart-issue-reason">کلید تطبیق (SKU یا برچسب) با چند Variation دیگر مشترک است؛ اتصال خودکار امن نیست.</small>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate">TisaCase · قاب A55 · ID:4839 · برچسب</span></div>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-counterpart_unusable" data-kind="unmatched" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">همتای نامعتبر</span></span><span class="tcas-smart-issue-shop">TisaCase</span></div>
+            <strong class="tcas-smart-issue-label">قاب کریستالی iPhone 15 Pro</strong>
+            <code class="tcas-smart-issue-reference">ID:4844</code>
+            <small class="tcas-smart-issue-reason">همتای محتمل پیدا شد، اما مرجع Variation مقابل تکراری یا خالی است و قابل اتصال نیست.</small>
+            <div class="tcas-smart-issue-candidates"><span class="tcas-smart-issue-candidates-title">گزینه‌های محتمل (1):</span><span class="tcas-smart-issue-candidate is-unusable">ArioCase · iPhone 15 Pro · بدون مرجع · برچسب · غیرقابل‌اتصال</span></div>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-no_candidate" data-kind="unmatched" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">بدون همتا</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
+            <strong class="tcas-smart-issue-label">Samsung Galaxy Note 20</strong>
+            <code class="tcas-smart-issue-reference">ID:9133/4702</code>
+            <small class="tcas-smart-issue-reason">هیچ Variation هم‌ارزی در سمت مقابل پیدا نشد (نه با SKU و نه با برچسب)؛ اگر این مدل در فروشگاه مقابل وجود ندارد، این مورد طبیعی است.</small>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+          <article class="tcas-smart-issue tcas-smart-issue-unmatched tcas-smart-issue-missing_reference" data-kind="unmatched" role="listitem">
+            <div class="tcas-smart-issue-header"><span class="tcas-smart-issue-flags"><span class="tcas-smart-issue-flag tcas-smart-issue-flag-kind">بدون تطبیق</span><span class="tcas-smart-issue-flag tcas-smart-issue-flag-reason">بدون مرجع</span></span><span class="tcas-smart-issue-shop">ArioCase</span></div>
+            <strong class="tcas-smart-issue-label">قاب چرمی Pixel 9</strong>
+            <code class="tcas-smart-issue-reference">مرجع ثبت نشده</code>
+            <small class="tcas-smart-issue-reason">این Variation مرجع SKU/ID ندارد؛ پیش از اتصال باید مرجع بگیرد.</small>
+            <button type="button" class="button tcas-smart-issue-review">بررسی دستی</button>
+          </article>
+        </div>
+      </section>
+    </section>
+    <section class="tcas-card">
+      <div class="tcas-card-head"><div><span class="tcas-step">＋</span><h2>جفت‌های تازه</h2></div><span class="tcas-muted">حداکثر 50 جفت</span></div>
+      <details class="tcas-fresh-product-group" open><summary class="tcas-fresh-product-summary"><span class="tcas-fresh-product-names"><strong class="tcas-shop-local-text">TisaCase · قاب گوشی سامسونگ</strong><span class="tcas-pair-link">↔</span><strong class="tcas-shop-remote-text">ArioCase · Samsung cases</strong></span><span class="tcas-fresh-product-count">2 Variation</span></summary><div class="tcas-pair-entries tcas-pair-entries-grouped">
+        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <span class="tcas-pair-flag" title="این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.">بررسی · تطبیق از برچسب</span>
+          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4822" readonly><small class="tcas-variation-title">S25 Ultra مشکی</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130/4410" readonly><small class="tcas-variation-title">S25 Ultra Black</small></label></div>
+        </article>
+        <article class="tcas-pair-entry"><button type="button" class="tcas-remove-pair" aria-label="حذف جفت">×</button>
+          <div class="tcas-pair-fields"><label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input type="text" dir="ltr" value="ID:4823" readonly><small class="tcas-variation-title">S25 Ultra آبی</small></label><span class="tcas-pair-link" aria-hidden="true">+</span><label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label">ArioCase</span><input type="text" dir="ltr" value="ID:9130/4411" readonly><small class="tcas-variation-title">S25 Ultra Blue</small></label></div>
+        </article>
+      </div></details>
+    </section>
+  </main>
+</div>
+<script>
+(function () {
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.tcas-smart-issue-list [role="listitem"]'));
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.tcas-smart-issue-filter'));
+  buttons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      var filter = button.dataset.filter;
+      buttons.forEach(function (item) {
+        var active = item === button;
+        item.classList.toggle('is-active', active);
+        item.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      rows.forEach(function (row) {
+        row.hidden = filter !== 'all' && row.dataset.kind !== filter;
+      });
+    });
+  });
+}());
+</script>
+</body>
+</html>

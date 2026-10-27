@@ -27,7 +27,8 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 	<div id="tcas-smart-status" class="tcas-status" role="status" aria-live="polite">موارد مبهم و بدون تطبیق وصل نمی‌شوند.</div>
 	<section id="tcas-smart-issues" class="tcas-smart-issues" aria-live="polite" hidden>
 		<div class="tcas-smart-issues-head"><h3>موارد نیازمند بررسی</h3><span id="tcas-smart-issues-count" class="tcas-smart-issues-count"></span></div>
-		<p class="tcas-smart-issues-help">این Variationها به‌دلیل ابهام یا نبود تطبیق یکتا خودکار به جفت‌ها اضافه نمی‌شوند.</p>
+		<p class="tcas-smart-issues-help">هر Variation رد‌شده با دلیل دقیق مشکلش علامت خورده است: مرجع تکراری، چند گزینهٔ محتمل، کلید مشترک، همتای نامعتبر، نبود مرجع یا نبود همتا. با «بررسی دستی» یک کارت جفت با همان مرجع ساخته می‌شود تا سمت مقابل را خودتان کامل کنید.</p>
+		<div id="tcas-smart-issue-filters" class="tcas-smart-issue-filters" role="group" aria-label="فیلتر موارد نیازمند بررسی"></div>
 		<div id="tcas-smart-issue-list" class="tcas-smart-issue-list" role="list"></div>
 	</section>
 </section>

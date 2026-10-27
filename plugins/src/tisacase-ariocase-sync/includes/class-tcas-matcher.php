@@ -116,28 +116,22 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			return $out;
 		}
 
-		private static function duplicate_references( $variations ) {
-			$counts = array();
-			foreach ( array_values( (array) $variations ) as $variation ) {
-				$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
-				if ( '' !== $reference ) {
-					$counts[ $reference ] = isset( $counts[ $reference ] ) ? $counts[ $reference ] + 1 : 1;
-				}
-			}
+		private static function duplicate_references( $variations, $counts = null ) {
+			$counts     = is_array( $counts ) ? $counts : self::reference_counts( $variations );
 			$duplicates = array();
 			foreach ( array_values( (array) $variations ) as $index => $variation ) {
 				$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
-				if ( '' !== $reference && $counts[ $reference ] > 1 ) {
+				if ( '' !== $reference && isset( $counts[ $reference ] ) && $counts[ $reference ] > 1 ) {
 					$duplicates[ $index ] = true;
 				}
 			}
 			return $duplicates;
 		}
 
-		private static function index( $variations, $duplicates ) {
+		private static function index( $variations, $duplicates, $include_duplicates = false ) {
 			$out = array();
 			foreach ( array_values( (array) $variations ) as $index => $variation ) {
-				if ( isset( $duplicates[ $index ] ) ) {
+				if ( ! $include_duplicates && isset( $duplicates[ $index ] ) ) {
 					continue;
 				}
 				foreach ( self::keys( $variation ) as $key => $score ) {
@@ -145,6 +139,133 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				}
 			}
 			return $out;
+		}
+
+		/** نوع کلیدی که تطبیق را ساخته است؛ همان امتیازهای ثابت کلاس. */
+		private static function key_type( $score ) {
+			$score = (int) $score;
+			if ( self::SCORE_SKU === $score ) {
+				return 'sku';
+			}
+			return self::SCORE_LABEL === $score ? 'label' : 'tokens';
+		}
+
+		/** تعداد Variationهایی که همین مرجع را در همین فروشگاه تکرار کرده‌اند. */
+		private static function reference_counts( $variations ) {
+			$counts = array();
+			foreach ( array_values( (array) $variations ) as $variation ) {
+				$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
+				if ( '' !== $reference ) {
+					$counts[ $reference ] = isset( $counts[ $reference ] ) ? $counts[ $reference ] + 1 : 1;
+				}
+			}
+			return $counts;
+		}
+
+		/** همتاهای همان مرجع در همان فروشگاه، برای نشان‌دادن منبع ابهام. */
+		private static function reference_twins( $variations, $index, $limit = 3 ) {
+			$self  = isset( $variations[ $index ] ) ? $variations[ $index ] : array();
+			$mine  = isset( $self['reference'] ) ? trim( (string) $self['reference'] ) : '';
+			$twins = array();
+			if ( '' === $mine ) {
+				return $twins;
+			}
+			foreach ( array_values( (array) $variations ) as $other_index => $variation ) {
+				if ( $other_index === $index || ! isset( $variation['reference'] ) || $mine !== trim( (string) $variation['reference'] ) ) {
+					continue;
+				}
+				$twins[] = array(
+					'index'     => (int) $other_index,
+					'reference' => $mine,
+					'label'     => self::label( $variation, '#' . ( $other_index + 1 ) ),
+				);
+				if ( count( $twins ) >= $limit ) {
+					break;
+				}
+			}
+			return $twins;
+		}
+
+		/**
+		 * همتاهای محتمل یک Variation در سمت مقابل، مستقل از یکتایی.
+		 * فقط برای شفاف‌سازی دلیل رد شدن است و هرگز به جفت تبدیل نمی‌شود.
+		 */
+		private static function issue_candidates( $variation, $other_shop, $other_variations, $other_index, $other_duplicates, $limit = 5 ) {
+			$found = array();
+			foreach ( self::keys( $variation ) as $key => $score ) {
+				if ( empty( $other_index[ $key ] ) ) {
+					continue;
+				}
+				foreach ( $other_index[ $key ] as $other_id => $other_score ) {
+					$other_id = (int) $other_id;
+					if ( ! isset( $other_variations[ $other_id ] ) ) {
+						continue;
+					}
+					$best = max( (int) $score, (int) $other_score );
+					if ( isset( $found[ $other_id ] ) && $found[ $other_id ]['score'] >= $best ) {
+						continue;
+					}
+					$other_reference = isset( $other_variations[ $other_id ]['reference'] ) ? trim( (string) $other_variations[ $other_id ]['reference'] ) : '';
+					$found[ $other_id ] = array(
+						'shop'      => $other_shop,
+						'index'     => $other_id,
+						'reference' => $other_reference,
+						'label'     => self::label( $other_variations[ $other_id ], '#' . ( $other_id + 1 ) ),
+						'score'     => $best,
+						'key'       => self::key_type( $best ),
+						'usable'    => '' !== $other_reference && ! isset( $other_duplicates[ $other_id ] ),
+					);
+				}
+			}
+			$candidates = array_values( $found );
+			usort( $candidates, function( $a, $b ) {
+				if ( $a['score'] === $b['score'] ) {
+					return $a['index'] <=> $b['index'];
+				}
+				return $b['score'] <=> $a['score'];
+			} );
+			$usable = 0;
+			foreach ( $candidates as $candidate ) {
+				if ( ! empty( $candidate['usable'] ) ) {
+					$usable++;
+				}
+			}
+			return array( 'total' => count( $candidates ), 'usable' => $usable, 'items' => array_slice( $candidates, 0, $limit ) );
+		}
+
+		/** ساخت یک ردیف «نیازمند بررسی» با دلیل مشخص و شواهد قابل‌دیدن. */
+		private static function issue( $shop, $variations, $index, $other_shop, $other_variations, $other_index, $other_duplicates, $counts, $possible ) {
+			$variation = $variations[ $index ];
+			$reference = isset( $variation['reference'] ) ? trim( (string) $variation['reference'] ) : '';
+			$duplicate = '' !== $reference && isset( $counts[ $reference ] ) && $counts[ $reference ] > 1;
+			$found     = self::issue_candidates( $variation, $other_shop, $other_variations, $other_index, $other_duplicates );
+			if ( '' === $reference ) {
+				$reason = 'missing_reference';
+			} elseif ( $duplicate ) {
+				$reason = 'duplicate_reference';
+			} elseif ( 0 === $found['total'] ) {
+				$reason = 'no_candidate';
+			} elseif ( 0 === $found['usable'] ) {
+				$reason = 'counterpart_unusable';
+			} elseif ( $found['usable'] > 1 ) {
+				$reason = 'multiple_candidates';
+			} elseif ( isset( $possible[ $index ] ) ) {
+				$reason = 'shared_key';
+			} else {
+				$reason = 'counterpart_unusable';
+			}
+			return array(
+				'shop'            => $shop,
+				'index'           => (int) $index,
+				'reference'       => $reference,
+				'label'           => self::label( $variation, '#' . ( $index + 1 ) ),
+				'reason'          => $reason,
+				'duplicate_count' => $duplicate ? (int) $counts[ $reference ] : 1,
+				'twins'           => $duplicate ? self::reference_twins( $variations, $index ) : array(),
+				'candidate_count' => (int) $found['total'],
+				'usable_count'    => (int) $found['usable'],
+				'candidates'      => $found['items'],
+			);
 		}
 
 		private static function label( $variation, $fallback ) {
@@ -162,6 +283,10 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			$duplicate_remote  = self::duplicate_references( $remote_variations );
 			$local_index       = self::index( $local_variations, $duplicate_local );
 			$remote_index      = self::index( $remote_variations, $duplicate_remote );
+			$local_diagnostic  = self::index( $local_variations, $duplicate_local, true );
+			$remote_diagnostic = self::index( $remote_variations, $duplicate_remote, true );
+			$local_counts      = self::reference_counts( $local_variations );
+			$remote_counts     = self::reference_counts( $remote_variations );
 			$edges             = array();
 			$possible_local    = array();
 			$possible_remote   = array();
@@ -229,6 +354,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 					'local_label'  => self::label( $local, '#' . ( $local_id + 1 ) ),
 					'remote_label' => self::label( $remote, '#' . ( $remote_id + 1 ) ),
 					'score'        => (int) $edge['score'],
+					'matched_by'   => self::key_type( $edge['score'] ),
+					'confidence'   => self::SCORE_SKU === (int) $edge['score'] ? 'exact' : 'fuzzy',
 					'local_index'  => (int) $local_id,
 					'remote_index' => (int) $remote_id,
 					'_local_index' => (int) $local_id,
@@ -250,12 +377,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_local[ $index ] ) ) {
 					continue;
 				}
-				$item = array(
-					'shop'      => 'tisacase',
-					'index'     => (int) $index,
-					'reference' => isset( $variation['reference'] ) ? (string) $variation['reference'] : '',
-					'label'     => self::label( $variation, '#' . ( $index + 1 ) ),
-				);
+				$item = self::issue( 'tisacase', $local_variations, $index, 'ariocase', $remote_variations, $remote_diagnostic, $duplicate_remote, $local_counts, $possible_local );
 				if ( isset( $duplicate_local[ $index ] ) || isset( $possible_local[ $index ] ) ) {
 					$ambiguous[] = $item;
 				} else {
@@ -266,19 +388,28 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				if ( isset( $matched_remote[ $index ] ) ) {
 					continue;
 				}
-				$item = array(
-					'shop'      => 'ariocase',
-					'index'     => (int) $index,
-					'reference' => isset( $variation['reference'] ) ? (string) $variation['reference'] : '',
-					'label'     => self::label( $variation, '#' . ( $index + 1 ) ),
-				);
+				$item = self::issue( 'ariocase', $remote_variations, $index, 'tisacase', $local_variations, $local_diagnostic, $duplicate_local, $remote_counts, $possible_remote );
 				if ( isset( $duplicate_remote[ $index ] ) || isset( $possible_remote[ $index ] ) ) {
 					$ambiguous[] = $item;
 				} else {
 					$unmatched[] = $item;
 				}
 			}
-			return array( 'matches' => $matches, 'ambiguous' => $ambiguous, 'unmatched' => $unmatched );
+			$exact  = 0;
+			$fuzzy  = 0;
+			foreach ( $matches as $match ) {
+				if ( 'exact' === $match['confidence'] ) {
+					$exact++;
+				} else {
+					$fuzzy++;
+				}
+			}
+			return array(
+				'matches'   => $matches,
+				'ambiguous' => $ambiguous,
+				'unmatched' => $unmatched,
+				'summary'   => array( 'exact' => $exact, 'fuzzy' => $fuzzy ),
+			);
 		}
 	}
 }

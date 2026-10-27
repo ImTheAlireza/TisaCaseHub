@@ -7,8 +7,38 @@
 		token: '', previewDone: false, running: false, linkProduct: null, linkVariations: [],
 		smartMatches: [], smartOffset: 0, smartSignature: '', smartAmbiguous: 0, smartUnmatched: 0,
 		smartLocalCount: 0, smartRemoteCount: 0, smartLocalName: '', smartRemoteName: '',
-		smartLocalReference: '', smartRemoteReference: ''
+		smartLocalReference: '', smartRemoteReference: '',
+		smartIssues: [], smartIssueFilter: 'all'
 	};
+
+	// دلیل دقیق هر مورد «نیازمند بررسی»؛ همان کدهایی که Matcher برمی‌گرداند.
+	const issueReasons = {
+		duplicate_reference: {
+			flag: 'مرجع تکراری',
+			reason: (item) => 'مرجع این Variation در همین فروشگاه ' + String(Number(item.duplicate_count) || 2) + ' بار تکرار شده است؛ تا یکتاشدن مرجع، جفت خودکار ساخته نمی‌شود.'
+		},
+		multiple_candidates: {
+			flag: 'چند گزینه',
+			reason: (item) => String(Number(item.candidate_count) || 0) + ' Variation محتمل در سمت مقابل پیدا شد؛ انتخاب خودکار دلخواه انجام نمی‌شود.'
+		},
+		shared_key: {
+			flag: 'کلید مشترک',
+			reason: () => 'کلید تطبیق (SKU یا برچسب) با چند Variation دیگر مشترک است؛ اتصال خودکار امن نیست.'
+		},
+		counterpart_unusable: {
+			flag: 'همتای نامعتبر',
+			reason: () => 'همتای محتمل پیدا شد، اما مرجع Variation مقابل تکراری یا خالی است و قابل اتصال نیست.'
+		},
+		missing_reference: {
+			flag: 'بدون مرجع',
+			reason: () => 'این Variation مرجع SKU/ID ندارد؛ پیش از اتصال باید مرجع بگیرد.'
+		},
+		no_candidate: {
+			flag: 'بدون همتا',
+			reason: () => 'هیچ Variation هم‌ارزی در سمت مقابل پیدا نشد (نه با SKU و نه با برچسب)؛ اگر این مدل در فروشگاه مقابل وجود ندارد، این مورد طبیعی است.'
+		}
+	};
+	const issueKeyLabels = { sku: 'SKU', label: 'برچسب', tokens: 'الگو' };
 
 	function text(id, value, isError) {
 		const node = $(id);
@@ -123,6 +153,19 @@
 		return label;
 	}
 
+	// جفت‌هایی که با SKU یکتا تطبیق نشده‌اند با نشان «بررسی» علامت می‌خورند.
+	function flagMatchEntry(entry, match) {
+		if (!entry || !match) return;
+		const confidence = match.confidence ? String(match.confidence) : '';
+		if (!confidence || 'exact' === confidence) return;
+		const kind = 'tokens' === match.matched_by ? 'تطبیق الگویی' : 'تطبیق از برچسب';
+		const badge = node('span', 'tcas-pair-flag', 'بررسی · ' + kind);
+		badge.title = 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.';
+		const fields = entry.querySelector('.tcas-pair-fields');
+		if (fields) entry.insertBefore(badge, fields);
+		else entry.appendChild(badge);
+	}
+
 	function pairFields(localCode, remoteCode, localTitle, remoteTitle) {
 		const fields = node('div', 'tcas-pair-fields');
 		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local', localTitle));
@@ -191,6 +234,8 @@
 		});
 		entry.querySelectorAll('input').forEach((input) => input.addEventListener('input', () => {
 			setVariationTitle(input.closest('.tcas-shop-field'), '');
+			const flag = entry.querySelector('.tcas-pair-flag');
+			if (flag) flag.remove();
 			invalidatePreview();
 			resetSmart();
 		}));
@@ -214,28 +259,137 @@
 		return entry;
 	}
 
+	function issueFlag(value, className) {
+		return node('span', 'tcas-smart-issue-flag' + (className ? ' ' + className : ''), value);
+	}
+
+	function issueCandidates(item) {
+		const candidates = Array.isArray(item.candidates) ? item.candidates : [];
+		if (!candidates.length) return null;
+		const box = node('div', 'tcas-smart-issue-candidates');
+		const total = Number(item.candidate_count) || candidates.length;
+		box.appendChild(node('span', 'tcas-smart-issue-candidates-title', 'گزینه‌های محتمل (' + String(total) + '):'));
+		candidates.forEach((candidate) => {
+			if (!candidate || typeof candidate !== 'object') return;
+			const shop = candidate.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase');
+			const parts = [
+				shop,
+				candidate.label ? String(candidate.label) : 'بدون عنوان',
+				candidate.reference ? String(candidate.reference) : 'بدون مرجع',
+				issueKeyLabels[candidate.key] || ''
+			].filter(Boolean);
+			if (candidate.usable === false) parts.push('غیرقابل‌اتصال');
+			box.appendChild(node('span', 'tcas-smart-issue-candidate' + (candidate.usable === false ? ' is-unusable' : ''), parts.join(' · ')));
+		});
+		return box;
+	}
+
+	function issueTwins(item) {
+		const twins = Array.isArray(item.twins) ? item.twins : [];
+		if (Number(item.duplicate_count) < 2 || !twins.length) return null;
+		const box = node('div', 'tcas-smart-issue-twins');
+		box.appendChild(node('span', 'tcas-smart-issue-twins-title', 'همین مرجع در همین فروشگاه:'));
+		twins.forEach((twin) => {
+			if (!twin || typeof twin !== 'object') return;
+			box.appendChild(node('span', 'tcas-smart-issue-twin', (twin.label ? String(twin.label) : 'Variation') + (twin.reference ? ' · ' + String(twin.reference) : '')));
+		});
+		return box;
+	}
+
+	function reviewIssue(item) {
+		const isLocal = item && item.shop === 'tisacase';
+		const reference = item && item.reference ? String(item.reference) : '';
+		const entry = addPairEntry(isLocal ? reference : '', isLocal ? '' : reference, false);
+		if (!entry) {
+			text('tcas-smart-status', 'برای ساخت کارت بررسی، یک کارت خالی را از فهرست جفت‌ها حذف کنید.', true);
+			return;
+		}
+		const target = entry.querySelector(isLocal ? '.tcas-remote-code' : '.tcas-local-code');
+		if (target) {
+			target.focus();
+			if (target.scrollIntoView) target.scrollIntoView({ block: 'nearest' });
+		}
+		text('tcas-smart-status', 'کارت بررسی برای «' + (item.label ? String(item.label) : (reference || 'این Variation')) + '» ساخته شد؛ مرجع سمت مقابل را وارد کنید.');
+	}
+
+	function issueRow(item, kind) {
+		const info = issueReasons[item.reason] || null;
+		const row = node('article', 'tcas-smart-issue tcas-smart-issue-' + kind + (info ? ' tcas-smart-issue-' + item.reason : ''));
+		row.dataset.kind = kind;
+		row.dataset.reason = info ? String(item.reason) : '';
+		row.setAttribute('role', 'listitem');
+		const header = node('div', 'tcas-smart-issue-header');
+		const flags = node('span', 'tcas-smart-issue-flags');
+		flags.appendChild(issueFlag(kind === 'ambiguous' ? 'مبهم' : 'بدون تطبیق', 'tcas-smart-issue-flag-kind'));
+		if (info) flags.appendChild(issueFlag(info.flag, 'tcas-smart-issue-flag-reason'));
+		header.appendChild(flags);
+		header.appendChild(node('span', 'tcas-smart-issue-shop', item.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase')));
+		row.appendChild(header);
+		row.appendChild(node('strong', 'tcas-smart-issue-label', item.label ? String(item.label) : 'Variation #' + String((Number(item.index) || 0) + 1)));
+		row.appendChild(node('code', 'tcas-smart-issue-reference', item.reference ? String(item.reference) : 'مرجع ثبت نشده'));
+		const reason = info ? info.reason(item) : (kind === 'ambiguous' ? 'مرجع تکراری یا چند گزینهٔ محتمل؛ تطبیق خودکار امن نیست.' : 'همتای یکتا در سمت دیگر پیدا نشد.');
+		row.appendChild(node('small', 'tcas-smart-issue-reason', reason));
+		const twins = issueTwins(item);
+		if (twins) row.appendChild(twins);
+		const candidates = issueCandidates(item);
+		if (candidates) row.appendChild(candidates);
+		const review = node('button', 'button tcas-smart-issue-review', 'بررسی دستی');
+		review.type = 'button';
+		review.title = 'یک کارت جفت با مرجع همین Variation می‌سازد تا سمت مقابل را دستی کامل کنید.';
+		review.addEventListener('click', () => reviewIssue(item));
+		row.appendChild(review);
+		return row;
+	}
+
+	function applyIssueFilter() {
+		const list = $('tcas-smart-issue-list');
+		if (list) {
+			Array.from(list.children).forEach((row) => {
+				row.hidden = state.smartIssueFilter !== 'all' && row.dataset.kind !== state.smartIssueFilter;
+			});
+		}
+		const wrap = $('tcas-smart-issue-filters');
+		if (wrap) {
+			Array.from(wrap.children).forEach((button) => {
+				const active = button.dataset.filter === state.smartIssueFilter;
+				button.classList.toggle('is-active', active);
+				button.setAttribute('aria-pressed', active ? 'true' : 'false');
+			});
+		}
+	}
+
+	function renderIssueFilters() {
+		const wrap = $('tcas-smart-issue-filters');
+		if (!wrap) return;
+		wrap.textContent = '';
+		const count = (kind) => state.smartIssues.filter((entry) => kind === 'all' || entry.kind === kind).length;
+		[['all', 'همه'], ['ambiguous', 'مبهم'], ['unmatched', 'بدون تطبیق']].forEach(([key, label]) => {
+			const button = node('button', 'button tcas-smart-issue-filter', label + ' ' + String(count(key)));
+			button.type = 'button';
+			button.dataset.filter = key;
+			button.setAttribute('aria-pressed', state.smartIssueFilter === key ? 'true' : 'false');
+			if (state.smartIssueFilter === key) button.classList.add('is-active');
+			button.addEventListener('click', () => {
+				state.smartIssueFilter = key;
+				applyIssueFilter();
+			});
+			wrap.appendChild(button);
+		});
+		wrap.hidden = state.smartIssues.length === 0;
+	}
+
 	function renderSmartIssues(ambiguous, unmatched) {
 		const panel = $('tcas-smart-issues');
 		const list = $('tcas-smart-issue-list');
 		const count = $('tcas-smart-issues-count');
 		if (!panel || !list) return;
 		list.textContent = '';
-		const issues = [];
-		(Array.isArray(ambiguous) ? ambiguous : []).forEach((item) => issues.push({ item, kind: 'ambiguous' }));
-		(Array.isArray(unmatched) ? unmatched : []).forEach((item) => issues.push({ item, kind: 'unmatched' }));
-		issues.forEach(({ item, kind }) => {
-			if (!item || typeof item !== 'object') return;
-			const row = node('article', 'tcas-smart-issue tcas-smart-issue-' + kind);
-			row.setAttribute('role', 'listitem');
-			const header = node('div', 'tcas-smart-issue-header');
-			header.appendChild(node('span', 'tcas-smart-issue-flag', kind === 'ambiguous' ? 'مبهم' : 'بدون تطبیق'));
-			header.appendChild(node('span', 'tcas-smart-issue-shop', item.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase')));
-			row.appendChild(header);
-			row.appendChild(node('strong', 'tcas-smart-issue-label', item.label ? String(item.label) : 'Variation #' + String((Number(item.index) || 0) + 1)));
-			row.appendChild(node('code', 'tcas-smart-issue-reference', item.reference ? String(item.reference) : 'مرجع ثبت نشده'));
-			row.appendChild(node('small', 'tcas-smart-issue-reason', kind === 'ambiguous' ? 'مرجع تکراری یا چند گزینهٔ محتمل؛ تطبیق خودکار امن نیست.' : 'همتای یکتا در سمت دیگر پیدا نشد.'));
-			list.appendChild(row);
-		});
+		state.smartIssues = [];
+		(Array.isArray(ambiguous) ? ambiguous : []).forEach((item) => { if (item && typeof item === 'object') state.smartIssues.push({ item, kind: 'ambiguous' }); });
+		(Array.isArray(unmatched) ? unmatched : []).forEach((item) => { if (item && typeof item === 'object') state.smartIssues.push({ item, kind: 'unmatched' }); });
+		state.smartIssues.forEach(({ item, kind }) => list.appendChild(issueRow(item, kind)));
+		renderIssueFilters();
+		applyIssueFilter();
 		const visibleCount = list.children.length;
 		panel.hidden = visibleCount === 0;
 		if (count) count.textContent = String(visibleCount) + ' مورد';
@@ -253,6 +407,8 @@
 		state.smartRemoteName = '';
 		state.smartLocalReference = '';
 		state.smartRemoteReference = '';
+		state.smartIssues = [];
+		state.smartIssueFilter = 'all';
 		renderSmartIssues([], []);
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = true;
@@ -314,6 +470,7 @@
 		batch.forEach((match) => {
 			const entry = addPairEntry(match.local_code, match.remote_code, false, groupEntries);
 			setPairEntryTitles(entry, match.local_label, match.remote_label);
+			flagMatchEntry(entry, match);
 		});
 		if (pairEntries().length !== batch.length) {
 			resetSmart();
@@ -323,8 +480,10 @@
 		state.smartOffset = start + batch.length;
 		invalidatePreview();
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
+		const flagged = batch.filter((match) => match && match.confidence && 'exact' !== match.confidence).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
-		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق در فهرست زیر علامت‌گذاری شد.';
+		if (flagged) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «بررسی» علامت خورد.';
+		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
 		text('tcas-smart-status', message);
 		const next = $('tcas-smart-next');
@@ -362,7 +521,7 @@
 			state.smartOffset = 0;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
-				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
 			} else {
 				state.running = false;
 				fillSmartBatch();

@@ -290,16 +290,33 @@
 .tcas-smart-issues-head h3 { margin:0; font-size:var(--tisa-fs-meta,13px); }
 .tcas-smart-issues-count { flex:0 0 auto; padding:3px 9px; border-radius:var(--tisa-r-pill,999px); background:#F4E4C6; color:#76520B; font-size:var(--tisa-fs-tiny,11px); font-weight:700; }
 .tcas-smart-issues-help { margin:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
+.tcas-smart-issue-filters { display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.tcas-smart-issue-filters[hidden] { display:none; }
+.tcas-smart-issue-filter { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; border-color:var(--tisa-warning-soft,#F4E4C6) !important; background:var(--tisa-surface,#fff) !important; color:#76520B !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.4 !important; }
+.tcas-smart-issue-filter.is-active { border-color:#C58A19 !important; background:#F4E4C6 !important; color:#5A3D06 !important; font-weight:700; }
 .tcas-smart-issue-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
 .tcas-smart-issue { display:grid; gap:5px; min-width:0; padding:9px; border:1px solid var(--tcas-border); border-right:3px solid #C58A19; border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
+.tcas-smart-issue[hidden] { display:none; }
 .tcas-smart-issue-unmatched { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-counterpart_unusable,.tcas-smart-issue-missing_reference { border-right-color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-duplicate_reference { border-right-color:#B5453A; }
 .tcas-smart-issue-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.tcas-smart-issue-flags { display:flex; align-items:center; flex-wrap:wrap; gap:4px; min-width:0; }
 .tcas-smart-issue-flag { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border-radius:var(--tisa-r-pill,999px); background:#FFF1CE; color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
 .tcas-smart-issue-unmatched .tcas-smart-issue-flag { background:var(--tisa-danger-soft,#FBECEA); color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-flag-reason { background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); }
+.tcas-smart-issue-unmatched .tcas-smart-issue-flag-reason,.tcas-smart-issue-duplicate_reference .tcas-smart-issue-flag-reason,.tcas-smart-issue-counterpart_unusable .tcas-smart-issue-flag-reason,.tcas-smart-issue-missing_reference .tcas-smart-issue-flag-reason { background:#F4E4C6; color:#76520B; }
 .tcas-smart-issue-shop { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); }
 .tcas-smart-issue-label { min-width:0; overflow-wrap:anywhere; font-size:var(--tisa-fs-meta,12px); }
 .tcas-smart-issue-reference { min-width:0; overflow-wrap:anywhere; direction:ltr; text-align:left; }
 .tcas-smart-issue-reason { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); line-height:1.6; }
+.tcas-smart-issue-twins,.tcas-smart-issue-candidates { display:flex; flex-wrap:wrap; align-items:center; gap:4px; min-width:0; }
+.tcas-smart-issue-twins-title,.tcas-smart-issue-candidates-title { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10px); font-weight:600; }
+.tcas-smart-issue-twin,.tcas-smart-issue-candidate { display:inline-flex; align-items:center; min-width:0; max-width:100%; padding:2px 7px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-pill,999px); background:var(--tcas-soft); color:var(--tcas-ink); font-size:var(--tisa-fs-tiny,10px); overflow-wrap:anywhere; }
+.tcas-smart-issue-candidate { direction:rtl; unicode-bidi:plaintext; }
+.tcas-smart-issue-candidate.is-unusable { border-style:dashed; color:var(--tisa-danger,#B5453A); }
+.tcas-smart-issue-review { justify-self:start; min-height:28px; padding:2px 10px !important; font-size:var(--tisa-fs-tiny,11px) !important; }
+.tcas-pair-flag { display:inline-flex; align-items:center; justify-self:start; min-height:22px; margin-bottom:7px; padding:2px 8px; border:1px dashed #C58A19; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }
 .tcas-fresh-product-group,.tcas-linked-group { display:block; min-width:0; overflow:hidden; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); }
 .tcas-fresh-product-summary,.tcas-linked-group-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px 13px; cursor:pointer; list-style:none; }
 .tcas-fresh-product-summary::-webkit-details-marker,.tcas-linked-group-summary::-webkit-details-marker { display:none; }

@@ -136,5 +136,61 @@ foreach ( $remaining as $item ) { if ( 'a56' === TCAS_Matcher::normalize_label( 
 foreach ( $matches as $match ) { if ( 'a56' === TCAS_Matcher::normalize_label( $match['local_label'] ) || 'a56' === TCAS_Matcher::normalize_label( $match['remote_label'] ) ) $a56_matched = true; }
 smart_integration_test( 'A56 بدون Variation واقعی Local از Attribute والد جفت نمی‌شود', $a56_remaining && ! $a56_matched && 17 === count( $local_ids ) );
 smart_integration_test( 'برچسب s25ultra از variation_attributes خام بازیابی شده است', $response && 's25ultra' === $matches[7]['remote_label'] );
+$diagnostics_ok   = 34 === count( $remaining );
+$reason_counts    = array();
+$with_candidates  = 0;
+$candidate_ref_ok = true;
+$known_reasons    = array( 'duplicate_reference', 'multiple_candidates', 'shared_key', 'counterpart_unusable', 'missing_reference', 'no_candidate' );
+foreach ( $remaining as $issue ) {
+	$diagnostics_ok = $diagnostics_ok
+		&& ! empty( $issue['reason'] )
+		&& in_array( $issue['reason'], $known_reasons, true )
+		&& array_key_exists( 'candidate_count', $issue )
+		&& array_key_exists( 'usable_count', $issue )
+		&& array_key_exists( 'candidates', $issue )
+		&& array_key_exists( 'duplicate_count', $issue );
+	if ( isset( $issue['reason'] ) ) {
+		$reason_counts[ $issue['reason'] ] = isset( $reason_counts[ $issue['reason'] ] ) ? $reason_counts[ $issue['reason'] ] + 1 : 1;
+	}
+	if ( ! empty( $issue['candidate_count'] ) ) {
+		$with_candidates++;
+	}
+	foreach ( (array) $issue['candidates'] as $candidate ) {
+		if ( empty( $candidate['reference'] ) || 0 !== strpos( (string) $candidate['reference'], 'ID:' ) ) {
+			$candidate_ref_ok = false;
+		}
+	}
+}
+smart_integration_test( 'هر مورد ردشده دلیل شناخته‌شده و شمارش کاندید دارد', $diagnostics_ok, json_encode( $reason_counts, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'در این Fixture هیچ همتای محتملی نیست و هر ۳۴ مورد «بدون کاندید» علامت می‌خورند', 0 === $with_candidates && $candidate_ref_ok && array( 'no_candidate' => 34 ) === $reason_counts, json_encode( $reason_counts, JSON_UNESCAPED_UNICODE ) );
+
+// سناریوی دوم: یک Variation محلی با دو همتای هم‌برچسب در سمت مقابل → مورد مبهم با کاندید مشخص.
+$ambiguous_local_id  = $local_parent_id + 201;
+$ambiguous_remote_id = $remote_parent_id + 201;
+$GLOBALS['integration_products'][ $ambiguous_local_id ] = new TCAS_Integration_Product( $ambiguous_local_id, 'variation', 'Local - A56', 'L-A56', array( 'Model' => 'A56' ), array(), $local_parent_id );
+$GLOBALS['local_ids'] = array( $ambiguous_local_id );
+TCAS_Api::$product = array(
+	'remote_id' => $remote_parent_id, 'parent_remote_id' => 0, 'code' => '', 'name' => 'Remote parent', 'type' => 'variable',
+	'variations' => array(
+		array( 'remote_id' => $ambiguous_remote_id, 'parent_remote_id' => $remote_parent_id, 'code' => 'R-A56-1', 'name' => 'Remote - A56 first', 'variation_attributes' => array( 'Model' => 'A56' ) ),
+		array( 'remote_id' => $ambiguous_remote_id + 1, 'parent_remote_id' => $remote_parent_id, 'code' => 'R-A56-2', 'name' => 'Remote - A56 second', 'variation_attributes' => array( 'Model' => 'A56' ) ),
+	),
+);
+$_REQUEST['nonce'] = 'valid'; $_POST['local_code'] = $local_reference; $_POST['remote_code'] = $remote_reference;
+try { TCAS_Ajax::match_variations(); $ambiguous_response = null; } catch ( TCAS_JSON_Response $caught ) { $ambiguous_response = $caught; }
+$ambiguous_issues = $ambiguous_response && $ambiguous_response->success ? $ambiguous_response->data['ambiguous'] : array();
+$local_issue      = isset( $ambiguous_issues[0] ) ? $ambiguous_issues[0] : array();
+$remote_issue     = isset( $ambiguous_issues[1] ) ? $ambiguous_issues[1] : array();
+smart_integration_test( 'هم‌برچسب‌های سمت مقابل در مسیر AJAX هیچ جفتی نمی‌سازند', $ambiguous_response && $ambiguous_response->success && 0 === count( $ambiguous_response->data['matches'] ), $ambiguous_response ? json_encode( $ambiguous_response->data['matches'], JSON_UNESCAPED_UNICODE ) : 'no response' );
+smart_integration_test( 'Variation محلی با دو همتای هم‌برچسب دلیل «چند گزینه» و دو کاندید ID می‌گیرد', 'multiple_candidates' === $local_issue['reason'] && 2 === $local_issue['candidate_count'] && 2 === count( $local_issue['candidates'] ) && 'label' === $local_issue['candidates'][0]['key'] && 0 === strpos( (string) $local_issue['candidates'][0]['reference'], 'ID:' . $remote_parent_id . '/' ), json_encode( $local_issue, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'همتای سمت مقابل با کلید مشترک و شاهد محلی علامت می‌خورد', 'shared_key' === $remote_issue['reason'] && 1 === $remote_issue['candidate_count'] && 'ID:' . $ambiguous_local_id === $remote_issue['candidates'][0]['reference'], json_encode( $remote_issue, JSON_UNESCAPED_UNICODE ) );
+
+$flagged = 0;
+$exact   = 0;
+foreach ( $matches as $match ) {
+	if ( 'exact' === $match['confidence'] ) { $exact++; } else { $flagged++; }
+	if ( ! in_array( $match['matched_by'], array( 'sku', 'label', 'tokens' ), true ) ) { $exact = -999; }
+}
+smart_integration_test( 'تطبیق‌های خروجی نوع کلید و اطمینان را مشخص می‌کنند', $exact + $flagged === count( $matches ) && 0 === $exact && 8 === $flagged, json_encode( array( 'exact' => $exact, 'flagged' => $flagged ) ) );
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );
