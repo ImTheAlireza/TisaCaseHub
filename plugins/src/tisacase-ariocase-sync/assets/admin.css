@@ -424,6 +424,18 @@
 .tcas-pair-flag.is-warn { border-style:dashed; border-color:#C58A19; background:var(--tisa-warning-soft,#FFF8E8); color:#76520B; }
 .tcas-pair-flag.is-danger { border-color:var(--tisa-danger,#B5453A); background:#fff; color:var(--tisa-danger,#B5453A); }
 .tcas-pair-flag-note[hidden] { display:none; }
+/* ---- جزئیات خطای درخواست: مبدا، هدرها و نمونهٔ پاسخ ---- */
+.tcas-request-diag { flex:1 1 100%; margin-top:10px; padding:9px 11px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tcas-soft); font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-request-diag[hidden] { display:none; }
+.tcas-request-diag-summary { cursor:pointer; color:var(--tisa-danger,#B5453A); font-weight:700; }
+.tcas-request-diag-note { margin:8px 0; color:var(--tcas-muted); }
+.tcas-request-diag-row { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; border-top:1px dashed var(--tcas-border); }
+.tcas-request-diag-label { flex:0 0 150px; color:var(--tcas-muted); font-weight:600; }
+.tcas-request-diag-value { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; unicode-bidi:plaintext; }
+.tcas-request-diag-value[dir=ltr] { text-align:left; direction:ltr; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:var(--tisa-fs-tiny,10px); }
+.tcas-request-diag-actions { margin-top:8px; }
+.tcas-request-diag-copy { min-height:28px; }
+
 
 @media(max-width:900px) {
   .tcas-hero { align-items:flex-start; }

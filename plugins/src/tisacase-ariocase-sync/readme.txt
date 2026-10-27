@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, inventory, partner
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.16.0
+Stable tag: 1.16.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -125,6 +125,12 @@ SKU یا Label تکراری، چند کاندیدای هم‌امتیاز، اس
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.16.1 =
+* پنل «جزئیات آخرین خطای درخواست» زیر کارت‌های جفت: آدرس کامل، دامنهٔ پاسخ‌دهنده، کد وضعیت، هدر `Server`، `cf-ray`، `Content-Type`، فایروال/CDN شناسایی‌شده (Cloudflare، Imunify360، Sucuri، Wordfence، ModSecurity، LiteSpeed، چالش CAPTCHA) و نمونهٔ پاسخ سرور بدون تگ HTML، همراه دکمهٔ کپی برای ارسال به پشتیبانی هاست.
+* پیام خطا حالا دامنهٔ همان سایت را نشان می‌دهد تا روشن شود پاسخ از `admin-ajax.php` سایت خود کاربر آمده و نه از API همکار (درخواست همکار از سمت سرور انجام می‌شود).
+* درخواست‌های AJAX با هدر `X-Requested-With: XMLHttpRequest` و `Accept: application/json` ارسال می‌شوند.
+* شناسه‌ها و لینک‌هایی که دارای `://` هستند با پیشوند `b64:` ارسال می‌شوند و در سرور رمزگشایی می‌شوند؛ فایروال‌های هاست (CRS/ModSecurity) که وجود آدرس در بدنهٔ POST را با 403/418 مسدود می‌کنند دیگر فعال نمی‌شوند. مقادیر `b64` نامعتبر امن رد می‌شوند.
 
 = 1.16.0 =
 * بخش جداگانهٔ «پیش‌نمایش اتصال» حذف شد؛ بررسی، موجودی و پیام هر جفت روی همان کارت «جفت‌های تازه» نمایش داده می‌شود.

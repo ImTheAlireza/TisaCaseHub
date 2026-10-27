@@ -78,6 +78,15 @@ TCAS_Link_Resolver::$product = null; TCAS_Api::$product = null; TCAS_Api::$refer
 $response = invoke_ajax( 'match_variations' );
 ajax_test( 'تطبیق فقط والد متغیر می‌پذیرد و برای Simple ریموت را نمی‌خواند', $response && ! $response->success && 422 === $response->status && null === TCAS_Api::$reference );
 unset( $_POST['local_code'], $_POST['remote_code'] );
+// رابط شناسه‌های لینکی را با پیشوند b64 می‌فرستد تا فایروال هاست روی «://» حساس نشود.
+$_POST['url'] = 'b64:' . base64_encode( 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8-%d9%82%d9%84%d8%a8/' );
+$response = invoke_ajax( 'resolve_link' );
+ajax_test( 'مقدار b64 در Resolver به همان لینک اصلی با %XX فارسی برمی‌گردد', $response && $response->success && 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8-%d9%82%d9%84%d8%a8/' === TCAS_Link_Resolver::$last_url );
+unset( $_POST['url'] );
+$_POST['url'] = 'b64:###not-base64###';
+$response = invoke_ajax( 'resolve_link' );
+ajax_test( 'پیشوند b64 نامعتبر باعث کرش یا لینک خالی نمی‌شود', $response && $response->success && TCAS_Link_Resolver::$last_url !== '' );
+unset( $_POST['url'] );
 $_POST['code'] = 'ID:658';
 TCAS_Api::$product = array( 'code' => '', 'remote_id' => 658, 'name' => 'ID only', 'type' => 'simple', 'stock' => array( 'quantity' => 5.0, 'status' => 'instock' ), 'variations' => array() );
 $response = invoke_ajax( 'test_connection' );

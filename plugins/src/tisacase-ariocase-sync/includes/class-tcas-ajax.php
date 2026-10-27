@@ -27,9 +27,22 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			}
 		}
 
+		/**
+		 * شناسه‌های لینکی از رابط با پیشوند b64: می‌آیند تا فایروال‌های هاست که وجود «://»
+		 * در بدنهٔ POST را با 403/418 مسدود می‌کنند فعال نشوند. مقدار غیر b64 دست‌نخورده می‌ماند.
+		 */
+		private static function decode_transport( $value ) {
+			$value = (string) $value;
+			if ( 0 !== strpos( $value, 'b64:' ) ) {
+				return $value;
+			}
+			$decoded = base64_decode( substr( $value, 4 ), true );
+			return false === $decoded ? $value : $decoded;
+		}
+
 		/** Read URL references without stripping percent-encoded UTF-8 bytes from Persian slugs. */
 		private static function posted_reference( $key ) {
-			$value = isset( $_POST[ $key ] ) ? trim( (string) wp_unslash( $_POST[ $key ] ) ) : '';
+			$value = isset( $_POST[ $key ] ) ? trim( self::decode_transport( wp_unslash( $_POST[ $key ] ) ) ) : '';
 			return preg_match( '#^https?://#i', $value ) ? $value : trim( sanitize_text_field( $value ) );
 		}
 
@@ -67,7 +80,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			if ( ! $configured ) {
 				wp_send_json_error( array( 'message' => 'ابتدا تنظیمات اتصال همکار انتخاب‌شده را کامل کنید.' ), 422 );
 			}
-			$pairs = TCAS_Core::parse_pairs( isset( $_POST['pairs'] ) ? wp_unslash( $_POST['pairs'] ) : '' );
+			$pairs = TCAS_Core::parse_pairs( isset( $_POST['pairs'] ) ? self::decode_transport( wp_unslash( $_POST['pairs'] ) ) : '' );
 			if ( ! $pairs ) {
 				wp_send_json_error( array( 'message' => 'حداقل یک جفت با قالب «SKU تیساکیس - مرجع محصول همکار» وارد کنید.' ), 400 );
 			}

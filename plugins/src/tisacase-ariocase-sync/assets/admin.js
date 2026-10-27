@@ -98,16 +98,199 @@
 
 	const RETRY_STATUSES = [408, 418, 425, 429, 500, 502, 503, 504];
 
-	function responseMessage(status, action) {
+	/** آدرس واقعی AJAX؛ همان دامنه‌ای که این صفحه از آن باز شده است. */
+	function ajaxTarget() {
+		const fallback = window.location ? window.location.origin : '';
+		try {
+			const url = new URL(cfg.ajaxUrl || '/wp-admin/admin-ajax.php', window.location.href);
+			return { url: url.href, origin: url.origin, host: url.host, path: url.pathname };
+		} catch (error) {
+			return { url: String(cfg.ajaxUrl || ''), origin: fallback, host: fallback, path: '' };
+		}
+	}
+
+	function headerValue(response, name) {
+		try {
+			return response && response.headers && response.headers.get ? String(response.headers.get(name) || '') : '';
+		} catch (error) {
+			return '';
+		}
+	}
+
+	/** نام فایروال/CDN از روی هدرها و بدنهٔ صفحهٔ مسدودی حدس زده می‌شود. */
+	function detectFirewall(response, raw) {
+		const body = String(raw || '').toLowerCase();
+		if (headerValue(response, 'cf-ray') || body.indexOf('cloudflare') !== -1 || body.indexOf('cf-error') !== -1) return 'Cloudflare (CDN / WAF)';
+		if (body.indexOf('imunify') !== -1) return 'Imunify360';
+		if (body.indexOf('sucuri') !== -1) return 'Sucuri';
+		if (body.indexOf('wordfence') !== -1) return 'Wordfence';
+		if (body.indexOf('mod_security') !== -1 || body.indexOf('modsecurity') !== -1) return 'ModSecurity (فایروال هاست)';
+		if (body.indexOf('litespeed') !== -1) return 'LiteSpeed';
+		if (body.indexOf('captcha') !== -1 || body.indexOf('challenge') !== -1) return 'چالش امنیتی / CAPTCHA';
+		return '';
+	}
+
+	function plainExcerpt(raw) {
+		const text = String(raw || '')
+			.replace(/<script[\s\S]*?<\/script>/gi, ' ')
+			.replace(/<style[\s\S]*?<\/style>/gi, ' ')
+			.replace(/<[^>]+>/g, ' ')
+			.replace(/&nbsp;/gi, ' ')
+			.replace(/&amp;/gi, '&')
+			.replace(/\s+/g, ' ')
+			.trim();
+		return text.length > 400 ? text.slice(0, 400) + '…' : text;
+	}
+
+	const diag = { action: '', url: '', host: '', status: 0, server: '', firewall: '', excerpt: '', at: '' };
+
+	function diagRow(list, label, value, mono) {
+		const row = node('div', 'tcas-request-diag-row');
+		row.appendChild(node('span', 'tcas-request-diag-label', label));
+		const cell = node(mono ? 'code' : 'span', 'tcas-request-diag-value', value || '—');
+		if (mono) cell.dir = 'ltr';
+		row.appendChild(cell);
+		list.appendChild(row);
+		return row;
+	}
+
+	function diagPanel() {
+		let panel = $('tcas-request-diag');
+		if (panel) return panel;
+		const host = document.querySelector('.tcas-pair-actions') || document.querySelector('.tcas-pairs-card');
+		if (!host) return null;
+		panel = document.createElement('details');
+		panel.id = 'tcas-request-diag';
+		panel.className = 'tcas-request-diag';
+		panel.hidden = true;
+		const summary = node('summary', 'tcas-request-diag-summary', 'جزئیات آخرین خطای درخواست (مبدا و پاسخ سرور)');
+		panel.appendChild(summary);
+		const body = node('div', 'tcas-request-diag-body');
+		body.appendChild(node('p', 'tcas-request-diag-note', 'این درخواست فقط به همان سایتی رفته است که این صفحه از آن باز شده (admin-ajax.php خود وردپرس). درخواست به ArioCase از سمت سرور انجام می‌شود و خطای آن هرگز به‌صورت HTTP 418 در مرورگر دیده نمی‌شود؛ پس این پاسخ از سایت خودتان یا CDN/فایروال جلوی آن است.'));
+		panel.appendChild(body);
+		const actions = node('div', 'tcas-request-diag-actions');
+		const copy = node('button', 'button tcas-request-diag-copy', 'کپی جزئیات');
+		copy.type = 'button';
+		actions.appendChild(copy);
+		panel.appendChild(actions);
+		host.appendChild(panel);
+		return panel;
+	}
+
+	function copyText(value) {
+		if (window.navigator && window.navigator.clipboard && window.navigator.clipboard.writeText) {
+			return window.navigator.clipboard.writeText(value).catch(() => fallbackCopy(value));
+		}
+		return Promise.resolve(fallbackCopy(value));
+	}
+
+	function fallbackCopy(value) {
+		try {
+			const area = document.createElement('textarea');
+			area.value = value;
+			area.style.position = 'fixed';
+			area.style.opacity = '0';
+			document.body.appendChild(area);
+			area.select();
+			document.execCommand('copy');
+			document.body.removeChild(area);
+		} catch (error) {
+			/* بدون دسترسی کلیپ‌بورد هم متن جزئیات در صفحه دیده می‌شود. */
+		}
+	}
+
+	function diagText() {
+		return [
+			'درخواست: tcas_' + diag.action,
+			'آدرس: ' + diag.url,
+			'دامنهٔ پاسخ‌دهنده: ' + diag.host,
+			'وضعیت: HTTP ' + diag.status,
+			'سرور: ' + (diag.server || 'نامشخص'),
+			'فایروال/CDN: ' + (diag.firewall || 'در هدر و بدنه شناسایی نشد'),
+			'زمان: ' + diag.at,
+			'نمونهٔ پاسخ: ' + (diag.excerpt || '—')
+		].join('\n');
+	}
+
+	/** خطای شبکه/AJAX را با مبدا، هدرها و نمونهٔ پاسخ ثبت می‌کند. */
+	function reportFailure(action, response, raw) {
+		const target = ajaxTarget();
+		diag.action = action;
+		diag.url = target.url;
+		diag.host = target.host || target.origin;
+		diag.status = response && response.status ? response.status : 0;
+		diag.server = headerValue(response, 'server');
+		diag.firewall = detectFirewall(response, raw);
+		diag.excerpt = plainExcerpt(raw);
+		diag.at = new Date().toLocaleString('fa-IR');
+		try {
+			console.warn('[TisaCase] خطای درخواست ' + action, {
+				url: diag.url,
+				status: diag.status,
+				server: diag.server,
+				firewall: diag.firewall,
+				cfRay: headerValue(response, 'cf-ray'),
+				contentType: headerValue(response, 'content-type'),
+				excerpt: diag.excerpt
+			});
+		} catch (error) {
+			/* console در دسترس نیست. */
+		}
+		const panel = diagPanel();
+		if (!panel) return;
+		let body = panel.querySelector('.tcas-request-diag-body');
+		if (!body) return;
+		Array.from(body.querySelectorAll('.tcas-request-diag-row')).forEach((row) => row.remove());
+		diagRow(body, 'درخواست', 'tcas_' + diag.action);
+		diagRow(body, 'آدرس کامل', diag.url, true);
+		diagRow(body, 'دامنهٔ پاسخ‌دهنده', diag.host, true);
+		diagRow(body, 'وضعیت', 'HTTP ' + diag.status);
+		diagRow(body, 'هدر Server', diag.server);
+		diagRow(body, 'فایروال / CDN', diag.firewall || 'در هدر و بدنه شناسایی نشد');
+		diagRow(body, 'cf-ray', headerValue(response, 'cf-ray'));
+		diagRow(body, 'Content-Type', headerValue(response, 'content-type'));
+		diagRow(body, 'نمونهٔ پاسخ', diag.excerpt || '—', true);
+		const copy = panel.querySelector('.tcas-request-diag-copy');
+		if (copy && !copy.dataset.wired) {
+			copy.dataset.wired = '1';
+			copy.addEventListener('click', () => {
+				copyText(diagText()).then(() => {
+					copy.textContent = 'کپی شد';
+					window.setTimeout(() => { copy.textContent = 'کپی جزئیات'; }, 1500);
+				});
+			});
+		}
+		panel.hidden = false;
+		panel.open = true;
+	}
+
+	function responseMessage(status, action, host, firewall) {
 		const code = 'HTTP ' + (status || 0);
+		const where = host ? ' · ' + host : '';
+		const who = firewall ? ' · ' + firewall : '';
 		if ([403, 418, 429].includes(status)) {
-			return 'درخواست «' + action + '» توسط فایروال یا محدودکنندهٔ نرخ سرور سایت مسدود شد (' + code + '). چند لحظه صبر کنید و دوباره تلاش کنید.'
-				+ ' اگر تکرار شد، بررسی زندهٔ هر کارت را با دکمهٔ «بررسی همه دوباره» به‌جای تایپ‌زدن پشت‌سرهم انجام دهید.';
+			return 'درخواست «' + action + '» توسط سرور سایت مسدود شد (' + code + where + who + ').'
+				+ ' این پاسخ از همان دامنهٔ خودتان آمده است؛ مبدا و بدنهٔ پاسخ را در «جزئیات آخرین خطای درخواست» زیر همین کارت‌ها ببینید.'
+				+ ' چند لحظه صبر کنید و دوباره تلاش کنید؛ اگر تکرار شد، بررسی زندهٔ هر کارت را با دکمهٔ «بررسی همه دوباره» انجام دهید.';
 		}
 		if (500 <= status) {
-			return 'سرور سایت هنگام پردازش «' + action + '» خطا داد (' + code + ')؛ گزارش خطاهای PHP را ببینید.';
+			return 'سرور سایت هنگام پردازش «' + action + '» خطا داد (' + code + where + ')؛ گزارش خطاهای PHP همین سایت را ببینید.';
 		}
-		return 'پاسخ JSON معتبر از سرور سایت دریافت نشد (' + code + ')؛ احتمالاً یک افزونهٔ امنیتی یا CDN درخواست را تغییر داده است.';
+		return 'پاسخ JSON معتبر از سرور سایت دریافت نشد (' + code + where + ').';
+	}
+
+	/** شناسه‌های لینکی به‌صورت b64 ارسال می‌شوند تا فایروال‌های هاست که وجود «://» در POST را مسدود می‌کنند حساس نشوند. */
+	function transportValue(value) {
+		const text = String(value);
+		if (!/https?:\/\//i.test(text)) return text;
+		try {
+			const bytes = new window.TextEncoder().encode(text);
+			let binary = '';
+			bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+			return 'b64:' + window.btoa(binary);
+		} catch (error) {
+			return text;
+		}
 	}
 
 	async function request(action, data, options) {
@@ -118,17 +301,32 @@
 		body.append('nonce', cfg.nonce || '');
 		body.append('partner_id', cfg.partnerId || 'ariocase');
 		Object.entries(data || {}).forEach(([key, value]) => {
-			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', item));
-			else body.append(key, value === null || typeof value === 'undefined' ? '' : String(value));
+			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', transportValue(item)));
+			else body.append(key, value === null || typeof value === 'undefined' ? '' : transportValue(value));
 		});
+		const target = ajaxTarget();
 		for (let attempt = 0; attempt <= retries; attempt++) {
 			if (attempt) await delay(700 * attempt);
 			let response;
 			try {
-				response = await fetch(cfg.ajaxUrl, { method: 'POST', body, credentials: 'same-origin' });
+				response = await fetch(target.url, {
+					method: 'POST',
+					body,
+					credentials: 'same-origin',
+					headers: { 'X-Requested-With': 'XMLHttpRequest', Accept: 'application/json, text/plain, */*' }
+				});
 			} catch (error) {
 				if (attempt < retries) continue;
-				throw new Error('ارتباط با سرور سایت برقرار نشد؛ اتصال شبکه یا فایروال سایت را بررسی کنید.');
+				diag.action = action;
+				diag.url = target.url;
+				diag.host = target.host || target.origin;
+				diag.status = 0;
+				diag.server = '';
+				diag.firewall = '';
+				diag.excerpt = String(error && error.message ? error.message : error);
+				diag.at = new Date().toLocaleString('fa-IR');
+				reportFailure(action, null, diag.excerpt);
+				throw new Error('ارتباط با ' + (target.host || 'سرور سایت') + ' برقرار نشد؛ اتصال شبکه یا فایروال سایت را بررسی کنید.');
 			}
 			let raw = '';
 			try { raw = await response.text(); } catch (error) { raw = ''; }
@@ -136,14 +334,17 @@
 			try { payload = raw ? JSON.parse(raw) : null; } catch (error) { payload = null; }
 			if (!payload || 'object' !== typeof payload) {
 				if (RETRY_STATUSES.includes(response.status) && attempt < retries) continue;
-				throw new Error(responseMessage(response.status, action));
+				const firewall = detectFirewall(response, raw);
+				reportFailure(action, response, raw);
+				throw new Error(responseMessage(response.status, action, target.host || target.origin, firewall));
 			}
 			if (!payload.success) {
 				throw new Error(payload && payload.data && payload.data.message ? payload.data.message : (cfg.strings && cfg.strings.unknownError) || 'خطا');
 			}
 			return payload.data || {};
 		}
-		throw new Error(responseMessage(0, action));
+		reportFailure(action, null, '');
+		throw new Error(responseMessage(0, action, target.host || target.origin, ''));
 	}
 
 	/** صف تک‌نفره برای بررسی کارت‌ها تا هاست پشت فایروال با موج درخواست مسدود نشود. */

@@ -42,6 +42,10 @@ function codes(local, remote) { return { local_code: local, remote_code: remote 
 function pairRow(overrides) {
 	return Object.assign({ status: 'connect', selectable: true, local_name: 'Local case', remote_name: 'Remote case', stock: { quantity: 4, status: 'instock' }, local_stock: { quantity: 2, status: 'instock' }, message: 'دو محصول جفت می‌شوند.' }, overrides || {});
 }
+function decodeValue(value) {
+	if (typeof value !== 'string' || !value.startsWith('b64:')) return value;
+	return Buffer.from(value.slice(4), 'base64').toString('utf8');
+}
 function type(entry, field, value) {
 	const input = entry.querySelector(field);
 	input.value = value;
@@ -187,8 +191,63 @@ function type(entry, field, value) {
 	type(entry, '.tcas-remote-code', 'AR30');
 	await waitFor(() => entry.dataset.state === 'error');
 	ok('پاسخ غیر JSON یک بار دیگر تلاش می‌شود', attempts === 2, String(attempts));
-	ok('خطای ۴۱۸ با پیام فایروال/محدودیت نرخ گزارش می‌شود', entry.querySelector('.tcas-pair-message').textContent.includes('فایروال') && entry.querySelector('.tcas-pair-message').textContent.includes('418'));
+	const message = entry.querySelector('.tcas-pair-message').textContent;
+	ok('پیام خطا شامل کد ۴۱۸ و دامنهٔ همان سایت است', message.includes('418') && message.includes('tisa.test') && message.includes('سرور سایت'));
 	ok('کارت خطادار قرمز و غیرقابل‌انتخاب می‌شود', entry.classList.contains('is-failed') && entry.querySelector('.tcas-row-select').disabled);
+	dom.window.close();
+}
+
+// ---------- ۷ب) پنل «جزئیات خطای درخواست»: مبدا و فایروال ----------
+{
+	const dom = makeDom(); const { window } = dom; const headers = [];
+	window.fetch = async (url, options) => {
+		headers.push(options.headers || {});
+		return {
+			status: 418,
+			headers: { get: (name) => ({ 'server': 'cloudflare', 'cf-ray': '8f2c1d3e4a5b-FRA', 'content-type': 'text/html; charset=UTF-8' }[String(name).toLowerCase()] || '') },
+			text: async () => '<!DOCTYPE html><html><head><title>Access denied</title></head><body><h1>Sorry, you have been blocked</h1><p>Cloudflare Ray ID: 8f2c1d3e4a5b-FRA</p></body></html>'
+		};
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'TS40');
+	type(entry, '.tcas-remote-code', 'AR40');
+	await waitFor(() => entry.dataset.state === 'error');
+	const panel = window.document.getElementById('tcas-request-diag');
+	ok('پنل جزئیات خطا ساخته و باز می‌شود', Boolean(panel) && !panel.hidden);
+	const text = panel.textContent;
+	ok('پنل، آدرس و دامنهٔ پاسخ‌دهنده را نشان می‌دهد', text.includes('tisa.test') && text.includes('admin-ajax.php') && text.includes('دامنهٔ پاسخ‌دهنده'));
+	ok('پنل، فایروال شناسایی‌شده و cf-ray را نشان می‌دهد', text.includes('Cloudflare') && text.includes('8f2c1d3e4a5b-FRA'));
+	ok('پنل، نمونهٔ پاسخ سرور را بدون تگ HTML نشان می‌دهد', text.includes('you have been blocked') && !text.includes('<h1>'));
+	ok('پنل توضیح می‌دهد پاسخ از همان site خود کاربر است', text.includes('admin-ajax.php خود وردپرس') && text.includes('ArioCase'));
+	ok('درخواست AJAX با هدر X-Requested-With ارسال می‌شود', String(headers[0]['X-Requested-With'] || '') === 'XMLHttpRequest');
+	dom.window.close();
+}
+
+// ---------- ۷ج) شناسه‌های لینکی به‌صورت b64 (دور زدن فایروال «://») ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = [];
+	window.fetch = async (url, options) => {
+		bodies.push(options.body);
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({ matches: [], ambiguous: [], unmatched: [], local: { name: 'L', reference: 'ID:0', count: 0 }, remote: { name: 'R', reference: 'ID:9', count: 0 } });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8/';
+	window.document.getElementById('tcas-smart-remote').value = 'https://ariocase.com/product/case/';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => bodies.length > 0);
+	const body = bodies[0];
+	ok('لینک‌ها با پیشوند b64 ارسال می‌شوند و «://» در بدنهٔ POST نمی‌ماند', body.get('local_code').startsWith('b64:') && !String(body.get('local_code')).includes('://'));
+	ok('b64 دقیقاً همان لینک اولیه را برمی‌گرداند (شامل %XX فارسی)', decodeValue(body.get('local_code')) === 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8/' && decodeValue(body.get('remote_code')) === 'https://ariocase.com/product/case/');
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'ID:401470');
+	type(card, '.tcas-remote-code', 'ID:45969/46045');
+	const before = bodies.length;
+	await waitFor(() => bodies.length > before);
+	const plain = bodies[bodies.length - 1];
+	ok('شناسه‌های غیرلینکی دست‌نخورده و بدون b64 ارسال می‌شوند', plain.get('action') === 'tcas_preview_pair' && plain.get('local_code') === 'ID:401470' && plain.get('remote_code') === 'ID:45969/46045');
 	dom.window.close();
 }
 
@@ -245,7 +304,7 @@ function type(entry, field, value) {
 	window.document.getElementById('tcas-link-input').value = 'https://tisacase.com/product/local-case/'; window.document.getElementById('tcas-link-resolve').click();
 	await waitFor(() => window.document.getElementById('tcas-link-sku').value === 'TS0100');
 	ok('کارت نتیجه فقط بعد از تبدیل نمایش داده می‌شود', !window.document.getElementById('tcas-link-result').hidden);
-	ok('تبدیل لینک، URL را برای Resolver ارسال می‌کند', calls[0].get('action') === 'tcas_resolve_link' && calls[0].get('url') === 'https://tisacase.com/product/local-case/');
+	ok('تبدیل لینک، URL را برای Resolver ارسال می‌کند', calls[0].get('action') === 'tcas_resolve_link' && decodeValue(calls[0].get('url')) === 'https://tisacase.com/product/local-case/');
 	ok('فروشگاه و SKU در خروجی نمایش داده می‌شوند', window.document.getElementById('tcas-link-shop').textContent.includes('TisaCase') && window.document.getElementById('tcas-link-result').dataset.shop === 'tisacase');
 	ok('دکمهٔ کپی بعد از دریافت SKU فعال می‌شود', !window.document.getElementById('tcas-link-copy').disabled);
 	window.document.getElementById('tcas-link-copy').click();
