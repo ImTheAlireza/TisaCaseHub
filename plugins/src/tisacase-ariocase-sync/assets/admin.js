@@ -214,6 +214,33 @@
 		return entry;
 	}
 
+	function renderSmartIssues(ambiguous, unmatched) {
+		const panel = $('tcas-smart-issues');
+		const list = $('tcas-smart-issue-list');
+		const count = $('tcas-smart-issues-count');
+		if (!panel || !list) return;
+		list.textContent = '';
+		const issues = [];
+		(Array.isArray(ambiguous) ? ambiguous : []).forEach((item) => issues.push({ item, kind: 'ambiguous' }));
+		(Array.isArray(unmatched) ? unmatched : []).forEach((item) => issues.push({ item, kind: 'unmatched' }));
+		issues.forEach(({ item, kind }) => {
+			if (!item || typeof item !== 'object') return;
+			const row = node('article', 'tcas-smart-issue tcas-smart-issue-' + kind);
+			row.setAttribute('role', 'listitem');
+			const header = node('div', 'tcas-smart-issue-header');
+			header.appendChild(node('span', 'tcas-smart-issue-flag', kind === 'ambiguous' ? 'مبهم' : 'بدون تطبیق'));
+			header.appendChild(node('span', 'tcas-smart-issue-shop', item.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase')));
+			row.appendChild(header);
+			row.appendChild(node('strong', 'tcas-smart-issue-label', item.label ? String(item.label) : 'Variation #' + String((Number(item.index) || 0) + 1)));
+			row.appendChild(node('code', 'tcas-smart-issue-reference', item.reference ? String(item.reference) : 'مرجع ثبت نشده'));
+			row.appendChild(node('small', 'tcas-smart-issue-reason', kind === 'ambiguous' ? 'مرجع تکراری یا چند گزینهٔ محتمل؛ تطبیق خودکار امن نیست.' : 'همتای یکتا در سمت دیگر پیدا نشد.'));
+			list.appendChild(row);
+		});
+		const visibleCount = list.children.length;
+		panel.hidden = visibleCount === 0;
+		if (count) count.textContent = String(visibleCount) + ' مورد';
+	}
+
 	function resetSmart() {
 		state.smartMatches = [];
 		state.smartOffset = 0;
@@ -226,6 +253,7 @@
 		state.smartRemoteName = '';
 		state.smartLocalReference = '';
 		state.smartRemoteReference = '';
+		renderSmartIssues([], []);
 		const next = $('tcas-smart-next');
 		if (next) next.hidden = true;
 		text('tcas-smart-status', 'موارد مبهم و بدون تطبیق وصل نمی‌شوند.');
@@ -296,7 +324,7 @@
 		invalidatePreview();
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
-		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق کنار ماند.';
+		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق در فهرست زیر علامت‌گذاری شد.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' پیش‌نمایش را بزنید.';
 		text('tcas-smart-status', message);
 		const next = $('tcas-smart-next');
@@ -320,8 +348,11 @@
 		try {
 			const data = await request('match_variations', { local_code: local.value.trim(), remote_code: remote.value.trim() });
 			state.smartMatches = Array.isArray(data.matches) ? data.matches : [];
-			state.smartAmbiguous = Array.isArray(data.ambiguous) ? data.ambiguous.length : 0;
-			state.smartUnmatched = Array.isArray(data.unmatched) ? data.unmatched.length : 0;
+			const ambiguous = Array.isArray(data.ambiguous) ? data.ambiguous : [];
+			const unmatched = Array.isArray(data.unmatched) ? data.unmatched : [];
+			state.smartAmbiguous = ambiguous.length;
+			state.smartUnmatched = unmatched.length;
+			renderSmartIssues(ambiguous, unmatched);
 			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
 			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
 			state.smartLocalName = data.local && data.local.name ? String(data.local.name) : '';
@@ -331,7 +362,7 @@
 			state.smartOffset = 0;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
-				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد کنار ماند.' : '.'), true);
+				text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق در فهرست زیر علامت‌گذاری شد.' : '.'), true);
 			} else {
 				state.running = false;
 				fillSmartBatch();
