@@ -375,19 +375,34 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			// Variationهایی که از قبل به همین مرجع وصل‌اند علامت می‌خورند تا کارتشان
 			// دوباره بررسی/ارسال نشود؛ این کار فقط نگاشت داخلی را می‌خواند.
 			$connected = 0;
-			if ( class_exists( 'TCAS_Pairing' ) && method_exists( 'TCAS_Pairing', 'mark_connected' ) ) {
-				$annotated         = TCAS_Pairing::mark_connected( $result['matches'], $partner_id );
+			$skipped   = array();
+			if ( class_exists( 'TCAS_Pairing' ) && method_exists( 'TCAS_Pairing', 'annotate' ) ) {
+				$annotated         = TCAS_Pairing::annotate( $result['matches'], $partner_id );
 				$result['matches'] = $annotated['matches'];
 				$connected         = (int) $annotated['connected'];
+				// مرجع‌هایی که به Variation دیگری وصل‌اند کارت نمی‌سازند تا خطای
+				// «مرجع تکراری» به‌ازای هر ردیف روی صفحه نریزد.
+				foreach ( $annotated['taken'] as $taken ) {
+					$skipped[] = array(
+						'local_code'   => isset( $taken['local_code'] ) ? (string) $taken['local_code'] : '',
+						'local_label'  => isset( $taken['local_label'] ) ? (string) $taken['local_label'] : '',
+						'remote_code'  => isset( $taken['remote_code'] ) ? (string) $taken['remote_code'] : '',
+						'remote_label' => isset( $taken['remote_label'] ) ? (string) $taken['remote_label'] : '',
+						'taken_by'     => isset( $taken['taken_by'] ) ? (int) $taken['taken_by'] : 0,
+						'taken_by_name'=> isset( $taken['taken_by_name'] ) ? (string) $taken['taken_by_name'] : '',
+					);
+				}
 			}
 			$summary                   = $result['summary'];
 			$summary['connected']      = $connected;
+			$summary['skipped']        = count( $skipped );
 			wp_send_json_success( array(
 				'matches'   => $result['matches'],
 				'ambiguous' => $result['ambiguous'],
 				'unmatched' => $result['unmatched'],
 				'summary'   => $summary,
 				'connected' => $connected,
+				'skipped'   => $skipped,
 				'local'     => array( 'name' => $local['name'], 'reference' => $local['reference'], 'count' => count( $local['variations'] ) ),
 				'remote'    => array( 'name' => $remote['name'], 'reference' => $remote['reference'], 'count' => count( $remote['variations'] ) ),
 			) );

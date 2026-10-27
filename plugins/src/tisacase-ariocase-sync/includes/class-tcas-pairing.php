@@ -72,37 +72,117 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 		 * است تا رابط آن‌ها را دوباره بررسی/ارسال نکند. فقط نگاشت داخلی همین سایت
 		 * خوانده می‌شود؛ هیچ درخواستی به همکار نمی‌رود.
 		 */
-		public static function mark_connected( $matches, $partner_id = 'ariocase' ) {
+		/**
+		 * کارت‌های تطبیق را بر اساس نگاشت‌های موجود دسته‌بندی می‌کند؛ فقط از دادهٔ
+		 * همین سایت، بدون هیچ درخواستی به همکار:
+		 *
+		 * - connected: همین Variation از قبل به همین Variation همکار وصل است.
+		 * - taken:     همین Variation همکار به Variation دیگری وصل است (و برچسب
+		 *              همکار چندمدلی نیست)؛ کارت ساخته نمی‌شود تا خطای تکراری ندهد.
+		 * - free:      بقیه.
+		 *
+		 * @param array  $matches    خروجی تطبیق.
+		 * @param string $partner_id همکار.
+		 * @return array{matches:array,connected:int,taken:array,skipped:int}
+		 */
+		public static function annotate( $matches, $partner_id = 'ariocase' ) {
 			$matches    = array_values( (array) $matches );
 			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
-			$count      = 0;
+			$out        = array( 'matches' => array(), 'connected' => 0, 'taken' => array(), 'skipped' => 0 );
 			if ( ! class_exists( 'TCAS_Mapping' ) ) {
-				return array( 'matches' => $matches, 'connected' => 0 );
+				$out['matches'] = $matches;
+				return $out;
 			}
-			foreach ( $matches as $index => $match ) {
+			$holder_names = array();
+			foreach ( $matches as $match ) {
 				if ( ! is_array( $match ) ) {
 					continue;
 				}
-				$local_id = self::reference_local_id( isset( $match['local_code'] ) ? $match['local_code'] : '' );
-				if ( ! $local_id ) {
+				$local_id  = self::reference_local_id( isset( $match['local_code'] ) ? $match['local_code'] : '' );
+				$reference = isset( $match['remote_code'] ) ? (string) $match['remote_code'] : '';
+				if ( ! $local_id || '' === $reference ) {
+					$out['matches'][] = $match;
 					continue;
 				}
-				$code = TCAS_Mapping::remote_code( $local_id );
-				if ( '' === $code || ! TCAS_Mapping::is_enabled( $local_id ) ) {
+				// ۱) همین Variation از قبل وصل است.
+				$own_code = TCAS_Mapping::remote_code( $local_id );
+				$own_same = '' !== $own_code && TCAS_Mapping::is_enabled( $local_id )
+					&& TCAS_Mapping::partner_id( $local_id ) === $partner_id
+					&& self::same_remote( $own_code, $reference, $local_id );
+				if ( $own_same ) {
+					$match['connected']      = true;
+					$match['connected_code'] = $own_code;
+					$out['matches'][]        = $match;
+					$out['connected']++;
 					continue;
 				}
-				if ( TCAS_Mapping::partner_id( $local_id ) !== $partner_id ) {
+				// ۲) همین Variation همکار در اختیار Variation دیگری است.
+				$holders = array_values( array_diff( TCAS_Mapping::holders_of( $reference, $partner_id ), array( $local_id ) ) );
+				$holders = array_values( array_filter( $holders, function ( $id ) use ( $partner_id ) {
+					return TCAS_Mapping::is_enabled( $id ) && TCAS_Mapping::partner_id( $id ) === $partner_id;
+				} ) );
+				if ( $holders && ! self::bundled_label( $match ) ) {
+					if ( ! isset( $holder_names[ $holders[0] ] ) ) {
+						$product = wc_get_product( $holders[0] );
+						$holder_names[ $holders[0] ] = $product && is_object( $product ) ? (string) $product->get_name() : '';
+					}
+					$match['taken_by']      = (int) $holders[0];
+					$match['taken_by_name'] = $holder_names[ $holders[0] ];
+					$out['taken'][]         = $match;
+					$out['skipped']++;
 					continue;
 				}
-				// اگر مرجع ذخیره‌شده با مرجع تازه یکی نباشد، کارت باید دوباره بررسی شود.
-				if ( $code !== (string) ( isset( $match['remote_code'] ) ? $match['remote_code'] : '' ) ) {
-					continue;
+				// ۳) آزاد (یا برچسب چندمدلی که اجازهٔ اشتراک دارد).
+				if ( $holders ) {
+					$match['shared_remote'] = true;
 				}
-				$matches[ $index ]['connected']      = true;
-				$matches[ $index ]['connected_code'] = $code;
-				$count++;
+				$out['matches'][] = $match;
 			}
-			return array( 'matches' => $matches, 'connected' => $count );
+			return $out;
+		}
+
+		/** سازگاری با فراخوانی‌های قبلی. */
+		public static function mark_connected( $matches, $partner_id = 'ariocase' ) {
+			$result = self::annotate( $matches, $partner_id );
+			return array( 'matches' => $result['matches'], 'connected' => $result['connected'] );
+		}
+
+		/** آیا این کد ذخیره‌شده همان مرجع تازه است؟ (هویت یا رشته) */
+		private static function same_remote( $stored_code, $reference, $local_id = 0 ) {
+			$stored_code = trim( (string) $stored_code );
+			$reference   = trim( (string) $reference );
+			if ( '' === $stored_code || '' === $reference ) {
+				return false;
+			}
+			if ( $stored_code === $reference ) {
+				return true;
+			}
+			$stored = TCAS_Mapping::identity_from_reference( $stored_code );
+			$fresh  = TCAS_Mapping::identity_from_reference( $reference );
+			if ( $stored['remote_id'] && $fresh['remote_id'] ) {
+				if ( $stored['remote_id'] !== $fresh['remote_id'] ) {
+					return false;
+				}
+				return ( ! $stored['parent_id'] || ! $fresh['parent_id'] || $stored['parent_id'] === $fresh['parent_id'] );
+			}
+			// کد ذخیره‌شده SKU است: هویت ذخیره‌شدهٔ همان محصول را مقایسه می‌کنیم.
+			if ( $local_id ) {
+				$identity = TCAS_Mapping::remote_identity( $local_id );
+				return $identity['remote_id'] && $identity['remote_id'] === $fresh['remote_id'];
+			}
+			return false;
+		}
+
+		/** برچسب خود Variation همکار چند مدل دارد؟ */
+		private static function bundled_label( $match ) {
+			if ( ! empty( $match['shared_remote'] ) ) {
+				return true;
+			}
+			if ( ! class_exists( 'TCAS_Matcher' ) ) {
+				return false;
+			}
+			$models = TCAS_Matcher::bundled_models( isset( $match['remote_label'] ) ? (string) $match['remote_label'] : '' );
+			return count( $models ) >= 2;
 		}
 
 		/**
@@ -164,8 +244,9 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به همکار دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}
 			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
-			// قبلاً متصل شده و همان مرجع است: هیچ درخواستی به همکار زده نمی‌شود.
-			if ( ! $is_url && '' !== $current && $current === $reference && TCAS_Mapping::is_enabled( $local_id ) ) {
+			// قبلاً متصل شده و همان مرجع است (هویت یکی است، حتی اگر شکل کد فرق کند):
+			// هیچ درخواستی به همکار زده نمی‌شود.
+			if ( ! $is_url && '' !== $current && self::same_remote( $current, $reference, $local_id ) && TCAS_Mapping::is_enabled( $local_id ) ) {
 				return array(
 					'row'      => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است؛ برای پرهیز از درخواست تکراری دوباره خوانده نمی‌شود.', $extra ),
 					'remote'   => null,
@@ -203,7 +284,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			}
 			$pair['shared_remote'] = $shared;
 			if ( ! $shared ) {
-				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'], $partner_id ) as $mapped_id ) {
+				foreach ( TCAS_Mapping::holders_of( $pair['remote_code'], $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
 						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
 					}

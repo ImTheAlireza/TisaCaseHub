@@ -235,6 +235,37 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۶۵) مرجع اشغال‌شده: نه کارت قرمز، نه درخواست ----------
+{
+	const dom = makeDom(); const { window } = dom; const actions = [];
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		actions.push(action);
+		if (action === 'tcas_match_variations') return reply({
+			matches: [{ local_code: 'ID:309494', remote_code: 'ID:45448/45452', local_label: 'iPhone 13', remote_label: 'iPhone 13', confidence: 'family', matched_by: 'family', score: 88 }],
+			ambiguous: [], unmatched: [],
+			skipped: [
+				{ local_code: 'ID:309495', local_label: 'iPhone 16', remote_code: 'ID:45448/45453', remote_label: 'iPhone 16', taken_by: 401726, taken_by_name: 'قاب چرم کرم گل آرا - iPhone 16' },
+				{ local_code: 'ID:309496', local_label: 'iPhone 16 Pro Max', remote_code: 'ID:45448/45454', remote_label: 'iPhone 16 Pro Max', taken_by: 401727, taken_by_name: 'قاب چرم کرم گل آرا - iPhone 16 Pro Max' }
+			],
+			summary: { family: 1, skipped: 2 }, connected: 0,
+			local: { name: 'L', reference: 'ID:0', count: 3 }, remote: { name: 'R', reference: 'ID:9', count: 3 }
+		});
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-smart-issue').length === 2, 8000);
+	await waitFor(() => !window.document.getElementById('tcas-smart-status').textContent.includes('در حال دریافت'), 8000);
+	ok('برای مرجعِ در اختیار Variation دیگر، کارت قرمزی ساخته نمی‌شود', 1 === window.document.querySelectorAll('.tcas-pair-entry').length);
+	ok('این موارد در فهرست «از قبل متصل» با شمارهٔ محصول مقصد دیده می‌شوند', window.document.getElementById('tcas-smart-issues').textContent.includes('از قبل متصل') && window.document.getElementById('tcas-smart-issues').textContent.includes('#401726'));
+	ok('گزارش تطبیق، تعداد موارد بدون کارت را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('مرجعش از قبل به Variation دیگری وصل بود'));
+	ok('هیچ درخواست موجودی‌ای برای این تطبیق زده نمی‌شود', !actions.includes('tcas_preview_pair') && !actions.includes('tcas_preview_start'), actions.join(','));
+	dom.window.close();
+}
+
 // ---------- ۵.۷) کارت از قبل متصل: نه بررسی، نه درخواست ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];

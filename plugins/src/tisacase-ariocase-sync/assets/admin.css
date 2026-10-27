@@ -308,6 +308,9 @@
 .tcas-smart-issue-unmatched { border-right-color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-counterpart_unusable,.tcas-smart-issue-missing_reference { border-right-color:var(--tisa-danger,#B5453A); }
 .tcas-smart-issue-duplicate_reference { border-right-color:#B5453A; }
+.tcas-smart-issue-connected { border-right-color:var(--tisa-success,#1F7A55); }
+.tcas-smart-issue-connected .tcas-smart-issue-flag { background:var(--tisa-success-soft,#E7F4ED); color:var(--tisa-success,#1F7A55); }
+.tcas-smart-issue-connected .tcas-smart-issue-flag-reason { background:var(--tisa-success-soft,#E7F4ED); color:var(--tisa-success,#1F7A55); }
 .tcas-smart-issue-header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .tcas-smart-issue-flags { display:flex; align-items:center; flex-wrap:wrap; gap:4px; min-width:0; }
 .tcas-smart-issue-flag { display:inline-flex; align-items:center; min-height:21px; padding:2px 7px; border-radius:var(--tisa-r-pill,999px); background:#FFF1CE; color:#76520B; font-size:var(--tisa-fs-tiny,10px); font-weight:700; }

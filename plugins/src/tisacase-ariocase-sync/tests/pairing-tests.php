@@ -209,13 +209,18 @@ $before_recheck = count( TCAS_Api::$calls );
 $recheck = TCAS_Pairing::preview( pair_of( 'ID:72', 'MERGED-LABEL' ) );
 pair_test( 'جفت از قبل متصل بدون هیچ درخواستی به همکار Connected برمی‌گردد', 'connected' === $recheck['row']['status'] && ! $recheck['row']['selectable'] && $before_recheck === count( TCAS_Api::$calls ) && false !== strpos( $recheck['row']['message'], 'تکراری' ) );
 
-$marked = TCAS_Pairing::mark_connected( array(
+$marked = TCAS_Pairing::annotate( array(
 	array( 'local_code' => 'ID:72', 'remote_code' => 'MERGED-LABEL' ),
 	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL' ),
 	array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ),
 	array( 'local_code' => 'ID:900', 'remote_code' => 'MERGED-LABEL' ),
 ), 'ariocase' );
-pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked['matches'][0]['connected'] ) && empty( $marked['matches'][1]['connected'] ) && ! empty( $marked['matches'][2]['connected'] ) && empty( $marked['matches'][3]['connected'] ) );
+pair_test( 'فقط Variationهایی که با همین مرجع وصل‌اند «از قبل متصل» علامت می‌خورند', 2 === $marked['connected'] && ! empty( $marked['matches'][0]['connected'] ) && ! empty( $marked['matches'][1]['connected'] ) && empty( $marked['matches'][2]['connected'] ) );
+pair_test( 'مرجعی که به Variation دیگری وصل است کارت نمی‌سازد و «اشغال‌شده» گزارش می‌شود', 2 === $marked['skipped'] && 'ID:74' === $marked['taken'][0]['local_code'] && 72 === $marked['taken'][0]['taken_by'] && 2 === count( $marked['matches'] ) );
+$bundled_marked = TCAS_Pairing::annotate( array(
+	array( 'local_code' => 'ID:74', 'remote_code' => 'MERGED-LABEL', 'remote_label' => 'A52 / A52s' ),
+), 'ariocase' );
+pair_test( 'اگر برچسب همکار چندمدلی باشد، همان مرجع برای Variation دوم آزاد می‌ماند', 0 === $bundled_marked['skipped'] && ! empty( $bundled_marked['matches'][0]['shared_remote'] ) );
 
 TCAS_Mapping::map( 73, 'MERGED-LABEL', false, 'ariocase', true );
 $disabled_marked = TCAS_Pairing::mark_connected( array( array( 'local_code' => 'ID:73', 'remote_code' => 'MERGED-LABEL' ) ), 'ariocase' );

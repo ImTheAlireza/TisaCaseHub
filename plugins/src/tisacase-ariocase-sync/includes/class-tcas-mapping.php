@@ -61,6 +61,91 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			} ) );
 		}
 
+		/**
+		 * هویت یک مرجع همکار از روی خود مرجع، بدون هیچ درخواستی:
+		 * «ID:45448/45453» => remote_id 45453 و parent_id 45448 ؛
+		 * «ID:45453» => remote_id 45453. برای SKU هر دو صفر برمی‌گردد.
+		 *
+		 * کد ذخیره‌شده ممکن است فرم دیگری داشته باشد (SKU یا ID:)، پس مقایسهٔ
+		 * درست «هویت» است نه رشتهٔ خام.
+		 *
+		 * @param string $reference مرجع.
+		 * @return array{remote_id:int,parent_id:int}
+		 */
+		public static function identity_from_reference( $reference ) {
+			$reference = trim( (string) $reference );
+			$out       = array( 'remote_id' => 0, 'parent_id' => 0 );
+			if ( preg_match( '/^ID:([1-9][0-9]*)[\/\\]([1-9][0-9]*)$/i', $reference, $parts ) ) {
+				$out['parent_id'] = (int) $parts[1];
+				$out['remote_id'] = (int) $parts[2];
+			} elseif ( preg_match( '/^ID:([1-9][0-9]*)$/i', $reference, $parts ) ) {
+				$out['remote_id'] = (int) $parts[1];
+			}
+			return $out;
+		}
+
+		/** هویت ذخیره‌شدهٔ یک Variation محلی. */
+		public static function remote_identity( $product_id ) {
+			$product_id = absint( $product_id );
+			return array(
+				'remote_id' => absint( get_post_meta( $product_id, self::META_REMOTE_ID, true ) ),
+				'parent_id' => absint( get_post_meta( $product_id, self::META_PARENT_ID, true ) ),
+			);
+		}
+
+		/**
+		 * Variationهای محلی که همین Variation همکار را گرفته‌اند.
+		 *
+		 * @param int    $remote_id  شناسهٔ Variation همکار.
+		 * @param string $partner_id همکار.
+		 * @param int    $parent_id  شناسهٔ والد همکار (۰ = مهم نیست).
+		 * @return array<int,int>
+		 */
+		public static function local_ids_by_remote_id( $remote_id, $partner_id = 'ariocase', $parent_id = 0 ) {
+			$remote_id = absint( $remote_id );
+			if ( ! $remote_id ) {
+				return array();
+			}
+			$ids        = self::query_ids( self::META_REMOTE_ID, (string) $remote_id );
+			$partner_id = sanitize_key( $partner_id );
+			$parent_id  = absint( $parent_id );
+			$out        = array();
+			foreach ( $ids as $product_id ) {
+				if ( self::partner_id( $product_id ) !== $partner_id ) {
+					continue;
+				}
+				if ( $parent_id ) {
+					$stored_parent = absint( get_post_meta( $product_id, self::META_PARENT_ID, true ) );
+					if ( $stored_parent && $stored_parent !== $parent_id ) {
+						continue;
+					}
+				}
+				$out[] = (int) $product_id;
+			}
+			return $out;
+		}
+
+		/**
+		 * آیا این مرجع همکار از قبل نگاشت دارد؟ اول با هویت (شناسه‌ها) و بعد با رشتهٔ
+		 * کد؛ چون نگاشت‌های قدیمی ممکن است SKU ذخیره کرده باشند.
+		 *
+		 * @param string $reference  مرجع.
+		 * @param string $partner_id همکار.
+		 * @return array<int,int>
+		 */
+		public static function holders_of( $reference, $partner_id = 'ariocase' ) {
+			$reference = trim( (string) $reference );
+			$identity  = self::identity_from_reference( $reference );
+			$ids       = array();
+			if ( $identity['remote_id'] ) {
+				$ids = self::local_ids_by_remote_id( $identity['remote_id'], $partner_id, $identity['parent_id'] );
+			}
+			if ( ! $ids && '' !== $reference ) {
+				$ids = self::ids_by_remote_code( $reference, $partner_id );
+			}
+			return $ids;
+		}
+
 		public static function partner_id( $product_id ) {
 			$id = sanitize_key( get_post_meta( absint( $product_id ), self::META_PARTNER_ID, true ) );
 			return '' === $id ? 'ariocase' : $id;
