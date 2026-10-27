@@ -82,6 +82,8 @@ reset_resolver_fixtures();
 $local = TCAS_Link_Resolver::resolve( 'https://www.tisacase.com/product/local-case/' );
 resolver_test( 'لینک Pretty تیساکیس با www به SKU محلی تبدیل می‌شود', is_array( $local ) && 'tisacase' === $local['shop'] && 'TS0100' === $local['sku'] && 41 === $local['product_id'] );
 resolver_test( 'Rewrite محلی با Host canonical و بدون Fetch خارجی اجرا می‌شود', array( 'https://tisacase.com/product/local-case/' ) === $GLOBALS['url_calls'] && 0 === count( TCAS_Api::$calls ) );
+$local_only_remote = TCAS_Link_Resolver::resolve_local_link( 'https://ariocase.com/product/not-local/' );
+resolver_test( 'Resolver محلی دامنهٔ همکار را رد می‌کند و API خارجی صدا نمی‌زند', is_wp_error( $local_only_remote ) && 'tcas_not_local_shop' === $local_only_remote->get_error_code() && 0 === count( TCAS_Api::$calls ) );
 
 reset_resolver_fixtures();
 $persian_url = 'https://tisacase.com/product/%d9%82%d8%a7%d8%a8-%d8%a8%d8%b1%d8%a7%d8%b4-%d9%84%db%8c%d9%84%db%8c%d9%88%d9%85/';

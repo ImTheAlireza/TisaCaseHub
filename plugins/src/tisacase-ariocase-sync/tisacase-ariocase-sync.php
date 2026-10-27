@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name:       TisaCase — اتصال جفتی موجودی ArioCase
+ * Plugin Name:       TisaCase — همگام‌سازی موجودی با همکار
  * Plugin URI:        https://tisacase.com
- * Description:       جفت‌کردن SKU تیساکیس با لینک، SKU یا ID محصول ArioCase و سینک فقط موجودی؛ بدون تغییر نام، قیمت یا سایر مشخصات.
- * Version:           1.12.0
+ * Description:       اتصال محصولات تیساکیس به همکارهای ثبت‌شده و همگام‌سازی فقط موجودی؛ ArioCase به‌صورت پیش‌فرض پشتیبانی می‌شود.
+ * Version:           1.13.0
  * Requires at least: 5.8
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -14,14 +14,14 @@
  * Domain Path:       /languages
  * License:           GPL-2.0-or-later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
- * TisaCase Hub:      key=ariocase-sync; title="جفت موجودی ArioCase"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="اتصال جفتی با SKU تیساکیس و لینک، SKU یا ID محصول ArioCase؛ سینک فقط موجودی و کنترل آن هنگام خرید."
+ * TisaCase Hub:      key=ariocase-sync; title="همگام‌سازی موجودی با همکار"; icon=box; group=products; page=admin.php?page=tisacase-ariocase-sync; screen=woocommerce_page_tisacase-ariocase-sync; parent=woocommerce; slug=tisacase-ariocase-sync; desc="اتصال محصولات تیساکیس به همکارهای مختلف و همگام‌سازی موجودی؛ ArioCase یکی از providerهای پشتیبانی‌شده است."
  *
  * @package TisaCase_ArioCase_Sync
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'TCAS_VERSION', '1.12.0' );
+define( 'TCAS_VERSION', '1.13.0' );
 define( 'TCAS_FILE', __FILE__ );
 define( 'TCAS_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TCAS_URL', plugin_dir_url( __FILE__ ) );
@@ -31,6 +31,9 @@ require_once TCAS_PATH . 'includes/class-tcas-normalizer.php';
 require_once TCAS_PATH . 'includes/class-tcas-api.php';
 require_once TCAS_PATH . 'includes/class-tcas-local-variation-reader.php';
 require_once TCAS_PATH . 'includes/class-tcas-link-resolver.php';
+require_once TCAS_PATH . 'includes/interface-tcas-partner-provider.php';
+require_once TCAS_PATH . 'includes/providers/class-tcas-ariocase-provider.php';
+require_once TCAS_PATH . 'includes/class-tcas-partners.php';
 require_once TCAS_PATH . 'includes/class-tcas-matcher.php';
 require_once TCAS_PATH . 'includes/class-tcas-mapping.php';
 require_once TCAS_PATH . 'includes/class-tcas-stock.php';
@@ -52,8 +55,8 @@ add_action( 'before_woocommerce_init', function() {
 add_filter( 'tisacase_hub_items', function( $items ) {
 	if ( is_array( $items ) && ! isset( $items['ariocase-sync'] ) ) {
 		$items['ariocase-sync'] = array(
-			'title' => 'جفت موجودی ArioCase',
-			'desc'  => 'جفت‌کردن دو محصول موجود با لینک، SKU یا ID و سینک فقط موجودی؛ بدون تغییر سایر مشخصات.',
+			'title' => 'همگام‌سازی موجودی با همکار',
+			'desc'  => 'اتصال محصولات تیساکیس به همکارهای مختلف و همگام‌سازی موجودی؛ ArioCase یکی از providerهای پشتیبانی‌شده است.',
 			'group' => 'products',
 			'icon'  => 'box',
 			'dir'   => 'tisacase-ariocase-sync',

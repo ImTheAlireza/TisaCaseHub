@@ -31,7 +31,7 @@ const core = fs.readFileSync(path.join(root, 'includes/class-tcas-core.php'), 'u
 const live = fs.readFileSync(path.join(root, 'includes/class-tcas-live.php'), 'utf8');
 const main = fs.readFileSync(path.join(root, 'tisacase-ariocase-sync.php'), 'utf8');
 const readme = fs.readFileSync(path.join(root, 'readme.txt'), 'utf8');
-ok('نسخهٔ Pair-only یکسان است', main.includes('Version:           1.12.0') && main.includes("TCAS_VERSION', '1.12.0'") && readme.includes('Stable tag: 1.12.0'));
+ok('نسخهٔ Pair-only یکسان است', main.includes('Version:           1.13.0') && main.includes("TCAS_VERSION', '1.13.0'") && readme.includes('Stable tag: 1.13.0'));
 ok('پیش‌فرض خواندن امن و مهاجرت تنظیمات تعریف شده است', core.includes("'live_scope'          => 'purchase'") && core.includes('maybe_upgrade_settings'));
 ok('تازه‌سازی Snapshot از WP-Cron و خارج از Getter انجام می‌شود', live.includes('wp_schedule_single_event') && live.includes('process_scheduled_refresh') && live.includes('cached_state'));
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

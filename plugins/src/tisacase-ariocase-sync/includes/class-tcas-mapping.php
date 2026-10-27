@@ -19,6 +19,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		const META_REMOTE_ID  = '_tcas_remote_product_id';
 		const META_PARENT_ID  = '_tcas_remote_parent_id';
 		const META_REMOTE_NAME = '_tcas_remote_product_name';
+		const META_PARTNER_ID  = '_tcas_partner_id';
 
 		private static function query_ids( $meta_key, $value ) {
 			global $wpdb;
@@ -52,8 +53,17 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			return $ids ? (int) $ids[0] : 0;
 		}
 
-		public static function ids_by_remote_code( $code ) {
-			return self::query_ids( self::META_CODE, trim( (string) $code ) );
+		public static function ids_by_remote_code( $code, $partner_id = 'ariocase' ) {
+			$ids = self::query_ids( self::META_CODE, trim( (string) $code ) );
+			$partner_id = sanitize_key( $partner_id );
+			return array_values( array_filter( $ids, function( $product_id ) use ( $partner_id ) {
+				return self::partner_id( $product_id ) === $partner_id;
+			} ) );
+		}
+
+		public static function partner_id( $product_id ) {
+			$id = sanitize_key( get_post_meta( absint( $product_id ), self::META_PARTNER_ID, true ) );
+			return '' === $id ? 'ariocase' : $id;
 		}
 
 		public static function remote_code( $product_id ) {
@@ -64,6 +74,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			$product_id = absint( $product_id );
 			$product    = wc_get_product( $product_id );
 			$out        = array(
+				'partner_id'      => self::partner_id( $product_id ),
 				'type'            => $product ? $product->get_type() : '',
 				'remote_id'       => absint( get_post_meta( $product_id, self::META_REMOTE_ID, true ) ),
 				'parent_remote_id' => 0,
@@ -101,24 +112,34 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			return '' !== self::remote_code( $product_id ) && 'no' !== get_post_meta( $product_id, self::META_ENABLED, true );
 		}
 
-		public static function map( $product_id, $remote_code, $enabled = true ) {
+		public static function map( $product_id, $remote_code, $enabled = true, $partner_id = 'ariocase' ) {
 			$product_id  = absint( $product_id );
 			$remote_code = trim( sanitize_text_field( $remote_code ) );
+			$partner_id  = sanitize_key( $partner_id );
 			$product     = wc_get_product( $product_id );
-			if ( ! $product || '' === $remote_code ) {
-				return new WP_Error( 'tcas_invalid_mapping', 'محصول یا کد ArioCase معتبر نیست.' );
+			if ( ! $product || '' === $remote_code || '' === $partner_id || ( class_exists( 'TCAS_Partners' ) && ! TCAS_Partners::get( $partner_id ) ) ) {
+				return new WP_Error( 'tcas_invalid_mapping', 'محصول یا مرجع همکار معتبر نیست.' );
 			}
-			$other_ids = self::ids_by_remote_code( $remote_code );
+			$current_partner = self::partner_id( $product_id );
+			$current = self::remote_code( $product_id );
+			if ( '' !== $current && $current_partner !== $partner_id ) {
+				return new WP_Error( 'tcas_mapping_partner_exists', 'این محصول به همکار دیگری متصل است؛ ابتدا اتصال قبلی را حذف کنید.' );
+			}
+			$other_ids = self::ids_by_remote_code( $remote_code, $partner_id );
 			foreach ( $other_ids as $other_id ) {
 				if ( $other_id !== $product_id ) {
-					return new WP_Error( 'tcas_remote_code_used', sprintf( 'کد ArioCase قبلاً به محصول #%d متصل شده است.', $other_id ) );
+					return new WP_Error( 'tcas_remote_code_used', sprintf( 'این مرجع %s قبلاً به محصول #%d متصل شده است.', class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'همکار', $other_id ) );
 				}
 			}
-			$current = self::remote_code( $product_id );
 			if ( '' !== $current && $current !== $remote_code ) {
 				return new WP_Error( 'tcas_mapping_exists', 'این محصول قبلاً به کد دیگری متصل شده است؛ ابتدا اتصال قبلی را حذف کنید.' );
 			}
 			update_post_meta( $product_id, self::META_CODE, $remote_code );
+			if ( 'ariocase' === $partner_id ) {
+				delete_post_meta( $product_id, self::META_PARTNER_ID );
+			} else {
+				update_post_meta( $product_id, self::META_PARTNER_ID, $partner_id );
+			}
 			update_post_meta( $product_id, self::META_ENABLED, $enabled ? 'yes' : 'no' );
 			delete_post_meta( $product_id, self::META_ERROR );
 			return true;
@@ -126,7 +147,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 
 		public static function forget( $product_id ) {
 			$product_id = absint( $product_id );
-			foreach ( array( self::META_CODE, self::META_ENABLED, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_REMOTE_ID, self::META_PARENT_ID, self::META_REMOTE_NAME ) as $key ) {
+			foreach ( array( self::META_CODE, self::META_ENABLED, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_REMOTE_ID, self::META_PARENT_ID, self::META_REMOTE_NAME, self::META_PARTNER_ID ) as $key ) {
 				delete_post_meta( $product_id, $key );
 			}
 			return true;
@@ -177,6 +198,8 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 					'type'        => $product->get_type(),
 					'menu_order' => method_exists( $product, 'get_menu_order' ) ? (int) $product->get_menu_order() : $id,
 					'remote_code' => (string) $row['remote_code'],
+					'partner_id'  => self::partner_id( $id ),
+					'partner_label' => class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( self::partner_id( $id ) ) : 'ArioCase',
 					'remote_id'   => absint( get_post_meta( $id, self::META_REMOTE_ID, true ) ),
 					'remote_parent_id' => absint( get_post_meta( $id, self::META_PARENT_ID, true ) ),
 					'remote_name' => (string) get_post_meta( $id, self::META_REMOTE_NAME, true ),
@@ -204,12 +227,15 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 					$remote_parent_id = absint( $parts[1] );
 				}
 				$remote_group = $remote_parent_id ? 'parent:' . $remote_parent_id : 'item:' . ( ! empty( $row['remote_id'] ) ? absint( $row['remote_id'] ) : (string) $row['remote_code'] );
-				$key = $local_parent_id . '|' . $remote_group;
+				$partner_id = isset( $row['partner_id'] ) ? sanitize_key( $row['partner_id'] ) : 'ariocase';
+				$key = $partner_id . '|' . $local_parent_id . '|' . $remote_group;
 				if ( ! isset( $groups[ $key ] ) ) {
 					$local_parent = $local_parent_id !== $id ? wc_get_product( $local_parent_id ) : false;
 					$local_name = $local_parent && is_object( $local_parent ) ? $local_parent->get_name() : ( isset( $row['name'] ) ? (string) $row['name'] : 'محصول تیساکیس' );
 					$remote_name = $remote_parent_id ? 'والد #' . $remote_parent_id : ( ! empty( $row['remote_name'] ) ? (string) $row['remote_name'] : (string) $row['remote_code'] );
 					$groups[ $key ] = array(
+						'partner_id'        => $partner_id,
+						'partner_label'     => isset( $row['partner_label'] ) ? (string) $row['partner_label'] : ( class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase' ),
 						'local_parent_id'   => $local_parent_id,
 					'local_parent_name' => $local_name,
 					'remote_parent_id'  => $remote_parent_id,

@@ -34,6 +34,7 @@
 		const body = new FormData();
 		body.append('action', 'tcas_' + action);
 		body.append('nonce', cfg.nonce || '');
+		body.append('partner_id', cfg.partnerId || 'ariocase');
 		Object.entries(data || {}).forEach(([key, value]) => {
 			if (Array.isArray(value)) value.forEach((item) => body.append(key + '[]', item));
 			else body.append(key, value === null || typeof value === 'undefined' ? '' : String(value));
@@ -126,7 +127,7 @@
 		const fields = node('div', 'tcas-pair-fields');
 		fields.appendChild(readonlyShopField('تیساکیس · TisaCase', localCode, 'tcas-shop-local', localTitle));
 		fields.appendChild(node('span', 'tcas-pair-link', '+'));
-		fields.appendChild(readonlyShopField('آریوکیس · ArioCase', remoteCode, 'tcas-shop-remote', remoteTitle));
+		fields.appendChild(readonlyShopField(cfg.partnerLabel || 'ArioCase', remoteCode, 'tcas-shop-remote', remoteTitle));
 		return fields;
 	}
 
@@ -239,7 +240,7 @@
 	function smartCoverage() {
 		const local = Number(state.smartLocalCount) || 0;
 		const remote = Number(state.smartRemoteCount) || 0;
-		return local || remote ? 'TisaCase: ' + String(local) + ' · ArioCase: ' + String(remote) + ' — ' : '';
+		return local || remote ? 'TisaCase: ' + String(local) + ' · ' + (cfg.partnerLabel || 'ArioCase') + ': ' + String(remote) + ' — ' : '';
 	}
 
 	function fillSmartBatch() {
@@ -275,7 +276,7 @@
 		const productNames = node('span', 'tcas-fresh-product-names');
 		productNames.appendChild(node('strong', 'tcas-shop-local-text', 'TisaCase · ' + (state.smartLocalName || state.smartLocalReference || 'محصول')));
 		productNames.appendChild(node('span', 'tcas-pair-link', '↔'));
-		productNames.appendChild(node('strong', 'tcas-shop-remote-text', 'ArioCase · ' + (state.smartRemoteName || state.smartRemoteReference || 'محصول')));
+		productNames.appendChild(node('strong', 'tcas-shop-remote-text', (cfg.partnerLabel || 'ArioCase') + ' · ' + (state.smartRemoteName || state.smartRemoteReference || 'محصول')));
 		summary.appendChild(productNames);
 		summary.appendChild(node('span', 'tcas-fresh-product-count', String(batch.length) + ' Variation'));
 		group.appendChild(summary);

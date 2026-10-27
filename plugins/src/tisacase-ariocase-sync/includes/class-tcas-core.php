@@ -19,6 +19,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		const MAX_CODES              = 50;
 
 		private static $instance = null;
+		private static $settings_override = null;
 
 		public static function instance() {
 			if ( null === self::$instance ) {
@@ -78,12 +79,26 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 		}
 
 		public static function settings() {
+			if ( is_array( self::$settings_override ) ) {
+				return self::$settings_override;
+			}
 			$saved    = get_option( self::OPTION_SETTINGS, array() );
 			$settings = wp_parse_args( is_array( $saved ) ? $saved : array(), self::defaults() );
 			if ( ! in_array( $settings['live_scope'], array( 'all', 'purchase' ), true ) ) {
 				$settings['live_scope'] = 'purchase';
 			}
 			return $settings;
+		}
+
+		/** Run one provider request with its own connection settings in legacy API helpers. */
+		public static function with_settings( $settings, $callback ) {
+			$previous = self::$settings_override;
+			self::$settings_override = is_array( $settings ) ? $settings : null;
+			try {
+				return call_user_func( $callback );
+			} finally {
+				self::$settings_override = $previous;
+			}
 		}
 
 		public static function api_key( $settings = null ) {
@@ -174,7 +189,10 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 			$lines = is_array( $raw ) ? $raw : preg_split( '/\r\n|\r|\n/', (string) $raw );
 			$out = array(); $seen = array(); $locals = array(); $remotes = array();
 			foreach ( (array) $lines as $line ) {
-				$line = trim( sanitize_text_field( $line ) );
+				$line = trim( (string) $line );
+				if ( ! preg_match( '#^https?://#i', $line ) ) {
+					$line = sanitize_text_field( $line );
+				}
 				if ( '' === $line ) {
 					continue;
 				}
@@ -185,17 +203,20 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 				$parts = preg_split( '/\s+-\s+/u', $line );
 				if ( 2 !== count( $parts ) ) {
 					$entry['local_code'] = $line;
-					$entry['error'] = 'قالب جفت معتبر نیست؛ بنویسید: SKU تیساکیس - لینک یا SKU محصول ArioCase';
+					$entry['error'] = 'قالب جفت معتبر نیست؛ بنویسید: SKU تیساکیس - لینک یا مرجع محصول همکار';
 					$out[] = $entry;
 					continue;
 				}
-				$local  = trim( (string) $parts[0] );
+				$local  = trim( sanitize_text_field( (string) $parts[0] ) );
 				$remote = trim( (string) $parts[1] );
+				if ( ! preg_match( '#^https?://#i', $remote ) ) {
+					$remote = sanitize_text_field( $remote );
+				}
 				$entry['local_code'] = $local;
 				$entry['remote_code'] = $remote;
 				$remote_limit = preg_match( '#^https?://#i', $remote ) ? 2048 : 190;
 				if ( '' === $local || '' === $remote || strlen( $local ) > 190 || strlen( $remote ) > $remote_limit ) {
-					$entry['error'] = 'SKU یا مرجع ArioCase خالی/بسیار طولانی است.';
+					$entry['error'] = 'SKU یا مرجع همکار خالی/بسیار طولانی است.';
 					$out[] = $entry;
 					continue;
 				}
@@ -209,7 +230,7 @@ if ( ! class_exists( 'TCAS_Core' ) ) {
 					continue;
 				}
 				if ( isset( $remotes[ $remote ] ) && $remotes[ $remote ] !== $local ) {
-					$entry['error'] = 'این کد ArioCase در همین دسته با SKU دیگری جفت شده است.';
+					$entry['error'] = 'این مرجع همکار در همین دسته با SKU دیگری جفت شده است.';
 					$out[] = $entry;
 					continue;
 				}

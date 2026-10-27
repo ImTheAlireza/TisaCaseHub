@@ -42,7 +42,7 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 
 		private static function enabled() {
 			$settings = TCAS_Core::settings();
-			return 'yes' === $settings['enabled'] && TCAS_Core::is_configured( $settings );
+			return 'yes' === $settings['enabled'];
 		}
 
 		/** false = no override, live = synchronous API (explicit opt-in), cached = local Snapshot. */
@@ -83,7 +83,12 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 			}
 			$code        = TCAS_Mapping::remote_code( $product_id );
 			$identifiers = TCAS_Mapping::remote_identifiers( $product_id );
-			$state       = TCAS_Api::fetch_stock( $code, $identifiers );
+			$partner_id  = TCAS_Mapping::partner_id( $product_id );
+			if ( class_exists( 'TCAS_Partners' ) && ! TCAS_Partners::is_configured( $partner_id ) ) {
+				self::$states[ $product_id ] = null;
+				return null;
+			}
+			$state = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::fetch_stock( $partner_id, $code, $identifiers ) : TCAS_Api::fetch_stock( $code, $identifiers );
 			self::$states[ $product_id ] = $state;
 			if ( is_wp_error( $state ) ) {
 				return $state;
@@ -238,10 +243,12 @@ if ( ! class_exists( 'TCAS_Live' ) ) {
 				return true;
 			}
 			if ( is_wp_error( $state ) ) {
-				return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» از ArioCase قابل بررسی نیست. لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name() ) );
+				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
+				return new WP_Error( 'tcas_live_unavailable', sprintf( 'موجودی «%s» از %s قابل بررسی نیست. لطفاً کمی بعد دوباره تلاش کنید.', $product->get_name(), $partner_label ) );
 			}
 			if ( 'instock' !== $state['status'] ) {
-				return new WP_Error( 'tcas_live_outofstock', sprintf( '«%s» در ArioCase فعلاً موجود نیست.', $product->get_name() ) );
+				$partner_label = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( TCAS_Mapping::partner_id( $product_id ) ) : 'ArioCase';
+				return new WP_Error( 'tcas_live_outofstock', sprintf( '«%s» نزد %s فعلاً موجود نیست.', $product->get_name(), $partner_label ) );
 			}
 			if ( null !== $state['quantity'] && (float) $quantity > (float) $state['quantity'] ) {
 				$available = (float) $state['quantity'];

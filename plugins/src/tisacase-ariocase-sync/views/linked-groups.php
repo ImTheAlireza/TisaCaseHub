@@ -13,7 +13,7 @@ $groups = isset( $groups ) && is_array( $groups ) ? $groups : array();
 					<span class="tcas-linked-group-title">
 						<strong class="tcas-local-group-title">TisaCase · <?php echo esc_html( $group['local_parent_name'] ); ?></strong>
 						<span aria-hidden="true">↔</span>
-						<strong class="tcas-remote-group-title">ArioCase · <?php echo esc_html( $group['remote_parent_name'] ); ?></strong>
+						<strong class="tcas-remote-group-title"><?php echo esc_html( $group['partner_label'] ); ?> · <?php echo esc_html( $group['remote_parent_name'] ); ?></strong>
 					</span>
 					<span class="tcas-linked-group-count"><?php echo (int) $group['count']; ?> متغیر متصل</span>
 				</summary>
@@ -26,7 +26,7 @@ $groups = isset( $groups ) && is_array( $groups ) ? $groups : array();
 							</div>
 							<div class="tcas-linked-codes">
 								<div><span>TisaCase</span><code dir="ltr"><?php echo esc_html( '' !== (string) $row['sku'] ? $row['sku'] : 'ID:' . (int) $row['id'] ); ?></code></div>
-								<div><span>ArioCase</span><?php if ( ! empty( $row['remote_name'] ) ) : ?><small><?php echo esc_html( $row['remote_name'] ); ?></small><?php endif; ?><code dir="ltr"><?php echo esc_html( $row['remote_code'] ); ?></code><?php if ( ! empty( $row['remote_id'] ) ) : ?><small dir="ltr">ID: <?php echo (int) $row['remote_id']; ?></small><?php endif; ?></div>
+								<div><span><?php echo esc_html( isset( $row['partner_label'] ) ? $row['partner_label'] : $partner_label ); ?></span><?php if ( ! empty( $row['remote_name'] ) ) : ?><small><?php echo esc_html( $row['remote_name'] ); ?></small><?php endif; ?><code dir="ltr"><?php echo esc_html( $row['remote_code'] ); ?></code><?php if ( ! empty( $row['remote_id'] ) ) : ?><small dir="ltr">ID: <?php echo (int) $row['remote_id']; ?></small><?php endif; ?></div>
 							</div>
 							<div class="tcas-linked-variation-foot">
 								<span class="tcas-stock-pill"><strong><?php echo '' !== (string) $row['quantity'] ? esc_html( $row['quantity'] ) : '—'; ?></strong> · <?php echo esc_html( TCAS_Stock::status_label( $row['status'] ) ); ?></span>

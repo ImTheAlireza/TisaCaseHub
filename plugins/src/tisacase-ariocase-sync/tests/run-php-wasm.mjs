@@ -17,12 +17,14 @@ const suites = [
 	{ file: 'tests/pairing-tests.php', sources: ['includes/class-tcas-mapping.php', 'includes/class-tcas-stock.php', 'includes/class-tcas-pairing.php'] },
 	{ file: 'tests/ajax-job-tests.php', sources: ['includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
 	{ file: 'tests/smart-match-integration-tests.php', sources: ['includes/class-tcas-local-variation-reader.php', 'includes/class-tcas-link-resolver.php', 'includes/class-tcas-matcher.php', 'includes/class-tcas-ajax.php'] },
+	{ file: 'tests/provider-tests.php', sources: ['includes/class-tcas-core.php', 'includes/interface-tcas-partner-provider.php', 'includes/providers/class-tcas-ariocase-provider.php', 'includes/class-tcas-partners.php'] },
 ];
 let failed = false;
 let pid = 740;
 for (const suite of suites) {
 	const php = new PHP(await loadNodeRuntime('8.3', { emscriptenOptions: { processId: ++pid } }));
 	php.mkdirTree('/plugin/includes');
+	php.mkdirTree('/plugin/includes/providers');
 	php.mkdirTree('/plugin/tests');
 	for (const file of [...suite.sources, suite.file]) php.writeFile('/plugin/' + file, fs.readFileSync(path.join(plugin, file)));
 	const output = await php.runStream({ code: `<?php define("TCAS_TEST_NO_EXIT", true); require "/plugin/${suite.file}";` });

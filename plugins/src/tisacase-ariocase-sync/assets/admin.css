@@ -394,3 +394,5 @@
   .tcas-converter-input-row,.tcas-converter-reference { grid-template-columns:1fr; }
   .tcas-converter-input-row .button,.tcas-converter-reference .button { justify-self:start; }
 }
+.tcas-partner-select { display:flex; align-items:center; gap:10px; margin:14px 0; }
+.tcas-partner-select select { min-width:220px; }
