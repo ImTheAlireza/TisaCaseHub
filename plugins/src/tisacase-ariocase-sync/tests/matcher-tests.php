@@ -244,6 +244,26 @@ matcher_test( 'هر دو کارت به همان مرجع همکار و با نش
 matcher_test( 'مدل هر کارت و مدل‌های دیگر همان برچسب گزارش می‌شود', array( 'a52' ) === $result['matches'][0]['shared'] && in_array( 'a52s', $result['matches'][0]['extra'], true ) && array( 'a52s' ) === $result['matches'][1]['shared'] );
 matcher_test( 'کارت‌های فهرست مدل در فهرست مبهم تکرار نمی‌شوند', 0 === count( $result['ambiguous'] ) && 0 === count( $result['unmatched'] ) && 2 === $result['summary']['list'] );
 
+// --- نام Variation تیساکیس واژه‌های تزئینی دارد («A52s ـ قاب چرم باک روشن») ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:407472', 'A52 ـ قاب چرم باک روشن', '' ), matcher_variation( 'ID:407473', 'A52s ـ قاب چرم باک روشن', '' ) ),
+	array( matcher_variation( 'ID:46922/46978', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'واژه‌های تزئینی فارسی در نام Variation مانع پخش «فهرست مدل» نمی‌شوند', 'ID:407472=ID:46922/46978' === matcher_refs( $result )[0] && 'ID:407473=ID:46922/46978' === matcher_refs( $result )[1] && 2 === $result['summary']['list'] );
+matcher_test( 'مدل گزارش‌شدهٔ کارت تمیز است (بدون واژه‌های تزئینی)', array( 'a52' ) === $result['matches'][0]['shared'] && array( 'a52s' ) === $result['matches'][1]['shared'] && in_array( 'a52s', $result['matches'][0]['extra'], true ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A52 Pro ـ قاب چرم', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'پسوند لاتین اضافه (A52 Pro) با مدل A52 یکی گرفته نمی‌شود', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A52s ـ قاب چرم', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'قاب چرم / قاب شفاف', '' ) )
+);
+matcher_test( 'برچسب همکار بدون رقم مدل، فهرست مدل حساب نمی‌شود', 0 === count( $result['matches'] ) );
+
 $result = TCAS_Matcher::match(
 	array( matcher_variation( 'ID:1', 'Samsung A52 4G', '' ) ),
 	array( matcher_variation( 'ID:9/1', 'Samsung A52 5G / A52s 5G', '' ) )

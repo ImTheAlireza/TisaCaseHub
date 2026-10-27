@@ -28,7 +28,7 @@ class TCAS_Test_Product {
 	public $saved = 0;
 	public function __construct( $id, $sku, $type = 'simple', $parent = 0, $fail_save = false ) { $this->id = $id; $this->sku = $sku; $this->type = $type; $this->parent = $parent; $this->fail_save = $fail_save; $this->name = 'نام اصلی ' . $sku; $this->price = 9000.0; $this->status = 'publish'; $this->description = 'توضیح اصلی'; }
 	public function get_id() { return $this->id; } public function get_parent_id() { return $this->parent; } public function get_type() { return $this->type; }
-	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; }
+	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; } public function set_name( $n ) { $this->name = (string) $n; }
 	public function get_regular_price() { return $this->price; } public function get_status() { return $this->status; } public function get_description() { return $this->description; }
 	public function get_manage_stock( $context = 'view' ) { return $this->manage; } public function get_stock_quantity( $context = 'view' ) { return $this->qty; } public function get_stock_status( $context = 'view' ) { return $this->stock_status; }
 	public function set_manage_stock( $v ) { $this->manage = (bool) $v; } public function set_stock_quantity( $v ) { $this->qty = (float) $v; } public function set_stock_status( $v ) { $this->stock_status = $v; }
@@ -47,6 +47,7 @@ class TCAS_Core {
 	public static function defaults() { return array( 'stock_mode' => 'quantity', 'fail_mode' => 'closed' ); }
 	public static function settings() { return array_merge( self::defaults(), self::$settings ); }
 }
+require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-mapping.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-stock.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-pairing.php';
@@ -183,6 +184,25 @@ pair_test( 'پیش‌نمایش با پرچم اشتراک، کارت را قا�
 $shared_result = TCAS_Pairing::connect( $shared_preview );
 pair_test( 'دومین Variation تیساکیس هم به همان Variation همکار وصل می‌شود', ! is_wp_error( $shared_result ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 71 ) && 'A52-MERGED' === TCAS_Mapping::remote_code( 70 ) );
 pair_test( 'هر دو Variation موجودی همان مرجع را می‌گیرند', 3.0 === (float) $a52->get_stock_quantity() && 3.0 === (float) $a52s->get_stock_quantity() );
+
+// --- مرجع مشترک خودکار: برچسب خود Variation همکار چند مدل دارد («Samsung A52 / A52s») ---
+TCAS_Core::$settings = array( 'stock_mode' => 'quantity' );
+local_product( 72, 'SKU-72' );
+local_product( 73, 'SKU-73' );
+local_product( 74, 'SKU-74' );
+$GLOBALS['products'][72]->set_name( 'قاب چرم A52 ـ روشن' );
+$GLOBALS['products'][73]->set_name( 'قاب چرم A52s ـ روشن' );
+$GLOBALS['products'][74]->set_name( 'قاب چرم A54 ـ روشن' );
+TCAS_Api::$responses['MERGED-LABEL'] = remote_product( 'MERGED-LABEL', array( 'name' => 'Samsung A52 / A52s', 'remote_id' => 47978, 'stock' => array( 'quantity' => 5.0, 'status' => 'instock' ) ) );
+list( $auto_first, $auto_first_result ) = connect_pair( 'ID:72', 'MERGED-LABEL' );
+pair_test( 'کارت اول برچسب چندمدلی بدون پرچم کلاینت وصل می‌شود', ! is_wp_error( $auto_first_result ) && 'MERGED-LABEL' === TCAS_Mapping::remote_code( 72 ) );
+$auto_second = TCAS_Pairing::preview( pair_of( 'ID:73', 'MERGED-LABEL' ) );
+pair_test( 'بدون پرچم کلاینت، برچسب چندمدلی همکار خودکار مشترک شناخته می‌شود', 'connect' === $auto_second['row']['status'] && ! empty( $auto_second['row']['shared_remote'] ) );
+$auto_second_result = TCAS_Pairing::connect( $auto_second );
+pair_test( 'کارت دوم همان مرجع مشترک را می‌گیرد و موجودی یکی است', ! is_wp_error( $auto_second_result ) && 'MERGED-LABEL' === TCAS_Mapping::remote_code( 73 ) && 5.0 === (float) $GLOBALS['products'][73]->get_stock_quantity() );
+
+$not_in_list = TCAS_Pairing::preview( pair_of( 'ID:74', 'MERGED-LABEL' ) );
+pair_test( 'مدلی که در فهرست برچسب همکار نیست همچنان مرجع تکراری می‌گیرد', 'error' === $not_in_list['row']['status'] && false !== strpos( $not_in_list['row']['message'], '#72' ) && '' === TCAS_Mapping::remote_code( 74 ) );
 
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );

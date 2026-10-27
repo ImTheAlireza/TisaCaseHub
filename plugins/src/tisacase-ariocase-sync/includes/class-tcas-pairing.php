@@ -53,6 +53,34 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			return array( 'id' => (int) $local_id, 'product' => $product );
 		}
 
+		/**
+		 * آیا Variation همکار خودش چند مدل را فهرست کرده («Samsung A52 / A52s») و این
+		 * محصول یکی از همان مدل‌هاست؟ ملاک اصلی «مرجع مشترک» همین است، چون پرچم مرورگر
+		 * ممکن است در اجرای بعدی یا برای کارت‌های ذخیره‌شده نرسد.
+		 */
+		private static function bundled_remote( $remote, $product ) {
+			if ( ! class_exists( 'TCAS_Matcher' ) || ! is_object( $product ) ) {
+				return false;
+			}
+			$models = TCAS_Matcher::bundled_models( isset( $remote['name'] ) ? (string) $remote['name'] : '' );
+			if ( count( $models ) < 2 ) {
+				return false;
+			}
+			$labels = array();
+			if ( method_exists( $product, 'get_name' ) ) {
+				$labels[] = (string) $product->get_name();
+			}
+			if ( method_exists( $product, 'get_sku' ) ) {
+				$labels[] = (string) $product->get_sku();
+			}
+			foreach ( $labels as $label ) {
+				if ( '' !== trim( $label ) && TCAS_Matcher::label_matches_models( $label, $models ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		public static function preview( $pair, $partner_id = 'ariocase' ) {
 			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
 			$pair = wp_parse_args( is_array( $pair ) ? $pair : array(), array( 'local_code' => '', 'remote_code' => '', 'error' => '', 'shared_remote' => false ) );
@@ -87,14 +115,6 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( ! $is_url && '' !== $current && $current !== $reference ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => null, 'local_id' => $local_id, 'partner_id' => $partner_id );
 			}
-			if ( ! $is_url && ! $shared ) {
-				foreach ( TCAS_Mapping::ids_by_remote_code( $reference, $partner_id ) as $mapped_id ) {
-					if ( $mapped_id !== $local_id ) {
-						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => null, 'local_id' => $local_id );
-					}
-				}
-			}
-
 			$remote = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::fetch_reference( $partner_id, $reference ) : TCAS_Api::fetch_reference( $reference );
 			if ( is_wp_error( $remote ) ) {
 				return array( 'row' => self::row( $pair, 'error', $remote->get_error_message(), $extra ), 'remote' => null, 'local_id' => $local_id );
@@ -115,7 +135,14 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
-			if ( $is_url && ! $shared ) {
+			// مرجع مشترک: اگر برچسب خودِ Variation همکار چند مدل را با هم فهرست کرده باشد و
+			// این محصول یکی از همان مدل‌ها باشد، چند Variation تیساکیس می‌توانند به همان
+			// مرجع وصل شوند؛ پرچم کلاینت لازم نیست (کارت‌های ذخیره‌شدهٔ قبلی هم کار می‌کنند).
+			if ( ! $shared && self::bundled_remote( $remote, $product ) ) {
+				$shared = true;
+			}
+			$pair['shared_remote'] = $shared;
+			if ( ! $shared ) {
 				foreach ( TCAS_Mapping::ids_by_remote_code( $pair['remote_code'], $partner_id ) as $mapped_id ) {
 					if ( $mapped_id !== $local_id ) {
 						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );

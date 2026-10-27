@@ -196,6 +196,45 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۶) مرجع مشترک از سمت سرور: کارت بی‌پرچم با برچسب چندمدلی همکار ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		// تطبیق، کارت دوم را از پاس «پیشنهاد» می‌سازد: بدون پرچم مرجع مشترک.
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:407472', remote_code: 'ID:46922/46978', local_label: 'A52', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52'], extra: ['a52s'], shared_remote: true },
+				{ local_code: 'ID:407473', remote_code: 'ID:46922/46978', local_label: 'A52s', remote_label: 'Samsung A52 / A52s', confidence: 'suggested', matched_by: 'suggested', score: 80, shared: ['a52', 'a52s'], extra: [] }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		if (action === 'tcas_preview_start') return reply({ token: 'e'.repeat(32), total: 2 });
+		// سرور برچسب چندمدلی را تشخیص می‌دهد و هر دو کارت را shared برمی‌گرداند.
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2, rows: [
+			pairRow(Object.assign(codes('ID:407472', 'ID:46922/46978'), { index: 0, shared_remote: true, status: 'connect', selectable: true })),
+			pairRow(Object.assign(codes('ID:407473', 'ID:46922/46978'), { index: 1, shared_remote: true, status: 'connect', selectable: true }))
+		] });
+		if (action === 'tcas_connect_start') return reply({ token: 'f'.repeat(32), total: 2 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 2, total: 2, rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('کارت پیشنهادی بدون پرچم، قبل از بررسی مرجع مشترک را اعلام نمی‌کند', '' === entries[1].dataset.sharedRemote && entries[0].dataset.sharedRemote === '1');
+	entries[1].querySelector('.tcas-row-select').checked = true;
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => entries[1].dataset.sharedRemote === '1', 8000);
+	ok('پاسخ سرور پرچم مرجع مشترک را روی کارت بی‌پرچم فعال می‌کند', '1' === entries[1].dataset.sharedRemote);
+	ok('یادداشت «چند مدل» روی همان کارت ظاهر می‌شود', !entries[1].querySelector('.tcas-pair-flag-note').hidden && entries[1].querySelector('.tcas-pair-flag-note').textContent.includes('چند مدل'));
+	dom.window.close();
+}
+
 // ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];

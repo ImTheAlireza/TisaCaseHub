@@ -799,6 +799,20 @@
 	function applyRow(entry, row) {
 		if (!entry || !row) return;
 		const parts = entryParts(entry);
+		// مرجع مشترک را خود سرور هم تشخیص می‌دهد (برچسب چندمدلی همکار)؛ پس کارت‌های
+		// ذخیره‌شده یا بررسی‌شدهٔ تک‌کارتی هم پرچم را از دست نمی‌دهند.
+		if (row.shared_remote) {
+			entry.dataset.sharedRemote = '1';
+			if (parts.note) {
+				const sharedNote = 'این Variation همکار چند مدل را با هم دارد؛ موجودی همان یک کد روی همهٔ کارت‌های هم‌مرجع می‌نشیند.';
+				const current = parts.note.textContent || '';
+				if (!current.includes('چند مدل را با هم دارد')) {
+					parts.note.textContent = current ? current + ' · ' + sharedNote : sharedNote;
+				}
+				parts.note.hidden = false;
+				parts.note.classList.add('is-list');
+			}
+		}
 		setPairEntryTitles(entry, row.local_name, row.remote_name);
 		if (parts.stock) {
 			const cells = [];

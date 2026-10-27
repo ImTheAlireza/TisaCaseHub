@@ -157,6 +157,72 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 		}
 
 		/**
+		 * توکن‌های «معنادار»: هر توکنی که رقم یا نویسهٔ لاتین دارد. واژه‌های تزئینی فارسی
+		 * («قاب»، «چرم»، «باک»، «روشن») که در نام Variation تکرار می‌شوند نادیده می‌مانند،
+		 * ولی هیچ پسوند مدل لاتینی (pro/ultra/s/5g) حذف نمی‌شود.
+		 */
+		private static function significant_tokens( $tokens ) {
+			$out = array();
+			foreach ( (array) $tokens as $token ) {
+				$token = (string) $token;
+				if ( '' !== $token && preg_match( '/[0-9a-z]/u', $token ) ) {
+					$out[] = $token;
+				}
+			}
+			return array_values( array_unique( $out ) );
+		}
+
+		/**
+		 * آیا این Variation تک‌مدلی همان مدلِ یک بخش از برچسب همکار است؟
+		 * فقط واژه‌های تزئینی فارسی اجازهٔ اختلاف دارند؛ «A52» با «A52 Pro» یکی نیست.
+		 */
+		private static function model_equivalent( $local_models, $segment ) {
+			$local = self::significant_tokens( $local_models );
+			$part  = self::significant_tokens( $segment );
+			if ( ! $local || ! $part || count( $local ) !== count( $part ) ) {
+				return false;
+			}
+			sort( $local, SORT_STRING );
+			sort( $part, SORT_STRING );
+			return $local === $part;
+		}
+
+		/**
+		 * بخش‌های مدل یک برچسب همکار که واقعاً مدل‌اند (رقم دارند):
+		 * «Samsung A52 / A52s» => [[a52],[a52s]] ؛ برچسب تک‌مدلی آرایهٔ خالی می‌دهد.
+		 */
+		public static function bundled_models( $label ) {
+			$out = array();
+			foreach ( self::model_segments( $label ) as $segment ) {
+				$significant = self::significant_tokens( $segment );
+				if ( ! $significant ) {
+					continue;
+				}
+				foreach ( $significant as $token ) {
+					if ( preg_match( '/[0-9]/u', $token ) ) {
+						$out[] = $significant;
+						break;
+					}
+				}
+			}
+			return $out;
+		}
+
+		/** آیا این برچسب به یکی از مدل‌های فهرست‌شده اشاره می‌کند؟ */
+		public static function label_matches_models( $label, $models ) {
+			$tokens = self::significant_tokens( self::label_tokens( $label ) );
+			if ( ! $tokens ) {
+				return false;
+			}
+			foreach ( (array) $models as $model ) {
+				if ( $model && count( array_intersect( (array) $model, $tokens ) ) === count( (array) $model ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
 		 * نسل شبکه فقط وقتی سازگار است که برابر باشد یا یک طرف هر دو نسل را فهرست کند.
 		 * در مسیر «پیشنهاد» نبودِ نسل در یک برچسب، نامشخص حساب می‌شود نه ناسازگار؛
 		 * ولی 4G در برابر 5G هرگز سازگار نیست.
@@ -392,7 +458,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				foreach ( $segments as $segment ) {
 					$candidates = array();
 					foreach ( $locals as $local_index => $local ) {
-						if ( count( $local['models'] ) !== count( $segment ) || ! self::contains_all( $local['models'], $segment ) ) {
+						if ( ! self::model_equivalent( $local['models'], $segment ) ) {
 							continue;
 						}
 						if ( ! self::nets_compatible( $local['nets'], $remote['nets'], true ) ) {
@@ -436,9 +502,9 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 					$remote_variations[ $remote_index ], $remote_index,
 					self::SCORE_LIST, 'list', 'list'
 				);
-				$entry['shared']        = $local['models'];
-				$entry['extra']         = array_values( array_diff( $remote['models'], $local['models'] ) );
-				$entry['list_models']   = $remote['models'];
+				$entry['shared']        = self::significant_tokens( $local['models'] );
+				$entry['extra']         = array_values( array_diff( self::significant_tokens( $remote['models'] ), $entry['shared'] ) );
+				$entry['list_models']   = self::significant_tokens( $remote['models'] );
 				$entry['shared_remote'] = true;
 				$found[]                = $entry;
 				$matched_local[ $local_index ]   = true;
