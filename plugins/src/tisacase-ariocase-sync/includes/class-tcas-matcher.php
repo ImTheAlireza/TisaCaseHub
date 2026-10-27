@@ -63,6 +63,8 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 				'مشکی' => 'black', 'سفید' => 'white', 'ابی' => 'blue', 'قرمز' => 'red',
 				'سبز' => 'green', 'طلایی' => 'gold', 'نقرهای' => 'silver', 'خاکستری' => 'gray',
 				'بنفش' => 'purple', 'صورتی' => 'pink', 'زرد' => 'yellow', 'نارنجی' => 'orange',
+				'کرم' => 'cream', 'بژ' => 'beige', 'نیلی' => 'navy', 'طوسی' => 'gray',
+				'یشمی' => 'mint', 'زرشکی' => 'maroon', 'ارغوانی' => 'violet',
 				'قهوهای' => 'brown', 'گیگ' => 'gb', 'گیگابایت' => 'gb', 'ترابایت' => 'tb',
 				'مگابایت' => 'mb',
 			);
@@ -105,6 +107,29 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 		}
 
 		/**
+		 * رنگ هم مثل نسل شبکه یک «بُعد» جداست، نه بخشی از نام مدل:
+		 * «A23 4G / آبی» و «Samsung A23 / آبی» یک مدل با یک رنگ‌اند.
+		 */
+		private static function is_color_token( $token ) {
+			return in_array( $token, array(
+				'black', 'white', 'blue', 'lightblue', 'darkblue', 'navy', 'red', 'maroon',
+				'green', 'mint', 'teal', 'gold', 'silver', 'gray', 'grey', 'graphite',
+				'purple', 'violet', 'pink', 'rose', 'yellow', 'orange', 'brown', 'cream',
+				'beige', 'turquoise', 'clear', 'transparent',
+			), true );
+		}
+
+		/** رنگ‌ها فقط وقتی تناقض ندارند که یکی خالی باشد یا هر دو یکی باشند. */
+		private static function colors_compatible( $first, $second ) {
+			$first  = (array) $first;
+			$second = (array) $second;
+			if ( ! $first || ! $second ) {
+				return true;
+			}
+			return $first === $second;
+		}
+
+		/**
 		 * پروفایل مدل یک Variation: توکن‌های مدل (بدون شبکه)، نسل شبکه، ارقام مدل
 		 * و این‌که برچسب چند مدل جایگزین را با هم فهرست کرده است یا نه (A / B / C).
 		 */
@@ -114,9 +139,14 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			$models = array();
 			$nets   = array();
 			$digits = array();
+			$colors = array();
 			foreach ( $tokens as $token ) {
 				if ( self::is_net_token( $token ) ) {
 					$nets[ $token ] = true;
+					continue;
+				}
+				if ( self::is_color_token( $token ) ) {
+					$colors[ $token ] = true;
 					continue;
 				}
 				$models[ $token ] = true;
@@ -130,17 +160,21 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			$models = array_map( 'strval', array_keys( $models ) );
 			$nets   = array_map( 'strval', array_keys( $nets ) );
 			$digits = array_map( 'strval', array_keys( $digits ) );
+			$colors = array_map( 'strval', array_keys( $colors ) );
 			sort( $models, SORT_STRING );
 			sort( $nets, SORT_STRING );
 			sort( $digits, SORT_STRING );
+			sort( $colors, SORT_STRING );
 			$multi = (bool) preg_match( '#[/+|&،]#u', $raw )
 				|| (bool) preg_match( '/(?:^|\s)(?:و|یا|or|and)(?:\s|$)/u', $raw );
 			return array(
-				'models' => $models,
-				'nets'   => $nets,
-				'digits' => $digits,
-				'multi'  => $multi,
-				'key'    => implode( '|', $models ),
+				'models'    => $models,
+				'nets'      => $nets,
+				'digits'    => $digits,
+				'colors'    => $colors,
+				'multi'     => $multi,
+				'key'       => implode( '|', $models ),
+				'color_key' => implode( '|', $colors ),
 			);
 		}
 
@@ -275,6 +309,14 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 		 * (مثل «Redmi Note 11 Pro/12 Pro 4G» و «Xiaomi Note 11 Pro / Note 12 Pro (4G)»
 		 * یا «Note 14 Pro 4G» و «Note 14 Pro (4G / 5G)») یک‌به‌یک جفت می‌شوند.
 		 */
+		/**
+		 * پاس «خانوادهٔ مدل»: نگارش‌های مختلف یک مدل را جفت می‌کند.
+		 *
+		 * رنگ یک بُعد مستقل است، نه بخشی از نام مدل؛ پس «A23 4G / آبی» با
+		 * «Samsung A23 / آبی» هم‌مدل است و با «Samsung A23 / صورتی» نه. وقتی هر دو
+		 * طرف چند Variation از یک مدل دارند، فقط از روی رنگ جفت می‌شوند و اگر رنگ
+		 * تعیین‌کننده نباشد هیچ جفتی ساخته نمی‌شود (مبهم می‌ماند).
+		 */
 		private static function family_matches( $local_variations, $remote_variations, $duplicate_local, $duplicate_remote, &$matched_local, &$matched_remote ) {
 			$local_groups  = array();
 			$remote_groups = array();
@@ -304,23 +346,88 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 					continue;
 				}
 				$remote_entries = $remote_groups[ $key ];
-				if ( 1 !== count( $local_entries ) || 1 !== count( $remote_entries ) ) {
+				// تک‌به‌تک: نسل نامشخص مانع نیست، ولی رنگ متناقض مانع است.
+				if ( 1 === count( $local_entries ) && 1 === count( $remote_entries ) ) {
+					$local_entry  = $local_entries[0];
+					$remote_entry = $remote_entries[0];
+					if ( ! self::colors_compatible( $local_entry['profile']['colors'], $remote_entry['profile']['colors'] ) ) {
+						continue;
+					}
+					if ( ! self::nets_compatible( $local_entry['profile']['nets'], $remote_entry['profile']['nets'], true ) ) {
+						continue;
+					}
+					$found[] = self::family_entry(
+						$local_variations[ $local_entry['index'] ], $local_entry['index'],
+						$remote_variations[ $remote_entry['index'] ], $remote_entry['index'],
+						self::SCORE_FAMILY, 'model', 'family'
+					);
+					$matched_local[ $local_entry['index'] ]   = true;
+					$matched_remote[ $remote_entry['index'] ] = true;
 					continue;
 				}
-				$local_entry  = $local_entries[0];
-				$remote_entry = $remote_entries[0];
-				if ( ! self::nets_compatible( $local_entry['profile']['nets'], $remote_entry['profile']['nets'] ) ) {
-					continue;
+				// چندبه‌چند: فقط رنگ تعیین‌کننده است.
+				foreach ( self::color_pairs( $local_entries, $remote_entries ) as $pair ) {
+					list( $local_pos, $remote_pos ) = $pair;
+					$local_entry  = $local_entries[ $local_pos ];
+					$remote_entry = $remote_entries[ $remote_pos ];
+					$found[]      = self::family_entry(
+						$local_variations[ $local_entry['index'] ], $local_entry['index'],
+						$remote_variations[ $remote_entry['index'] ], $remote_entry['index'],
+						self::SCORE_FAMILY, 'color', 'color'
+					);
+					$matched_local[ $local_entry['index'] ]   = true;
+					$matched_remote[ $remote_entry['index'] ] = true;
 				}
-				$found[] = self::family_entry(
-					$local_variations[ $local_entry['index'] ], $local_entry['index'],
-					$remote_variations[ $remote_entry['index'] ], $remote_entry['index'],
-					self::SCORE_FAMILY, 'model', 'family'
-				);
-				$matched_local[ $local_entry['index'] ]   = true;
-				$matched_remote[ $remote_entry['index'] ] = true;
 			}
 			return $found;
+		}
+
+		/**
+		 * جفت‌کردن گروهی که هر دو طرفش چند Variation هم‌مدل دارد؛ فقط از روی رنگ.
+		 * خروجی جفت موقعیت‌ها (position) در همان دو آرایه است.
+		 */
+		private static function color_pairs( $local_entries, $remote_entries ) {
+			$pairs       = array();
+			$used_local  = array();
+			$used_remote = array();
+			foreach ( $local_entries as $local_pos => $local_entry ) {
+				$colors = $local_entry['profile']['colors'];
+				if ( ! $colors ) {
+					continue;
+				}
+				$candidates = array();
+				foreach ( $remote_entries as $remote_pos => $remote_entry ) {
+					if ( isset( $used_remote[ $remote_pos ] ) ) {
+						continue;
+					}
+					if ( $remote_entry['profile']['colors'] !== $colors ) {
+						continue;
+					}
+					if ( ! self::nets_compatible( $local_entry['profile']['nets'], $remote_entry['profile']['nets'], true ) ) {
+						continue;
+					}
+					$candidates[] = $remote_pos;
+				}
+				if ( 1 !== count( $candidates ) ) {
+					continue;
+				}
+				$used_local[ $local_pos ]     = true;
+				$used_remote[ $candidates[0] ] = true;
+				$pairs[]                       = array( $local_pos, $candidates[0] );
+			}
+			// اگر از هر طرف دقیقاً یکی ماند و یکی از دو رنگ نداشت، همان‌ها جفت می‌شوند.
+			$left_local  = array_values( array_diff( array_keys( $local_entries ), array_keys( $used_local ) ) );
+			$left_remote = array_values( array_diff( array_keys( $remote_entries ), array_keys( $used_remote ) ) );
+			if ( 1 === count( $left_local ) && 1 === count( $left_remote ) ) {
+				$local_profile  = $local_entries[ $left_local[0] ]['profile'];
+				$remote_profile = $remote_entries[ $left_remote[0] ]['profile'];
+				if ( ( ! $local_profile['colors'] || ! $remote_profile['colors'] )
+					&& self::colors_compatible( $local_profile['colors'], $remote_profile['colors'] )
+					&& self::nets_compatible( $local_profile['nets'], $remote_profile['nets'], true ) ) {
+					$pairs[] = array( $left_local[0], $left_remote[0] );
+				}
+			}
+			return $pairs;
 		}
 
 		/**
@@ -398,7 +505,7 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 			foreach ( (array) $parts as $part ) {
 				$models = array();
 				foreach ( self::label_tokens( $part ) as $token ) {
-					if ( self::is_net_token( $token ) ) {
+					if ( self::is_net_token( $token ) || self::is_color_token( $token ) ) {
 						continue;
 					}
 					$models[ $token ] = true;
@@ -536,11 +643,18 @@ if ( ! class_exists( 'TCAS_Matcher' ) ) {
 					if ( count( $big['models'] ) <= count( $small['models'] ) ) {
 						continue;
 					}
+					// اشتراک واژه‌های تزئینی مدل نمی‌سازد؛ دست‌کم یک شمارهٔ مدل لازم است.
+					if ( ! preg_match( '/[0-9]/', implode( '', $small['models'] ) ) ) {
+						continue;
+					}
 					$extra = array_values( array_diff( $big['models'], $small['models'] ) );
 					return array( 'shared' => $small['models'], 'extra' => $extra );
 				}
 				// هر دو طرف چندمدلی‌اند: مدل‌های یک طرف باید زیرمجموعهٔ دیگری باشد.
 				if ( self::contains_all( $small['models'], $big['models'] ) && count( $big['models'] ) > count( $small['models'] ) ) {
+					if ( ! preg_match( '/[0-9]/', implode( '', $small['models'] ) ) ) {
+						continue;
+					}
 					return array( 'shared' => $small['models'], 'extra' => array_values( array_diff( $big['models'], $small['models'] ) ) );
 				}
 			}

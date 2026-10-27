@@ -24,6 +24,29 @@ matcher_test( 'Poco و Mi و Redmi بدون تغییر مدل حذف می‌شو
 $result = TCAS_Matcher::match( array( matcher_variation( 'ID:56', 'Samsung A56', '' ) ), array( matcher_variation( 'ID:9/56', 'A56', '' ), matcher_variation( 'ID:9/55', 'A55', '' ) ) );
 matcher_test( 'A56 فقط به A56 وصل می‌شود نه A55', array( 'ID:56=ID:9/56' ) === matcher_refs( $result ) && 1 === count( $result['unmatched'] ) );
 
+// --- رنگ بُعدی جدا از مدل است: «A23 4G / آبی» با «Samsung A23 / آبی» هم‌مدل است ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:305588', 'A23 4G / آبی' ), matcher_variation( 'ID:305589', 'A23 4G / صورتی' ) ),
+	array( matcher_variation( 'ID:45024/45190', 'Samsung A23 / آبی' ), matcher_variation( 'ID:45024/45191', 'Samsung A23 / صورتی' ) )
+);
+$color_refs = matcher_refs( $result );
+sort( $color_refs );
+matcher_test( 'هر رنگ فقط به همان رنگ وصل می‌شود', array( 'ID:305588=ID:45024/45190', 'ID:305589=ID:45024/45191' ) === $color_refs, implode( ',', matcher_refs( $result ) ) );
+matcher_test( 'جفت رنگ‌محور با نشان «بررسی» برمی‌گردد نه قطعی', 2 === count( $result['matches'] ) && 'color' === $result['matches'][0]['confidence'] && 'color' === $result['matches'][0]['matched_by'] );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 / آبی' ) ), array( matcher_variation( 'ID:9/1', 'A23 / صورتی' ) ) );
+matcher_test( 'رنگ متناقض هرگز جفت نمی‌شود', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 / آبی' ), matcher_variation( 'ID:2', 'A23 / صورتی' ) ), array( matcher_variation( 'ID:9/1', 'A23' ) ) );
+matcher_test( 'وقتی یک طرف رنگ ندارد و چند هم‌مدل هست، حدس زده نمی‌شود', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 4G / آبی' ) ), array( matcher_variation( 'ID:9/1', 'Samsung A23 / آبی' ) ) );
+matcher_test( 'نسل نامشخص در یک طرف مانع اتصال نیست', 1 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match( array( matcher_variation( 'ID:1', 'A23 4G / آبی' ) ), array( matcher_variation( 'ID:9/1', 'Samsung A23 5G / آبی' ) ) );
+matcher_test( 'نسل متناقض (4G در برابر 5G) همچنان مانع است', 0 === count( $result['matches'] ) );
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A23 4G / آبی' ), matcher_variation( 'ID:2', 'A23 4G / صورتی' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A23 / آبی' ) )
+);
+matcher_test( 'رنگ مشترک حتی وقتی طرف مقابل یک Variation دارد انتخاب می‌شود', 1 === count( $result['matches'] ) && 'ID:1=ID:9/1' === matcher_refs( $result )[0] );
+
 $local = array(
 	matcher_variation( 'ID:101', 'Samsung Galaxy S25 Ultra', 'SHARED' ),
 	matcher_variation( 'ID:102', 'Samsung Galaxy S24', 'SHARED' ),

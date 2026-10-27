@@ -46,6 +46,7 @@
 
 	// نشان‌های تطبیق: فقط SKU یکتا بی‌نشان است؛ بقیه باید پیش از اتصال دیده شوند.
 	const matchFlags = {
+		color: { text: 'بررسی · رنگ یکسان', cls: 'is-family', hint: 'مدل یکی است و رنگ هم یکی؛ فقط نوشتن برچسب و نسل شبکه فرق دارد. پیش از اتصال مرجع دو طرف را ببینید.' },
 		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
 		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
 		list: { text: 'پیشنهاد · فهرست مدل', cls: 'is-list', hint: 'این Variation همکار چند مدل را با هم دارد و هر مدل، Variation جداگانه‌ای در تیساکیس است؛ همین موجودی روی همهٔ آن کارت‌ها اعمال می‌شود.' },
@@ -480,9 +481,11 @@
 			const ok = 'exact' === confidence;
 			// کارت «فهرست مدل» هم نیاز به تأیید دارد ولی دلیلش مشخص است؛ برچسب آن حفظ می‌شود.
 			const list = 'list' === confidence;
+			// تطبیق رنگ‌محور دلیلش را روی خود کارت می‌گوید تا با «نیاز به بررسی» گم نشود.
+			const color = 'color' === confidence;
 			setEntrySelectable(entry, !entry.dataset.savedDone);
 			setEntryState(entry, ok ? 'ready' : 'review', {
-				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال'),
+				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : (color ? 'رنگ یکسان · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال')),
 				tone: ok ? 'ok' : 'warn',
 				text: 'موجودی هنگام زدن «اتصال انتخاب‌شده‌ها» خوانده می‌شود.'
 			});
@@ -1583,12 +1586,14 @@
 		const excluded = state.smartAmbiguous + state.smartUnmatched;
 		const flagged = batch.filter((match) => match && match.confidence && 'exact' !== match.confidence).length;
 		const familyCount = batch.filter((match) => match && 'family' === match.confidence).length;
+		const colorCount = batch.filter((match) => match && 'color' === match.confidence).length;
 		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
 		const listCount = batch.filter((match) => match && 'list' === match.confidence).length;
 		const sharedRemotes = new Set(batch.filter((match) => match && match.shared_remote).map((match) => String(match.remote_code))).size;
 		const alreadyConnected = batch.filter((match) => match && match.connected).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
 		const smartParts = [];
+		if (colorCount) smartParts.push(String(colorCount) + ' جفت از روی رنگ یکسان');
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
 		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
 		if (listCount) smartParts.push(String(listCount) + ' کارت از ' + String(sharedRemotes) + ' Variation چندمدلی همکار');

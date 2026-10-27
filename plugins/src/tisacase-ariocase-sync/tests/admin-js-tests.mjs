@@ -278,6 +278,35 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۶۶) تطبیق از روی رنگ: کارت با نشان «رنگ یکسان» ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:305588', remote_code: 'ID:45024/45190', local_label: 'A23 4G / آبی', remote_label: 'Samsung A23 / آبی', confidence: 'color', matched_by: 'color', score: 88 },
+				{ local_code: 'ID:305589', remote_code: 'ID:45024/45191', local_label: 'A23 4G / صورتی', remote_label: 'Samsung A23 / صورتی', confidence: 'color', matched_by: 'color', score: 88 }
+			],
+			ambiguous: [], unmatched: [], skipped: [],
+			summary: { color: 2 }, connected: 0,
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 2 }
+		});
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('هر دو کارت رنگ‌محور ساخته می‌شوند', 2 === entries.length);
+	ok('نشان کارت می‌گوید تطبیق از روی رنگ یکسان است', entries.every((entry) => entry.textContent.includes('رنگ یکسان')));
+	ok('گزارش تطبیق تعداد جفت‌های رنگ‌محور را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('جفت از روی رنگ یکسان'));
+	ok('کارت رنگ‌محور قابل انتخاب است ولی نیاز به بررسی دارد', entries.every((entry) => !entry.querySelector('.tcas-row-select').disabled && 'review' === entry.dataset.state));
+	dom.window.close();
+}
+
 // ---------- ۵.۷) کارت از قبل متصل: نه بررسی، نه درخواست ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];
