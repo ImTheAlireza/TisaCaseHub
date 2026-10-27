@@ -193,7 +193,11 @@ if ( ! class_exists( 'TisaCase_Exporter_Cli' ) ) {
 			$unique = $exported;
 
 			if ( '' !== $dedup ) {
-				$finalize = TisaCase_Exporter_Pipeline::finalize_dedup( $forced );
+				$forced['source_exported'] = (int) $exported;
+				$finalize = false;
+				while ( false === $finalize ) {
+					$finalize = TisaCase_Exporter_Pipeline::finalize_dedup( $forced );
+				}
 
 				if ( is_wp_error( $finalize ) ) {
 					fclose( $handle );
