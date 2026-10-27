@@ -24,7 +24,7 @@ function makeDom(entryCount = 1) {
 	for (let i = 0; i < entryCount; i++) entries += entryMarkup();
 	const dom = new JSDOM(`<!doctype html><html><body>
 		<div class="tcas-converter-flow"><label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input"><button id="tcas-link-resolve">تبدیل</button></span></label><div id="tcas-link-result" class="tcas-converter-result" hidden><div class="tcas-converter-result-meta"><span id="tcas-link-shop"></span><small id="tcas-link-product"></small></div><label id="tcas-link-variation-wrap" class="tcas-link-variation" hidden><select id="tcas-link-variation"></select></label><span class="tcas-converter-reference"><input id="tcas-link-sku" readonly><button id="tcas-link-copy" disabled>کپی</button></span></div><span id="tcas-link-status"></span></div>
-		<input id="tcas-smart-local"><input id="tcas-smart-remote"><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span>
+		<label class="tcas-shop-field tcas-shop-local"><input id="tcas-smart-local" type="text"></label><label class="tcas-shop-field tcas-shop-remote"><input id="tcas-smart-remote" type="text"></label><button id="tcas-smart-match">تطبیق</button><button id="tcas-smart-next" hidden>دسته بعد</button><span id="tcas-smart-status"></span>
 		<section id="tcas-smart-issues" hidden><h3>موارد نیازمند بررسی</h3><span id="tcas-smart-issues-count"></span><p class="tcas-smart-issues-help"></p><div id="tcas-smart-issue-filters" role="group"></div><div id="tcas-smart-issue-list" role="list"></div></section>
 		<section class="tcas-card tcas-pairs-card"><div class="tcas-card-head"><div class="tcas-pairs-actions"><button id="tcas-select-valid" class="button">انتخاب همه</button><button id="tcas-preview-start" class="button">بررسی همه دوباره</button><button id="tcas-pair-add" class="button">افزودن جفت</button></div></div><p class="tcas-pairs-help">help</p>
 		<div id="tcas-pair-entries" class="tcas-pair-entries">${entries}</div><template id="tcas-pair-entry-template">${entryMarkup()}</template>
@@ -469,6 +469,57 @@ function type(entry, field, value) {
 	ok('هر دو مسیر تلاش می‌شوند', calls >= 4);
 	ok('خطای نهایی کد ۴۰۴ و نام دامنه را نشان می‌دهد', message.includes('404') && message.includes('tisa.test'));
 	ok('پنل جزئیات، LiteSpeed را به‌عنوان فایروال/CDN نشان می‌دهد', window.document.getElementById('tcas-request-diag').textContent.includes('LiteSpeed'));
+	dom.window.close();
+}
+
+// ---------- ۷ل) جست‌وجوی کارت تطبیق: نمایش فوری، نتیجهٔ خالی و خطا ----------
+{
+	const dom = makeDom(); const { window } = dom; let release = null; let answer = 'empty'; let block = 1;
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') !== 'tcas_search_products') return reply({});
+		if (block > 0) { block--; await new Promise((resolve) => { release = resolve; }); }
+		if ('error' === answer) return reply({ message: 'جست‌وجو مسدود شد' }, false, 500);
+		if ('rows' === answer) return reply({ rows: [{ reference: 'TS0100', product_id: 11, type: 'simple', sku: 'TS0100', name: 'قاب رویایی پروانه آبی', label: '', stock: { quantity: 2, status: 'instock' } }] });
+		return reply({ rows: [] });
+	};
+	window.eval(script);
+	const smart = window.document.getElementById('tcas-smart-local');
+	smart.value = 'قاب رویایی پروانه آبی';
+	smart.dispatchEvent(new window.Event('input'));
+	const box = smart.parentElement.querySelector('.tcas-search-results');
+	await waitFor(() => release !== null, 8000);
+	ok('به‌محض تایپ، «در حال جست‌وجو» همان‌جا دیده می‌شود', !box.hidden && box.textContent.includes('در حال جست‌وجو'));
+	release(); release = null;
+	await waitFor(() => box.textContent.includes('پیدا نشد'), 8000);
+	ok('نتیجهٔ خالی هم پیام دارد و فهرست باز می‌ماند', !box.hidden && box.textContent.includes('پیدا نشد'));
+	answer = 'rows';
+	smart.value = 'قاب';
+	smart.dispatchEvent(new window.Event('input'));
+	await waitFor(() => box.querySelectorAll('.tcas-search-row').length === 1, 8000);
+	ok('با رسیدن نتیجه، ردیف‌های قابل انتخاب نمایش داده می‌شوند', !box.hidden && box.querySelector('.tcas-search-row').dataset.reference === 'TS0100');
+	answer = 'error';
+	smart.value = 'خطا';
+	smart.dispatchEvent(new window.Event('input'));
+	await waitFor(() => box.textContent.includes('مسدود شد'), 8000);
+	ok('خطای سرور در همان فهرست نوشته می‌شود', !box.hidden && box.textContent.includes('مسدود شد'));
+	ok('هنگام باز بودن فهرست، والدها برای دیده‌شدن آزاد می‌شوند', smart.parentElement.classList.contains('is-open'));
+	dom.window.close();
+}
+
+// ---------- ۷م) جست‌وجوی عبارت چندواژه‌ای همان عبارت را می‌فرستد ----------
+{
+	const dom = makeDom(); const { window } = dom; const terms = [];
+	window.fetch = async (url, options) => {
+		if (options.body.get('action') === 'tcas_search_products') { terms.push(options.body.get('term')); return reply({ rows: [] }); }
+		return reply({});
+	};
+	window.eval(script);
+	const smart = window.document.getElementById('tcas-smart-local');
+	smart.value = 'قاب رویایی پروانه آبی';
+	smart.dispatchEvent(new window.Event('input'));
+	await waitFor(() => terms.length > 0, 8000);
+	ok('عبارت کاربر کامل و بدون تغییر به سرور می‌رود (شکستن واژه‌ها سمت سرور است)', terms[0] === 'قاب رویایی پروانه آبی');
+	ok('جست‌وجو روی محصولات همان سایت انجام می‌شود', window.document.querySelectorAll('.tcas-search-row').length === 0);
 	dom.window.close();
 }
 

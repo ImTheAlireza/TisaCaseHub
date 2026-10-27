@@ -65,6 +65,45 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 			return self::rank( $rows, $term );
 		}
 
+		/**
+		 * شکستن عبارت به واژه‌ها؛ «قاب رویایی پروانه آبی» با ترتیب دیگر هم پیدا می‌شود.
+		 * نویسه‌های کنترلی راست‌به‌چپ و نیم‌فاصله حذف می‌شوند و حداکثر ۶ واژه جست‌وجو می‌شود.
+		 *
+		 * @param string $term عبارت.
+		 * @return array<int,string>
+		 */
+		public static function terms( $term ) {
+			$term = trim( (string) $term );
+			if ( '' === $term ) {
+				return array();
+			}
+			if ( preg_match( '/[\x{200c}\x{200e}\x{200f}]/u', $term ) ) {
+				$term = preg_replace( '/[\x{200c}\x{200e}\x{200f}]+/u', ' ', $term );
+			}
+			$term = preg_replace( '/\s+/u', ' ', (string) $term );
+			// جداکننده‌های رایج در نام محصول: «-»، «/»، «|»، ویرگول فارسی و لاتین.
+			$parts = preg_split( '/[\s,،;؛\|\/\\\\]+/u', (string) $term );
+			if ( ! is_array( $parts ) ) {
+				return array();
+			}
+			$total  = count( $parts );
+			$tokens = array();
+			foreach ( $parts as $part ) {
+				$part = trim( $part, " \t\n\r\0\x0B-_()[]{}\"'.”“" );
+				if ( '' === $part ) {
+					continue;
+				}
+				$length = function_exists( 'mb_strlen' ) ? mb_strlen( $part ) : strlen( $part );
+				// واژه‌های تک‌حرفی نویز می‌سازند، مگر اینکه کل عبارت یک واژه باشد.
+				if ( $length < 2 && $total > 1 ) {
+					continue;
+				}
+				$tokens[] = $part;
+			}
+			$tokens = array_values( array_unique( $tokens ) );
+			return array_slice( $tokens, 0, 6 );
+		}
+
 		/** عبارت کوتاه‌تر از دو حرف جست‌وجو نمی‌شود. */
 		public static function too_short( $term ) {
 			$term = trim( (string) $term );
@@ -140,31 +179,24 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 			if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || ! function_exists( 'wc_get_product' ) ) {
 				return array();
 			}
-			$term = (string) $term;
-			$like = '%' . $wpdb->esc_like( $term ) . '%';
-			$id   = ctype_digit( $term ) ? (int) $term : 0;
-			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- نام جداول از $wpdb خوانده می‌شود.
-			$sql = $wpdb->prepare(
-				"SELECT DISTINCT p.ID, p.post_type, p.post_parent
-				FROM {$wpdb->posts} p
-				LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_sku'
-				WHERE p.post_type IN ('product','product_variation')
-					AND p.post_status = 'publish'
-					AND ( p.post_title LIKE %s OR m.meta_value LIKE %s OR p.ID = %d )
-				ORDER BY p.post_type ASC, p.ID DESC
-				LIMIT %d",
-				$like,
-				$like,
-				$id,
-				(int) $limit * 3
-			);
-			$found = $wpdb->get_results( $sql );
-			// phpcs:enable
-			if ( ! is_array( $found ) ) {
+			$tokens = self::terms( $term );
+			$id     = ctype_digit( (string) $term ) ? (int) $term : 0;
+			if ( ! $tokens && ! $id ) {
 				return array();
 			}
 			$candidates = array();
-			foreach ( $found as $post ) {
+			// اول همهٔ واژه‌ها با هم (دقیق‌تر)، بعد هر واژه به‌تنهایی (نتیجهٔ بیشتر مثل جست‌وجوی معمول).
+			foreach ( array( 'AND', 'OR' ) as $glue ) {
+				$candidates = self::posts_for( $tokens, $id, $glue, (int) $limit * 3 );
+				if ( $candidates ) {
+					break;
+				}
+			}
+			if ( ! $candidates ) {
+				return array();
+			}
+			$rows = array();
+			foreach ( $candidates as $post ) {
 				$product_id = isset( $post->ID ) ? (int) $post->ID : 0;
 				$product    = $product_id ? wc_get_product( $product_id ) : false;
 				if ( ! $product || ! is_object( $product ) ) {
@@ -175,7 +207,7 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 				if ( 'variation' === $type ) {
 					$parent_id = isset( $post->post_parent ) ? (int) $post->post_parent : 0;
 					$parent    = $parent_id ? wc_get_product( $parent_id ) : false;
-					$candidates[] = array(
+					$rows[]    = array(
 						'product_id' => $product_id,
 						'parent_id'  => $parent_id,
 						'type'       => 'variation',
@@ -187,7 +219,7 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 					);
 					continue;
 				}
-				$candidates[] = array(
+				$rows[] = array(
 					'product_id' => $product_id,
 					'parent_id'  => 0,
 					'type'       => $type,
@@ -198,7 +230,50 @@ if ( ! class_exists( 'TCAS_Local_Search' ) ) {
 					'status'     => (string) $product->get_stock_status(),
 				);
 			}
-			return $candidates;
+			return $rows;
+		}
+
+		/**
+		 * کوئری آماده‌شده برای واژه‌ها؛ LIKE هر واژه با esc_like ساخته می‌شود.
+		 *
+		 * @param array<int,string> $tokens واژه‌ها.
+		 * @param int               $id     شناسهٔ عددی (اگر عبارت عدد باشد).
+		 * @param string            $glue   AND یا OR.
+		 * @param int               $limit  سقف.
+		 * @return array<int,mixed>
+		 */
+		private static function posts_for( $tokens, $id, $glue, $limit ) {
+			global $wpdb;
+			$clauses = array();
+			$values  = array();
+			foreach ( $tokens as $token ) {
+				$like      = '%' . $wpdb->esc_like( $token ) . '%';
+				$clauses[] = '( p.post_title LIKE %s OR m.meta_value LIKE %s )';
+				$values[]  = $like;
+				$values[]  = $like;
+			}
+			if ( $id ) {
+				$clauses[] = 'p.ID = %d';
+				$values[]  = $id;
+			}
+			if ( ! $clauses ) {
+				return array();
+			}
+			$values[] = (int) $limit;
+			$where    = implode( ' ' . ( 'OR' === $glue ? 'OR' : 'AND' ) . ' ', $clauses );
+			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders -- نام جداول از $wpdb و مقادیر با placeholders.
+			$query = "SELECT DISTINCT p.ID, p.post_type, p.post_parent
+				FROM {$wpdb->posts} p
+				LEFT JOIN {$wpdb->postmeta} m ON m.post_id = p.ID AND m.meta_key = '_sku'
+				WHERE p.post_type IN ('product','product_variation')
+					AND p.post_status = 'publish'
+					AND ( {$where} )
+				ORDER BY p.post_type ASC, p.ID DESC
+				LIMIT %d";
+			$sql = call_user_func_array( array( $wpdb, 'prepare' ), array_merge( array( $query ), $values ) );
+			$found = $wpdb->get_results( $sql );
+			// phpcs:enable
+			return is_array( $found ) ? $found : array();
 		}
 
 		/**

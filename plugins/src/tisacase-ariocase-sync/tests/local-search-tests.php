@@ -22,6 +22,17 @@ search_test( 'عبارت یک‌حرفی جست‌وجو نمی‌شود', TCAS_
 search_test( 'عبارت دوحرفی یا بیشتر مجاز است', ! TCAS_Local_Search::too_short( 'ab' ) && ! TCAS_Local_Search::too_short( 'قاب' ) );
 search_test( 'عبارت کوتاه هیچ کوئری‌ای اجرا نمی‌کند', array() === TCAS_Local_Search::search( 'a' ) && array() === TCAS_Local_Search::search( '   ' ) );
 
+// --- شکستن عبارت به واژه (جست‌وجوی واقعی مثل بقیهٔ جست‌وجوها) ---
+search_test( 'عبارت چندواژه‌ای به واژه‌های جدا شکسته می‌شود', array( 'قاب', 'رویایی', 'پروانه', 'آبی' ) === TCAS_Local_Search::terms( 'قاب رویایی پروانه آبی' ) );
+search_test( 'جداکننده‌ها و ویرگول هم واژه‌ها را جدا می‌کنند', array( 'قاب', 'پروانه', 'آبی' ) === TCAS_Local_Search::terms( 'قاب/پروانه، آبی' ) );
+search_test( 'نویسهٔ کنترلی راست‌به‌چپ حذف می‌شود', array( 'قاب', 'گوشی' ) === TCAS_Local_Search::terms( "قاب گوشی\u{200e}" ) );
+search_test( 'واژه‌های تکراری یک‌بار جست‌وجو می‌شوند', array( 'قاب', 'آبی' ) === TCAS_Local_Search::terms( 'قاب آبی قاب' ) );
+search_test( 'واژه‌های تک‌حرفی در عبارت چندواژه‌ای حذف می‌شوند', array( 'قاب', 'آبی' ) === TCAS_Local_Search::terms( 'قاب a آبی' ) );
+search_test( 'عبارت تک‌واژه‌ای حتی یک‌حرفی حفظ می‌شود', array( 'a' ) === TCAS_Local_Search::terms( 'a' ) );
+search_test( 'تعداد واژه‌ها به شش محدود می‌شود', 6 === count( TCAS_Local_Search::terms( 'aa bb cc dd ee ff gg hh' ) ) );
+search_test( 'عبارت خالی هیچ واژه‌ای ندارد', array() === TCAS_Local_Search::terms( '   ' ) );
+search_test( 'پرانتز و گیومه از دو طرف واژه حذف می‌شوند', array( 'قاب', 'آبی' ) === TCAS_Local_Search::terms( '(قاب) "آبی"' ) );
+
 // --- جست‌وجو با منبع تستی ---
 $calls = 0;
 TCAS_Local_Search::$finder = function ( $term, $limit ) use ( &$calls ) {

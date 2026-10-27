@@ -20,7 +20,7 @@ $recent_groups = array_slice( $connected_groups, 0, 4 );
 <section class="tcas-card tcas-smart-card">
 	<div class="tcas-card-head"><div><span class="tcas-step">⌁</span><h2>تطبیق خودکار Variationها</h2></div><span class="tcas-tag">مرجع دقیق</span></div>
 	<div class="tcas-smart-grid">
-		<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input id="tcas-smart-local" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
+		<label class="tcas-shop-field tcas-shop-local"><span class="tcas-shop-label">تیساکیس <bdi>TisaCase</bdi></span><input id="tcas-smart-local" type="text" dir="auto" placeholder="جست‌وجوی نام/SKU محصول TisaCase یا لینک و ID" autocomplete="off" spellcheck="false"></label>
 		<label class="tcas-shop-field tcas-shop-remote"><span class="tcas-shop-label"><?php echo esc_html( $partner_label ); ?></span><input id="tcas-smart-remote" type="text" dir="ltr" placeholder="لینک، SKU یا ID محصول متغیر" autocomplete="off" spellcheck="false"></label>
 		<div class="tcas-smart-actions"><button type="button" id="tcas-smart-match" class="button button-primary tcas-btn-primary">یافتن جفت‌ها</button><button type="button" id="tcas-smart-next" class="button" hidden>دسته بعد</button></div>
 	</div>

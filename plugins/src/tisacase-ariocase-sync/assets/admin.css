@@ -426,6 +426,9 @@
 .tcas-pair-flag-note[hidden] { display:none; }
 /* ---- جست‌وجوی محلی محصول: فهرست پیشنهادها زیر همان فیلد ---- */
 .tcas-search-host { position:relative; }
+.tcas-search-host.is-open { z-index:30; }
+.tcas-card.is-search-open,.tcas-pair-entry.is-search-open,.tcas-fresh-product-group.is-search-open { overflow:visible; z-index:20; }
+.tcas-search-host.is-open .tcas-search-results { box-shadow:0 16px 32px rgba(15,42,38,.18); }
 .tcas-search-results { position:absolute; z-index:40; inset-inline:0; top:calc(100% + 4px); display:grid; gap:2px; max-height:290px; overflow:auto; padding:5px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:#fff; box-shadow:0 10px 24px rgba(15,42,38,.12); }
 .tcas-search-results[hidden] { display:none; }
 .tcas-search-note { margin:4px 6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }

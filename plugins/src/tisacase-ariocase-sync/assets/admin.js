@@ -406,7 +406,7 @@
 	}
 
 	// ---- جست‌وجوی محلی محصول TisaCase: بدون درخواست بیرونی و بدون لینک در POST ----
-	const SEARCH_DEBOUNCE = 350;
+	const SEARCH_DEBOUNCE = 250;
 
 	function looksLikeLink(value) {
 		const text = String(value || '').trim();
@@ -446,16 +446,30 @@
 		let rows = [];
 		let active = -1;
 
+		const unclip = (open) => {
+			// گروه‌های آکاردئونی overflow:hidden دارند و فهرست را می‌برند.
+			let parent = host.parentElement;
+			while (parent && parent !== document.body) {
+				if (parent.classList && (parent.classList.contains('tcas-fresh-product-group') || parent.classList.contains('tcas-card') || parent.classList.contains('tcas-pair-entry'))) {
+					parent.classList.toggle('is-search-open', Boolean(open));
+				}
+				parent = parent.parentElement;
+			}
+			host.classList.toggle('is-open', Boolean(open));
+		};
+
 		const hide = () => {
 			box.hidden = true;
 			box.textContent = '';
 			active = -1;
+			rows = [];
+			unclip(false);
 			input.setAttribute('aria-expanded', 'false');
 		};
 
 		const show = () => {
-			if (!rows.length) return;
 			box.hidden = false;
+			unclip(true);
 			input.setAttribute('aria-expanded', 'true');
 		};
 
@@ -507,6 +521,7 @@
 				return;
 			}
 			const current = ++seq;
+			render([], 'در حال جست‌وجوی «' + term + '»…');
 			try {
 				const data = await searchFetch(term);
 				if (current !== seq) return;
@@ -530,10 +545,12 @@
 				return;
 			}
 			window.clearTimeout(timer);
-			timer = window.setTimeout(run, opts.debounce || SEARCH_DEBOUNCE);
+			// مثل هر جست‌وجوی دیگری: اولین حرف‌ها فوراً نتیجه می‌دهند و تایپ سریع دوباره‌کاری نمی‌کند.
+			const delay = 0 === rows.length && !box.hidden ? 120 : (opts.debounce || SEARCH_DEBOUNCE);
+			timer = window.setTimeout(run, delay);
 		});
 		input.addEventListener('focus', () => { if (rows.length) show(); });
-		input.addEventListener('blur', () => { window.setTimeout(hide, 150); });
+		input.addEventListener('blur', () => { window.setTimeout(hide, 220); });
 		input.addEventListener('keydown', (event) => {
 			if (box.hidden) return;
 			if ('ArrowDown' === event.key) {
