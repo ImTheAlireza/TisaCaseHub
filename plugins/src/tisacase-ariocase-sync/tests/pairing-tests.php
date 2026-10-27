@@ -1,6 +1,7 @@
 <?php
 /** اتصال جفتی: فقط محصولات موجود و فقط فیلدهای Stock. */
 define( 'ABSPATH', __DIR__ . '/' );
+if ( ! defined( 'ARRAY_A' ) ) { define( 'ARRAY_A', 'ARRAY_A' ); }
 class WP_Error { private $code; private $message; public function __construct( $c = '', $m = '' ) { $this->code = $c; $this->message = $m; } public function get_error_code() { return $this->code; } public function get_error_message() { return $this->message; } }
 function is_wp_error( $v ) { return $v instanceof WP_Error; }
 function wp_parse_args( $a, $d ) { return array_merge( $d, (array) $a ); }
@@ -29,6 +30,16 @@ class TCAS_Test_WPDB {
 			}
 		}
 		sort( $out ); return $out;
+	}
+	public function get_results( $query, $mode = null ) {
+		preg_match( "/pm\.meta_key = '([^']+)'/", $query, $key );
+		$rows = array();
+		foreach ( $GLOBALS['meta'] as $id => $meta ) {
+			if ( isset( $key[1], $meta[ $key[1] ] ) && '' !== (string) $meta[ $key[1] ] ) {
+				$rows[] = array( 'id' => (string) $id, 'code' => (string) $meta[ $key[1] ] );
+			}
+		}
+		return $rows;
 	}
 }
 $GLOBALS['wpdb'] = new TCAS_Test_WPDB(); $GLOBALS['meta'] = array(); $GLOBALS['products'] = array();
@@ -268,6 +279,20 @@ pair_test( 'قطع اتصال، مرجع را از فهرست صاحبان زن�
 $stale_preview = TCAS_Pairing::preview( pair_of( 'ID:86', 'STALE-1' ) );
 pair_test( 'مرجع یتیم مانع اتصال Variation تازه نمی‌شود', 'connect' === $stale_preview['row']['status'] && $stale_preview['row']['selectable'] );
 pair_test( 'پاک‌سازی مرجع‌های یتیم، متای قدیمی را حذف می‌کند', TCAS_Mapping::prune_stale() >= 1 && '' === (string) get_post_meta( 85, TCAS_Mapping::META_REMOTE_ID, true ) );
+
+// --- نگاشت خراب: محصول حذف شده ولی مرجعش روی متا مانده ---
+local_product( 88, 'SKU-88' );
+local_product( 89, 'SKU-89' );
+TCAS_Api::$responses['BROKEN-1'] = remote_product( 'BROKEN-1', array( 'name' => 'Case BROKEN', 'remote_id' => 77001, 'stock' => array( 'quantity' => 3.0, 'status' => 'instock' ) ) );
+list( $broken_a, $broken_a_result ) = connect_pair( 'ID:88', 'BROKEN-1' );
+pair_test( 'Variation اول به مرجع وصل می‌شود', ! is_wp_error( $broken_a_result ) && 'BROKEN-1' === TCAS_Mapping::remote_code( 88 ) );
+unset( $GLOBALS['products'][88] ); // محصول دیگر بارگذاری نمی‌شود (حذف‌شده/خراب)
+pair_test( 'نگاشت خراب صاحب مرجع حساب نمی‌شود', ! in_array( 88, TCAS_Mapping::holders_of( 'ID:77001' ), true ) );
+$broken_preview = TCAS_Pairing::preview( pair_of( 'ID:89', 'BROKEN-1' ) );
+pair_test( 'نگاشت خراب مانع اتصال Variation تازه نمی‌شود', 'connect' === $broken_preview['row']['status'] );
+$broken_rows = TCAS_Mapping::orphans();
+pair_test( 'نگاشت خراب در فهرست تشخیصی دیده می‌شود', 1 === count( $broken_rows ) && 88 === (int) $broken_rows[0]['id'] && 'BROKEN-1' === $broken_rows[0]['code'] );
+pair_test( 'پاک‌سازی نگاشت خراب، متایش را حذف می‌کند', 1 === TCAS_Mapping::clear_broken() && '' === (string) TCAS_Mapping::remote_code( 88 ) );
 
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );

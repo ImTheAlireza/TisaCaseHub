@@ -15,7 +15,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		const STEP_MAX  = 20;
 
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'group_action', 'clear_logs', 'sweep_now' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'group_action', 'clear_broken', 'clear_logs', 'sweep_now' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -600,6 +600,20 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				'reload'  => true,
 				'done'    => $ok,
 				'failed'  => $fail,
+			) );
+		}
+
+		/** حذف نگاشت‌های خراب (محصول حذف‌شده/زباله‌دان) که در فهرست دیده نمی‌شوند. */
+		public static function clear_broken() {
+			self::auth();
+			$removed = TCAS_Mapping::clear_broken();
+			$pruned  = TCAS_Mapping::prune_stale();
+			TCAS_Logger::add( 'mapping_remove', 'نگاشت‌های خراب', sprintf( '%d نگاشت خراب و %d مرجع یتیم پاک شد.', $removed, $pruned ) );
+			wp_send_json_success( array(
+				'message' => ( $removed + $pruned ) . ' نگاشت خراب پاک شد' . ( $removed ? ' (' . $removed . ' محصول حذف‌شده/زباله‌دان و ' . $pruned . ' مرجع یتیم)' : '' ) . '؛ هیچ محصولی حذف نشد.',
+				'reload'  => true,
+				'removed' => $removed,
+				'pruned'  => $pruned,
 			) );
 		}
 

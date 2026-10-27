@@ -1052,6 +1052,31 @@
 		if (parts.message) {
 			parts.message.textContent = row.message || '';
 			parts.message.classList.toggle('is-error', !row.selectable);
+			// مرجع در اختیار محصول دیگری است: دکمهٔ آزادسازی دقیقاً روی همان کارت.
+			const old = parts.message.parentNode ? parts.message.parentNode.querySelector('.tcas-release-holder') : null;
+			if (old) old.remove();
+			if (row.holder && row.holder.id) {
+				const release = node('button', 'button tcas-release-holder', 'آزادکردن مرجع از #' + String(row.holder.id));
+				release.type = 'button';
+				release.dataset.productId = String(row.holder.id);
+				release.title = row.holder.name
+					? 'اتصال «' + row.holder.name + '» به این مرجع حذف می‌شود؛ محصول و موجودی آن دست‌نخورده می‌مانند.'
+					: 'اتصال محصول #' + String(row.holder.id) + ' به این مرجع حذف می‌شود.';
+				release.addEventListener('click', async () => {
+					const holderLabel = row.holder.name ? '«' + row.holder.name + '» (#' + String(row.holder.id) + ')' : 'محصول #' + String(row.holder.id);
+					if (!window.confirm(holderLabel + ' از این مرجع جدا شود؟ محصول و موجودی‌اش دست‌نخورده می‌مانند.')) return;
+					busy(release, true, 'در حال آزادسازی…');
+					try {
+						await request('disconnect_mapping', { product_id: release.dataset.productId });
+						text('tcas-preview-status', 'مرجع آزاد شد؛ همان کارت دوباره بررسی می‌شود.');
+						await checkEntry(entry, { force: true });
+					} catch (error) {
+						text('tcas-preview-status', error.message, true);
+					}
+					busy(release, false);
+				});
+				parts.message.parentNode.appendChild(release);
+			}
 		}
 		if ('connected' !== row.status) rememberCard(entry, row, 'preview');
 	}
@@ -2209,6 +2234,12 @@
 		if (!ids.length) return;
 		simpleAction(button, 'group_action', { mode: 'sync', ids }, 'tcas-sync-status');
 	}));
+	const clearBroken = document.querySelector('.tcas-clear-broken');
+	if (clearBroken) clearBroken.addEventListener('click', () => {
+		const count = document.querySelectorAll('#tcas-broken-card .tcas-broken-row').length;
+		if (!window.confirm('اتصال این ' + String(count) + ' نگاشت خراب حذف شود؟ هیچ محصولی حذف نمی‌شود و موجودی‌ها دست‌نخورده می‌مانند.')) return;
+		simpleAction(clearBroken, 'clear_broken', {}, 'tcas-broken-status');
+	});
 	const clearLogs = $('tcas-clear-logs');
 	if (clearLogs) clearLogs.addEventListener('click', () => simpleAction(clearLogs, 'clear_logs', {}, 'tcas-log-status'));
 	const sweepNow = $('tcas-sweep-now');

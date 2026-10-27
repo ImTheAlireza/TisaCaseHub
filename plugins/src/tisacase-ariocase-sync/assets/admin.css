@@ -336,6 +336,16 @@
 .tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
 .tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
 .tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-broken-card { border-color:#E6BDB8; }
+.tcas-count-warn { background:var(--tisa-danger-soft,#FBECEA) !important; color:var(--tisa-danger,#B5453A) !important; }
+.tcas-warn-help { margin:0; color:#76520B; font-size:var(--tisa-fs-tiny,11px); line-height:1.8; }
+.tcas-broken-list { margin:0; padding:0; list-style:none; display:grid; gap:6px; }
+.tcas-broken-row { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:7px 9px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:var(--tisa-surface,#fff); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-broken-row code { direction:ltr; }
+.tcas-broken-id { color:var(--tcas-muted); }
+.tcas-broken-row small { color:var(--tcas-muted); }
+.tcas-broken-row .button { margin-inline-start:auto; }
+.tcas-release-holder { margin-top:6px; min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.5 !important; }
 .tcas-linked-group-tail { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
 .tcas-linked-group-actions { display:flex; align-items:center; gap:5px; }
 .tcas-linked-group-actions .button { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.5 !important; }

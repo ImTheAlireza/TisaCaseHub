@@ -150,7 +150,12 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			// قدیمی همکار رویش مانده نباید مانع اتصال Variation تازه شود.
 			$partner_id = sanitize_key( $partner_id );
 			return array_values( array_filter( $ids, function( $product_id ) use ( $partner_id ) {
-				return self::is_enabled( $product_id ) && self::partner_id( $product_id ) === $partner_id;
+				if ( ! self::is_enabled( $product_id ) || self::partner_id( $product_id ) !== $partner_id ) {
+					return false;
+				}
+				// نگاشتِ خراب (محصول حذف‌شده یا ناسالم) صاحب مرجع نیست؛ وگرنه کاربر
+				// پیام «از قبل متصل است» می‌گیرد برای محصولی که در فهرست هم نیست.
+				return (bool) wc_get_product( $product_id );
 			} ) );
 		}
 
@@ -162,6 +167,76 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		 *
 		 * @return int تعداد محصولات پاک‌شده.
 		 */
+		/** نام نمایشی محصولِ صاحب مرجع؛ حتی وقتی شیء ووکامرس ساخته نمی‌شود. */
+		public static function holder_name( $product_id ) {
+			$product_id = absint( $product_id );
+			if ( ! $product_id ) {
+				return '';
+			}
+			$product = wc_get_product( $product_id );
+			if ( $product && is_object( $product ) && method_exists( $product, 'get_name' ) ) {
+				$name = (string) $product->get_name();
+				if ( '' !== $name ) {
+					return $name;
+				}
+			}
+			if ( function_exists( 'get_the_title' ) ) {
+				return (string) get_the_title( $product_id );
+			}
+			return '';
+		}
+
+		/**
+		 * نگاشت‌هایی که در دیتابیس هستند ولی در «محصولات متصل» دیده نمی‌شوند:
+		 * محصولشان حذف شده، در زباله‌دان است یا شیء ووکامرس برایشان ساخته نمی‌شود.
+		 * همین‌ها باعث می‌شوند اتصال تازه پیام «از قبل متصل است» بگیرد بی‌آن‌که کسی
+		 * آن محصول را در فهرست ببیند.
+		 *
+		 * @return array<int,array{id:int,code:string,title:string,reason:string}>
+		 */
+		public static function orphans( $limit = 200 ) {
+			global $wpdb;
+			$limit = max( 1, min( 1000, absint( $limit ) ) );
+			$sql   = "SELECT pm.post_id AS id, pm.meta_value AS code FROM {$wpdb->postmeta} pm
+				WHERE pm.meta_key = %s AND pm.meta_value <> ''
+				ORDER BY pm.post_id ASC LIMIT %d";
+			$rows = (array) $wpdb->get_results( $wpdb->prepare( $sql, self::META_CODE, $limit ), ARRAY_A );
+			$out  = array();
+			foreach ( $rows as $row ) {
+				$product_id = absint( isset( $row['id'] ) ? $row['id'] : 0 );
+				if ( ! $product_id ) {
+					continue;
+				}
+				$product = wc_get_product( $product_id );
+				$reason  = '';
+				if ( ! $product || ! is_object( $product ) ) {
+					$reason = 'محصول حذف شده یا شیء ووکامرس برای آن ساخته نمی‌شود';
+				} elseif ( method_exists( $product, 'get_status' ) && in_array( (string) $product->get_status(), array( 'trash', 'auto-draft' ), true ) ) {
+					$reason = 'محصول در زباله‌دان است';
+				}
+				if ( '' === $reason ) {
+					continue;
+				}
+				$out[] = array(
+					'id'     => $product_id,
+					'code'   => (string) $row['code'],
+					'title'  => self::holder_name( $product_id ),
+					'reason' => $reason,
+				);
+			}
+			return $out;
+		}
+
+		/** حذف نگاشت‌های خراب؛ تعداد حذف‌شده را برمی‌گرداند. */
+		public static function clear_broken() {
+			$removed = 0;
+			foreach ( self::orphans() as $row ) {
+				self::forget( (int) $row['id'] );
+				$removed++;
+			}
+			return $removed;
+		}
+
 		public static function prune_stale( $limit = 500 ) {
 			global $wpdb;
 			$limit = max( 1, min( 2000, absint( $limit ) ) );

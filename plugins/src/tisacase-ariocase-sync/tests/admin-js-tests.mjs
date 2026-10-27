@@ -376,6 +376,45 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۵.۹) مرجع دست محصول دیگر: دکمهٔ آزادسازی روی همان کارت ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = []; const confirmations = [];
+	let releaseTurns = 0;
+	window.confirm = (message) => { confirmations.push(String(message)); return true; };
+	window.fetch = async (url, options) => {
+		const body = options.body; bodies.push(body);
+		const action = body.get('action');
+		if (action === 'tcas_preview_pair') {
+			releaseTurns++;
+			if (1 === releaseTurns) {
+				return reply({ row: Object.assign(pairRow({}), {
+					status: 'error', selectable: false,
+					message: 'مرجع ArioCase از قبل به محصول #401728 («قاب چرم کرم گل ارا») متصل است.',
+					holder: { id: 401728, name: 'قاب چرم کرم گل ارا' }
+				}) });
+			}
+			return reply({ row: pairRow({}) });
+		}
+		if (action === 'tcas_disconnect_mapping') return reply({ message: 'اتصال حذف شد.' });
+		return reply({});
+	};
+	window.eval(script);
+	const entry = window.document.querySelector('.tcas-pair-entry');
+	type(entry, '.tcas-local-code', 'ID:309495');
+	type(entry, '.tcas-remote-code', 'ID:45448/45453');
+	await waitFor(() => Boolean(entry.querySelector('.tcas-release-holder')), 8000);
+	const release = entry.querySelector('.tcas-release-holder');
+	ok('کارت می‌گوید مرجع دست کدام محصول است و دکمهٔ آزادسازی دارد', release.textContent.includes('401728') && entry.querySelector('.tcas-pair-message').textContent.includes('قاب چرم کرم گل ارا'));
+	release.click();
+	await waitFor(() => bodies.some((body) => body.get('action') === 'tcas_disconnect_mapping'), 8000);
+	const disconnect = bodies.find((body) => body.get('action') === 'tcas_disconnect_mapping');
+	ok('آزادسازی، اتصال همان محصول را حذف می‌کند', '401728' === disconnect.get('product_id'));
+	ok('قبل از آزادسازی، نام و شمارهٔ محصول تأیید می‌شود', confirmations.some((text) => text.includes('401728') && text.includes('قاب چرم کرم گل ارا')));
+	await waitFor(() => 'connect' === entry.querySelector('.tcas-pair-flag').dataset.tone || entry.dataset.state !== 'error', 8000);
+	ok('بعد از آزادسازی، همان کارت دوباره بررسی و قابل انتخاب می‌شود', 'error' !== entry.dataset.state && !entry.querySelector('.tcas-row-select').disabled);
+	dom.window.close();
+}
+
 // ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];
