@@ -6,6 +6,7 @@ class TCAS_JSON_Response extends Exception { public $success; public $data; publ
 function is_wp_error( $value ) { return $value instanceof WP_Error; }
 function sanitize_text_field( $value ) { return trim( (string) $value ); } function wp_unslash( $value ) { return $value; } function absint( $value ) { return abs( (int) $value ); }
 function wp_verify_nonce( $nonce, $action ) { return 'valid' === $nonce && 'tcas_admin_nonce' === $action; }
+function sanitize_key( $key ) { return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) ); }
 function wp_send_json_success( $data ) { throw new TCAS_JSON_Response( true, $data, 200 ); } function wp_send_json_error( $data, $status = 400 ) { throw new TCAS_JSON_Response( false, $data, $status ); }
 function get_transient( $key ) { return isset( $GLOBALS['transients'][ $key ] ) ? $GLOBALS['transients'][ $key ] : false; }
 function set_transient( $key, $value, $ttl ) { $GLOBALS['transients'][ $key ] = $value; return true; }
@@ -27,13 +28,14 @@ class TCAS_Api {
 	public static $product = null; public static $reference = null;
 	public static function fetch_reference( $reference ) { self::$reference = $reference; return self::$product; }
 }
-class TCAS_Mapping { public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } }
+class TCAS_Mapping { public static $forgotten = array(); public static function is_enabled( $id ) { return true; } public static function remote_code( $id ) { return 'AR22'; } public static function forget( $id ) { self::$forgotten[] = (int) $id; return true; } public static function prune_stale() { return 2; } public static function remember_error( $id, $message ) { return true; } }
 class TCAS_Live { public static $state = null; public static function refresh( $id ) { return self::$state; } }
 require_once dirname( __DIR__ ) . '/includes/class-tcas-local-search.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-matcher.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcas-ajax.php';
 $pass = 0; $fail = 0;
 function ajax_test( $label, $condition, $detail = '' ) { global $pass, $fail; if ( $condition ) { $pass++; echo "OK   {$label}\n"; } else { $fail++; echo "FAIL {$label}" . ( $detail ? ' >> ' . $detail : '' ) . "\n"; } }
+function wp_json_encode_safe( $value ) { return json_encode( $value, JSON_UNESCAPED_UNICODE ); }
 function invoke_ajax( $method ) { try { TCAS_Ajax::$method(); return null; } catch ( TCAS_JSON_Response $response ) { return $response; } }
 $token = str_repeat( 'a', 32 ); $_REQUEST['nonce'] = 'valid'; $_POST['token'] = $token;
 $pair = array( 'local_code' => 'AR120', 'remote_code' => 'https://ariocase.com/product/case-slug/', 'error' => '' );
@@ -119,6 +121,25 @@ TCAS_Link_Resolver::$product = null;
 $response = invoke_ajax( 'search_products' );
 ajax_test( 'انتخاب محصول متغیر، جزئیات محلی همان محصول را برمی‌گرداند', $response && $response->success && 41 === $response->data['product_id'] && 'tisacase' === $response->data['shop'] );
 unset( $_POST['product_id'], $_POST['term'] );
+
+// --- عملیات گروهی: قطع اتصال همه / سینک همه در یک درخواست ---
+$_POST['ids'] = array( '101', '102', '103', '10x' );
+$_POST['mode'] = 'disconnect';
+TCAS_Mapping::$forgotten = array();
+$response = invoke_ajax( 'group_action' );
+ajax_test( 'قطع اتصال گروهی، همهٔ Variationهای محصول را یک‌جا حذف می‌کند', $response && $response->success && array( 101, 102, 103 ) === TCAS_Mapping::$forgotten, $response ? wp_json_encode_safe( $response->data ) : 'no response' );
+ajax_test( 'گزارش گروهی تعداد حذف و پاک‌سازی مرجع یتیم را می‌گوید', $response && false !== strpos( $response->data['message'], '3 اتصال' ) && false !== strpos( $response->data['message'], 'مرجع یتیم' ) );
+TCAS_Live::$state = array( 'quantity' => 4.0, 'status' => 'instock' );
+$_POST['mode'] = 'sync';
+$response = invoke_ajax( 'group_action' );
+ajax_test( 'سینک گروهی همهٔ Variationها را تازه می‌کند', $response && $response->success && 3 === (int) $response->data['done'] && false !== strpos( $response->data['message'], 'سینک شد' ) );
+TCAS_Live::$state = new WP_Error( 'tcas_api_error', 'فایروال هاست پاسخ را بست.' );
+$response = invoke_ajax( 'group_action' );
+ajax_test( 'خطای همکار در سینک گروهی گزارش می‌شود، نه استثنا', $response && $response->success && 3 === (int) $response->data['failed'] && false !== strpos( $response->data['message'], 'فایروال' ) );
+$_POST['mode'] = 'unknown';
+$response = invoke_ajax( 'group_action' );
+ajax_test( 'حالت ناشناختهٔ عملیات گروهی رد می‌شود', $response && ! $response->success && 400 === $response->status );
+unset( $_POST['ids'], $_POST['mode'] );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -133,7 +133,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		 * @param string $partner_id همکار.
 		 * @return array<int,int>
 		 */
-		public static function holders_of( $reference, $partner_id = 'ariocase' ) {
+		public static function holders_of( $reference, $partner_id = 'ariocase', $active_only = true ) {
 			$reference = trim( (string) $reference );
 			$identity  = self::identity_from_reference( $reference );
 			$ids       = array();
@@ -143,7 +143,49 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 			if ( ! $ids && '' !== $reference ) {
 				$ids = self::ids_by_remote_code( $reference, $partner_id );
 			}
-			return $ids;
+			if ( ! $active_only ) {
+				return $ids;
+			}
+			// فقط نگاشت زنده «صاحب مرجع» است: محصولی که اتصالش حذف شده ولی شناسهٔ
+			// قدیمی همکار رویش مانده نباید مانع اتصال Variation تازه شود.
+			$partner_id = sanitize_key( $partner_id );
+			return array_values( array_filter( $ids, function( $product_id ) use ( $partner_id ) {
+				return self::is_enabled( $product_id ) && self::partner_id( $product_id ) === $partner_id;
+			} ) );
+		}
+
+		/**
+		 * پاک‌سازی «مرجع یتیم»: محصولاتی که شناسهٔ مرجع همکار را دارند ولی کد اتصالشان
+		 * خالی شده است (نگاشت‌های نیمه‌حذف‌شدهٔ نسخه‌های قبل). این‌ها باعث می‌شدند
+		 * Variationهای تازه پیام «از قبل به محصول #… متصل است» بگیرند بدون این‌که
+		 * در «محصولات متصل» دیده شوند.
+		 *
+		 * @return int تعداد محصولات پاک‌شده.
+		 */
+		public static function prune_stale( $limit = 500 ) {
+			global $wpdb;
+			$limit = max( 1, min( 2000, absint( $limit ) ) );
+			$sql   = "SELECT p.ID FROM {$wpdb->postmeta} pm
+				INNER JOIN {$wpdb->posts} p ON p.ID = pm.post_id
+				WHERE pm.meta_key = %s AND pm.meta_value <> ''
+				AND p.post_type IN ('product', 'product_variation')
+				AND NOT EXISTS (
+					SELECT 1 FROM {$wpdb->postmeta} code
+					WHERE code.post_id = pm.post_id AND code.meta_key = %s AND code.meta_value <> ''
+				)
+				ORDER BY p.ID ASC LIMIT %d";
+			$ids = array_map( 'absint', (array) $wpdb->get_col( $wpdb->prepare( $sql, self::META_REMOTE_ID, self::META_CODE, $limit ) ) );
+			$fixed = 0;
+			foreach ( $ids as $product_id ) {
+				if ( ! $product_id ) {
+					continue;
+				}
+				foreach ( array( self::META_REMOTE_ID, self::META_PARENT_ID, self::META_REMOTE_NAME, self::META_QTY, self::META_STATUS, self::META_FETCHED_AT, self::META_ERROR, self::META_ENABLED, self::META_PARTNER_ID ) as $key ) {
+					delete_post_meta( $product_id, $key );
+				}
+				$fixed++;
+			}
+			return $fixed;
 		}
 
 		public static function partner_id( $product_id ) {

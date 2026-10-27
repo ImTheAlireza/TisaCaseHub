@@ -298,7 +298,9 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 							$reclaim_holder = (int) $mapped_id;
 							continue;
 						}
-						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d متصل است.', $partner_label, $mapped_id ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
+						$holder_product = wc_get_product( $mapped_id );
+						$holder_name    = $holder_product && is_object( $holder_product ) ? (string) $holder_product->get_name() : '';
+						return array( 'row' => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d%s متصل است.', $partner_label, $mapped_id, '' !== $holder_name ? ' («' . $holder_name . '»)' : '' ), $extra ), 'remote' => $remote, 'local_id' => $local_id );
 					}
 				}
 			}

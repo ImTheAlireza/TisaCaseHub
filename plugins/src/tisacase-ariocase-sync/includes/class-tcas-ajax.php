@@ -15,7 +15,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		const STEP_MAX  = 20;
 
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'clear_logs', 'sweep_now' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'group_action', 'clear_logs', 'sweep_now' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -527,8 +527,80 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'اتصال پیدا نشد.' ), 404 );
 			}
 			TCAS_Mapping::forget( $product_id );
+			// مرجع‌های یتیم (بدون کد اتصال) هم پاک می‌شوند تا اتصال تازه را نبندند.
+			TCAS_Mapping::prune_stale();
 			TCAS_Logger::add( 'mapping_remove', $code, sprintf( 'اتصال محصول #%d حذف شد؛ خود محصول حذف نشد.', $product_id ) );
 			wp_send_json_success( array( 'message' => 'اتصال حذف شد؛ محصول و موجودی فعلی حذف نشدند.', 'reload' => true ) );
+		}
+
+		/**
+		 * عملیات گروهی روی همهٔ Variationهای یک محصول متصل: قطع اتصال همه یا سینک همه.
+		 * محدود به همان شناسه‌هایی است که صفحه فرستاده تا هیچ محصول دیگری دست نخورد.
+		 */
+		public static function group_action() {
+			self::auth();
+			$mode = isset( $_POST['mode'] ) ? sanitize_key( wp_unslash( $_POST['mode'] ) ) : '';
+			if ( ! in_array( $mode, array( 'disconnect', 'sync' ), true ) ) {
+				wp_send_json_error( array( 'message' => 'حالت عملیات گروهی مشخص نیست.' ), 400 );
+			}
+			$raw = isset( $_POST['ids'] ) ? (array) wp_unslash( $_POST['ids'] ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+			$ids = array();
+			foreach ( $raw as $value ) {
+				if ( is_scalar( $value ) && ctype_digit( (string) $value ) ) {
+					$ids[ (int) $value ] = (int) $value;
+				}
+			}
+			$ids = array_slice( array_values( $ids ), 0, 500 );
+			if ( ! $ids ) {
+				wp_send_json_error( array( 'message' => 'هیچ Variationی برای این عملیات انتخاب نشد.' ), 400 );
+			}
+			if ( 'disconnect' === $mode ) {
+				$done = 0;
+				foreach ( $ids as $product_id ) {
+					if ( '' === TCAS_Mapping::remote_code( $product_id ) ) {
+						continue;
+					}
+					TCAS_Mapping::forget( $product_id );
+					$done++;
+				}
+				$pruned = TCAS_Mapping::prune_stale();
+				TCAS_Logger::add( 'mapping_remove', sprintf( 'گروه #%d', $ids[0] ), sprintf( '%d اتصال گروهی حذف شد.', $done ) );
+				wp_send_json_success( array(
+					'message' => $done . ' اتصال این محصول حذف شد' . ( $pruned ? ' و ' . $pruned . ' مرجع یتیم پاک شد' : '' ) . '؛ محصول و موجودی فعلی حذف نشدند.',
+					'reload'  => true,
+					'done'    => $done,
+					'pruned'  => $pruned,
+				) );
+			}
+			$ok    = 0;
+			$fail  = 0;
+			$first = '';
+			foreach ( $ids as $product_id ) {
+				if ( ! TCAS_Mapping::is_enabled( $product_id ) ) {
+					continue;
+				}
+				$state = TCAS_Live::refresh( $product_id );
+				if ( is_wp_error( $state ) ) {
+					$fail++;
+					if ( '' === $first ) {
+						$first = $state->get_error_message();
+					}
+					TCAS_Mapping::remember_error( $product_id, $state->get_error_message() );
+					continue;
+				}
+				if ( null === $state ) {
+					$fail++;
+					continue;
+				}
+				$ok++;
+			}
+			TCAS_Logger::add( 'sync_ok', sprintf( 'گروه #%d', $ids[0] ), sprintf( '%d Variation سینک شد، %d خطا.', $ok, $fail ) );
+			wp_send_json_success( array(
+				'message' => $ok . ' Variation سینک شد' . ( $fail ? ' · ' . $fail . ' خطا' . ( $first ? ': ' . $first : '' ) : '' ) . '.',
+				'reload'  => true,
+				'done'    => $ok,
+				'failed'  => $fail,
+			) );
 		}
 
 		/** اجرای دستی جارو؛ دفعهٔ اول فقط چند کد تا پاسخ سریع بماند، ادامه در پس‌زمینه. */

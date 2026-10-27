@@ -344,6 +344,38 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۶.۵) عملیات گروهی: قطع اتصال همه / سینک همهٔ Variationهای یک محصول ----------
+{
+	const dom = makeDom(); const { window } = dom; const bodies = []; const confirmations = [];
+	window.confirm = (message) => { confirmations.push(String(message)); return true; };
+	const group = window.document.createElement('section');
+	group.innerHTML = '<details class="tcas-linked-group" open><summary class="tcas-linked-group-summary">'
+		+ '<span class="tcas-linked-group-title"><strong>TisaCase · قاب چرم کرم گل ارا</strong></span>'
+		+ '<span class="tcas-linked-group-tail"><span class="tcas-linked-group-count">3 متغیر متصل</span>'
+		+ '<span class="tcas-linked-group-actions">'
+		+ '<button type="button" class="button tcas-group-sync" data-ids="11,12,13" data-count="3">سینک همه</button>'
+		+ '<button type="button" class="button tcas-group-disconnect" data-ids="11,12,13" data-count="3">قطع اتصال همه</button>'
+		+ '</span></span></summary><div class="tcas-linked-variation-grid"></div></details>';
+	window.document.body.appendChild(group);
+	window.fetch = async (url, options) => { bodies.push(options.body); return reply({ message: '۳ اتصال حذف شد.', reload: false }); };
+	window.eval(script);
+	const details = window.document.querySelector('.tcas-linked-group');
+	const syncButton = window.document.querySelector('.tcas-group-sync');
+	const disconnectButton = window.document.querySelector('.tcas-group-disconnect');
+	disconnectButton.click();
+	await waitFor(() => bodies.some((body) => body.get('action') === 'tcas_group_action'), 8000);
+	const disconnectBody = bodies.find((body) => body.get('action') === 'tcas_group_action');
+	ok('دکمهٔ «قطع اتصال همه» همهٔ شناسه‌های همان محصول را یک‌جا می‌فرستد', 'disconnect' === disconnectBody.get('mode') && '11,12,13' === disconnectBody.getAll('ids[]').join(','));
+	ok('پیش از حذف گروهی، تعداد Variationها تأیید می‌شود', confirmations.some((text) => text.includes('3') && text.includes('حذف')), confirmations.join('|'));
+	ok('کلیک روی دکمهٔ گروه، جزئیات محصول را باز/بسته نمی‌کند', true === details.open);
+	bodies.length = 0;
+	syncButton.click();
+	await waitFor(() => bodies.some((body) => body.get('action') === 'tcas_group_action'), 8000);
+	const syncBody = bodies.find((body) => body.get('action') === 'tcas_group_action');
+	ok('دکمهٔ «سینک همه» بدون کادر تأیید، همه را تازه می‌کند', 'sync' === syncBody.get('mode') && 1 === confirmations.length);
+	dom.window.close();
+}
+
 // ---------- ۶) اتصال از همان کارت‌های انتخاب‌شده ----------
 {
 	const dom = makeDom(); const { window } = dom; const bodies = [];

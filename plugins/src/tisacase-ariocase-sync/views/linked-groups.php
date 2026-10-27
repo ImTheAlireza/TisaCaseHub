@@ -15,7 +15,19 @@ $groups = isset( $groups ) && is_array( $groups ) ? $groups : array();
 						<span aria-hidden="true">↔</span>
 						<strong class="tcas-remote-group-title"><?php echo esc_html( $group['partner_label'] ); ?> · <?php echo esc_html( $group['remote_parent_name'] ); ?></strong>
 					</span>
-					<span class="tcas-linked-group-count"><?php echo (int) $group['count']; ?> متغیر متصل</span>
+					<span class="tcas-linked-group-tail">
+						<span class="tcas-linked-group-count"><?php echo (int) $group['count']; ?> متغیر متصل</span>
+						<?php
+						$group_ids = array();
+						foreach ( $group['rows'] as $group_row ) {
+							$group_ids[] = (int) $group_row['id'];
+						}
+						?>
+						<span class="tcas-linked-group-actions">
+							<button type="button" class="button tcas-group-sync" data-ids="<?php echo esc_attr( implode( ',', $group_ids ) ); ?>" data-count="<?php echo (int) $group['count']; ?>" title="خواندن موجودی همهٔ Variationهای این محصول از همکار">سینک همه</button>
+							<button type="button" class="button tcas-group-disconnect" data-ids="<?php echo esc_attr( implode( ',', $group_ids ) ); ?>" data-count="<?php echo (int) $group['count']; ?>" title="حذف اتصال همهٔ Variationهای این محصول (خود محصول و موجودی حذف نمی‌شود)">قطع اتصال همه</button>
+						</span>
+					</span>
 				</summary>
 				<div class="tcas-linked-variation-grid">
 					<?php foreach ( $group['rows'] as $row ) : ?>

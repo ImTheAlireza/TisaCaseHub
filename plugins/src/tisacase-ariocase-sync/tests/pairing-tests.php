@@ -17,7 +17,17 @@ class TCAS_Test_WPDB {
 	public function prepare( $query, ...$args ) { foreach ( $args as $arg ) { $query = preg_replace( '/%s/', "'" . addslashes( (string) $arg ) . "'", $query, 1 ); $query = preg_replace( '/%d/', (string) (int) $arg, $query, 1 ); } return $query; }
 	public function get_col( $query ) {
 		preg_match( "/pm\.meta_key = '([^']+)'/", $query, $key ); preg_match( "/pm\.meta_value = '([^']*)'/", $query, $value ); $out = array();
-		foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $key[1], $value[1], $meta[ $key[1] ] ) && 0 === strcasecmp( (string) $meta[ $key[1] ], (string) $value[1] ) ) $out[] = $id;
+		if ( isset( $value[1] ) ) {
+			foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $key[1], $meta[ $key[1] ] ) && 0 === strcasecmp( (string) $meta[ $key[1] ], (string) $value[1] ) ) $out[] = $id;
+		} elseif ( isset( $key[1] ) ) {
+			// کوئری «مقدار خالی نیست» (پاک‌سازی مرجع‌های یتیم).
+			foreach ( $GLOBALS['meta'] as $id => $meta ) if ( isset( $meta[ $key[1] ] ) && '' !== (string) $meta[ $key[1] ] ) $out[] = $id;
+			if ( preg_match( "/code\.meta_key = '([^']+)'/", $query, $code_key ) ) {
+				$out = array_values( array_filter( $out, function( $id ) use ( $code_key ) {
+					return ! isset( $GLOBALS['meta'][ $id ][ $code_key[1] ] ) || '' === (string) $GLOBALS['meta'][ $id ][ $code_key[1] ];
+				} ) );
+			}
+		}
 		sort( $out ); return $out;
 	}
 }
@@ -245,6 +255,19 @@ $move_preview = TCAS_Pairing::preview( array_merge( pair_of( 'ID:81', 'MOVE-1' )
 pair_test( 'با تأیید، کارت قابل انتقال می‌شود و محصول قبلی را نام می‌برد', 'connect' === $move_preview['row']['status'] && $move_preview['row']['selectable'] && 80 === (int) $move_preview['row']['reclaim'] && false !== strpos( $move_preview['row']['message'], '#80' ) );
 $move_result = TCAS_Pairing::connect( $move_preview );
 pair_test( 'انتقال انجام شد: نگاشت قبلی حذف و مرجع روی Variation جدید ثبت شد', ! is_wp_error( $move_result ) && 'MOVE-1' === TCAS_Mapping::remote_code( 81 ) && '' === TCAS_Mapping::remote_code( 80 ) && false !== strpos( $move_result['message'], '#80' ) );
+
+// --- مرجع یتیم: اتصال حذف شده ولی شناسهٔ قدیمی همکار روی محصول مانده ---
+local_product( 85, 'SKU-85' );
+local_product( 86, 'SKU-86' );
+TCAS_Api::$responses['STALE-1'] = remote_product( 'STALE-1', array( 'name' => 'Case STALE', 'remote_id' => 66001, 'stock' => array( 'quantity' => 2.0, 'status' => 'instock' ) ) );
+list( $stale_a, $stale_a_result ) = connect_pair( 'ID:85', 'STALE-1' );
+pair_test( 'Variation اول به مرجع یتیم‌شده وصل می‌شود', ! is_wp_error( $stale_a_result ) && 'STALE-1' === TCAS_Mapping::remote_code( 85 ) );
+TCAS_Mapping::forget( 85 );
+update_post_meta( 85, TCAS_Mapping::META_REMOTE_ID, 66001 );
+pair_test( 'قطع اتصال، مرجع را از فهرست صاحبان زنده حذف می‌کند', ! in_array( 85, TCAS_Mapping::holders_of( 'ID:66001' ), true ) && in_array( 85, TCAS_Mapping::holders_of( 'ID:66001', 'ariocase', false ), true ) );
+$stale_preview = TCAS_Pairing::preview( pair_of( 'ID:86', 'STALE-1' ) );
+pair_test( 'مرجع یتیم مانع اتصال Variation تازه نمی‌شود', 'connect' === $stale_preview['row']['status'] && $stale_preview['row']['selectable'] );
+pair_test( 'پاک‌سازی مرجع‌های یتیم، متای قدیمی را حذف می‌کند', TCAS_Mapping::prune_stale() >= 1 && '' === (string) get_post_meta( 85, TCAS_Mapping::META_REMOTE_ID, true ) );
 
 // --- حالت flag: فقط موجود/ناموجود ---
 TCAS_Core::$settings = array( 'stock_mode' => 'flag' );

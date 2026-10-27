@@ -2189,6 +2189,26 @@
 		if (!window.confirm((cfg.strings && cfg.strings.disconnect) || 'ادامه؟')) return;
 		simpleAction(button, 'disconnect_mapping', { product_id: button.dataset.productId }, 'tcas-sync-status');
 	}));
+	// عملیات گروهی: همهٔ Variationهای یک محصول، یک‌جا.
+	function groupIds(button) {
+		return String(button.dataset.ids || '').split(',').map((value) => value.trim()).filter((value) => /^[0-9]+$/.test(value));
+	}
+	document.querySelectorAll('.tcas-group-disconnect').forEach((button) => button.addEventListener('click', (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		const ids = groupIds(button);
+		const count = Number(button.dataset.count) || ids.length;
+		if (!ids.length) return;
+		if (!window.confirm('اتصال همهٔ ' + String(count) + ' Variation این محصول حذف شود؟ خود محصول و موجودی فعلی حذف نمی‌شوند و بسته‌ها دست‌نخورده می‌مانند.')) return;
+		simpleAction(button, 'group_action', { mode: 'disconnect', ids }, 'tcas-sync-status');
+	}));
+	document.querySelectorAll('.tcas-group-sync').forEach((button) => button.addEventListener('click', (event) => {
+		event.preventDefault();
+		event.stopPropagation();
+		const ids = groupIds(button);
+		if (!ids.length) return;
+		simpleAction(button, 'group_action', { mode: 'sync', ids }, 'tcas-sync-status');
+	}));
 	const clearLogs = $('tcas-clear-logs');
 	if (clearLogs) clearLogs.addEventListener('click', () => simpleAction(clearLogs, 'clear_logs', {}, 'tcas-log-status'));
 	const sweepNow = $('tcas-sweep-now');

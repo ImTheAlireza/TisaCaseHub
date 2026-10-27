@@ -336,6 +336,12 @@
 .tcas-shop-local-text,.tcas-local-group-title { color:var(--tisa-primary-deep,#0A5F52); }
 .tcas-shop-remote-text,.tcas-remote-group-title { color:var(--tisa-info,#246B8E); }
 .tcas-fresh-product-count,.tcas-linked-group-count { flex:0 0 auto; padding:4px 9px; border-radius:var(--tisa-r-pill,999px); background:var(--tisa-primary-soft,#E8F0EE); color:var(--tisa-primary-deep,#0A5F52); font-size:var(--tisa-fs-tiny,11px); }
+.tcas-linked-group-tail { display:flex; align-items:center; gap:8px; flex:0 0 auto; }
+.tcas-linked-group-actions { display:flex; align-items:center; gap:5px; }
+.tcas-linked-group-actions .button { min-height:26px; padding:2px 10px !important; border-radius:var(--tisa-r-pill,999px) !important; font-size:var(--tisa-fs-tiny,11px) !important; line-height:1.5 !important; }
+.tcas-linked-group-tail .tcas-group-disconnect { border-color:#E6BDB8 !important; color:var(--tisa-danger,#B5453A) !important; }
+.tcas-linked-group-tail .tcas-group-disconnect:hover { background:var(--tisa-danger-soft,#FBECEA) !important; }
+@media (max-width:782px) { .tcas-linked-group-tail { flex-wrap:wrap; justify-content:flex-end; } }
 .tcas-pair-entries-grouped { grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; padding:0 10px 10px; }
 .tcas-pair-entries-grouped .tcas-pair-entry { padding:10px; }
 .tcas-linked-groups { display:grid; gap:10px; }
