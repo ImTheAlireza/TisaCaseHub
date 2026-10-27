@@ -209,6 +209,58 @@ class TCP_Jalali {
 		return self::is_leap( $jy ) ? 30 : 29;
 	}
 
+	/** منطقهٔ زمانی محلی سایت، بدون عبور از فیلترهای تاریخ وردپرس. */
+	private static function site_timezone() {
+		if ( function_exists( 'wp_timezone' ) ) {
+			$timezone = wp_timezone();
+			if ( $timezone instanceof DateTimeZone ) {
+				return $timezone;
+			}
+		}
+		return new DateTimeZone( 'UTC' );
+	}
+
+	/** یک timestamp را به DateTimeImmutable محلی تبدیل می‌کند، بدون فیلترهای تقویم. */
+	private static function datetime( $timestamp ) {
+		return ( new DateTimeImmutable( '@' . (int) $timestamp ) )->setTimezone( self::site_timezone() );
+	}
+
+	/**
+	 * تاریخ میلادی محلی سایت را از timestamp می‌سازد؛ مستقل از wp_date/date_i18n فیلترشده.
+	 *
+	 * @param int    $timestamp timestamp یونیکس.
+	 * @param string $format قالب استاندارد DateTime.
+	 * @return string
+	 */
+	public static function gregorian_date( $timestamp, $format = 'Y-m-d' ) {
+		return self::datetime( $timestamp )->format( (string) $format );
+	}
+
+	/**
+	 * تاریخ و ساعت محلی را به timestamp یونیکس تبدیل می‌کند (برای setter ووکامرس که timestamp را UTC می‌گیرد).
+	 *
+	 * @param string $gregorian تاریخ Y-m-d.
+	 * @param string $time ساعت H:i:s.
+	 * @return int|false
+	 */
+	public static function gregorian_to_timestamp( $gregorian, $time = '00:00:00' ) {
+		$gregorian = trim( (string) $gregorian );
+		$time      = trim( (string) $time );
+		if ( ! preg_match( '/^\d{4}-\d{2}-\d{2}$/', $gregorian ) || ! preg_match( '/^\d{2}:\d{2}:\d{2}$/', $time ) ) {
+			return false;
+		}
+		list( $year, $month, $day ) = array_map( 'intval', explode( '-', $gregorian ) );
+		if ( ! checkdate_compat( $month, $day, $year ) ) {
+			return false;
+		}
+		$datetime = DateTimeImmutable::createFromFormat( '!Y-m-d H:i:s', $gregorian . ' ' . $time, self::site_timezone() );
+		$errors   = DateTimeImmutable::getLastErrors();
+		if ( ! $datetime || ( is_array( $errors ) && ( $errors['warning_count'] || $errors['error_count'] ) ) ) {
+			return false;
+		}
+		return $datetime->getTimestamp();
+	}
+
 	/**
 	 * قالب‌بندی تایم‌استمپ به تاریخ شمسی (زمان بدون تغییر می‌ماند).
 	 *
@@ -222,13 +274,11 @@ class TCP_Jalali {
 	public static function format( $format, $timestamp = null ) {
 		$timestamp = null === $timestamp ? time() : (int) $timestamp;
 
-		// اجزای میلادی در منطقهٔ زمانی سایت (در تست‌های بدون وردپرس: UTC).
-		if ( function_exists( 'wp_date' ) ) {
-			$parts = wp_date( 'Y|n|j|G|i|s', $timestamp );
-		} else {
-			$parts = gmdate( 'Y|n|j|G|i|s', $timestamp );
-		}
-		$bits = array_map( 'intval', explode( '|', (string) $parts ) );
+		// عمداً از wp_date()/date_i18n() استفاده نمی‌کنیم: افزونه‌های تقویم شمسی
+		// ممکن است این توابع را فیلتر و timestamp میلادی را از قبل به شمسی تبدیل کنند.
+		// تبدیل دوباره باعث سال‌های نامعتبر (مثلاً 0786) و خالی‌شدن انقضای کوپن می‌شود.
+		$local = self::datetime( $timestamp );
+		$bits  = array_map( 'intval', explode( '|', $local->format( 'Y|n|j|G|i|s' ) ) );
 		list( $gy, $gm, $gd, $hour, $minute, $second ) = $bits;
 		list( $jy, $jm, $jd ) = self::to_jalali( $gy, $gm, $gd );
 		if ( $jy < self::MIN_YEAR || $jy > self::MAX_YEAR ) {
@@ -261,12 +311,11 @@ class TCP_Jalali {
 		if ( '' === $mysql_date || '0000-00-00 00:00:00' === $mysql_date || '0000-00-00' === $mysql_date ) {
 			return '';
 		}
-		if ( function_exists( 'mysql2date' ) ) {
-			$ts = mysql2date( 'U', $mysql_date );
-		} else {
-			$ts = strtotime( $mysql_date );
+		if ( ! preg_match( '/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}:\d{2}:\d{2}))?$/', $mysql_date, $matches ) ) {
+			return '';
 		}
-		return false === $ts || null === $ts ? '' : self::format( $format, (int) $ts );
+		$ts = self::gregorian_to_timestamp( $matches[1], isset( $matches[2] ) ? $matches[2] : '00:00:00' );
+		return false === $ts ? '' : self::format( $format, $ts );
 	}
 
 	/**

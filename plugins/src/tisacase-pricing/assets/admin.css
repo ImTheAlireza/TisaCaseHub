@@ -646,7 +646,7 @@ body.tcp-modal-open { overflow: hidden; }
 
 .tcp-jdate { position: relative; display: flex; width: 100%; align-items: stretch; }
 /* ورودی LTR است و متن از لبهٔ چپ شروع می‌شود؛ آیکم هم سمت چپ می‌نشیند، پس فاصله فیزیکی از چپ لازم است. */
-.tcp-jdate__text { flex: 1 1 auto; min-width: 0; padding-left: 36px; text-align: left; font-variant-numeric: tabular-nums lining-nums; }
+.tcp-jdate input.tcp-jdate__text { flex: 1 1 auto; min-width: 0; padding-left: 42px !important; text-align: left; font-variant-numeric: tabular-nums lining-nums; }
 .tcp-jdate__toggle {
 	position: absolute; left: 4px; align-self: center;
 	display: inline-flex; align-items: center; justify-content: center;
