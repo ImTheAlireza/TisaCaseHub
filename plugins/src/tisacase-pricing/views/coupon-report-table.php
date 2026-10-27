@@ -1,7 +1,7 @@
 <?php defined( 'ABSPATH' ) || exit; ?>
 <div class="tcp-report-meta" data-page="<?php echo esc_attr( $data['page'] ); ?>">
 	<strong><?php echo esc_html( number_format_i18n( $data['total'] ) ); ?> سفارش مرتبط ثبت‌شده</strong>
-	<span>آخرین تازه‌سازی: <?php echo esc_html( wp_date( 'Y/m/d H:i:s' ) ); ?></span>
+	<span>آخرین تازه‌سازی: <span dir="ltr"><?php echo esc_html( TCP_Jalali::format( 'Y/m/d H:i:s' ) ); ?></span></span>
 </div>
 <div class="tcp-phone-table"><table class="widefat striped tcp-report-table">
 <thead><tr><th>سفارش / وضعیت فعلی</th><th>مشتری</th><th>شماره / ایمیل</th><th>مبلغ‌ها</th><th>تاریخ‌ها</th><th>مصرف و ریست</th><th>جزئیات سفارش</th></tr></thead>
@@ -35,11 +35,11 @@
 	<small dir="ltr"><?php echo esc_html( $order->get_billing_email() ?: '—' ); ?></small>
 </td>
 <td>تخفیف همین کد: <?php echo $money( $amount ); ?><small>مالیات تخفیف: <?php echo $money( $tax ); ?></small><small>کل سفارش: <?php echo $money( $order->get_total() ); ?></small><small>بازپرداخت کل سفارش: <?php echo $money( $order->get_total_refunded() ); ?></small></td>
-<td><?php foreach ( $dates as $label => $date ) : ?><small><?php echo esc_html( $label . ': ' . ( $date ? wp_date( 'Y/m/d H:i', $date->getTimestamp() ) : '—' ) ); ?></small><?php endforeach; ?></td>
+<td><?php foreach ( $dates as $label => $date ) : ?><small><?php echo esc_html( $label . ': ' ); ?><span dir="ltr"><?php echo esc_html( $date ? TCP_Jalali::format( 'Y/m/d H:i', $date->getTimestamp() ) : '—' ); ?></span></small><?php endforeach; ?></td>
 <td><?php if ( $use ) : ?>
 	<strong><?php echo $use->released ? 'سهمیه آزادشده با ریست' : 'مصرف قطعی ثبت‌شده'; ?></strong>
-	<small><?php echo esc_html( wp_date( 'Y/m/d H:i', $use->used_at ) ); ?></small>
-	<?php if ( $use->reset_at ) : $actor = get_userdata( $use->reset_by ); ?><small><?php echo esc_html( 'ریست: ' . wp_date( 'Y/m/d H:i', $use->reset_at ) . ' — ' . ( $actor ? $actor->display_name : 'حساب حذف‌شده' ) . ' (#' . $use->reset_by . ')' ); ?></small><?php endif; ?>
+	<small><span dir="ltr"><?php echo esc_html( TCP_Jalali::format( 'Y/m/d H:i', (int) $use->used_at ) ); ?></span></small>
+	<?php if ( $use->reset_at ) : $actor = get_userdata( $use->reset_by ); ?><small><?php echo esc_html( 'ریست: ' ); ?><span dir="ltr"><?php echo esc_html( TCP_Jalali::format( 'Y/m/d H:i', (int) $use->reset_at ) . ' — ' . ( $actor ? $actor->display_name : 'حساب حذف‌شده' ) . ' (#' . $use->reset_by . ')' ); ?></span></small><?php endif; ?>
 	<?php else : ?><span><?php echo TCP_Coupon_Phones::successful( $order ) ? 'سفارش موفق؛ بدون رکورد سهمیه موبایلی' : 'مصرف موفق در دفتر موبایلی ثبت نشده'; ?></span><?php endif; ?>
 </td>
 <td><details><summary>کالاها و روش پرداخت</summary><p><?php echo esc_html( 'درگاه: ' . ( $order->get_payment_method_title() ?: '—' ) ); ?></p><p dir="ltr"><?php echo esc_html( 'Transaction: ' . ( $order->get_transaction_id() ?: '—' ) ); ?></p>

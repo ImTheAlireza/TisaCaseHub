@@ -100,8 +100,8 @@ if ( ! class_exists( 'TCP_Rules' ) ) {
 		}
 
 		private static function date( $v ) {
-			$v = trim( (string) $v );
-			return preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) ? $v : '';
+			// ورودی می‌تواند شمسی (تقویم جلالی) یا میلادی باشد؛ خروجی همیشه میلادی Y-m-d یا ''.
+			return TCP_Jalali::normalize_date_input( trim( (string) $v ) );
 		}
 
 		private static function money( $v ) {

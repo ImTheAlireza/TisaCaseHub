@@ -107,7 +107,11 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 				'status'        => $status,
 				'usage'         => $usage,
 				'limit'         => $limit,
-				'expires'       => $expires ? $expires->date_i18n( 'Y/m/d' ) : '',
+				'expires'           => $expires ? TCP_Jalali::format( 'Y/m/d', $expires->getTimestamp() ) : '',
+				// رکورد قدیمی ممکن است سال میلادی نامتعارف (مثل ۱۴۰۵ میلادی) داشته باشد؛ تبدیل شمسی‌اش نامعتبر است.
+				'expires_invalid'   => (bool) $expires && '' === TCP_Jalali::format( 'Y/m/d', $expires->getTimestamp() ),
+				// مقدار میلادی برای فیلد مخفی فرم ویرایش (ذخیره‌سازی همیشه میلادی می‌ماند).
+				'expires_gregorian' => $expires ? TCP_Jalali::gregorian_date( $expires->getTimestamp() ) : '',
 				'free_shipping' => (bool) $c->get_free_shipping(),
 				'round'         => 'yes' === $c->get_meta( self::META_ROUND ),
 				'batch'         => (string) $c->get_meta( self::META_BATCH ),
@@ -165,6 +169,26 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			return isset( $_POST[ $key ] ) ? array_values( array_filter( array_map( 'absint', (array) wp_unslash( $_POST[ $key ] ) ) ) ) : array(); // phpcs:ignore WordPress.Security.NonceVerification.Missing
 		}
 
+		/**
+		 * خواندن تاریخ فرم: نسخهٔ JSدار ISO مخفی را مرجع می‌گیرد؛ بدون JS ورودی شمسی را.
+		 *
+		 * @param array $p داده‌های POST.
+		 * @return array [خام، تاریخ میلادی نرمال‌شده].
+		 */
+		private static function expiry_from_post( $p ) {
+			if ( '1' === ( isset( $p['tcp_jalali_date_ready'] ) ? (string) $p['tcp_jalali_date_ready'] : '' ) && array_key_exists( 'expires', $p ) ) {
+				$raw = $p['expires'];
+			} elseif ( array_key_exists( 'expires_jalali', $p ) ) {
+				$raw = $p['expires_jalali'];
+			} elseif ( array_key_exists( 'expires_gregorian', $p ) ) {
+				$raw = $p['expires_gregorian']; // سازگاری با نسخهٔ قبلی.
+			} else {
+				$raw = isset( $p['expires'] ) ? $p['expires'] : '';
+			}
+			$raw = trim( (string) $raw );
+			return array( $raw, TCP_Jalali::normalize_date_input( $raw ) );
+		}
+
 		/** فیلدهای مشترک فرم → روی شیء کوپن. */
 		private static function fill( WC_Coupon $c, $p ) {
 			$type = isset( $p['discount_type'] ) ? sanitize_key( $p['discount_type'] ) : 'percent';
@@ -181,8 +205,9 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$c->set_individual_use( ! empty( $p['individual_use'] ) );
 			$c->set_exclude_sale_items( ! empty( $p['exclude_sale_items'] ) );
 
-			$exp = isset( $p['expires'] ) ? trim( (string) $p['expires'] ) : '';
-			$c->set_date_expires( preg_match( '/^\d{4}-\d{2}-\d{2}$/', $exp ) ? strtotime( $exp . ' 23:59:59' ) : null );
+			list( , $exp ) = self::expiry_from_post( $p );
+			$expiry_ts = '' !== $exp ? TCP_Jalali::gregorian_to_timestamp( $exp, '23:59:59' ) : false;
+			$c->set_date_expires( false !== $expiry_ts ? $expiry_ts : null );
 
 			$min = TCP_Ops::number( isset( $p['minimum_amount'] ) ? $p['minimum_amount'] : '' );
 			$max = TCP_Ops::number( isset( $p['maximum_amount'] ) ? $p['maximum_amount'] : '' );
@@ -209,6 +234,11 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 			$p    = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			$code = isset( $p['code'] ) ? wc_format_coupon_code( sanitize_text_field( $p['code'] ) ) : '';
 			$id   = isset( $p['coupon_id'] ) ? absint( $p['coupon_id'] ) : 0;
+			list( $raw_exp, $normalized_exp ) = self::expiry_from_post( $p );
+			if ( '' !== $raw_exp && '' === $normalized_exp ) {
+				// ورودی بد هرگز نباید به null تبدیل شود و تاریخ معتبر قبلی را پاک کند.
+				self::back( 'err', array( 'msg' => 'invalid_expiry', 'panel' => 'single', 'edit' => $id ) );
+			}
 			if ( '' === $code ) {
 				self::back( 'err', array( 'msg' => 'nocode' ) );
 			}
@@ -229,6 +259,10 @@ if ( ! class_exists( 'TCP_Coupons' ) ) {
 		public static function generate() {
 			self::guard( self::ACTION_GENERATE );
 			$p      = wp_unslash( $_POST ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+			list( $raw_exp, $normalized_exp ) = self::expiry_from_post( $p );
+			if ( '' !== $raw_exp && '' === $normalized_exp ) {
+				self::back( 'err', array( 'msg' => 'invalid_expiry', 'panel' => 'bulk' ) );
+			}
 			$count  = isset( $p['count'] ) ? max( 1, min( 1000, absint( $p['count'] ) ) ) : 10;
 			$prefix = isset( $p['prefix'] ) ? strtoupper( preg_replace( '/[^A-Za-z0-9\-_]/', '', (string) $p['prefix'] ) ) : '';
 			$len    = isset( $p['length'] ) ? max( 4, min( 16, absint( $p['length'] ) ) ) : 8;

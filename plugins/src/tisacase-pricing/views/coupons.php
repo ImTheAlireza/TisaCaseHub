@@ -16,6 +16,7 @@ $tcp_search  = isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s']
 $tcp_batch   = isset( $_GET['batch'] ) ? sanitize_text_field( wp_unslash( $_GET['batch'] ) ) : '';
 $tcp_edit_id = isset( $_GET['edit'] ) ? absint( $_GET['edit'] ) : 0;
 $tcp_panel   = isset( $_GET['panel'] ) ? sanitize_key( $_GET['panel'] ) : ( $tcp_edit_id ? 'single' : 'list' );
+$tcp_error   = isset( $_GET['err'], $_GET['msg'] ) && 'invalid_expiry' === sanitize_key( wp_unslash( $_GET['msg'] ) ) ? 'invalid_expiry' : '';
 // phpcs:enable
 
 $tcp_rows    = TCP_Coupons::list_coupons( $tcp_search, $tcp_batch );
@@ -67,10 +68,35 @@ $tcp_prod_select = static function ( $name, $selected ) {
 	<?php
 };
 
+/**
+ * فیلد تاریخ شمسی با تقویم جلالی.
+ *
+ * ورودی همیشه میلادی Y-m-d است (فرمت ذخیره‌سازی)؛ فیلد متنی نمای شمسی را نشان
+ * می‌دهد و بک‌اند با TCP_Jalali::normalize_date_input هر دو فرمت را می‌پذیرد.
+ */
+$tcp_jdate = static function ( $name, $gregorian, $id = '', $hidden_id = '' ) {
+	$gregorian = TCP_Jalali::normalize_date_input( $gregorian );
+	$jalali    = TCP_Jalali::gregorian_to_text( $gregorian );
+	// مقدار میلادی خارج بازه (رکورد خراب قدیمی) هنگام باز شدن فرم خالی می‌شود تا با ذخیرهٔ بعدی اصلاح شود.
+	if ( '' !== $gregorian && '' === $jalali ) {
+		$gregorian = '';
+	}
+	?>
+	<?php $visible_name = 'expires' === $name ? 'expires_jalali' : $name; ?>
+	<span class="tcp-jdate" data-tcp-jdate>
+		<input type="text" class="tisa-input tcp-jdate__text"<?php echo $id ? ' id="' . esc_attr( $id ) . '"' : ''; ?> dir="ltr" inputmode="numeric" autocomplete="off" placeholder="1405/08/08" name="<?php echo esc_attr( $visible_name ); ?>" value="<?php echo esc_attr( $jalali ); ?>">
+		<input type="hidden" class="tcp-jdate__value"<?php echo $hidden_id ? ' id="' . esc_attr( $hidden_id ) . '"' : ''; ?><?php echo 'expires' === $name ? ' name="expires"' : ''; ?> value="<?php echo esc_attr( $gregorian ); ?>">
+		<button type="button" class="tcp-jdate__toggle" tabindex="-1" aria-label="باز کردن تقویم شمسی">
+			<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+		</button>
+	</span>
+	<?php
+};
+
 /** بدنهٔ مشترک فرم (ساخت تکی و انبوه). */
-$tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tcp_toggle, $tcp_cat_select, $tcp_prod_select, $tcp_cur ) {
-	$d = wp_parse_args( (array) $d, array( 'type' => 'percent', 'amount' => 10, 'expires' => '', 'min' => 0, 'max' => 0, 'limit' => 0, 'per_user' => 0, 'free_shipping' => false, 'individual' => false, 'excl_sale' => false, 'round' => true, 'products' => array(), 'excl_products' => array(), 'cats' => array(), 'excl_cats' => array(), 'emails' => array(), 'description' => '' ) );
-	$exp = $d['expires'] ? gmdate( 'Y-m-d', strtotime( str_replace( '/', '-', $d['expires'] ) ) ) : '';
+$tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tcp_toggle, $tcp_cat_select, $tcp_prod_select, $tcp_cur, $tcp_jdate ) {
+	$d = wp_parse_args( (array) $d, array( 'type' => 'percent', 'amount' => 10, 'expires' => '', 'expires_gregorian' => '', 'min' => 0, 'max' => 0, 'limit' => 0, 'per_user' => 0, 'free_shipping' => false, 'individual' => false, 'excl_sale' => false, 'round' => true, 'products' => array(), 'excl_products' => array(), 'cats' => array(), 'excl_cats' => array(), 'emails' => array(), 'description' => '' ) );
+	$exp = $d['expires_gregorian'] ? $d['expires_gregorian'] : TCP_Jalali::normalize_date_input( $d['expires'] );
 	?>
 	<div class="tcp-grid-3">
 		<label class="tcp-stack">نوع تخفیف
@@ -84,7 +110,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 			<input type="number" class="tisa-input" name="amount" min="0" step="0.01" value="<?php echo esc_attr( $d['amount'] ); ?>" required>
 		</label>
 		<label class="tcp-stack">تاریخ انقضا <span class="tcp-muted">(خالی = بدون انقضا)</span>
-			<input type="date" class="tisa-input" name="expires" value="<?php echo esc_attr( $exp ); ?>">
+			<?php $tcp_jdate( 'expires', $exp ); ?>
 		</label>
 	</div>
 
@@ -126,6 +152,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 ?>
 
 <p class="tcp-lead">کدها همان کوپن‌های ووکامرس‌اند؛ در سبد، پرداخت و گزارش‌ها طبیعی کار می‌کنند. اینجا ساخت سریع، تولید انبوه کدهای یک‌بارمصرف، رند به ۸ و مدیریت یک‌جا اضافه شده.</p>
+<?php if ( 'invalid_expiry' === $tcp_error ) : ?><div class="notice notice-error"><p>تاریخ انقضا ذخیره نشد؛ تاریخ را از تقویم انتخاب کنید یا با قالب ۱۴۰۵/۰۸/۰۸ وارد کنید. تاریخ قبلی تغییر نکرده است.</p></div><?php endif; ?>
 
 <nav class="tcp-subnav">
 	<a class="tcp-subtab<?php echo 'list' === $tcp_panel ? ' is-active' : ''; ?>" href="<?php echo esc_url( TCP_Admin::url( 'coupons' ) ); ?>">فهرست کدها <span class="tcp-count"><?php echo esc_html( number_format_i18n( count( $tcp_rows ) ) ); ?></span></a>
@@ -218,7 +245,7 @@ $tcp_common_fields = static function ( $d, $bulk = false ) use ( $tcp_types, $tc
 							<td><button type="button" class="tcp-cp-code tisa-code" data-code="<?php echo esc_attr( $r['code'] ); ?>" title="کپی"><?php echo esc_html( $r['code'] ); ?></button><?php if ( $r['batch'] ) : ?><div class="tcp-muted"><?php echo esc_html( $r['batch'] ); ?></div><?php endif; ?></td>
 							<td><?php echo esc_html( isset( $tcp_types[ $r['type'] ] ) ? $tcp_types[ $r['type'] ] : $r['type'] ); ?><br><strong><?php echo 'percent' === $r['type'] ? esc_html( number_format_i18n( $r['amount'], 2 ) . '٪' ) : esc_html( number_format_i18n( $r['amount'] ) . ' ' . $tcp_cur ); ?></strong></td>
 							<td><?php echo esc_html( number_format_i18n( $r['usage'] ) ); ?> / <?php echo $r['limit'] ? esc_html( number_format_i18n( $r['limit'] ) ) : '∞'; ?></td>
-							<td><?php echo $r['expires'] ? esc_html( $r['expires'] ) : '—'; ?></td>
+							<td><?php if ( ! empty( $r['expires_invalid'] ) ) : ?><span class="tcp-badge tcp-cp-used_up" title="تاریخ ذخیره‌شده خارج بازهٔ معتبر است؛ فرم را باز و تاریخ را دوباره انتخاب کن">تاریخ نامعتبر</span><?php elseif ( $r['expires'] ) : ?><span dir="ltr"><?php echo esc_html( $r['expires'] ); ?></span><?php else : ?>—<?php endif; ?></td>
 							<td class="tcp-cp-feats">
 								<?php if ( $r['phone_policy']['enabled'] ) : ?><span class="tcp-badge tcp-st-done">سهمیه خرید موفق / موبایل</span><?php endif; ?>
 								<?php if ( $r['round'] ) : ?><span class="tcp-badge tcp-st-done">رند ۸</span><?php endif; ?>

@@ -816,7 +816,7 @@ if ( ! class_exists( 'TCP_Ajax' ) ) {
 						TCP_Settings::csv_cell( isset( $skus[ $oid ] ) ? $skus[ $oid ] : '' ),
 						TCP_Settings::csv_cell( $rr['before_value'] ),
 						TCP_Settings::csv_cell( $rr['after_value'] ),
-						(string) $rr['created_at'],
+						TCP_Jalali::from_mysql( (string) $rr['created_at'], 'Y/m/d H:i:s' ),
 					) );
 				}
 				$offset += $step;

@@ -168,8 +168,13 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 
 			wp_enqueue_style( 'tcp-admin', TCP_URL . 'assets/admin.css', $deps, self::asset_ver( 'assets/admin.css' ) );
 
+			// تقویم شمسی روی تب‌های قوانین (بازهٔ تاریخ) و کد تخفیف (تاریخ انقضا).
+			if ( 'rules' === $tab || 'coupons' === $tab ) {
+				wp_enqueue_script( 'tcp-jalali', TCP_URL . 'assets/jalali.js', array(), self::asset_ver( 'assets/jalali.js' ), true );
+			}
+
 			if ( 'rules' === $tab ) {
-				wp_enqueue_script( 'tcp-rules', TCP_URL . 'assets/rules.js', array( 'jquery' ), self::asset_ver( 'assets/rules.js' ), true );
+				wp_enqueue_script( 'tcp-rules', TCP_URL . 'assets/rules.js', array( 'jquery', 'tcp-jalali' ), self::asset_ver( 'assets/rules.js' ), true );
 				wp_localize_script(
 					'tcp-rules',
 					'TCP_RULES',
@@ -192,7 +197,7 @@ if ( ! class_exists( 'TCP_Admin' ) ) {
 			}
 
 			if ( 'coupons' === $tab ) {
-				wp_enqueue_script( 'tcp-coupons', TCP_URL . 'assets/coupons.js', array( 'jquery' ), self::asset_ver( 'assets/coupons.js' ), true );
+				wp_enqueue_script( 'tcp-coupons', TCP_URL . 'assets/coupons.js', array( 'jquery', 'tcp-jalali' ), self::asset_ver( 'assets/coupons.js' ), true );
 				wp_localize_script( 'tcp-coupons', 'TCP_COUPONS', array( 'currency' => function_exists( 'get_woocommerce_currency_symbol' ) ? get_woocommerce_currency_symbol() : '' ) );
 				return;
 			}

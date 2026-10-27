@@ -8,10 +8,12 @@
 
 require_once __DIR__ . '/stubs.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-settings.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcp-jalali.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-round.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-ops.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-db.php';
 require_once dirname( __DIR__ ) . '/includes/class-tcp-rules.php';
+require_once dirname( __DIR__ ) . '/includes/class-tcp-coupons.php';
 
 /* ---------- هارنس ---------- */
 
@@ -579,6 +581,38 @@ $r202 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 202 ) 
 t( 'شناسه غیرفعال (LP) قانون ندارد؛ به سراسری (۳۰٪) می‌افتد', $r202 && 30.0 === (float) $r202['increase'], var_export( $r202, true ) );
 $r204 = call_private( 'TCP_Rules', 'resolve_rule', array( new WC_Product( 204 ) ) );
 t( 'اولویت: قانون تکی محصول (۱۰٪) بر قانون شناسه CH (۴۰٪) برنده است', $r204 && 10.0 === (float) $r204['increase'] );
+
+require __DIR__ . '/jalali-tests.php';
+// شبیه‌سازی افزونهٔ تقویم بیرونی که خروجی wp_date را از قبل شمسی می‌کند.
+if ( ! function_exists( 'wp_date' ) ) {
+	function wp_date( $format, $timestamp = null, $timezone = null ) {
+		return '1405|8|8|23|59|59';
+	}
+}
+if ( ! function_exists( 'wp_timezone' ) ) {
+	function wp_timezone() {
+		return new DateTimeZone( 'Asia/Tehran' );
+	}
+}
+
+echo "--- فیلتر تقویم بیرونی روی wp_date ---\n";
+$jalali_filter_ts = TCP_Jalali::gregorian_to_timestamp( '2026-10-30', '23:59:59' );
+t( 'wp_date فیلترشده شمسی دوباره به‌عنوان میلادی تفسیر نمی‌شود', '1405/08/08 23:59:59' === TCP_Jalali::format( 'Y/m/d H:i:s', $jalali_filter_ts ) );
+t( 'تاریخ میلادی فرم مستقل از date_i18n/wp_date است', '2026-10-30' === TCP_Jalali::gregorian_date( $jalali_filter_ts ) );
+t( 'تاریخ MySQL محلی در منطقهٔ زمانی سایت به‌درستی تبدیل می‌شود', '1405/08/08 23:59' === TCP_Jalali::from_mysql( '2026-10-30 23:59:59', 'Y/m/d H:i' ) );
+t( 'ساخت timestamp محلی از 23:59 به همان روز برمی‌گردد', '2026-10-30' === TCP_Jalali::gregorian_date( TCP_Jalali::gregorian_to_timestamp( '2026-10-30', '23:59:59' ) ) );
+
+echo "--- تاریخ انقضای فرم کوپن: مسیر POST با/بدون JS ---\n";
+$exp_js = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '2026-10-30', 'expires_jalali' => '1405/08/08', 'tcp_jalali_date_ready' => '1' ) ) );
+t( 'POST جاوااسکریپت: ISO تازه‌همگام‌شده مرجع است', array( '2026-10-30', '2026-10-30' ) === $exp_js );
+$exp_no_js = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '2025-01-01', 'expires_jalali' => '1405/08/08' ) ) );
+t( 'POST بدون جاوااسکریپت: ورودی شمسی بر مقدار پنهان کهنه اولویت دارد', array( '1405/08/08', '2026-10-30' ) === $exp_no_js );
+$exp_legacy = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '1405/08/08' ) ) );
+t( 'فرم نسخهٔ قبلی: ورودی شمسی سازگار می‌ماند', array( '1405/08/08', '2026-10-30' ) === $exp_legacy );
+$exp_invalid = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires_jalali' => '1405/13/99' ) ) );
+t( 'POST تاریخ نامعتبر: خروجی خالی برای جلوگیری از ذخیره', array( '1405/13/99', '' ) === $exp_invalid );
+$exp_clear = call_private( 'TCP_Coupons', 'expiry_from_post', array( array( 'expires' => '', 'expires_jalali' => '', 'tcp_jalali_date_ready' => '1' ) ) );
+t( 'پاک‌کردن صریح تاریخ: هر دو مقدار خالی', array( '', '' ) === $exp_clear );
 
 echo "\nنتیجه: $pass موفق، $fail ناموفق\n";
 exit( $fail === 0 ? 0 : 1 );
