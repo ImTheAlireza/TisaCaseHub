@@ -24,7 +24,12 @@ if ( 'ariocase' !== $partner_id ) :
 						$required = ! empty( $definition['required'] ) ? ' required' : '';
 						?>
 						<label class="<?php echo ! empty( $definition['wide'] ) ? 'tcas-span-2' : ''; ?>"><span class="tcas-label"><?php echo esc_html( $label ); ?></span>
-						<?php if ( 'select' === $type ) : ?><select name="tcas_settings[<?php echo esc_attr( $key ); ?>]"><?php foreach ( (array) ( $definition['options'] ?? array() ) as $option_value => $option_label ) : ?><option value="<?php echo esc_attr( $option_value ); ?>" <?php selected( $value, (string) $option_value ); ?>><?php echo esc_html( $option_label ); ?></option><?php endforeach; ?></select>
+						<?php if ( 'select' === $type ) : ?>
+							<select name="tcas_settings[<?php echo esc_attr( $key ); ?>]">
+								<?php foreach ( (array) ( $definition['options'] ?? array() ) as $option_value => $option_label ) { ?>
+									<option value="<?php echo esc_attr( $option_value ); ?>" <?php selected( $value, (string) $option_value ); ?>><?php echo esc_html( $option_label ); ?></option>
+								<?php } ?>
+							</select>
 						<?php elseif ( 'checkbox' === $type ) : ?><input type="checkbox" name="tcas_settings[<?php echo esc_attr( $key ); ?>]" value="1" <?php checked( $value, '1' ); ?>>
 						<?php else : ?><input type="<?php echo esc_attr( in_array( $type, array( 'url', 'password', 'number', 'email' ), true ) ? $type : 'text' ); ?>" name="tcas_settings[<?php echo esc_attr( $key ); ?>]" value="<?php echo 'password' === $type ? '' : esc_attr( $value ); ?>" placeholder="<?php echo esc_attr( $placeholder ); ?>" <?php echo 'password' === $type ? 'autocomplete="new-password"' : ''; ?><?php echo $required; ?>><?php endif; ?>
 						<?php if ( ! empty( $definition['description'] ) ) : ?><small><?php echo esc_html( $definition['description'] ); ?></small><?php endif; ?></label>
