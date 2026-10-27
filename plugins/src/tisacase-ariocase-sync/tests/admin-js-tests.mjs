@@ -486,6 +486,36 @@ function type(entry, field, value) {
 	dom.window.close();
 }
 
+// ---------- ۷ز۲) سرعت جست‌وجو: کش مرورگر و شفافیت منبع ----------
+{
+	const dom = makeDom(); const { window } = dom; const terms = [];
+	window.fetch = async (url, options) => {
+		const body = options.body;
+		if (body.get('action') === 'tcas_search_products') {
+			terms.push(body.get('term'));
+			return reply({ rows: [
+				{ reference: 'TS0100', product_id: 11, type: 'simple', sku: 'TS0100', name: 'قاب شیائومی', label: '', stock: { quantity: 3, status: 'instock' } },
+			], source: 'fibo', ms: 6.4 });
+		}
+		return reply({});
+	};
+	window.eval(script);
+	const input = window.document.getElementById('tcas-link-input');
+	input.value = 'قاب';
+	input.dispatchEvent(new window.Event('input'));
+	await waitFor(() => window.document.querySelectorAll('.tcas-search-row').length === 1, 8000);
+	const note = window.document.querySelector('.tcas-search-note');
+	ok('پاسخ جست‌وجو منبع (FiboSearch) و زمان پاسخ را نشان می‌دهد', Boolean(note) && note.textContent.includes('FiboSearch') && note.textContent.includes('میلی‌ثانیه') && note.textContent.includes('نتیجه'));
+	input.value = '';
+	input.dispatchEvent(new window.Event('input'));
+	input.value = 'قاب';
+	input.dispatchEvent(new window.Event('input'));
+	await new Promise((resolve) => setTimeout(resolve, 900));
+	ok('عبارت تکراری از کش مرورگر جواب می‌گیرد و درخواست تازه نمی‌فرستد', 1 === terms.length, terms.join('|'));
+	ok('نتیجهٔ کش‌شده همچنان در فهرست نمایش داده می‌شود', window.document.querySelectorAll('.tcas-search-row').length === 1);
+	dom.window.close();
+}
+
 // ---------- ۷ح) لینک چسبانده‌شده همچنان کار می‌کند و جست‌وجو را فعال نمی‌کند ----------
 {
 	const dom = makeDom(); const { window } = dom; const calls = [];

@@ -261,8 +261,22 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				wp_send_json_error( array( 'message' => 'برای جست‌وجو دست‌کم ' . TCAS_Local_Search::MIN_TERM . ' حرف از نام محصول یا SKU را وارد کنید.' ), 400 );
 			}
 			$rows = TCAS_Local_Search::search( $term );
-			TCAS_Logger::add( 'product_search', $term, count( $rows ) . ' نتیجه' );
-			wp_send_json_success( array( 'rows' => $rows, 'term' => $term, 'count' => count( $rows ) ) );
+			// هر جست‌وجوی موفق لاگ نمی‌شود (نوشتن Option به‌ازای هر حرف، خودش کندی می‌ساخت)؛
+			// فقط «نتیجه‌ای پیدا نشد» و حداکثر یک‌بار در هر ۱۰ دقیقه برای هر عبارت ثبت می‌شود.
+			if ( ! $rows ) {
+				$throttle = 'tcas_search_miss_' . md5( strtolower( $term ) );
+				if ( ! get_transient( $throttle ) ) {
+					set_transient( $throttle, 1, 600 );
+					TCAS_Logger::add( 'product_search_empty', $term, 'نتیجه‌ای پیدا نشد (' . TCAS_Local_Search::$last_source . ').' );
+				}
+			}
+			wp_send_json_success( array(
+				'rows'   => $rows,
+				'term'   => $term,
+				'count'  => count( $rows ),
+				'source' => TCAS_Local_Search::$last_source,
+				'ms'     => round( (float) TCAS_Local_Search::$last_ms, 1 ),
+			) );
 		}
 
 		public static function resolve_link() {

@@ -112,6 +112,7 @@ TCAS_Local_Search::$finder = function ( $term, $limit ) {
 $response = invoke_ajax( 'search_products' );
 ajax_test( 'جست‌وجو ردیف‌های آمادهٔ انتخاب را برمی‌گرداند', $response && $response->success && 2 === $response->data['count'] && 'TS0100' === $response->data['rows'][0]['reference'] && 'ID:42' === $response->data['rows'][1]['reference'] );
 ajax_test( 'جست‌وجو هیچ درخواستی به همکار نمی‌فرستد', null === TCAS_Api::$reference );
+ajax_test( 'پاسخ جست‌وجو منبع و زمان را هم برمی‌گرداند تا کندی قابل تشخیص باشد', isset( $response->data['source'], $response->data['ms'] ) && 'hook' === $response->data['source'] && is_numeric( $response->data['ms'] ) );
 TCAS_Local_Search::$finder = null;
 $_POST['product_id'] = 41;
 TCAS_Link_Resolver::$product = null;

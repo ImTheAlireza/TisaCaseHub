@@ -520,7 +520,22 @@
 	}
 
 	// ---- جست‌وجوی محلی محصول TisaCase: بدون درخواست بیرونی و بدون لینک در POST ----
-	const SEARCH_DEBOUNCE = 250;
+	// جست‌وجو مثل هر جست‌وجوی دیگری باید فوری باشد: مکث کوتاه + کش سمت مرورگر.
+	const SEARCH_DEBOUNCE = 120;
+	const SEARCH_MEMO_MAX = 80;
+	const searchMemo = new Map();
+
+	function searchMemoGet(term) {
+		const key = String(term || '').trim().toLowerCase();
+		return key && searchMemo.has(key) ? searchMemo.get(key) : null;
+	}
+
+	function searchMemoSet(term, data) {
+		const key = String(term || '').trim().toLowerCase();
+		if (!key) return;
+		if (searchMemo.size >= SEARCH_MEMO_MAX) searchMemo.delete(searchMemo.keys().next().value);
+		searchMemo.set(key, data);
+	}
 
 	function looksLikeLink(value) {
 		const text = String(value || '').trim();
@@ -533,7 +548,24 @@
 	}
 
 	function searchFetch(term) {
-		return enqueuePreview(() => request('search_products', { term }));
+		const cached = searchMemoGet(term);
+		if (cached) return Promise.resolve(cached);
+		return enqueuePreview(() => request('search_products', { term })).then((data) => {
+			const rows = Array.isArray(data.rows) ? data.rows : [];
+			// فقط نتیجهٔ غیرخالی کش می‌شود تا محصول تازه‌ساخته پنهان نماند.
+			if (rows.length) searchMemoSet(term, data);
+			return data;
+		});
+	}
+
+	/** منبع پاسخ را برای شفافیت نشان می‌دهد؛ فقط در پیشخوان مدیر. */
+	function searchSourceNote(data) {
+		const parts = [];
+		if (Number.isFinite(Number(data && data.ms))) parts.push(Number(data.ms) + ' میلی‌ثانیه');
+		const source = data && data.source ? String(data.source) : '';
+		if ('fibo' === source) parts.push('ایندکس FiboSearch');
+		else if ('memo' === source || 'cache' === source) parts.push('از حافظه');
+		return parts.length ? parts.join(' · ') : '';
 	}
 
 	/**
@@ -644,7 +676,9 @@
 					render([], opts.emptyHint || 'محصولی با این نام یا SKU پیدا نشد.');
 					return;
 				}
-				render(list, '');
+				const note = searchSourceNote(data);
+				const head = list.length.toLocaleString('fa-IR') + ' نتیجه' + (note ? ' · ' + note : '');
+				render(list, head);
 			} catch (error) {
 				if (current !== seq) return;
 				render([], error.message);
