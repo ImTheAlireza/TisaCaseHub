@@ -257,11 +257,11 @@ function type(entry, field, value) {
 	window.document.getElementById('tcas-smart-local').value = 'ID:0';
 	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
 	window.document.getElementById('tcas-smart-match').click();
-	await waitFor(() => window.document.querySelectorAll('.tcas-smart-issue').length === 2, 8000);
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 1, 8000);
 	await waitFor(() => !window.document.getElementById('tcas-smart-status').textContent.includes('در حال دریافت'), 8000);
 	ok('برای مرجعِ در اختیار Variation دیگر، کارت قرمزی ساخته نمی‌شود', 1 === window.document.querySelectorAll('.tcas-pair-entry').length);
-	ok('این موارد در فهرست «از قبل متصل» با شمارهٔ محصول مقصد دیده می‌شوند', window.document.getElementById('tcas-smart-issues').textContent.includes('از قبل متصل') && window.document.getElementById('tcas-smart-issues').textContent.includes('#401726'));
-	ok('گزارش تطبیق، تعداد موارد بدون کارت را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('مرجعش از قبل به Variation دیگری وصل بود'));
+	ok('مراجع اشغال‌شده فهرست «موارد نیازمند بررسی» را شلوغ نمی‌کنند', 0 === window.document.querySelectorAll('.tcas-smart-issue').length && window.document.getElementById('tcas-smart-issues').hidden);
+	ok('گزارش تطبیق، تعداد موارد بدون کارت را می‌گوید', window.document.getElementById('tcas-smart-status').textContent.includes('Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت'));
 	ok('هیچ درخواست موجودی‌ای برای این تطبیق زده نمی‌شود', !actions.includes('tcas_preview_pair') && !actions.includes('tcas_preview_start'), actions.join(','));
 	dom.window.close();
 }

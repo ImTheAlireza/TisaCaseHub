@@ -1377,33 +1377,24 @@
 		row.setAttribute('role', 'listitem');
 		const header = node('div', 'tcas-smart-issue-header');
 		const flags = node('span', 'tcas-smart-issue-flags');
-		const kindLabel = 'connected' === kind ? 'از قبل متصل' : ('ambiguous' === kind ? 'مبهم' : 'بدون تطبیق');
-		flags.appendChild(issueFlag(kindLabel, 'tcas-smart-issue-flag-kind'));
+		flags.appendChild(issueFlag(kind === 'ambiguous' ? 'مبهم' : 'بدون تطبیق', 'tcas-smart-issue-flag-kind'));
 		if (info) flags.appendChild(issueFlag(info.flag, 'tcas-smart-issue-flag-reason'));
 		header.appendChild(flags);
-		header.appendChild(node('span', 'tcas-smart-issue-shop', 'connected' === kind ? 'TisaCase' : (item.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase'))));
+		header.appendChild(node('span', 'tcas-smart-issue-shop', item.shop === 'tisacase' ? 'TisaCase' : (cfg.partnerLabel || 'ArioCase')));
 		row.appendChild(header);
 		row.appendChild(node('strong', 'tcas-smart-issue-label', item.label ? String(item.label) : 'Variation #' + String((Number(item.index) || 0) + 1)));
 		row.appendChild(node('code', 'tcas-smart-issue-reference', item.reference ? String(item.reference) : 'مرجع ثبت نشده'));
-		let reason;
-		if ('connected' === kind) {
-			reason = 'این مرجع همکار از قبل به ' + (item.taken_by_name ? '«' + item.taken_by_name + '»' : 'یک Variation دیگر')
-				+ (item.taken_by ? ' (#' + String(item.taken_by) + ')' : '') + ' وصل است؛ برای پرهیز از خطای «مرجع تکراری»، کارتی ساخته نشد.';
-		} else {
-			reason = info ? info.reason(item) : (kind === 'ambiguous' ? 'مرجع تکراری یا چند گزینهٔ محتمل؛ تطبیق خودکار امن نیست.' : 'همتای یکتا در سمت دیگر پیدا نشد.');
-		}
+		const reason = info ? info.reason(item) : (kind === 'ambiguous' ? 'مرجع تکراری یا چند گزینهٔ محتمل؛ تطبیق خودکار امن نیست.' : 'همتای یکتا در سمت دیگر پیدا نشد.');
 		row.appendChild(node('small', 'tcas-smart-issue-reason', reason));
 		const twins = issueTwins(item);
 		if (twins) row.appendChild(twins);
 		const candidates = issueCandidates(item);
 		if (candidates) row.appendChild(candidates);
-		if ('connected' !== kind) {
-			const review = node('button', 'button tcas-smart-issue-review', 'بررسی دستی');
-			review.type = 'button';
-			review.title = 'یک کارت جفت با مرجع همین Variation می‌سازد تا سمت مقابل را دستی کامل کنید.';
-			review.addEventListener('click', () => reviewIssue(item));
-			row.appendChild(review);
-		}
+		const review = node('button', 'button tcas-smart-issue-review', 'بررسی دستی');
+		review.type = 'button';
+		review.title = 'یک کارت جفت با مرجع همین Variation می‌سازد تا سمت مقابل را دستی کامل کنید.';
+		review.addEventListener('click', () => reviewIssue(item));
+		row.appendChild(review);
 		return row;
 	}
 
@@ -1429,7 +1420,7 @@
 		if (!wrap) return;
 		wrap.textContent = '';
 		const count = (kind) => state.smartIssues.filter((entry) => kind === 'all' || entry.kind === kind).length;
-		[['all', 'همه'], ['ambiguous', 'مبهم'], ['unmatched', 'بدون تطبیق'], ['connected', 'از قبل متصل']].forEach(([key, label]) => {
+		[['all', 'همه'], ['ambiguous', 'مبهم'], ['unmatched', 'بدون تطبیق']].forEach(([key, label]) => {
 			const button = node('button', 'button tcas-smart-issue-filter', label + ' ' + String(count(key)));
 			button.type = 'button';
 			button.dataset.filter = key;
@@ -1444,7 +1435,7 @@
 		wrap.hidden = state.smartIssues.length === 0;
 	}
 
-	function renderSmartIssues(ambiguous, unmatched, skipped) {
+	function renderSmartIssues(ambiguous, unmatched) {
 		const panel = $('tcas-smart-issues');
 		const list = $('tcas-smart-issue-list');
 		const count = $('tcas-smart-issues-count');
@@ -1453,21 +1444,6 @@
 		state.smartIssues = [];
 		(Array.isArray(ambiguous) ? ambiguous : []).forEach((item) => { if (item && typeof item === 'object') state.smartIssues.push({ item, kind: 'ambiguous' }); });
 		(Array.isArray(unmatched) ? unmatched : []).forEach((item) => { if (item && typeof item === 'object') state.smartIssues.push({ item, kind: 'unmatched' }); });
-		// مواردی که مرجعشان از قبل به Variation دیگری وصل است: نه کارت، نه درخواست.
-		(Array.isArray(skipped) ? skipped : []).forEach((entry) => {
-			if (!entry || typeof entry !== 'object') return;
-			state.smartIssues.push({
-				kind: 'connected',
-				item: {
-					shop: 'tisacase',
-					label: entry.local_label || entry.local_code || '',
-					reference: entry.local_code || '',
-					reason: 'remote_taken',
-					taken_by: entry.taken_by || 0,
-					taken_by_name: entry.taken_by_name || ''
-				}
-			});
-		});
 		state.smartIssues.forEach(({ item, kind }) => list.appendChild(issueRow(item, kind)));
 		renderIssueFilters();
 		applyIssueFilter();
@@ -1519,8 +1495,7 @@
 		const start = state.smartOffset;
 		// هیچ سقفی اعمال نمی‌شود؛ همهٔ Variationهای یافت‌شده (حتی ۲۰۰–۳۰۰ مورد) یک‌جا ساخته می‌شوند.
 		const batch = state.smartMatches.slice(start);
-		// «از قبل متصل» کارت نمی‌گیرد؛ فقط موارد مبهم/بدون تطبیق کارت قرمز می‌سازند.
-		const issues = 0 === start ? state.smartIssues.filter((entry) => 'connected' !== entry.kind) : [];
+		const issues = 0 === start ? state.smartIssues : [];
 		if (!batch.length && !issues.length) {
 			text('tcas-smart-status', 'جفت دیگری برای این تطبیق نمانده است.');
 			return;
@@ -1604,8 +1579,7 @@
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
 		if (alreadyConnected) message += ' ' + String(alreadyConnected) + ' کارت از قبل متصل بود و دوباره بررسی یا ارسال نمی‌شود.';
-		const takenCount = state.smartSkipped || 0;
-		if (takenCount) message += ' ' + String(takenCount) + ' مورد مرجعش از قبل به Variation دیگری وصل بود و کارت نگرفت.';
+		if (state.smartSkipped) message += ' ' + String(state.smartSkipped) + ' Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت.';
 		if (orphans) message += ' ' + String(orphans) + ' کارت قرمز برای Variationهای بدون همتا ساخته شد.';
 		if (skippedOrphans) message += ' ' + String(skippedOrphans) + ' مورد به‌خاطر ظرفیت یا نبود مرجع کارت نگرفت.';
 		message += state.smartOffset < state.smartMatches.length ? ' پس از اتصال، «دسته بعد» را بزنید.' : ' هیچ درخواستی برای موجودی زده نشد؛ با «اتصال انتخاب‌شده‌ها» موجودی خوانده و متصل می‌شود.';
@@ -1638,9 +1612,9 @@
 			const unmatched = Array.isArray(data.unmatched) ? data.unmatched : [];
 			state.smartAmbiguous = ambiguous.length;
 			state.smartUnmatched = unmatched.length;
-			const skipped = Array.isArray(data.skipped) ? data.skipped : [];
-			state.smartSkipped = skipped.length;
-			renderSmartIssues(ambiguous, unmatched, skipped);
+			// مراجعی که همین حالا در اختیار Variation دیگری هستند کارت نمی‌گیرند؛ فقط شمرده می‌شوند.
+			state.smartSkipped = Array.isArray(data.skipped) ? data.skipped.length : 0;
+			renderSmartIssues(ambiguous, unmatched);
 			state.smartLocalCount = data.local && Number.isFinite(Number(data.local.count)) ? Number(data.local.count) : 0;
 			state.smartRemoteCount = data.remote && Number.isFinite(Number(data.remote.count)) ? Number(data.remote.count) : 0;
 			state.smartLocalName = data.local && data.local.name ? String(data.local.name) : '';
@@ -1648,15 +1622,16 @@
 			state.smartLocalReference = data.local && data.local.reference ? String(data.local.reference) : '';
 			state.smartRemoteReference = data.remote && data.remote.reference ? String(data.remote.reference) : '';
 			state.smartOffset = 0;
-			const reviewable = state.smartIssues.filter(({ item, kind }) => item && item.reference && 'connected' !== kind).length;
+			const reviewable = state.smartIssues.filter(({ item }) => item && item.reference).length;
 			if (!state.smartMatches.length) {
 				const excluded = state.smartAmbiguous + state.smartUnmatched;
 				state.running = false;
+				const takenNote = state.smartSkipped ? ' ' + String(state.smartSkipped) + ' Variation از قبل به همین مرجع وصل بود و کارت تازه نگرفت.' : '';
 				if (reviewable) {
 					await fillSmartBatch();
-					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + '؛ ' + String(reviewable) + ' کارت قرمز برای بررسی دستی ساخته شد' + (excluded ? ' و ' + String(excluded) + ' مورد با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + '؛ ' + String(reviewable) + ' کارت قرمز برای بررسی دستی ساخته شد' + (excluded ? ' و ' + String(excluded) + ' مورد با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.') + takenNote, true);
 				} else {
-					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.'), true);
+					text('tcas-smart-status', smartCoverage() + 'جفت یکتایی پیدا نشد' + (excluded ? '؛ ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.' : '.') + takenNote, true);
 				}
 			} else {
 				state.running = false;
