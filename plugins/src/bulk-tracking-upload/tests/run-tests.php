@@ -413,6 +413,23 @@ class BWT_Test_WPDB {
     }
     public function get_col($sql) {
         $this->last_sql = $sql;
+        // شبیه‌سازی کوئری متای کد رهگیری روی هر دو ذخیره‌سازی (postmeta و HPOS).
+        if ((strpos($sql, 'FROM `wp_postmeta`') !== false || strpos($sql, 'FROM `wp_wc_orders_meta`') !== false)
+            && strpos($sql, 'meta_key') !== false) {
+            $key = preg_match("/meta_key = '([^']+)'/", $sql, $m) ? $m[1] : '';
+            $ids = array();
+            if (preg_match('/IN \(([^)]+)\)/', $sql, $in)) {
+                $ids = array_map('intval', array_map('trim', explode(',', $in[1])));
+            }
+            $out = array();
+            foreach ($ids as $id) {
+                $order = isset($GLOBALS['bwt_orders'][$id]) ? $GLOBALS['bwt_orders'][$id] : null;
+                if ($order && isset($order->meta[$key]) && $order->meta[$key] !== '') {
+                    $out[] = $id;
+                }
+            }
+            return $out;
+        }
         if ($sql === 'SHOW TABLES') {
             return array_keys($GLOBALS['bwt_db_tables']);
         }
@@ -437,6 +454,10 @@ class BWT_Test_WPDB {
     }
 }
 $GLOBALS['wpdb'] = new BWT_Test_WPDB();
+
+// استاب HPOS: رفتار OrderUtil وردپرس را شبیه‌سازی می‌کند تا هر دو مسیر تست شوند.
+eval('namespace Automattic\\WooCommerce\\Utilities; class OrderUtil { public static function custom_orders_table_usage_is_enabled() { return !empty($GLOBALS["bwt_hpos_enabled"]); } }');
+$GLOBALS['bwt_hpos_enabled'] = false;
 
 /* ---------- REST request ---------- */
 class BWT_Test_Request {
@@ -854,6 +875,28 @@ t('جارو سفارش بدون کد را پیدا و کد را ثبت می‌ک
 $last = bwt_last_sweep();
 t('آمار آخرین جارو ذخیره می‌شود', !empty($last['time']) && $last['created'] === 1);
 
+/* رگرسیون: سفارش‌های تازه‌تر که کد دارند نباید جای سفارش‌های قدیمی‌ترِ بدون کد را در جارو بگیرند */
+$GLOBALS['bwt_options'] = array();
+$GLOBALS['bwt_orders'] = array();
+bwt_save_settings(array('source_keys' => array('_sorna_barcode'), 'sweep_enabled' => 1));
+$GLOBALS['bwt_orders'][6101] = new BWT_Test_Order(6101, array('_tracking_code' => 'RR111222333IR', '_sorna_barcode' => 'RR111222333IR'));
+$GLOBALS['bwt_orders'][6102] = new BWT_Test_Order(6102, array('_tracking_code' => 'RR444555666IR', '_sorna_barcode' => 'RR444555666IR'));
+$GLOBALS['bwt_orders'][6103] = new BWT_Test_Order(6103, array('_sorna_barcode' => 'RR777888999IR'));
+$missing_ids = bwt_collect_sync_order_ids('missing');
+t('همگام‌سازی «بدون کد» سفارش‌های دارای کد را کنار می‌گذارد', $missing_ids === array(6103));
+$sweep2 = bwt_run_tracking_sweep();
+t('جارو سراغ سفارش قدیمی‌ترِ بدون کد می‌رود، نه سفارش‌های تازه‌ترِ دارای کد',
+    $sweep2['scanned'] === 1 && $sweep2['created'] === 1
+    && $GLOBALS['bwt_orders'][6103]->meta['_tracking_code'] === 'RR777888999IR'
+    && $GLOBALS['bwt_orders'][6101]->meta['_tracking_code'] === 'RR111222333IR');
+$GLOBALS['bwt_orders'][6104] = new BWT_Test_Order(6104, array());
+$GLOBALS['bwt_orders'][6105] = new BWT_Test_Order(6105, array('_tracking_code' => ''));
+$GLOBALS['bwt_transients'] = array();
+$empty_with = bwt_count_orders_with_code(true);
+$empty_without = bwt_count_orders_with_code(false);
+t('سفارش با متای کدِ خالی، «بدون کد» حساب می‌شود',
+    $empty_with === 3 && $empty_without === 2 && $empty_with + $empty_without === bwt_count_orders_recent());
+
 bwt_save_settings(array('sweep_enabled' => 0, 'source_keys' => array('_sorna_barcode')));
 $GLOBALS['bwt_options']['bwt_last_sweep'] = array('time' => 123, 'created' => 9);
 $GLOBALS['bwt_orders'][6002] = new BWT_Test_Order(6002, array('_sorna_barcode' => 'RR444555666IR'));
@@ -964,7 +1007,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.3.0') !== false);
+    && strpos($hero, 'v3.3.1') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1007,6 +1050,12 @@ t('مسیرهای کشف خودکار کلید از افزونه حذف شده�
     && !defined('BWT_SCAN_SAMPLE_ORDERS')
     && !has_action('wp_ajax_bwt_scan_sources')
     && !has_action('wp_ajax_bwt_find_key'));
+t('ارقام نمایش، فارسی می‌شوند', bwt_fmt_digits('1,234') === '۱٬۲۳۴' && bwt_fmt_digits(207) === '۲۰۷');
+t('کارت‌های خلاصه ارقام فارسی و جمع‌بندی کل بازه را نشان می‌دهند',
+    strpos($page, 'bwt-kpi-note') !== false
+    && preg_match('/bwt-kpi__value">[۰-۹٬]+</u', $page) === 1
+    && preg_match('/از [۰-۹٬]+ سفارش ۴۵ روز اخیر/u', $page) === 1);
+
 $notice_probe = bwt_admin_notice('danger', 'x');
 t('پیام‌های پیشخوان کلاس bwt-notice دارند',
     strpos($notice_probe, 'bwt-notice') !== false && strpos($notice_probe, 'tisa-notice--danger') !== false);
@@ -1081,6 +1130,44 @@ $count_with = bwt_count_orders_with_code(true);
 $count_without = bwt_count_orders_with_code(false);
 t('شمارندهٔ داشبورد، سفارش‌های دارای/بدون کد را جدا می‌شمارد', $count_with === 1 && $count_without === 1);
 t('شمارندهٔ داشبورد نتیجه را کش می‌کند', get_transient('bwt_count_with_code') === 1);
+
+/* دو عدد داشبورد باید همیشه با هم بخوانند: دارای کد + بدون کد = کل سفارش‌های بازه */
+$GLOBALS['bwt_orders'] = array(
+    9210 => new BWT_Test_Order(9210, array('_tracking_code' => 'RR111111111IR')),
+    9211 => new BWT_Test_Order(9211, array('_tracking_code' => 'RR222222222IR')),
+    9212 => new BWT_Test_Order(9212, array()),
+    9213 => new BWT_Test_Order(9213, array('_tracking_code' => 'RR333333333IR', '_sorna_barcode' => 'RR333333333IR')),
+    9214 => new BWT_Test_Order(9214, array('_tracking_code' => '')),
+);
+$GLOBALS['bwt_transients'] = array();
+$sum_with = bwt_count_orders_with_code(true);
+$sum_without = bwt_count_orders_with_code(false);
+$sum_total = bwt_count_orders_recent();
+t('دارای کد و بدون کد با هم برابر نیستند و جمعشان کل سفارش‌های بازه است',
+    $sum_with === 3 && $sum_without === 2 && $sum_total === 5 && $sum_with + $sum_without === $sum_total);
+t('کل سفارش‌های بازه کش می‌شود', get_transient('bwt_count_total') === 5);
+bwt_flush_order_counts_cache();
+t('پاک‌کردن کش شمارنده‌ها هر سه کلید را می‌زداید',
+    get_transient('bwt_count_with_code') === false
+    && get_transient('bwt_count_without_code') === false
+    && get_transient('bwt_count_total') === false);
+
+/* مسیر HPOS: جدول wp_wc_orders_meta و ستون order_id */
+$GLOBALS['bwt_orders'] = array(
+    9220 => new BWT_Test_Order(9220, array('_tracking_code' => 'RR444444444IR')),
+    9221 => new BWT_Test_Order(9221, array()),
+);
+$GLOBALS['bwt_transients'] = array();
+$GLOBALS['bwt_hpos_enabled'] = true;
+$hpos_with = bwt_count_orders_with_code(true);
+$hpos_without = bwt_count_orders_with_code(false);
+$hpos_sql = $GLOBALS['wpdb']->last_sql;
+t('شمارش در حالت HPOS از جدول سفارش‌های سفارشی می‌خواند',
+    $hpos_with === 1 && $hpos_without === 1
+    && strpos($hpos_sql, 'wp_wc_orders_meta') !== false
+    && strpos($hpos_sql, '`order_id`') !== false);
+$GLOBALS['bwt_hpos_enabled'] = false;
+$GLOBALS['bwt_transients'] = array();
 
 $_GET = array('bwt_cleanup_job' => 'invalid-id');
 $_POST = array();
@@ -1165,7 +1252,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.3.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.3.0');
+t('نسخهٔ افزونه 3.3.1 است', defined('BWT_VERSION') && BWT_VERSION === '3.3.1');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

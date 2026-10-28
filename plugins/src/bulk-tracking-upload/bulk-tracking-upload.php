@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.3.0
+ * Version: 3.3.1
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.3.0');
+define('BWT_VERSION', '3.3.1');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
@@ -448,9 +448,19 @@ function bwt_tracking_url($code) {
     return sprintf($template, rawurlencode((string) $code));
 }
 
+/** نمایش عدد با ارقام فارسی (مستقل از زبان وردپرس). */
+function bwt_fmt_digits($value) {
+    return strtr((string) $value, array(
+        '0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴',
+        '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹',
+        ',' => '٬',
+    ));
+}
+
 function bwt_flush_order_counts_cache() {
     delete_transient('bwt_count_with_code');
     delete_transient('bwt_count_without_code');
+    delete_transient('bwt_count_total');
 }
 
 /**
@@ -717,22 +727,23 @@ function bwt_deactivate_plugin() {
 }
 
 function bwt_query_orders_missing_tracking($limit = BWT_SWEEP_MAX_ORDERS) {
-    if (!function_exists('wc_get_orders')) {
+    if (!function_exists('wc_get_orders') || !function_exists('wc_get_order')) {
         return array();
     }
-    $orders = wc_get_orders(array(
-        'limit'        => max(1, (int) $limit),
-        'type'         => 'shop_order',
-        'status'       => array('processing', 'completed', 'on-hold', 'shipped'),
-        'meta_query'   => array(
-            array('key' => '_tracking_code', 'compare' => 'NOT EXISTS'),
-        ),
-        'date_created' => '>' . (time() - BWT_SWEEP_DAYS * DAY_IN_SECONDS),
-        'orderby'      => 'date',
-        'order'        => 'DESC',
-        'return'       => 'objects',
-    ));
-    return is_array($orders) ? $orders : array();
+    $limit = max(1, (int) $limit);
+    // پنج برابر ظرفیت نگاه می‌کنیم تا بعد از کنارگذاشتن سفارش‌های دارای کد، به تعداد کافی برسیم.
+    $candidates = bwt_recent_order_ids(BWT_SWEEP_DAYS, min(2500, $limit * 5));
+    $missing = array_values(array_diff($candidates, bwt_ids_with_tracking_code($candidates)));
+    $missing = array_slice($missing, 0, $limit);
+
+    $orders = array();
+    foreach ($missing as $id) {
+        $order = wc_get_order($id);
+        if ($order) {
+            $orders[] = $order;
+        }
+    }
+    return $orders;
 }
 
 function bwt_sync_orders($orders, $context = 'sweep') {
@@ -771,27 +782,128 @@ function bwt_last_sweep() {
 }
 
 // ========== 5. شمارش برای داشبورد ==========
+/**
+ * آیا HPOS (جدول‌های سفارش سفارشی) فعال است؟
+ * خواندن متا با HPOS از wp_postmeta انجام نمی‌شود، از {prefix}wc_orders_meta.
+ */
+function bwt_is_hpos_enabled() {
+    $util = '\Automattic\WooCommerce\Utilities\OrderUtil';
+    if (class_exists($util) && method_exists($util, 'custom_orders_table_usage_is_enabled')) {
+        return (bool) call_user_func(array($util, 'custom_orders_table_usage_is_enabled'));
+    }
+    return false;
+}
+
+/** وضعیت‌هایی که «سفارش واقعی» حساب می‌شوند. */
+function bwt_counted_statuses() {
+    return array('processing', 'completed', 'on-hold', 'shipped');
+}
+
+/**
+ * شناسهٔ سفارش‌های بازهٔ اخیر — فقط شناسه (سبک).
+ *
+ * نکتهٔ مهم: فیلتر متا (meta_query) در HPOS نادیده گرفته می‌شود؛ به همین دلیل
+ * «داشتن/نداشتن کد» با همین شناسه‌ها و متای واقعی سنجیده می‌شود، نه با meta_query.
+ *
+ * @param int $days تعداد روزهای گذشته.
+ * @param int $max  صفر = بدون سقف (سقف سخت ۵۰۰۰ برای امنیت).
+ */
+function bwt_recent_order_ids($days = BWT_SWEEP_DAYS, $max = 0) {
+    if (!function_exists('wc_get_orders')) {
+        return array();
+    }
+    $limit = $max > 0 ? (int) $max : 5000;
+    $ids = wc_get_orders(array(
+        'limit'        => min(5000, $limit),
+        'type'         => 'shop_order',
+        'status'       => bwt_counted_statuses(),
+        'date_created' => '>' . (time() - max(1, (int) $days) * DAY_IN_SECONDS),
+        'orderby'      => 'date',
+        'order'        => 'DESC',
+        'return'       => 'ids',
+    ));
+    if (!is_array($ids)) {
+        return array();
+    }
+    $out = array();
+    foreach ($ids as $id) {
+        $id = (int) $id;
+        if ($id > 0 && !isset($out[$id])) {
+            $out[$id] = $id;
+        }
+    }
+    return array_values($out);
+}
+
+/**
+ * از میان شناسه‌های داده‌شده، آن‌هایی که متای کد رهگیری دارند.
+ * یک کوئری روی جدول متای همان ذخیره‌سازی (postmeta یا wc_orders_meta).
+ */
+function bwt_ids_with_tracking_code($ids) {
+    global $wpdb;
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+    if (!$ids || !is_object($wpdb) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'prepare')) {
+        return array();
+    }
+    $hpos = bwt_is_hpos_enabled();
+    $table = $hpos ? $wpdb->prefix . 'wc_orders_meta' : (empty($wpdb->postmeta) ? $wpdb->prefix . 'postmeta' : $wpdb->postmeta);
+    $column = $hpos ? 'order_id' : 'post_id';
+
+    $found = array();
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+        $sql = $wpdb->prepare(
+            "SELECT DISTINCT `{$column}` FROM `{$table}` WHERE meta_key = %s AND meta_value <> '' AND `{$column}` IN ({$placeholders})",
+            array_merge(array('_tracking_code'), $chunk)
+        );
+        $rows = $wpdb->get_col($sql);
+        foreach ((array) $rows as $row) {
+            $row = (int) $row;
+            if ($row > 0) {
+                $found[$row] = $row;
+            }
+        }
+    }
+    return array_values($found);
+}
+
+/**
+ * شمارش سفارش‌های بازهٔ ۴۵ روز اخیر بر اساس وجود متای کد رهگیری.
+ * «بدون کد» همیشه از تفاضل کل منهای «دارای کد» به دست می‌آید تا دو عدد همیشه با هم بخوانند.
+ */
 function bwt_count_orders_with_code($has_code = true) {
     if (!function_exists('wc_get_orders')) {
         return 0;
     }
-    $cache_key = $has_code ? 'bwt_count_with_code' : 'bwt_count_without_code';
-    $cached = get_transient($cache_key);
+    $cached = get_transient('bwt_count_with_code');
+    if ($cached !== false) {
+        if ($has_code) {
+            return (int) $cached;
+        }
+        $cached_without = get_transient('bwt_count_without_code');
+        if ($cached_without !== false) {
+            return (int) $cached_without;
+        }
+    }
+
+    $ids = bwt_recent_order_ids(BWT_SWEEP_DAYS);
+    $with_code = count(bwt_ids_with_tracking_code($ids));
+    $without_code = max(0, count($ids) - $with_code);
+
+    set_transient('bwt_count_with_code', $with_code, 5 * MINUTE_IN_SECONDS);
+    set_transient('bwt_count_without_code', $without_code, 5 * MINUTE_IN_SECONDS);
+
+    return $has_code ? $with_code : $without_code;
+}
+
+/** کل سفارش‌های بازهٔ اخیر (برای نمایش «از چند سفارش»). */
+function bwt_count_orders_recent($days = BWT_SWEEP_DAYS) {
+    $cached = get_transient('bwt_count_total');
     if ($cached !== false) {
         return (int) $cached;
     }
-    $result = wc_get_orders(array(
-        'limit'        => 1,
-        'paginate'     => true,
-        'type'         => 'shop_order',
-        'status'       => array('processing', 'completed', 'on-hold', 'shipped'),
-        'date_created' => '>' . (time() - BWT_SWEEP_DAYS * DAY_IN_SECONDS),
-        'meta_query'   => array(
-            array('key' => '_tracking_code', 'compare' => $has_code ? 'EXISTS' : 'NOT EXISTS'),
-        ),
-    ));
-    $total = is_object($result) && isset($result->total) ? (int) $result->total : 0;
-    set_transient($cache_key, $total, 5 * MINUTE_IN_SECONDS);
+    $total = count(bwt_recent_order_ids($days));
+    set_transient('bwt_count_total', $total, 5 * MINUTE_IN_SECONDS);
     return $total;
 }
 
@@ -841,30 +953,18 @@ function bwt_release_lock($name) {
 }
 
 function bwt_collect_sync_order_ids($mode) {
-    if (!function_exists('wc_get_orders')) {
-        return array();
-    }
-    $args = array(
-        'limit'        => $mode === 'recent' ? 300 : BWT_SYNC_MAX_ORDERS,
-        'type'         => 'shop_order',
-        'status'       => array('processing', 'completed', 'on-hold', 'shipped'),
-        'date_created' => '>' . (time() - BWT_SWEEP_DAYS * DAY_IN_SECONDS),
-        'orderby'      => 'date',
-        'order'        => 'DESC',
-        'return'       => 'ids',
-    );
     if ($mode === 'missing') {
-        $args['limit'] = BWT_SYNC_MAX_ORDERS;
-        $args['meta_query'] = array(
-            array('key' => '_tracking_code', 'compare' => 'NOT EXISTS'),
-        );
-    }
-    $ids = wc_get_orders($args);
-    if (!is_array($ids)) {
-        return array();
+        // همهٔ سفارش‌های بازه را می‌گیریم و سفارش‌های دارای کد را با متای واقعی کنار می‌گذاریم
+        // (meta_query در HPOS نادیده گرفته می‌شود و باعث می‌شد سفارش‌های «بدون کد» اشتباه انتخاب شوند).
+        $candidates = bwt_recent_order_ids(BWT_SWEEP_DAYS, min(5000, BWT_SYNC_MAX_ORDERS * 10));
+        $ids = array_values(array_diff($candidates, bwt_ids_with_tracking_code($candidates)));
+        $ids = array_slice($ids, 0, BWT_SYNC_MAX_ORDERS);
+    } else {
+        // حالت «بازبینی اخیر»: سفارش‌های دارای کد هم دوباره خوانده می‌شوند تا تغییر منبع به‌روز شود.
+        $ids = bwt_recent_order_ids(BWT_SWEEP_DAYS, 300);
     }
     $out = array();
-    foreach ($ids as $id) {
+    foreach ((array) $ids as $id) {
         $id = (int) $id;
         if ($id > 0) {
             $out[$id] = $id;
@@ -1272,6 +1372,7 @@ function bwt_tracking_page() {
 
     $with_code = bwt_count_orders_with_code(true);
     $without_code = bwt_count_orders_with_code(false);
+    $total_recent = bwt_count_orders_recent();
     $last_sweep = bwt_last_sweep();
     $push_endpoint = function_exists('rest_url') ? rest_url('bwt/v1/tracking') : home_url('/wp-json/bwt/v1/tracking');
     $prefill_order = isset($_GET['bwt_order']) ? (int) bwt_normalize_digits(wp_unslash($_GET['bwt_order'])) : 0;
@@ -1285,20 +1386,21 @@ function bwt_tracking_page() {
             <section class="bwt-kpis" aria-label="خلاصهٔ وضعیت">
                 <div class="bwt-kpi">
                     <span class="bwt-kpi__label">دارای کد رهگیری</span>
-                    <span class="bwt-kpi__value"><?php echo esc_html(number_format_i18n($with_code)); ?></span>
-                    <span class="bwt-kpi__meta">سفارش ۴۵ روز اخیر</span>
+                    <span class="bwt-kpi__value"><?php echo esc_html(bwt_fmt_digits(number_format_i18n($with_code))); ?></span>
+                    <span class="bwt-kpi__meta">از <?php echo esc_html(bwt_fmt_digits(number_format_i18n($total_recent))); ?> سفارش ۴۵ روز اخیر</span>
                 </div>
                 <div class="bwt-kpi <?php echo $without_code > 0 ? 'bwt-kpi--warn' : ''; ?>">
                     <span class="bwt-kpi__label">بدون کد رهگیری</span>
-                    <span class="bwt-kpi__value"><?php echo esc_html(number_format_i18n($without_code)); ?></span>
-                    <span class="bwt-kpi__meta">در انتظار صدور از سورناپست</span>
+                    <span class="bwt-kpi__value"><?php echo esc_html(bwt_fmt_digits(number_format_i18n($without_code))); ?></span>
+                    <span class="bwt-kpi__meta"><?php echo $without_code > 0 ? 'در انتظار صدور از سورناپست' : 'همهٔ سفارش‌ها کد دارند'; ?></span>
                 </div>
                 <div class="bwt-kpi">
                     <span class="bwt-kpi__label">آخرین جاروی خودکار</span>
-                    <span class="bwt-kpi__value bwt-kpi__value--sm"><?php echo esc_html(!empty($last_sweep['time']) ? human_time_diff((int) $last_sweep['time']) . ' پیش' : 'اجرا نشده'); ?></span>
+                    <span class="bwt-kpi__value bwt-kpi__value--sm"><?php echo esc_html(!empty($last_sweep['time']) ? bwt_fmt_digits(human_time_diff((int) $last_sweep['time'])) . ' پیش' : 'اجرا نشده'); ?></span>
                     <span class="bwt-kpi__meta"><?php echo !empty($settings['sweep_enabled']) ? 'هر ۱۵ دقیقه فعال است' : 'خاموش است'; ?></span>
                 </div>
             </section>
+            <p class="bwt-hint bwt-kpi-note">هر دو عدد از سفارش‌های ۴۵ روز اخیر (در حال انجام، تکمیل‌شده، در انتظار بررسی و ارسال‌شده) شمرده می‌شوند؛ «دارای کد» + «بدون کد» همیشه برابر کل سفارش‌های همین بازه است.</p>
 
             <section class="bwt-card" id="bwt-source">
                 <header class="bwt-card__head">
@@ -1353,8 +1455,8 @@ function bwt_tracking_page() {
                         جاروی خودکار هر ۱۵ دقیقه سفارش‌های ۴۵ روز اخیر را بررسی می‌کند.
                         <?php if (!empty($last_sweep['time'])) : ?>
                             آخرین اجرا: <?php echo esc_html(date_i18n('j F Y - H:i', (int) $last_sweep['time'])); ?>
-                            · بررسی‌شده: <?php echo esc_html(number_format_i18n(isset($last_sweep['scanned']) ? (int) $last_sweep['scanned'] : 0)); ?>
-                            · ثبت‌شده: <?php echo esc_html(number_format_i18n((isset($last_sweep['created']) ? (int) $last_sweep['created'] : 0) + (isset($last_sweep['updated']) ? (int) $last_sweep['updated'] : 0))); ?>
+                            · بررسی‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n(isset($last_sweep['scanned']) ? (int) $last_sweep['scanned'] : 0))); ?>
+                            · ثبت‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n((isset($last_sweep['created']) ? (int) $last_sweep['created'] : 0) + (isset($last_sweep['updated']) ? (int) $last_sweep['updated'] : 0)))); ?>
                         <?php endif; ?>
                     </p>
                 </div>
