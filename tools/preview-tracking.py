@@ -6,8 +6,9 @@
 
     python3 tools/preview-tracking.py [port]        # پیش‌فرض 8000
 
-صفحهٔ پیش‌فرض، پیش‌نمایش پیشخوان است؛ فرم مشتری در
-/design/preview/tracking-form/index.html در دسترس است.
+صفحهٔ پیش‌فرض، مقایسهٔ ایده‌های عرض فرم است؛ فرم فعلی در
+/design/preview/tracking-form/index.html و پیشخوان در
+/design/preview/admin/index.html در دسترس است.
 """
 
 import os
@@ -15,7 +16,7 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LANDING = "/design/preview/admin/index.html"
+LANDING = "/design/preview/tracking-layouts/index.html"
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):
