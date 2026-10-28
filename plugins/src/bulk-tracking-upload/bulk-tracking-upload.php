@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.3.1
+ * Version: 3.4.0
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.3.1');
+define('BWT_VERSION', '3.4.0');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
@@ -1780,6 +1780,7 @@ function bwt_tracking_search_form($atts = array()) {
     ?>
     <div class="bwt-track" data-bwt-tracking>
         <form class="bwt-track__form" data-bwt-form novalidate>
+            <p class="bwt-track__lead"><b>کد رهگیری مرسوله</b>شمارهٔ سفارش و موبایلی که سفارش با آن ثبت شده را وارد کنید.</p>
             <div class="bwt-track__fields">
                 <div class="bwt-field">
                     <label class="bwt-field__label" for="bwt_order_id">شماره سفارش</label>
@@ -1790,7 +1791,7 @@ function bwt_tracking_search_form($atts = array()) {
                     <input class="bwt-field__input" type="text" id="bwt_billing_phone" name="billing_phone" required dir="ltr" placeholder="۰۹۱۲۱۲۳۴۵۶۷" inputmode="tel" autocomplete="tel" />
                 </div>
             </div>
-            <button type="submit" class="bwt-btn bwt-btn--primary bwt-btn--block">پیگیری سفارش</button>
+            <button type="submit" class="bwt-btn bwt-btn--primary">پیگیری سفارش</button>
         </form>
 
         <div class="bwt-track__result" data-bwt-result hidden aria-live="polite"></div>

@@ -6,6 +6,17 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
+// شمارش واقعی سنجه‌ها تا پیام پایانی با واقعیت بخواند
+let assertionCount = 0;
+for (const key of Object.keys(assert)) {
+    if (typeof assert[key] !== 'function') continue;
+    const original = assert[key];
+    assert[key] = (...args) => {
+        assertionCount += 1;
+        return original(...args);
+    };
+}
+
 const adminSource = fs.readFileSync(new URL('../assets/admin.js', import.meta.url), 'utf8');
 const trackingSource = fs.readFileSync(new URL('../assets/tracking.js', import.meta.url), 'utf8');
 
@@ -394,4 +405,42 @@ async function trackingDom(payload) {
     dom.window.close();
 }
 
-console.log('✓ ۳۱ سنجهٔ رابط: پاک‌سازی، کلید منبع، همگام‌سازی، فرم پیگیری و جعبهٔ PDF جایگزین سالم است.');
+/* ================= ۶) چیدمان A+ فرم پیگیری ================= */
+{
+    // فرم واقعی انتخاب‌شده: متن راهنمای کوتاه + دو فیلد + دکمه در یک ردیف
+    const previewPath = new URL('../../../../design/preview/tracking-form/index.html', import.meta.url);
+    const preview = new JSDOM(fs.readFileSync(previewPath, 'utf8')).window.document;
+    const card = preview.querySelector('.bwt-track');
+    assert.ok(card, 'کارت فرم در پیش‌نمایش هست');
+    const lead = card.querySelector('.bwt-track__lead');
+    assert.ok(lead, 'بلوک راهنمای کوتاه در فرم هست');
+    assert.match(lead.textContent, /کد رهگیری مرسوله/);
+    assert.match(lead.textContent, /شمارهٔ سفارش/);
+    assert.ok(lead.querySelector('b') !== null, 'تیتر پررنگ داخل بلوک راهنما هست');
+    assert.equal(card.querySelectorAll('.bwt-track__lead').length, 1, 'فقط یک بلوک راهنما');
+    assert.equal(card.querySelectorAll('.bwt-track__fields .bwt-field').length, 2, 'دو فیلد داخل ردیف');
+    assert.equal(card.querySelectorAll('.bwt-btn--block').length, 0, 'دکمه دیگر بلوک تمام‌عرض نیست');
+    const submit = card.querySelector('form[data-bwt-form] button[type="submit"]');
+    assert.ok(submit.classList.contains('bwt-btn--primary'));
+    assert.ok(lead.compareDocumentPosition(submit) & submit.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING, 'دکمه بعد از بلوک راهنما و فیلدها می‌آید');
+    const fallback = card.querySelector('[data-bwt-fallback]');
+    assert.ok(submit.compareDocumentPosition(fallback) & submit.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING, 'جعبهٔ PDF همچنان پایین‌تر از دکمه است');
+}
+
+{
+    // قاعده‌های چیدمان در CSS سمت کاربر (نه پیشخوان)
+    const css = fs.readFileSync(new URL('../assets/tracking.css', import.meta.url), 'utf8');
+    assert.match(css, /\.bwt-track__form\s*\{[^}]*display:\s*flex/, 'ردیف فرم فلکس است');
+    assert.match(css, /\.bwt-track__form\s*\{[^}]*align-items:\s*flex-end/, 'تراز از پایین برای هم‌ارتفاعی فیلد و دکمه');
+    assert.match(css, /\.bwt-track__fields\s*\{[^}]*display:\s*contents/, 'فیلدها فرزندِ همان ردیف‌اند');
+    assert.match(css, /\.bwt-track__fields > \.bwt-field\s*\{[^}]*max-width:\s*320px/, 'عرض فیلدها سقف دارد تا کشیده نشود');
+    assert.match(css, /\.bwt-track\s*\{[^}]*container-type:\s*inline-size/, 'کارت ظرف کوئری است');
+    assert.match(css, /@container bwt-track \(max-width:\s*900px\)/, 'شکست ۹۰۰px بر اساس عرض کارت');
+    assert.match(css, /@container bwt-track \(max-width:\s*640px\)/, 'شکست ۶۴۰px بر اساس عرض کارت');
+    assert.match(css, /\.bwt-track\s*\{[^}]*max-width:\s*100%/, 'کارت تمام‌عرض ستون محتواست');
+    assert.doesNotMatch(css, /max-width:\s*640px;\s*\n\s*margin:\s*0 auto/, 'کارت دیگر وسط‌چین و باریک نیست');
+    const adminCss = fs.readFileSync(new URL('../assets/admin.css', import.meta.url), 'utf8');
+    assert.doesNotMatch(adminCss, /bwt-track__lead/, 'استایل فرم در admin.css نیست');
+}
+
+console.log(`✓ ${assertionCount} سنجهٔ رابط: پاک‌سازی، کلید منبع، همگام‌سازی، فرم پیگیری (چیدمان A+)، جعبهٔ PDF جایگزین و CSS سالم است.`);

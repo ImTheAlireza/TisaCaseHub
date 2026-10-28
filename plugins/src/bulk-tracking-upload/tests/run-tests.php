@@ -748,6 +748,13 @@ $pdf_ok = bwt_sanitize_settings(array('fallback_pdf' => 'https://tisacase.com/fi
 t('آدرس http(s) در تنظیمات پذیرفته می‌شود', $pdf_ok['fallback_pdf'] === 'https://tisacase.com/files/codes.pdf');
 bwt_save_settings(array('fallback_pdf' => BWT_FALLBACK_PDF_DEFAULT));
 
+$layout_markup = bwt_tracking_search_form();
+t('فرم، چیدمان A+ را دارد: بلوک راهنمای کوتاه + دکمهٔ غیربلوک',
+    strpos($layout_markup, 'bwt-track__lead') !== false
+    && strpos($layout_markup, 'کد رهگیری مرسوله') !== false
+    && strpos($layout_markup, 'bwt-btn--block') === false
+    && strpos($layout_markup, 'bwt-track__fields') !== false);
+
 t('فرم کوتاه‌کد ثبت شده و فیلد موبایل اجباری دارد',
     isset($GLOBALS['bwt_shortcodes']['tracking_search_form'])
     && strpos(bwt_tracking_search_form(), 'name="billing_phone"') !== false
@@ -1007,7 +1014,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.3.1') !== false);
+    && strpos($hero, 'v3.4.0') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1252,7 +1259,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.3.1 است', defined('BWT_VERSION') && BWT_VERSION === '3.3.1');
+t('نسخهٔ افزونه 3.4.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.4.0');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

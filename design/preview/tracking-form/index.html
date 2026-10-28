@@ -132,9 +132,10 @@ body {
 	</div>
 
 	<div class="demo-side">
-		<div style="flex: 1 1 640px; max-width: 640px;">
+		<div style="flex: 1 1 100%; max-width: 1180px;">
 			<div class="bwt-track" data-bwt-tracking>
 				<form class="bwt-track__form" data-bwt-form novalidate>
+					<p class="bwt-track__lead"><b>کد رهگیری مرسوله</b>شمارهٔ سفارش و موبایلی که سفارش با آن ثبت شده را وارد کنید.</p>
 					<div class="bwt-track__fields">
 						<div class="bwt-field">
 							<label class="bwt-field__label" for="bwt_order_id">شماره سفارش</label>
@@ -145,7 +146,7 @@ body {
 							<input class="bwt-field__input" type="text" id="bwt_billing_phone" name="billing_phone" required dir="ltr" placeholder="۰۹۱۲۱۲۳۴۵۶۷" inputmode="tel" autocomplete="tel" value="09121234567" />
 						</div>
 					</div>
-					<button type="submit" class="bwt-btn bwt-btn--primary bwt-btn--block">پیگیری سفارش</button>
+					<button type="submit" class="bwt-btn bwt-btn--primary">پیگیری سفارش</button>
 				</form>
 
 				<div class="bwt-track__result" data-bwt-result hidden aria-live="polite"></div>
@@ -169,7 +170,7 @@ body {
 				<li><strong>ارتفاع کنترل:</strong> <code>--wd-form-height</code> قالب (۴۲px) و همان ارتفاع دکمه‌ها.</li>
 				<li><strong>گوشه‌ها:</strong> <code>--wd-brd-radius</code> قالب، با کف ۸px تا تیز نشود.</li>
 				<li><strong>فونت:</strong> <code>inherit</code> — فونت خود قالب، نه فونت تحمیلی.</li>
-				<li><strong>چیدمان:</strong> دو فیلد کنار هم در دسکتاپ، تک‌ستونه زیر ۷۸۲px.</li>
+				<li><strong>چیدمان A+:</strong> فرم تمام‌عرضِ همان ستون محتواست؛ متن کوتاه + دو فیلد + دکمه در یک ردیف. با باریک‌شدن کارت (نه پنجره) متن به سطر بالا و در موبایل همه تک‌ستونه می‌شوند.</li>
 				<li><strong>بدون ایموجی تزئینی:</strong> آیکون‌ها در بج نتیجه؛ ایموجی فقط روی کد رهگیری.</li>
 				<li><strong>فایل PDF جایگزین:</strong> فقط وقتی خطا رخ می‌دهد، زیر پیام خطا و با همان دکمه/گوشهٔ فرم ظاهر می‌شود (دکمهٔ «خطا» را بزنید).</li>
 			</ul>
