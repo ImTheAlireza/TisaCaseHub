@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A یا B؟ مقایسهٔ مستقیم + یک گزینهٔ ترکیبی</title>
+<style>
+:root {
+	color-scheme: light;
+	--wd-primary-color: #2F55E8;
+	--wd-text-color: #242424;
+	--wd-title-color: #333333;
+	--wd-form-height: 42px;
+	--wd-brd-radius: 0.001px;
+	--wd-form-brd-color: rgba(0, 0, 0, .12);
+	--color-gray-500: #767676;
+	--brdcolor-gray-300: rgba(0, 0, 0, .105);
+
+	--p: var(--wd-primary-color);
+	--ink: var(--wd-title-color);
+	--muted: var(--color-gray-500);
+	--border: var(--brdcolor-gray-300);
+	--radius: max(var(--wd-brd-radius), 10px);
+	--h: var(--wd-form-height);
+	--page: 1180px;
+	--vp: 1180px;         /* عرض انتخابی برای شبیه‌سازی */
+}
+
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 0 0 80px;
+	background: #fff;
+	color: var(--wd-text-color);
+	font: 400 14px/1.8 Vazirmatn, "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+
+/* ---------- نوار ابزار ---------- */
+.topbar {
+	position: sticky;
+	top: 0;
+	z-index: 9;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 8px 12px;
+	padding: 10px 22px;
+	background: #1D2327;
+	color: #F0F0F1;
+	font-size: 12.5px;
+}
+.topbar .spacer { flex: 1 1 auto; }
+.topbar a { color: #9FD8CB; text-decoration: none; }
+.topbar a:hover { text-decoration: underline; }
+.topbar .label { opacity: .7; }
+.wbtn {
+	height: 28px;
+	padding: 0 12px;
+	border: 1px solid #4A555C;
+	border-radius: 999px;
+	background: #2C3338;
+	color: #E7E9EA;
+	font: inherit;
+	font-size: 12px;
+	cursor: pointer;
+}
+.wbtn:hover { background: #3A444B; }
+.wbtn.is-on { background: #fff; border-color: #fff; color: #1D2327; font-weight: 700; }
+
+.page { width: 100%; max-width: var(--page); margin: 0 auto; padding: 0 16px; }
+
+.intro { margin: 24px 0 0; }
+.intro h1 { margin: 0 0 6px; font-size: 22px; line-height: 1.6; color: var(--ink); }
+.intro p { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* ---------- بلوک هر گزینه ---------- */
+.idea { margin: 30px 0 0; }
+.idea__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+.idea__tag {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 30px;
+	height: 30px;
+	padding: 0 9px;
+	border-radius: 999px;
+	background: var(--p);
+	color: #fff;
+	font-weight: 700;
+	font-size: 13px;
+}
+.idea__title { margin: 0; font-size: 15.5px; font-weight: 700; color: var(--ink); }
+.idea__why { margin: 0; width: 100%; color: var(--muted); font-size: 12.5px; }
+
+/* بوم شبیه‌سازی: عرضش با دکمه‌های بالا عوض می‌شود و چیدمان با container query می‌شکند */
+.canvas {
+	container-type: inline-size;
+	width: 100%;
+	max-width: var(--vp);
+	margin-inline: auto;
+	padding: 24px 20px;
+	border: 1px dashed #DFE3EA;
+	border-radius: 16px;
+	background-color: #FCFCFD;
+	transition: max-width .22s ease;
+}
+.canvas .hintbox {
+	margin-top: 18px;
+	padding: 14px 18px;
+	border: 1px solid rgba(47, 85, 232, .35);
+	border-radius: 12px;
+	background: #F7F9FF;
+	color: #333;
+	font-size: 12.5px;
+	line-height: 2;
+}
+
+/* ---------- کنترل‌ها ---------- */
+.f { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; }
+.f__label { margin: 0; color: var(--ink); font-size: 12.5px; font-weight: 600; line-height: 1.6; }
+.f__input {
+	display: block;
+	width: 100%;
+	height: var(--h);
+	min-height: var(--h);
+	padding: 0 14px;
+	border: 1px solid var(--wd-form-brd-color);
+	border-radius: var(--radius);
+	background: #fff;
+	color: var(--ink);
+	font: inherit;
+	font-size: 14px;
+	direction: ltr;
+	text-align: left;
+	appearance: none;
+}
+.f__input::placeholder { color: #A6ABB5; }
+.f__input:focus {
+	border-color: var(--p);
+	outline: 0;
+	box-shadow: 0 0 0 3px rgba(47, 85, 232, .16);
+}
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: var(--h);
+	padding: 0 28px;
+	border: 1px solid var(--p);
+	border-radius: var(--radius);
+	background: var(--p);
+	color: #fff;
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.btn:hover { filter: brightness(.93); }
+
+/* ---------- A) یک‌ردیفی ---------- */
+.v-a {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 14px;
+	padding: 18px 20px 20px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
+}
+.v-a .f { flex: 1 1 240px; max-width: 420px; }
+.v-a .btn { flex: 0 0 auto; }
+
+/* ---------- B) دو ستونه ---------- */
+.v-b {
+	display: grid;
+	grid-template-columns: minmax(200px, .85fr) minmax(0, 1.7fr);
+	align-items: center;
+	gap: 26px;
+	padding: 22px 24px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
+}
+.v-b__text h3 { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
+.v-b__text p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.v-b__form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.v-b__form .btn { grid-column: 1 / -1; }
+
+/* ---------- A+ ) ترکیبی: یک ردیف، با یک جملهٔ کوتاه ---------- */
+.v-ap {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 16px;
+	padding: 18px 22px 20px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
+}
+.v-ap__lead { flex: 1 1 210px; max-width: 290px; margin: 0 0 4px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
+.v-ap__lead b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
+.v-ap .f { flex: 1 1 210px; max-width: 320px; }
+.v-ap .btn { flex: 0 0 auto; }
+
+/* ---------- شکسستن بر اساس عرض خودِ بوم (نه پنجره) ---------- */
+@container (max-width: 900px) {
+	.v-b { grid-template-columns: 1fr; gap: 16px; }
+	.v-b__form { grid-template-columns: 1fr 1fr; }
+	.v-ap__lead { flex: 1 1 100%; max-width: none; }
+}
+@container (max-width: 640px) {
+	.v-a .f, .v-ap .f { flex: 1 1 100%; max-width: none; }
+	.v-a .btn, .v-ap .btn, .v-b__form .btn { flex: 1 1 100%; width: 100%; }
+	.v-b__form { grid-template-columns: 1fr; }
+}
+
+/* ---------- جدول مقایسه ---------- */
+.compare { width: 100%; margin: 40px 0 0; border-collapse: collapse; font-size: 12.5px; }
+.compare caption { margin-bottom: 10px; text-align: start; font-weight: 700; color: var(--ink); font-size: 14px; }
+.compare th, .compare td { padding: 10px 12px; border-bottom: 1px solid #EEF0F3; text-align: start; vertical-align: top; }
+.compare thead th { background: #FAFAFB; color: var(--muted); font-weight: 700; }
+.compare td:first-child { color: var(--muted); width: 30%; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+	<b>A یا B؟</b>
+	<span class="label">عرض شبیه‌سازی:</span>
+	<button class="wbtn is-on" data-vp="1180px" type="button">تمام‌عرض ۱۱۸۰</button>
+	<button class="wbtn" data-vp="992px" type="button">۹۹۲</button>
+	<button class="wbtn" data-vp="768px" type="button">تبلت ۷۶۸</button>
+	<button class="wbtn" data-vp="390px" type="button">موبایل ۳۹۰</button>
+	<span class="spacer"></span>
+	<a href="../tracking-form/index.html">فرم فعلی</a>
+	<a href="../admin/index.html">پیشخوان</a>
+</div>
+
+<main class="page">
+
+	<div class="intro">
+		<h1>مقایسهٔ مستقیم A و B + یک گزینهٔ ترکیبی</h1>
+		<p>با دکمه‌های بالای صفحه عرض را کم کنید تا رفتار هر سه در تبلت و موبایل را ببینید. پایین صفحه یک جدول مقایسهٔ کوتاه هم هست.</p>
+	</div>
+
+	<!-- A -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">A</span>
+			<h2 class="idea__title">یک‌ردیفی، کارت کم‌ارتفاع</h2>
+			<p class="idea__why">فیلدها حداکثر ۴۲۰px عرض می‌گیرند تا در دسکتاپِ عریض کشیده نشوند؛ دکمه در انتهای همان خط می‌نشیند.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-a">
+				<label class="f">
+					<span class="f__label">شماره سفارش</span>
+					<input class="f__input" type="text" placeholder="مثلاً 424172" />
+				</label>
+				<label class="f">
+					<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+					<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+				</label>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- B -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">B</span>
+			<h2 class="idea__title">دو ستونه: متن راهنما + فرم</h2>
+			<p class="idea__why">سمت راست توضیح، سمت چپ فیلدها و دکمهٔ تمام‌عرض. عرض زیاد با محتوا پر می‌شود ولی ارتفاعِ کارت بیشتر است.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-b">
+				<div class="v-b__text">
+					<h3>کد رهگیری مرسولهٔ شما</h3>
+					<p>شمارهٔ سفارش و موبایلی که با آن خرید کرده‌اید را وارد کنید؛ کد پستی همان لحظه نمایش داده می‌شود.</p>
+				</div>
+				<form class="v-b__form">
+					<label class="f">
+						<span class="f__label">شماره سفارش</span>
+						<input class="f__input" type="text" placeholder="مثلاً 424172" />
+					</label>
+					<label class="f">
+						<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+						<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+					</label>
+					<button class="btn" type="button">پیگیری سفارش</button>
+				</form>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- A+ -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">A+</span>
+			<h2 class="idea__title">ترکیبی — یک ردیف، با یک جملهٔ کوتاه در ابتدای خط</h2>
+			<p class="idea__why">کم‌ارتفاعی A را دارد و پرکردنِ عرض B را: یک بلوک متن کوچک سمت راست، بعد فیلدها و دکمه در همان خط.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-ap">
+				<p class="v-ap__lead"><b>کد رهگیری مرسوله</b>شمارهٔ سفارش و موبایلِ ثبت‌شده را وارد کنید.</p>
+				<label class="f">
+					<span class="f__label">شماره سفارش</span>
+					<input class="f__input" type="text" placeholder="مثلاً 424172" />
+				</label>
+				<label class="f">
+					<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+					<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+				</label>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<table class="compare">
+		<caption>کدام را برای چه چیزی انتخاب کنیم؟</caption>
+		<thead>
+			<tr><th>معیار</th><th>A — یک‌ردیفی</th><th>B — دو ستونه</th><th>A+ — ترکیبی</th></tr>
+		</thead>
+		<tbody>
+			<tr>
+				<td>ارتفاع کارت</td>
+				<td>کم (~۹۰px) — بقیهٔ صفحه دیده می‌شود</td>
+				<td>بیشتر (~۱۶۰px) — یک بلوک بزرگ‌تر</td>
+				<td>کم (~۱۱۰px)</td>
+			</tr>
+			<tr>
+				<td>پرکردن عرض ۱۱۸۰px</td>
+				<td>خوب؛ دو فیلد پهن + دکمه</td>
+				<td>خیلی خوب؛ متن و فرم هم‌وزن‌اند</td>
+				<td>خیلی خوب؛ سه بخش متعادل</td>
+			</tr>
+			<tr>
+				<td>جای توضیح‌دادن</td>
+				<td>ندارد</td>
+				<td>یک پاراگراف کامل</td>
+				<td>یک جملهٔ کوتاه</td>
+			</tr>
+			<tr>
+				<td>روی موبایل</td>
+				<td>فیلدها و دکمه زیر هم</td>
+				<td>متن بالا، فرم زیرش</td>
+				<td>متن بالا، فرم زیرش</td>
+			</tr>
+			<tr>
+				<td>حس کلی</td>
+				<td>ابزارگونه و سریع</td>
+				<td>رسمی‌تر، شبیه بلوک‌های محتوای سایت</td>
+				<td>هم ابزار، هم توضیح</td>
+			</tr>
+		</tbody>
+	</table>
+
+	<p class="intro" style="margin-top:26px">
+		<b>پیشنهاد من:</b> اگر می‌خواهید فرم «کم‌جا» باشد و صفحه نفس بکشد، A. اگر دلتان می‌خواهد این بخش مثل بقیهٔ بلوک‌های سایت «محتوا» داشته باشد و خالی نماند، B. و اگر هر دو را می‌خواهید بدون اینکه ارتفاع بالا برود، A+.
+	</p>
+
+</main>
+
+<script>
+(function () {
+	'use strict';
+	var buttons = document.querySelectorAll('[data-vp]');
+	Array.prototype.forEach.call(buttons, function (button) {
+		button.addEventListener('click', function () {
+			Array.prototype.forEach.call(buttons, function (item) { item.classList.remove('is-on'); });
+			button.classList.add('is-on');
+			document.documentElement.style.setProperty('--vp', button.getAttribute('data-vp'));
+		});
+	});
+}());
+</script>
+</body>
+</html>

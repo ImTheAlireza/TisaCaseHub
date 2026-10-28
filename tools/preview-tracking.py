@@ -16,7 +16,7 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LANDING = "/design/preview/tracking-layouts/index.html"
+LANDING = "/design/preview/tracking-layouts/compare.html"
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):
