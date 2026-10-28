@@ -18,9 +18,9 @@
 | 6 | `tisacase-pricing-manager` | 1.1.0 → **جایگزین: `tisacase-pricing` 1.0.0** | قیمت‌گذاری داینامیک **بدون** بازنویسی دیتابیس | تک‌کلاس، تک‌فایل | 4 / ~920 | ⭐⭐⭐⭐ |
 | 7 | `wc-sku-prefix-bar` | 1.4.0 | نوار پیشوند SKU + تولید SKU + REST برای ربات | تک‌کلاس فشرده | 5 / ~115 | ⭐⭐⭐ |
 | 8 | `tisa-product-importer` | 0.6.5 | ایمپورت ZIP ربات تلگرام → محصول متغیر پیش‌نویس | تک‌کلاس استاتیک | 2 / ~480 | ⭐⭐⭐ |
-| 9 | `bulk-tracking-upload` | 2.1 | آپلود CSV کد رهگیری + شورت‌کد پیگیری | رویه‌ای (procedural) | 1 / ~740 | ⭐⭐ |
+| 9 | `bulk-tracking-upload` | **3.0.0** | همگام‌سازی خودکار کد رهگیری از سورناپست/حمل‌ونقل + شورت‌کد پیگیری (بدون CSV) | رویه‌ای (procedural) + Job/REST | 5 / ~1600 | ⭐⭐⭐ |
 
-**خط قرمز سراسری:** شمارهٔ ۹ تنها پلاگینی است که **نشت اطلاعات هویتی مشتری (PII)** دارد (بخش ۵، F1). بقیه از نظر امنیتی قابل‌دفاع‌اند.
+**وضعیت F1:** نشت PII افزونهٔ شمارهٔ ۹ در نسخهٔ 2.4.0 بسته شد (سفارش + موبایل ثبت‌شده، پیام یکسان، throttle بر IP) و در 3.0.0 حفظ شده است.
 
 ---
 
@@ -113,11 +113,18 @@
 - واریاسیون‌ها از طریق CRUD ساخته می‌شوند + نوشتن صریح `attribute_*` تا ادمین مقدار را preselect کند (رفع باگ «هر مدل»).
 
 ### 9) Bulk Tracking Code Upload — `bwt_*`
-- دو صفحه: آپلود CSV (`order_id,tracking_code`) و پاک‌سازی (انتخابی/همه). ردیف خالی در ستون دوم = حذف کد.
-- تشخیص هدر، تبدیل ارقام فارسی/عربی، بررسی وجود سفارش + نوع `shop_order`، سقف ۵MB، فقط پسوند `.csv`، گزارش ردیف‌به‌ردیف خطاها در جدول.
-- نوشتن همزمان در `postmeta` و `$order->update_meta_data` (سازگاری HPOS)؛ پاک‌سازی سراسری با `$wpdb->delete` روی `postmeta` + `wc_orders_meta`.
-- شورت‌کد `[tracking_search_form]` برای صفحهٔ «پیگیری سفارش» + لینک `tracking.post.ir`.
-- سبک رویه‌ای، CSS/HTML درون‌خطی، بدون i18n/کلاس/uninstall. **تک‌نفرهٔ قدیمی‌سبک مجموعه.**
+- **3.0.0 — حذف کامل مسیر CSV.** شرکت پست دیگر فایل نمی‌دهد؛ منبع حقیقت، متایی است که سورناپست هنگام صدور بارکد روی سفارش می‌نویسد.
+- **گرفتن لحظه‌ای:** `woocommerce_new_order` / `woocommerce_update_order` / `woocommerce_order_status_changed` (سازگار HPOS) → `bwt_sync_order_tracking()`؛ نوشتن فقط با CRUD (`update_meta_data` + `save`)، بدون `update_post_meta` مستقیم.
+- **حل منبع (`bwt_resolve_order_tracking`)**: کلیدهای انتخابی ادمین → فهرست کلیدهای شناخته‌شده (`_tracking_number`, `_post_barcode`, `_sorna_*`, `_wc_shipment_tracking_items`, …) → هر کلید متای دیگر با نام مرتبط (`track|barcode|رهگیری|parcel`) → یادداشت‌های سفارش (`order_note`) با بافت اجباری. مقادیر تودرتو/JSON/آرایهٔ Shipment Tracking پشتیبانی می‌شوند.
+- **کشف خودکار کلید (ویزارد):** اسکن ۱۰۰ سفارش اخیر، شمارش «نامرتبط/شبیه کد»، پیشنهاد کلیدهایی که هم نام و هم مقدارشان به کد رهگیری می‌خورد؛ ذخیره در `bwt_settings['source_keys']`. فیلتر توسعه: `bwt_tracking_meta_keys`.
+- **جاروی ۱۵ دقیقه‌ای** (`bwt_tracking_sweep`، فقط ۴۵ روز اخیر و ۵۰ سفارش در هر اجرا) برای نوشتن‌های بدون رویداد.
+- **بک‌فیل دسته‌ای** (Job قابل ادامه، ۵۰ سفارش per batch) با دو حالت «سفارش‌های بدون کد» و «۳۰۰ سفارش اخیر» + قفل option برای جلوگیری از اجرای هم‌زمان.
+- **Push API**: `POST /wp-json/bwt/v1/tracking` با `X-BWT-Signature` = HMAC-SHA256 بدنه خام؛ بدنه `{order_id, tracking_code|tracking_codes}`؛ برای وب‌هوک سورناپست/ربات.
+- **پاک‌سازی** همچنان Job دسته‌ای (۵۰۰ ردیف SQL / ۵۰ سفارش) است، ولی حالا `_tracking_code` + `_tracking_codes` را پاک می‌کند و `_bwt_autosync_off` می‌گذارد تا جارو کدِ عمداً حذف‌شده را برنگرداند.
+- **فرم مشتری** `[tracking_search_form]` حالا AJAX است (`bwt_track_lookup`): کارت اطلاعات سفارش، کد (مونو + کپی)، لینک پیگیری، چند مرسوله، و در نبود کد «متن آماده‌سازی + بررسی خودکار هر ۳۰ ثانیه تا ۲۰ بار». احراز هویت همان «شمارهٔ سفارش + موبایل ثبت‌شده» است.
+- **متاباکس سفارش** (HPOS/کلاسیک) خلاصهٔ کد/منبع/زمان + لینک ثبت دستی؛ ثبت دستی اضطراری هم در صفحهٔ افزونه هست.
+- سبک رویه‌ای؛ CSS فرانت به `assets/tracking.css` و JS به `assets/tracking.js` منتقل شد؛ ترجمه‌ها همچنان فارسی هاردکد (بدون i18n).
+- **3.1.0 — هم‌شکل‌شدن فرم با قالب سایت:** CSS فرانت حالا از توکن‌های Woodmart (`--wd-primary-color`, `--wd-form-height`, `--wd-brd-radius`, `--wd-text-color`, `--color-gray-500`) با فالبک `--tisa-*` تغذیه می‌شود؛ فونت `inherit` است و هیچ رنگ/فونت/گوشه‌ای هاردکد نشده. مارک‌آپ BEM شد (`bwt-track`, `bwt-field`, `bwt-btn`, `bwt-code`, `bwt-row`)، لیبل‌ها کوتاه و بدون ایموجی، دو فیلد کنار هم در دسکتاپ، و دکمهٔ تمام‌عرض هم‌رنگ برند. پیش‌نمایش: `design/preview/tracking-form/index.html` با `tools/preview-tracking.py`.
 
 ---
 
@@ -128,7 +135,11 @@
 | `_tisacase_wholesale_price` | post meta | `tisacase-bulk-price-manager` (ویرایش گروهی) | `tisacase-pricing-manager` (قفل «دست نزن» برای همکار) |
 | `_wcsp_mode` | post meta | `case-special-package` | خودش |
 | `_wcsp_package_unit_price`, `_wcsp_package_total` | order item meta | `case-special-package` | فاکتورها |
-| `_tracking_code` | order meta | `bulk-tracking-upload` | قالب/ایمیل فروشگاه |
+| `_tracking_code` | order meta | `bulk-tracking-upload` (خودکار/دستی/Push) | قالب/ایمیل فروشگاه، فرم پیگیری |
+| `_tracking_codes` | order meta (آرایه) | `bulk-tracking-upload` (فقط چند مرسوله) | فرم پیگیری چندکدی |
+| `_bwt_tracking_source`, `_bwt_tracking_synced_at` | order meta | `bulk-tracking-upload` | متاباکس/عیب‌یابی |
+| `_bwt_autosync_off` | order meta | `bulk-tracking-upload` (پاک‌سازی عمدی) | خودِ همگام‌سازی |
+| `bwt_settings`, `bwt_last_sweep` | option | `bulk-tracking-upload` | خودش |
 | `_tisacase_prep_time` | post meta (قابل تغییر) | `tisacase-product-description` | قالب/افزونهٔ زمان آماده‌سازی |
 | `bdc_backup_index`, `bdc_db_version` | option | `bulk-product-cleaner` | خودش |
 | `tcbpm_settings`, `tcbpm_db_version` | option + ۲ جدول | `tisacase-bulk-price-manager` | خودش |
@@ -288,6 +299,7 @@
 - **wc-telegram-orders 1.14.0** — پنج قابلیت جدید: (۱) اکشن گروهی در لیست سفارش‌ها (`bulk_actions-edit-shop_order` + `bulk_actions-woocommerce_page_wc-orders`) با ضد سیل: `bulk_gap`/`bulk_max`، قفل ۳۰ ثانیه‌ای `wc_telegram_bulk_lock`، ردِ صف‌های تکراری و پرچم یک‌بارمصرف `_wc_telegram_force` که در `process_order_send` شرط پرداخت را برای همان سفارش نادیده می‌گیرد؛ (۲) تاریخ شمسی داخلی (`gregorian_to_jalali`/`jalali_date`/`format_date` با `jalali_date`+`jalali_digits`) که جای `date_i18n` را می‌گیرد و با افزونه‌های شمسی دیگر تداخل ندارد؛ (۳) هشدار سلامت در `send_to_all_chats` → `track_send_result()` با `health_threshold`/`health_cooldown` و آپشن‌های `wc_telegram_fail_streak`/`wc_telegram_health_alert`؛ (۴) فالبک کرون `ping_wp_cron()` وقتی `DISABLE_WP_CRON` فعال است؛ (۵) تب «آمار فروش» (`collect_stats`/`render_stats_tab`) با پرفروش‌ترین محصولات، بزرگ‌ترین مشتریان، میانگین فاصلهٔ سفارش‌های پرداخت‌شده، ساعت‌های شلوغ، روش‌های پرداخت، کش ۳۰ دقیقه‌ای و سقف ۵۰۰ سفارش + آرگومان `since` در کوئری لاگ. تست‌ها: ۱۱۷ سنجه روی PHP 7.4 و 8.3.
 - **tisacase-order-phone-exporter 1.5.0** — فقط UI: سر سبز (نشان HPOS/Legacy + نسخه)، کارت «ساخت خروجی» با سوییچ حذف تکراری + دکمه‌ها در یک ردیف (یک دکمهٔ پُر)، ۴ کاشی KPI (بررسی‌شده/معتبر/بدون شماره/تکراری) به‌جای خط آماری، فایل‌ها به‌صورت ردیف شماره‌دار با دکمهٔ دانلود، راهنمای تاشو کوتاه. منطق AJAX/کوئری دست‌نخورده. `TISA_PHONE_EXPORTER_VERSION` اضافه شد.
 - **bulk-tracking-upload 2.4.0** — رفع نشت PII (یافتهٔ F1): فرم پیگیری حالا «شماره سفارش + شماره موبایل ثبت‌شده روی سفارش» را با هم می‌خواهد (`bwt_normalize_phone`/`bwt_phones_match` با `hash_equals`، نرمال‌سازی ۰/۰۰۹۸/+۹۸/۹۸ و رقم فارسی)، پیام خطای یکسان برای سفارش نامعتبر و موبایل نامطابق (عدم افشای وجود سفارش)، و محدودسازی ۱۰ تلاش ناموفق در ۱۵ دقیقه بر اساس IP. `uninstall.php` اضافه شد؛ transientهای ضدسیل پاک می‌شوند و متای `_tracking_code` دادهٔ سفارش است و می‌ماند. نسخهٔ 2.5.0 پاک‌سازی Jobها و فایل‌های موقت را هم به uninstall افزود. تست‌های آن نسخه: ۲۲ سنجه روی PHP 7.4 و 8.3.
+- **bulk-tracking-upload 3.0.0** — چرخش از «آپلود CSV» به «همگام‌سازی خودکار»: کد صادرشده توسط سورناپست از متای سفارش/یادداشت خوانده و روی `_tracking_code` می‌نشیند (هوک‌های ووکامرس + جاروی ۱۵ دقیقه‌ای + بک‌فیل دسته‌ای + Push API با HMAC). صفحهٔ آپلود CSV، پوشهٔ فایل موقت و کد Job آپلود کامل حذف شد. فرم پیگیری AJAX شد (کپی کد، لینک پست، چند مرسوله، بررسی خودکار تا آمدن کد) با همان احراز هویت سفارش+موبایل. پاک‌سازی کدها حالا `_tracking_codes` را هم پاک می‌کند و برای سفارش انتخابی `_bwt_autosync_off` می‌گذارد. تست‌ها: ۹۱ سنجه PHP روی PHP 7.4 و 8.3 + ۲۲ سنجه jsdom (`tests/admin-progress-tests.mjs`) و بیلد موفق `plugins/dist/bulk-tracking-upload.zip`.
 - **bulk-tracking-upload 2.5.0** — پردازش CSV از درخواست طولانی به Jobهای AJAX قابل ادامه تغییر کرد: هر batch حداکثر ۵۰ ردیف یا ۴ ثانیه، checkpoint با offset بایتی/شمارهٔ ردیف، قفل فایل برای جلوگیری از اجرای هم‌زمان، Progress bar قابل بازیابی پس از refresh، nonce + `manage_options` + مالکیت Job، فایل‌های موقت با مجوز محدود و پاک‌سازی پس از ۲۴ ساعت؛ گزارش خطا تا ۵۰۰ جزئیات در فایل موقت می‌ماند تا transientها سبک باشند. آزمون‌ها: PHP-WASM 7.4 و 8.3، هرکدام ۳۵ سنجه (از جمله ۵۰+۲ batch) + jsdom با ۱۲ assertion؛ `tools/build-plugin-zip.sh` تست‌های PHP و UI همین افزونه را در صورت نصب ابزار تست اجرا می‌کند.
 - **tisacase-pricing 1.2.1** — `ajax_preview` هم مثل بقیهٔ اندپوینت‌ها `guard()` می‌گیرد (capability+nonce؛ یافتهٔ F6)؛ محافظ CSV Injection (یافتهٔ F7): `TCP_Settings::csv_cell()` روی نام/SKU/نوع در خروجی لاگ اجرا و `code`/`batch` در خروجی کوپن‌ها (عددهای خالص دست‌نخورده می‌مانند). تست‌های جدید: `tests/run-tests.php` با ۹۲ سنجه (عدد فارسی، args_from_post، توکن HMAC، calc_regular/sale/wholesale، موتور رند و jitter، clampهای تنظیمات، csv_cell، اولویت/استثنا/انقضای قوانین داینامیک) روی PHP 7.4 و 8.3.
 - **case-special-package 1.4.2 / tisa-product-importer 0.7.1 / wc-sku-prefix-bar 1.5.2** — `uninstall.php` (یافتهٔ F4): به‌ترتیب `wcsp_settings`+`wcsp_stats_v1`، transientهای `tisa_update_*`، و `wcspb_latest_skus` پاک می‌شوند؛ دادهٔ محصولات/سفارش‌ها عمداً دست‌نخورده می‌ماند.

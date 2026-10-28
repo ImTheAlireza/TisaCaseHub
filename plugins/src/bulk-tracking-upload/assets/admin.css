@@ -1,6 +1,6 @@
-/* Bulk Tracking Upload — استایل ادمین (v2.3 · زبان طراحی TisaCase)
+/* کد رهگیری پستی — استایل ادمین (v3.0 · زبان طراحی TisaCase)
    کامپوننت‌های پایه (tisa-btn, tisa-input, tisa-table, tisa-notice, tisa-code) از tisacase-ui.css هاب؛
-   اینجا فقط چیدمان: سر سبز + تب‌های قرصی، کارت‌های تخت، KPI نتیجه.
+   اینجا فقط چیدمان: سر سبز + تب‌های قرصی، کارت‌های تخت، KPI، جدول منابع و پیشرفت.
    مهندسی رنگ: یک دکمهٔ پُر در هر کارت؛ قرمزِ پر فقط روی «پاک کردن همه». کد رهگیری = مونو؛ شمارنده‌ها = قلم رابط. */
 
 .bwt-wrap.wrap {
@@ -105,16 +105,11 @@ body.woocommerce_page_bwt-cleanup #wpcontent { background: var(--tisa-bg, #F4F2E
 /* ---------- فرم ---------- */
 .bwt-label { display: block; margin: 0 0 6px; font-size: var(--tisa-fs-control, 13px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
 .bwt-hint { margin: 8px 0 0; font-size: var(--tisa-fs-meta, 12px); color: var(--tisa-muted, #77828A); }
-.bwt-file {
-	display: block; width: 100%;
-	padding: 10px 12px;
-	border: 1px dashed var(--tisa-border-strong, #C9DCD7);
-	border-radius: var(--tisa-r-sm, 10px);
-	background: var(--tisa-surface-2, #FAFAF8);
-	font-size: var(--tisa-fs-control, 13px);
-	color: var(--tisa-ink, #1F2A2E);
-}
-.bwt-file:focus-visible { outline: 0; border-color: var(--tisa-primary, #0E7C6B); box-shadow: var(--tisa-ring, 0 0 0 3px rgba(14, 124, 107, .22)); }
+.bwt-inline-form { display: flex; flex-wrap: wrap; gap: var(--tisa-sp-2, 8px); margin: 8px 0 12px; }
+.bwt-key-input { flex: 1 1 220px; max-width: 320px; font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); }
+.bwt-check { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: var(--tisa-fs-control, 13px); color: var(--tisa-ink, #1F2A2E); }
+.bwt-manual-form { display: block; }
+.bwt-manual-form .bwt-input + .bwt-label { margin-top: 12px; }
 .bwt-ids { max-width: 360px; }
 .bwt-actions { display: flex; gap: var(--tisa-sp-3, 12px); margin: var(--tisa-sp-4, 16px) 0 0; }
 
@@ -141,7 +136,49 @@ body.woocommerce_page_bwt-cleanup #wpcontent { background: var(--tisa-bg, #F4F2E
 
 body.tisa-compact .bwt-card-body { padding: var(--tisa-sp-3, 12px) var(--tisa-sp-4, 16px) var(--tisa-sp-4, 16px); }
 
-/* ---------- پردازش دسته‌ای CSV ---------- */
+/* ---------- منابع کد و برچسب‌ها ---------- */
+.bwt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; min-height: 26px; }
+.bwt-chip {
+	display: inline-flex; align-items: center; gap: 6px;
+	padding: 4px 10px;
+	border: 1px solid var(--tisa-border-strong, #C9DCD7);
+	border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	color: var(--tisa-ink, #1F2A2E);
+	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
+	font-size: var(--tisa-fs-meta, 11.5px);
+}
+.bwt-chip-x {
+	border: 0; background: transparent; padding: 0 0 0 2px;
+	color: var(--tisa-muted, #77828A); font-size: 14px; line-height: 1;
+	cursor: pointer;
+}
+.bwt-chip-x:hover { color: var(--tisa-danger, #B5453A); }
+.bwt-tag {
+	display: inline-block; margin-inline-start: 6px;
+	padding: 1px 7px; border-radius: var(--tisa-r-pill, 999px);
+	background: var(--tisa-surface-2, #FAFAF8);
+	border: 1px solid var(--tisa-border, #E3E1DA);
+	color: var(--tisa-muted, #77828A);
+	font-size: 10.5px; font-family: var(--tisa-font, inherit);
+}
+.bwt-tag--ok { border-color: var(--tisa-success, #1A7F37); color: var(--tisa-success, #1A7F37); }
+.bwt-source-table .bwt-sample-cell { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bwt-source-table tr.bwt-row--suggested td { background: var(--tisa-primary-soft, #E8F0EE); }
+.bwt-scan-status:empty { display: none; }
+.bwt-hint--bad { color: var(--tisa-danger-ink, #8E3128); }
+.bwt-subhead { margin: 18px 0 6px; padding-top: 14px; border-top: 1px dashed var(--tisa-border, #E3E1DA); font-size: var(--tisa-fs-control, 13px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
+.bwt-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--tisa-sp-3, 12px); }
+@media (max-width: 720px) { .bwt-grid-2 { grid-template-columns: 1fr; } }
+.bwt-chip--table { cursor: help; }
+.bwt-source-table tr.bwt-row--match td:first-child { box-shadow: inset 3px 0 0 var(--tisa-primary, #0E7C6B); }
+.bwt-tables { margin: 12px 0 0; padding: 10px 14px; border: 1px dashed var(--tisa-border, #E3E1DA); border-radius: var(--tisa-r-sm, 10px); background: var(--tisa-surface-2, #FAFAF8); }
+.bwt-tables summary { cursor: pointer; font-size: var(--tisa-fs-meta, 12.5px); font-weight: 700; color: var(--tisa-ink, #1F2A2E); }
+.bwt-tables code { font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); }
+.bwt-btn--sm { height: 30px; padding: 0 12px; font-size: 12px; }
+.bwt-hint--ok { color: var(--tisa-success, #1A7F37); }
+
+/* ---------- پردازش دسته‌ای ---------- */
 .bwt-upload-progress { margin: 0 0 var(--tisa-sp-4, 16px); }
 .bwt-progress-bar { display: block; width: 100%; height: 12px; margin: 0 0 10px; accent-color: var(--tisa-primary, #0E7C6B); }
 .bwt-progress-meta { color: var(--tisa-muted, #77828A); font-size: var(--tisa-fs-meta, 12px); font-variant-numeric: tabular-nums; }
