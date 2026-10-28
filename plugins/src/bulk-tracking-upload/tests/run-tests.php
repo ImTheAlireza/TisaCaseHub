@@ -1014,7 +1014,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.4.0') !== false);
+    && strpos($hero, 'v3.4.1') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1259,7 +1259,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.4.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.4.0');
+t('نسخهٔ افزونه 3.4.1 است', defined('BWT_VERSION') && BWT_VERSION === '3.4.1');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

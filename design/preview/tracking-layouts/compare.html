@@ -203,16 +203,15 @@ body {
 	background: #fff;
 	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
 }
-.v-ap__lead { flex: 1 1 200px; max-width: 300px; margin: 0 0 4px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
+.v-ap__lead { flex: 1 1 100%; max-width: 100%; margin: 0 0 4px; color: var(--muted); font-size: 12.5px; line-height: 1.9; }
 .v-ap__lead b { display: block; color: var(--ink); font-size: 13.5px; margin-bottom: 2px; }
 .v-ap .f { flex: 1 1 210px; max-width: 320px; }
-.v-ap .btn { flex: 0 0 auto; }
+.v-ap .btn { flex: 0 0 auto; margin-inline-start: auto; }
 
 /* ---------- شکسستن بر اساس عرض خودِ بوم (نه پنجره) ---------- */
 @container (max-width: 900px) {
 	.v-b { grid-template-columns: 1fr; gap: 16px; }
 	.v-b__form { grid-template-columns: 1fr 1fr; }
-	.v-ap__lead { flex: 1 1 100%; max-width: none; }
 }
 @container (max-width: 640px) {
 	.v-a .f, .v-ap .f { flex: 1 1 100%; max-width: none; }

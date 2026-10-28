@@ -49,7 +49,7 @@
 	line-height: 1.8;
 	box-shadow: var(--bwt-shadow);
 
-	/* چیدمان A+: یک ردیف تمام‌عرض که با عرض ظرف خودش می‌شکند */
+	/* چیدمان A+: کارت تمام‌عرضِ ستون محتوا و واکنش‌گرا با عرض خودش */
 	container-type: inline-size;
 	container-name: bwt-track;
 }
@@ -62,9 +62,10 @@
 
 /* ---------- فرم ---------- */
 .bwt-track__lead {
-	flex: 1 1 200px;
-	max-width: 300px;
-	margin: 0 0 3px;
+	/* تیتر و توضیح همیشه یک سطر کامل بالای فیلدها */
+	flex: 1 1 100%;
+	max-width: 100%;
+	margin: 0;
 	padding: 0;
 	color: var(--bwt-muted);
 	font-size: 12.5px;
@@ -98,8 +99,10 @@
 	max-width: 320px;
 }
 
+/* دکمه همیشه انتهای ردیف (سمت چپ در RTL) می‌نشیند، هم‌تراز با پایین فیلدها */
 .bwt-track__form > .bwt-btn {
 	flex: 0 0 auto;
+	margin-inline-start: auto;
 }
 
 .bwt-field {
@@ -492,14 +495,6 @@
 }
 
 /* ---------- واکنش‌گرایی بر اساس عرض خودِ کارت ---------- */
-@container bwt-track (max-width: 900px) {
-	.bwt-track__lead {
-		flex: 1 1 100%;
-		max-width: none;
-		margin-bottom: 0;
-	}
-}
-
 @container bwt-track (max-width: 640px) {
 	.bwt-track__fields > .bwt-field {
 		flex: 1 1 100%;

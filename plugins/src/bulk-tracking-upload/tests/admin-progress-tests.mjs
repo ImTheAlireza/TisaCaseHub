@@ -435,7 +435,9 @@ async function trackingDom(payload) {
     assert.match(css, /\.bwt-track__fields\s*\{[^}]*display:\s*contents/, 'فیلدها فرزندِ همان ردیف‌اند');
     assert.match(css, /\.bwt-track__fields > \.bwt-field\s*\{[^}]*max-width:\s*320px/, 'عرض فیلدها سقف دارد تا کشیده نشود');
     assert.match(css, /\.bwt-track\s*\{[^}]*container-type:\s*inline-size/, 'کارت ظرف کوئری است');
-    assert.match(css, /@container bwt-track \(max-width:\s*900px\)/, 'شکست ۹۰۰px بر اساس عرض کارت');
+    assert.match(css, /\.bwt-track__lead\s*\{[^}]*flex:\s*1 1 100%/, 'تیتر و توضیح یک سطر کامل بالای فیلدها هستند');
+    assert.match(css, /\.bwt-track__lead\s*\{[^}]*max-width:\s*100%/, 'عرض بلوک راهنما محدود و باریک نیست');
+    assert.doesNotMatch(css, /@container bwt-track \(max-width:\s*900px\)/, 'بلوک راهنما مشروط به عرض کارت نیست و همیشه بالاست');
     assert.match(css, /@container bwt-track \(max-width:\s*640px\)/, 'شکست ۶۴۰px بر اساس عرض کارت');
     assert.match(css, /\.bwt-track\s*\{[^}]*max-width:\s*100%/, 'کارت تمام‌عرض ستون محتواست');
     assert.doesNotMatch(css, /max-width:\s*640px;\s*\n\s*margin:\s*0 auto/, 'کارت دیگر وسط‌چین و باریک نیست');
