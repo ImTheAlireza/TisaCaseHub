@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.2.0
+ * Version: 3.2.1
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.2.0');
+define('BWT_VERSION', '3.2.1');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
@@ -28,6 +28,8 @@ define('BWT_CLEANUP_SELECTED_BATCH_SIZE', 50);
 define('BWT_CLEANUP_MAX_SELECTED', 1000);
 define('BWT_TRACK_MAX_CODES', 10);
 define('BWT_TRACK_URL_DEFAULT', 'https://tracking.post.ir/?id=%s');
+// فایل PDF جایگزین (وقتی جست‌وجوی مشتری خطا می‌دهد داخل فرم نمایش داده می‌شود).
+define('BWT_FALLBACK_PDF_DEFAULT', 'https://tisacase.com/wp-content/uploads/2026/10/tracking.pdf');
 
 // ========== 1. تنظیمات ==========
 function bwt_default_settings() {
@@ -38,6 +40,7 @@ function bwt_default_settings() {
         'push_enabled'  => 0,
         'push_secret'   => '',
         'tracking_url'  => BWT_TRACK_URL_DEFAULT,
+        'fallback_pdf'  => BWT_FALLBACK_PDF_DEFAULT,
         'table_source'  => array('table' => '', 'order_col' => '', 'code_col' => ''),
     );
 }
@@ -91,6 +94,15 @@ function bwt_sanitize_settings($input) {
         $url = BWT_TRACK_URL_DEFAULT;
     }
 
+    // فایل PDF جایگزین: خالی = غیرفعال؛ فقط http/https پذیرفته می‌شود.
+    $fallback_pdf = isset($input['fallback_pdf']) ? trim((string) $input['fallback_pdf']) : (string) $defaults['fallback_pdf'];
+    if ($fallback_pdf !== '') {
+        $fallback_pdf = esc_url_raw($fallback_pdf);
+        if (!preg_match('#^https?://#i', $fallback_pdf)) {
+            $fallback_pdf = '';
+        }
+    }
+
     $secret = isset($input['push_secret']) ? (string) $input['push_secret'] : (string) $defaults['push_secret'];
     $secret = preg_replace('/[^A-Za-z0-9_\-]/', '', $secret);
     if (strlen($secret) > 64) {
@@ -104,6 +116,7 @@ function bwt_sanitize_settings($input) {
         'push_enabled'  => empty($input['push_enabled']) ? 0 : 1,
         'push_secret'   => $secret,
         'tracking_url'  => $url,
+        'fallback_pdf'  => $fallback_pdf,
         'table_source'  => bwt_sanitize_table_source(isset($input['table_source']) ? $input['table_source'] : array()),
     );
 }
@@ -1490,6 +1503,7 @@ function bwt_tracking_page() {
                 'push_enabled'  => isset($_POST['push_enabled']) ? 1 : 0,
                 'push_secret'   => isset($_POST['push_secret']) ? sanitize_text_field(wp_unslash($_POST['push_secret'])) : '',
                 'tracking_url'  => isset($_POST['tracking_url']) ? esc_url_raw(wp_unslash($_POST['tracking_url'])) : '',
+                'fallback_pdf'  => isset($_POST['fallback_pdf']) ? esc_url_raw(wp_unslash($_POST['fallback_pdf'])) : '',
             );
             if (!empty($_POST['bwt_regenerate_secret'])) {
                 $input['push_secret'] = bwt_generate_push_secret();
@@ -1706,6 +1720,11 @@ function bwt_tracking_page() {
                             <span class="bwt-field__label">کلید امضای Push</span>
                             <input type="text" name="push_secret" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['push_secret']); ?>" autocomplete="off" />
                             <span class="bwt-field__help"><label class="bwt-check"><input type="checkbox" name="bwt_regenerate_secret" value="1" /> ساخت کلید جدید</label></span>
+                        </label>
+                        <label class="bwt-field bwt-field--wide">
+                            <span class="bwt-field__label">فایل PDF کدهای رهگیری (اختیاری)</span>
+                            <input type="text" name="fallback_pdf" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['fallback_pdf']); ?>" placeholder="https://example.com/tracking.pdf" />
+                            <span class="bwt-field__help">وقتی جست‌وجوی مشتری خطا می‌دهد، همین فایل داخل فرم و زیر پیام خطا نمایش داده می‌شود. خالی بگذارید تا نمایش داده نشود.</span>
                         </label>
                     </div>
 
@@ -1928,7 +1947,24 @@ function bwt_pending_message_lines() {
     );
 }
 
-function bwt_tracking_search_form() {
+function bwt_tracking_search_form($atts = array()) {
+    $defaults_atts = array('pdf' => '', 'pdf_text' => '');
+    $atts = is_array($atts) ? $atts : array();
+    if (function_exists('shortcode_atts')) {
+        $atts = shortcode_atts($defaults_atts, $atts, 'tracking_search_form');
+    } else {
+        $atts = array_merge($defaults_atts, array_filter($atts, 'is_scalar'));
+    }
+    $settings = bwt_get_settings();
+    $fallback_pdf = $atts['pdf'] !== '' ? $atts['pdf'] : (string) $settings['fallback_pdf'];
+    $fallback_pdf = $fallback_pdf === '' ? '' : esc_url_raw($fallback_pdf);
+    if ($fallback_pdf !== '' && !preg_match('#^https?://#i', $fallback_pdf)) {
+        $fallback_pdf = '';
+    }
+    $fallback_text = $atts['pdf_text'] !== ''
+        ? (string) $atts['pdf_text']
+        : 'اگر شماره سفارش شما یافت نشد، می‌توانید از طریق فایل زیر کد رهگیری خود را مشاهده کنید.';
+
     if (function_exists('wp_enqueue_style')) {
         wp_enqueue_style('bwt-tracking');
     }
@@ -1978,6 +2014,19 @@ function bwt_tracking_search_form() {
         </form>
 
         <div class="bwt-track__result" data-bwt-result hidden aria-live="polite"></div>
+
+        <?php if ($fallback_pdf !== '') : ?>
+            <div class="bwt-track__fallback" data-bwt-fallback hidden>
+                <p class="bwt-track__fallback-text"><?php echo esc_html($fallback_text); ?></p>
+                <a class="bwt-btn bwt-btn--primary bwt-track__fallback-btn" href="<?php echo esc_url($fallback_pdf); ?>" download target="_blank" rel="noopener">
+                    <span class="bwt-track__fallback-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+                    </span>
+                    دانلود فایل کدهای رهگیری
+                </a>
+            </div>
+        <?php endif; ?>
+
         <noscript>
             <div class="bwt-track__result bwt-track__result--error">برای پیگیری، جاوااسکریپت مرورگر را فعال کنید.</div>
         </noscript>

@@ -89,7 +89,13 @@
     function init(root) {
         var form = root.querySelector('[data-bwt-form]');
         var result = root.querySelector('[data-bwt-result]');
+        var fallback = root.querySelector('[data-bwt-fallback]');
         if (!form || !result) return;
+
+        // فایل PDF جایگزین فقط وقتی جست‌وجو خطا می‌دهد نمایش داده می‌شود.
+        function showFallback(visible) {
+            if (fallback) fallback.hidden = !visible;
+        }
 
         var orderInput = form.querySelector('[name="order_id"]');
         var phoneInput = form.querySelector('[name="billing_phone"]');
@@ -106,6 +112,7 @@
 
         function showError(message) {
             stopPoll();
+            showFallback(true);
             result.hidden = false;
             result.className = 'bwt-track__result bwt-track__result--error';
             result.replaceChildren();
@@ -127,6 +134,7 @@
         function renderReady(data) {
             var s = strings();
             stopPoll();
+            showFallback(false);
             result.hidden = false;
             result.className = 'bwt-track__result bwt-track__result--ready';
             result.replaceChildren();
@@ -224,6 +232,7 @@
 
         function renderPending(data, credentials) {
             var s = strings();
+            showFallback(false);
             result.hidden = false;
             result.className = 'bwt-track__result';
             result.replaceChildren();
@@ -258,6 +267,7 @@
         function lookup(credentials, silent) {
             var s = strings();
             if (!silent) {
+                showFallback(false);
                 result.hidden = false;
                 result.className = 'bwt-track__result';
                 result.replaceChildren(make('p', 'bwt-spinner', s.sending));

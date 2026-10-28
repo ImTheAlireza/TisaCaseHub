@@ -491,3 +491,6 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-wrap [data-bwt-sync-result] > .bwt-notice:first-child { margin-top: 10px; }
 .bwt-wrap [data-bwt-scan-result] > .bwt-table-wrap,
 .bwt-wrap [data-bwt-find-key-result] > .bwt-table-wrap { margin-top: 10px; }
+
+/* فیلد تمام‌عرض در گرید تنظیمات (v3.2) */
+.bwt-form-grid > .bwt-field--wide { grid-column: 1 / -1; }

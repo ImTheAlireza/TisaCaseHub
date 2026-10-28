@@ -389,6 +389,9 @@ const trackingMarkup = `<!doctype html><html><body>
             <button type="submit">پیگیری</button>
         </form>
         <div data-bwt-result hidden></div>
+        <div class="bwt-track__fallback" data-bwt-fallback hidden>
+            <a class="bwt-btn bwt-btn--primary" href="https://example.test/tracking.pdf" download>دانلود فایل کدهای رهگیری</a>
+        </div>
     </div>
 </body></html>`;
 
@@ -432,6 +435,7 @@ async function trackingDom(payload) {
     assert.equal(doc.querySelectorAll('[data-bwt-result] script').length, 0, 'داده‌ها باید با textContent رندر شوند');
     assert.equal(doc.querySelector('.bwt-post-tracking-btn').getAttribute('href'), 'https://tracking.post.ir/?id=RR123456789IR');
     assert.ok(doc.querySelector('.bwt-copy-btn'));
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, true, 'جعبهٔ PDF در حالت موفق مخفی است');
     dom.window.close();
 }
 
@@ -449,6 +453,7 @@ async function trackingDom(payload) {
     const result = doc.querySelector('[data-bwt-result]');
     assert.match(result.textContent, /آماده‌سازی/);
     assert.ok(doc.querySelector('.bwt-poll-note').textContent.length > 0, 'شمارندهٔ بررسی خودکار نمایش داده می‌شود');
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, true, 'جعبهٔ PDF در حالت انتظار مخفی است');
     assert.equal(sent.length, 1, 'تا ۳۰ ثانیه درخواست اضافه‌ای ارسال نمی‌شود');
 
     // دکمهٔ «بررسی مجدد» درخواست تازه می‌فرستد
@@ -466,6 +471,24 @@ async function trackingDom(payload) {
     const result = doc.querySelector('[data-bwt-result]');
     assert.match(result.className, /bwt-track__result--error/);
     assert.match(result.textContent, /معتبر نیست/);
+    const fallback = doc.querySelector('[data-bwt-fallback]');
+    assert.equal(fallback.hidden, false, 'جعبهٔ PDF زیر پیام خطا ظاهر می‌شود');
+    assert.equal(fallback.getAttribute('href'), null);
+    assert.equal(fallback.querySelector('a').getAttribute('href'), 'https://example.test/tracking.pdf');
+    assert.ok(doc.querySelector('[data-bwt-result]').compareDocumentPosition(fallback) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'جعبهٔ PDF بعد از پیام خطا قرار دارد');
+    dom.window.close();
+}
+
+{
+    // خالی‌بودن فیلدها هم خطاست و باید جعبهٔ PDF را نشان دهد (بدون درخواست به سرور)
+    const { dom, sent } = await trackingDom({ state: 'ready', codes: [] });
+    const doc = dom.window.document;
+    doc.querySelector('[name="order_id"]').value = '';
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => doc.querySelector('[data-bwt-result]').className.includes('bwt-track__result--error'));
+    assert.equal(doc.querySelector('[data-bwt-result]').className.includes('--error'), true);
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, false);
+    assert.equal(sent.length, 0, 'اعتبارسنجی سمت مرورگر بدون درخواست به سرور');
     dom.window.close();
 }
 
@@ -480,4 +503,4 @@ async function trackingDom(payload) {
     dom.window.close();
 }
 
-console.log('✓ ۲۸ سنجهٔ رابط: پاک‌سازی، منابع، پیدا کردن کلید، همگام‌سازی و فرم پیگیری سالم است.');
+console.log('✓ ۳۳ سنجهٔ رابط: پاک‌سازی، منابع، پیدا کردن کلید، همگام‌سازی، فرم پیگیری و جعبهٔ PDF جایگزین سالم است.');

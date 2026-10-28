@@ -692,6 +692,38 @@ t('سفارش بدون کد، وضعیت pending و متن آماده‌سازی
     && $pending->payload['poll']['interval'] === 30);
 $_POST = array();
 
+/* فایل PDF جایگزین: پیش‌فرض، فعال/غیرفعال، اعتبارسنجی و بازنویسی با اتِریبیوت */
+$GLOBALS['bwt_options'] = array();
+$fallback_default = bwt_get_settings();
+t('پیش‌فرض فایل PDF جایگزین تنظیم شده است',
+    isset($fallback_default['fallback_pdf'])
+    && $fallback_default['fallback_pdf'] === BWT_FALLBACK_PDF_DEFAULT
+    && strpos(BWT_FALLBACK_PDF_DEFAULT, 'tracking.pdf') !== false);
+
+$form_default = bwt_tracking_search_form();
+t('فرم، جعبهٔ دانلود PDF را مخفی و با لینک درست رندر می‌کند',
+    strpos($form_default, 'data-bwt-fallback hidden') !== false
+    && strpos($form_default, 'href="' . esc_url(BWT_FALLBACK_PDF_DEFAULT) . '"') !== false
+    && strpos($form_default, 'دانلود فایل کدهای رهگیری') !== false
+    && strpos($form_default, 'download') !== false);
+
+bwt_save_settings(array('fallback_pdf' => ''));
+$form_off = bwt_tracking_search_form();
+t('با خالی‌بودن آدرس، جعبهٔ دانلود PDF رندر نمی‌شود', strpos($form_off, 'data-bwt-fallback') === false);
+
+$form_attr = bwt_tracking_search_form(array('pdf' => 'https://cdn.example.test/rahgiri.pdf'));
+t('اتِریبیوت pdf، آدرس تنظیمات را بازنویسی می‌کند',
+    strpos($form_attr, 'https://cdn.example.test/rahgiri.pdf') !== false);
+
+$form_bad_attr = bwt_tracking_search_form(array('pdf' => 'javascript:alert(1)'));
+t('آدرس خطرناک اتِریبیوت PDF نادیده گرفته می‌شود', strpos($form_bad_attr, 'data-bwt-fallback') === false);
+
+$pdf_clean = bwt_sanitize_settings(array('fallback_pdf' => 'javascript:alert(1)'));
+t('آدرس غیر http در تنظیمات ذخیره نمی‌شود', $pdf_clean['fallback_pdf'] === '');
+$pdf_ok = bwt_sanitize_settings(array('fallback_pdf' => 'https://tisacase.com/files/codes.pdf'));
+t('آدرس http(s) در تنظیمات پذیرفته می‌شود', $pdf_ok['fallback_pdf'] === 'https://tisacase.com/files/codes.pdf');
+bwt_save_settings(array('fallback_pdf' => BWT_FALLBACK_PDF_DEFAULT));
+
 t('فرم کوتاه‌کد ثبت شده و فیلد موبایل اجباری دارد',
     isset($GLOBALS['bwt_shortcodes']['tracking_search_form'])
     && strpos(bwt_tracking_search_form(), 'name="billing_phone"') !== false
@@ -947,7 +979,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.2.0') !== false);
+    && strpos($hero, 'v3.2.1') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1199,7 +1231,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.2.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.2.0');
+t('نسخهٔ افزونه 3.2.1 است', defined('BWT_VERSION') && BWT_VERSION === '3.2.1');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

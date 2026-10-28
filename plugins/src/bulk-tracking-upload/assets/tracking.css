@@ -1,5 +1,5 @@
 /*!
- * TisaCase — فرم پیگیری سفارش | استایل سمت کاربر (v3.1)
+ * TisaCase — فرم پیگیری سفارش | استایل سمت کاربر (v3.2)
  * ------------------------------------------------------------------
  * هدف: هم‌شکل با قالب فروشگاه (Woodmart) و نه یک «جزیرهٔ» مستقل.
  * ۱) هیچ فونت/رنگ اجباری‌ای تحمیل نمی‌شود؛ اول از توکن‌های قالب
@@ -277,6 +277,50 @@
 	color: var(--bwt-danger);
 }
 
+/* ---------- فایل PDF جایگزین (فقط در حالت خطا) ---------- */
+.bwt-track__fallback {
+	margin-top: 14px;
+	padding: 18px 20px;
+	border: 1px dashed var(--bwt-border-strong);
+	border: 1px dashed color-mix(in srgb, var(--bwt-primary) 34%, var(--bwt-border));
+	border-radius: 12px;
+	border-radius: max(var(--wd-brd-radius, 0px), 12px);
+	background: var(--bwt-surface);
+	text-align: center;
+	animation: bwt-fade .18s ease both;
+}
+
+.bwt-track__fallback[hidden] {
+	display: none;
+}
+
+.bwt-track__fallback .bwt-track__fallback-text {
+	margin: 0 auto 14px;
+	max-width: 46em;
+	color: var(--bwt-text);
+	font-size: var(--bwt-fs-sm);
+	line-height: 2;
+}
+
+.bwt-track__fallback .bwt-btn {
+	min-width: 215px;
+}
+
+.bwt-track__fallback-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+}
+
+.bwt-track__fallback-icon svg {
+	display: block;
+	width: 16px;
+	height: 16px;
+}
+
 /* ردیف‌های اطلاعات سفارش */
 .bwt-rows {
 	display: grid;
@@ -448,6 +492,20 @@
 
 	.bwt-code__actions .bwt-btn {
 		flex: 1 1 100%;
+	}
+
+	.bwt-track__fallback {
+		padding: 16px;
+	}
+
+	.bwt-track__fallback .bwt-track__fallback-text {
+		font-size: 12.5px;
+	}
+
+	.bwt-track__fallback .bwt-btn {
+		display: flex;
+		width: 100%;
+		min-width: 0;
 	}
 }
 
