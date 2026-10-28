@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.2.1
+ * Version: 3.3.0
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,12 +15,11 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.2.1');
+define('BWT_VERSION', '3.3.0');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
 define('BWT_SYNC_MAX_ORDERS', 500);
-define('BWT_SCAN_SAMPLE_ORDERS', 300);
 define('BWT_SWEEP_MAX_ORDERS', 50);
 define('BWT_SWEEP_DAYS', 45);
 define('BWT_CLEANUP_BATCH_SIZE', 500);
@@ -661,74 +660,6 @@ function bwt_custom_table_codes($order_id) {
     return $cache[$order_id];
 }
 
-/**
- * پیدا کردن نام کلیدی که یک مقدار مشخص (کد رهگیری) در آن ذخیره شده است.
- * فقط خواندن؛ روی جدول‌های متای سفارش (postmeta/HPOS) جست‌وجو می‌کند.
- */
-function bwt_find_meta_keys_by_value($code) {
-    global $wpdb;
-    $code = is_scalar($code) ? trim((string) $code) : '';
-    $result = array('code' => $code, 'variants' => array(), 'matches' => array(), 'found' => false);
-    if ($code === '' || strlen($code) > 100 || !is_object($wpdb) || !method_exists($wpdb, 'get_results')) {
-        return $result;
-    }
-
-    $variants = array($code);
-    $compact = preg_replace('/\s+/u', '', $code);
-    $normalized = bwt_normalize_digits($compact);
-    if (is_string($compact) && $compact !== '') {
-        $variants[] = $compact;
-    }
-    if (is_string($normalized) && $normalized !== '') {
-        $variants[] = $normalized;
-    }
-    $variants = array_values(array_unique(array_filter($variants, static function ($value) {
-        return is_string($value) && $value !== '';
-    })));
-    $result['variants'] = $variants;
-
-    $matches = array();
-    foreach (bwt_meta_tables() as $table) {
-        foreach ($variants as $variant) {
-            $sql = $wpdb->prepare("SELECT meta_key, COUNT(*) AS n FROM `{$table}` WHERE meta_value = %s GROUP BY meta_key LIMIT 50", $variant);
-            $rows = $wpdb->get_results($sql);
-            foreach ((array) $rows as $row) {
-                $row = (array) $row;
-                $key = isset($row['meta_key']) ? (string) $row['meta_key'] : '';
-                if ($key === '') {
-                    continue;
-                }
-                $count = isset($row['n']) ? (int) $row['n'] : 0;
-                if (!isset($matches[$key])) {
-                    $matches[$key] = array('key' => $key, 'count' => 0, 'tables' => array());
-                }
-                $matches[$key]['count'] += $count;
-                if (!in_array($table, $matches[$key]['tables'], true)) {
-                    $matches[$key]['tables'][] = $table;
-                }
-            }
-        }
-    }
-
-    $list = array_values($matches);
-    usort($list, static function ($a, $b) {
-        if ($a['count'] !== $b['count']) {
-            return $b['count'] - $a['count'];
-        }
-        return strcmp($a['key'], $b['key']);
-    });
-    foreach ($list as $index => $row) {
-        $list[$index]['tracking_like'] = bwt_key_looks_like_tracking($row['key'])
-            || in_array($row['key'], bwt_builtin_tracking_keys(), true);
-        $list[$index]['suggested'] = $list[$index]['tracking_like']
-            && !in_array($row['key'], array('_tracking_code', '_tracking_codes'), true);
-    }
-
-    $result['matches'] = $list;
-    $result['found'] = !empty($list);
-    return $result;
-}
-
 // ========== 3. گرفتن لحظه‌ای کد از افزونهٔ حمل‌ونقل ==========
 add_action('woocommerce_new_order', 'bwt_on_order_event', 20, 1);
 add_action('woocommerce_update_order', 'bwt_on_order_event', 20, 1);
@@ -864,236 +795,15 @@ function bwt_count_orders_with_code($has_code = true) {
     return $total;
 }
 
-// ========== 6. کشف منابع (ویزارد) ==========
-add_action('wp_ajax_bwt_scan_sources', 'bwt_ajax_scan_sources');
+// ========== 6. منبع کد رهگیری (ذخیرهٔ کلید متا) ==========
 add_action('wp_ajax_bwt_save_sources', 'bwt_ajax_save_sources');
 
-/** آیا نام کلید بوی سورناپست/پست می‌دهد؟ (برای گزارش جداگانه) */
-function bwt_key_looks_like_post_service($key) {
-    return (bool) preg_match('/(sorna|surena|post_|_post|barcode|parcel|shipment|مرسوله|رهگیری|بارکد)/iu', (string) $key);
-}
-
-/** آیا مقدار از سورناپست آمده؟ (کلید یا رشتهٔ حاوی sorna) */
-function bwt_value_mentions_sorna($value) {
-    if (is_array($value) || is_object($value)) {
-        $value = function_exists('wp_json_encode') ? wp_json_encode($value) : json_encode($value);
-    }
-    return is_string($value) && preg_match('/sorna|surena/i', $value);
-}
-
-/**
- * نمونه‌گیری از سفارش‌ها و گزارش منابع احتمالی کد رهگیری.
- *
- * @param int  $limit     تعداد سفارش نمونه‌گیری (پیش‌فرض ۳۰۰).
- * @param bool $only_code فقط سفارش‌هایی که کد رهگیری دارند.
- */
-function bwt_scan_order_sources($limit = BWT_SCAN_SAMPLE_ORDERS) {
-    $limit = max(1, min(1000, (int) $limit));
-    $settings = bwt_get_settings();
-    $rows = array();
-    $note_orders = 0;
-    $note_samples = array();
-    $sampled = 0;
-    $with_code = 0;
-    $orders_with_code_found = 0;
-    $sorna_orders = 0;
-
-    $base_args = array(
-        'type'    => 'shop_order',
-        'status'  => array('processing', 'completed', 'on-hold', 'shipped', 'pending', 'wcmps-in-progress'),
-        'orderby' => 'date',
-        'order'   => 'DESC',
-        'return'  => 'objects',
-    );
-
-    $orders = array();
-    if (function_exists('wc_get_orders')) {
-        // ۱) جدیدترین سفارش‌ها (اینجا قاعدتاً کدها هنوز صادر نشده‌اند).
-        $orders = wc_get_orders(array_merge($base_args, array('limit' => $limit)));
-        $orders = is_array($orders) ? $orders : array();
-        // ۲) جدیدترین سفارش‌هایی که واقعاً کد دارند: منبع را از همین‌جا پیدا کنیم.
-        $coded = wc_get_orders(array_merge($base_args, array(
-            'limit'      => min(100, $limit),
-            'meta_query' => array(array('key' => '_tracking_code', 'compare' => 'EXISTS')),
-        )));
-        foreach ((array) $coded as $order) {
-            if (is_object($order) && method_exists($order, 'get_id')) {
-                $orders[] = $order;
-            }
-        }
-    }
-
-    $seen = array();
-    foreach ($orders as $order) {
-        if (!is_object($order) || !method_exists($order, 'get_id')) {
-            continue;
-        }
-        $order_id = (int) $order->get_id();
-        if ($order_id <= 0 || isset($seen[$order_id])) {
-            continue;
-        }
-        $seen[$order_id] = true;
-        $sampled++;
-
-        $order_has_code = false;
-        $order_mentions_sorna = false;
-
-        foreach (bwt_order_meta_map($order) as $key => $value) {
-            $key = (string) $key;
-            if (!isset($rows[$key])) {
-                $rows[$key] = array(
-                    'key'           => $key,
-                    'orders'        => 0,
-                    'tracking_like' => 0,
-                    'samples'       => array(),
-                    'sorna_value'   => 0,
-                );
-            }
-            $rows[$key]['orders']++;
-            $codes = bwt_extract_codes_from_value($value);
-            if ($codes) {
-                $rows[$key]['tracking_like']++;
-                if (count($rows[$key]['samples']) < 3) {
-                    $rows[$key]['samples'][] = $codes[0];
-                }
-                if ($key === '_tracking_code') {
-                    $order_has_code = true;
-                }
-            } else {
-                if (!$rows[$key]['samples'] && is_scalar($value) && trim((string) $value) !== '') {
-                    $raw = (string) $value;
-                    $rows[$key]['samples'][] = strlen($raw) > 40 ? substr($raw, 0, 40) . '…' : $raw;
-                }
-                if (bwt_value_mentions_sorna($value)) {
-                    $rows[$key]['sorna_value']++;
-                    $order_mentions_sorna = true;
-                }
-            }
-            if (bwt_value_mentions_sorna($value)) {
-                $order_mentions_sorna = true;
-            }
-        }
-
-        if ($order_has_code) {
-            $with_code++;
-        }
-        if ($order_mentions_sorna) {
-            $sorna_orders++;
-        }
-
-        $resolved = bwt_resolve_order_tracking($order);
-        if (!empty($resolved['external']) && !empty($resolved['codes'])) {
-            $orders_with_code_found++;
-        }
-
-        $note_codes = bwt_extract_codes_from_order_notes($order);
-        if ($note_codes) {
-            $note_orders++;
-            if (count($note_samples) < 5) {
-                $note_samples[] = $note_codes[0];
-            }
-        }
-    }
-
-    $list = array_values($rows);
-    $builtin_keys = bwt_builtin_tracking_keys();
-    foreach ($list as $index => $row) {
-        $list[$index]['key_match'] = bwt_key_looks_like_tracking($row['key']) || in_array($row['key'], $builtin_keys, true);
-        $list[$index]['post_service'] = bwt_key_looks_like_post_service($row['key']);
-    }
-    usort($list, static function ($a, $b) {
-        $score = static function ($row) {
-            return ($row['post_service'] ? 8 : 0) + ($row['key_match'] ? 4 : 0) + ($row['sorna_value'] > 0 ? 3 : 0) + ($row['tracking_like'] > 0 ? 2 : 0);
-        };
-        $sa = $score($a);
-        $sb = $score($b);
-        if ($sa !== $sb) {
-            return $sb - $sa;
-        }
-        if ($a['orders'] !== $b['orders']) {
-            return $b['orders'] - $a['orders'];
-        }
-        return strcmp($a['key'], $b['key']);
-    });
-
-    $sorna_keys = array();
-    foreach ($list as $index => $row) {
-        $list[$index]['selected'] = in_array($row['key'], (array) $settings['source_keys'], true);
-        $list[$index]['builtin'] = in_array($row['key'], $builtin_keys, true);
-        $list[$index]['suggested'] = $row['key_match']
-            && $row['tracking_like'] > 0
-            && $row['tracking_like'] >= max(1, (int) floor(max(1, $sampled) * 0.2))
-            && !in_array($row['key'], array('_tracking_code', '_tracking_codes', '_billing_phone'), true);
-        if ($row['post_service']) {
-            $sorna_keys[] = $list[$index];
-        }
-    }
-
-    return array(
-        'sampled'        => $sampled,
-        'limit'          => $limit,
-        'with_code'      => $with_code,
-        'detected'       => $orders_with_code_found,
-        'sorna_orders'   => $sorna_orders,
-        'storage'        => bwt_storage_label(),
-        'keys'           => $list,
-        'sorna_keys'     => array_slice($sorna_keys, 0, 12),
-        'tables'         => bwt_candidate_tables(),
-        'notes'          => array(
-            'orders'  => $note_orders,
-            'samples' => $note_samples,
-            'enabled' => !empty($settings['scan_notes']),
-        ),
-        'source_keys'    => (array) $settings['source_keys'],
-    );
-}
-
-/** HPOS یا ذخیره‌سازی قدیمی (برای نمایش در عیب‌یابی). */
-function bwt_storage_label() {
-    $hpos = false;
-    if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && method_exists('\Automattic\WooCommerce\Utilities\OrderUtil', 'custom_orders_table_usage_is_enabled')) {
-        $hpos = (bool) \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled();
-    }
-    return array(
-        'hpos'  => $hpos,
-        'label' => $hpos ? 'HPOS (جدول‌های سفارش سفارشی)' : 'ذخیره‌سازی قدیمی (postmeta)',
-    );
-}
-
-function bwt_ajax_scan_sources() {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
-    }
-    check_ajax_referer('bwt_scan_sources', 'nonce');
-    $limit = isset($_POST['limit']) ? (int) $_POST['limit'] : BWT_SCAN_SAMPLE_ORDERS;
-    if (!in_array($limit, array(100, 300, 500, 1000), true)) {
-        $limit = BWT_SCAN_SAMPLE_ORDERS;
-    }
-    wp_send_json_success(bwt_scan_order_sources($limit));
-}
-
-add_action('wp_ajax_bwt_find_key', 'bwt_ajax_find_key');
-
-function bwt_ajax_find_key() {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
-    }
-    check_ajax_referer('bwt_scan_sources', 'nonce');
-    $code = isset($_POST['code']) ? sanitize_text_field(wp_unslash($_POST['code'])) : '';
-    if ($code === '') {
-        wp_send_json_error(array('message' => 'کد رهگیری را وارد کنید.'), 400);
-    }
-    $found = bwt_find_meta_keys_by_value($code);
-    $found['tables'] = bwt_candidate_tables();
-    $found['source_keys'] = (array) bwt_get_settings()['source_keys'];
-    wp_send_json_success($found);
-}
-
+/** ذخیرهٔ فهرست کلیدهای متایی که کد رهگیری را نگه می‌دارند. */
 function bwt_ajax_save_sources() {
     if (!current_user_can('manage_options')) {
         wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
     }
-    check_ajax_referer('bwt_scan_sources', 'nonce');
+    check_ajax_referer('bwt_save_sources', 'nonce');
     $keys = isset($_POST['keys']) ? wp_unslash($_POST['keys']) : array();
     if (!is_array($keys)) {
         $keys = array_filter(array_map('trim', explode(',', (string) $keys)));
@@ -1446,7 +1156,7 @@ function bwt_admin_assets($hook) {
     wp_localize_script('bwt-admin', 'BWTAdmin', array(
         'ajaxUrl'       => admin_url('admin-ajax.php'),
         'cleanupNonce'  => wp_create_nonce('bwt_cleanup_batch'),
-        'scanNonce'     => wp_create_nonce('bwt_scan_sources'),
+        'sourceNonce'   => wp_create_nonce('bwt_save_sources'),
         'syncNonce'     => wp_create_nonce('bwt_sync_batch'),
         'retryLabel'    => 'تلاش دوباره / ادامه پردازش',
         'genericError'  => 'ارتباط با سرور ناموفق بود.',
@@ -1593,67 +1303,35 @@ function bwt_tracking_page() {
             <section class="bwt-card" id="bwt-source">
                 <header class="bwt-card__head">
                     <div>
-                        <h2 class="bwt-card__title">۱. منبع کد رهگیری</h2>
-                        <p class="bwt-card__desc">افزونه باید بداند سورناپست کد را با چه نامی روی سفارش ذخیره می‌کند. یک بار شناسایی و ذخیره کنید؛ بعد از آن خودکار است.</p>
+                        <h2 class="bwt-card__title">۱. کلید متای کد رهگیری</h2>
+                        <p class="bwt-card__desc">نام متایی که سورناپست کد رهگیری را زیر آن روی سفارش می‌نویسد. یک بار ذخیره کنید؛ همگام‌سازی و جاروی خودکار از همین کلید می‌خوانند.</p>
                     </div>
                     <span class="bwt-badge-soft">گام ۱</span>
                 </header>
 
                 <div class="bwt-card__body">
-                    <div class="bwt-field-row">
-                        <label class="bwt-field bwt-field--inline">
-                            <span class="bwt-field__label">تعداد سفارش نمونه</span>
-                            <select class="bwt-input" data-bwt-scan-limit aria-label="تعداد سفارش نمونه">
-                                <option value="100">۱۰۰ سفارش</option>
-                                <option value="300" selected>۳۰۰ سفارش</option>
-                                <option value="500">۵۰۰ سفارش</option>
-                                <option value="1000">۱۰۰۰ سفارش</option>
-                            </select>
-                        </label>
-                        <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-scan>شناسایی منابع</button>
-                    </div>
-
-                    <div class="bwt-status-line" data-bwt-scan-status aria-live="polite"></div>
-                    <div data-bwt-scan-result></div>
+                    <form class="bwt-field-row bwt-field-row--tight" data-bwt-source-form>
+                        <input type="text" class="bwt-input bwt-input--mono" dir="rtl" placeholder="_surena_barcode" data-bwt-source-key aria-label="نام کلید متا" />
+                        <button type="submit" class="bwt-btn bwt-btn--primary">ذخیرهٔ کلید</button>
+                    </form>
+                    <div class="bwt-status-line" data-bwt-source-status aria-live="polite"></div>
 
                     <div class="bwt-divider"></div>
 
-                    <h3 class="bwt-subtitle">منابع فعال</h3>
+                    <h3 class="bwt-subtitle">کلیدهای فعال</h3>
                     <div class="bwt-chips" data-bwt-source-chips>
                         <?php foreach ((array) $settings['source_keys'] as $key) : ?>
                             <span class="bwt-chip" data-key="<?php echo esc_attr($key); ?>" dir="ltr"><?php echo esc_html($key); ?></span>
                         <?php endforeach; ?>
                     </div>
-                    <p class="bwt-hint">کلیدهای شناخته‌شدهٔ رایج (<code dir="ltr">_tracking_code</code>، <code dir="ltr">_post_barcode</code>، <code dir="ltr">_wc_shipment_tracking_items</code>) و کد داخل یادداشت‌های سفارش همیشه بررسی می‌شوند.</p>
-
-                    <form class="bwt-field-row bwt-field-row--tight" data-bwt-source-form>
-                        <input type="text" class="bwt-input bwt-input--mono" dir="ltr" placeholder="_sorna_tracking_code" data-bwt-source-key aria-label="کلید متا" />
-                        <button type="submit" class="bwt-btn">افزودن کلید دستی</button>
-                    </form>
+                    <p class="bwt-hint">هر کلیدی که اینجا اضافه کنید با اولویت خوانده می‌شود. کلیدهای رایج (<code dir="ltr">_tracking_code</code>، <code dir="ltr">_post_barcode</code>، <code dir="ltr">_wc_shipment_tracking_items</code>) و کد داخل یادداشت‌های سفارش هم بدون افزودن بررسی می‌شوند.</p>
                 </div>
             </section>
 
             <section class="bwt-card">
                 <header class="bwt-card__head">
                     <div>
-                        <h2 class="bwt-card__title">۲. پیدا کردن کلید با خود کد رهگیری</h2>
-                        <p class="bwt-card__desc">قطعی‌ترین راه: کد یک سفارش را از متاباکس «سورناپست» یا پیامک مشتری کپی کنید و اینجا بچسبانید. می‌گوید در کدام کلید ذخیره شده است.</p>
-                    </div>
-                </header>
-                <div class="bwt-card__body">
-                    <form class="bwt-field-row bwt-field-row--tight" data-bwt-find-key-form>
-                        <input type="text" class="bwt-input bwt-input--mono" dir="ltr" inputmode="numeric" placeholder="۷۹۹۴۰۰۵۲۲۲۰۱۷۶۱۹۷۸۱۴۳۱۴۷" data-bwt-find-key-input aria-label="کد رهگیری نمونه" />
-                        <button type="submit" class="bwt-btn bwt-btn--primary">پیدا کن</button>
-                    </form>
-                    <div class="bwt-status-line" data-bwt-find-key-status aria-live="polite"></div>
-                    <div data-bwt-find-key-result></div>
-                </div>
-            </section>
-
-            <section class="bwt-card">
-                <header class="bwt-card__head">
-                    <div>
-                        <h2 class="bwt-card__title">۳. همگام‌سازی سفارش‌ها</h2>
+                        <h2 class="bwt-card__title">۲. همگام‌سازی سفارش‌ها</h2>
                         <p class="bwt-card__desc">سفارش‌های قبلی را یک‌بار پر کنید؛ هر دسته ۵۰ سفارش است و اگر صفحه بسته شد، از همان‌جا ادامه می‌دهد.</p>
                     </div>
                     <span class="bwt-badge-soft">گام ۲</span>
@@ -1686,7 +1364,7 @@ function bwt_tracking_page() {
                 <?php wp_nonce_field('bwt_settings_action', 'bwt_settings_nonce'); ?>
                 <header class="bwt-card__head">
                     <div>
-                        <h2 class="bwt-card__title">۴. تنظیمات</h2>
+                        <h2 class="bwt-card__title">۳. تنظیمات</h2>
                         <p class="bwt-card__desc">پیش‌فرض‌ها برای سایت شما مناسب‌اند؛ این بخش را فقط اگر لازم شد باز کنید.</p>
                     </div>
                     <span class="bwt-badge-soft">پیشرفته</span>

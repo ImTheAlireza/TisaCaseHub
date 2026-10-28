@@ -1,5 +1,5 @@
 /*!
- * کد رهگیری پستی — استایل پیشخوان (v3.2)
+ * کد رهگیری پستی — استایل پیشخوان (v3.3)
  * ------------------------------------------------------------------
  * چون این صفحه روی اسکرین‌های ووکامرس لود می‌شود (نه داخل هاب)،
  * کامپوننت‌های پایه را خودش تعریف می‌کند و به tisacase-ui وابسته نیست؛
@@ -340,7 +340,6 @@ select.bwt-input { padding-inline-end: 30px; }
 	font-size: 10px;
 }
 .bwt-tag--ok { border-color: var(--tisa-success, #1A7F37); color: var(--tisa-success, #1A7F37); }
-.bwt-tag--sorna { border-color: #B98A18; color: #8A6116; background: #FCF3D7; }
 
 /* ---------- جدول ---------- */
 .bwt-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 10px; }
@@ -374,20 +373,8 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-wrap table.bwt-table tbody tr:hover td { background: #FCFCFA; }
 .bwt-table .bwt-cell-key { white-space: nowrap; font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); font-size: 11.5px; }
 .bwt-table .bwt-cell-num { width: 84px; white-space: nowrap; color: var(--tisa-ink, #1F2A2E); }
-.bwt-table .bwt-cell-sample { max-width: 240px; }
-.bwt-table .bwt-cell-sample span {
-	display: block;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
-	font-size: 11px;
-	color: var(--tisa-muted, #77828A);
-}
-.bwt-table .bwt-cell-pick { width: 54px; text-align: center; }
 .bwt-table .bwt-cell-action { width: 96px; }
 .bwt-row--suggested td { background: var(--tisa-primary-soft, #E8F0EE) !important; }
-.bwt-row--sorna td:first-child { box-shadow: inset 3px 0 0 #B98A18; }
 
 /* ---------- بلوک‌های تاشو و کد ---------- */
 .bwt-details { margin-top: 14px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 10px; background: #FAFAF8; }
@@ -486,11 +473,7 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-wrap .bwt-notice--danger { border-inline-start-color: var(--tisa-danger, #B5453A); background: var(--tisa-danger-soft, #FBECEA); color: var(--tisa-danger-ink, #8E3128); }
 .bwt-status-line--ok { color: var(--tisa-success, #1A7F37); }
 .bwt-status-line--bad { color: var(--tisa-warning, #8A6116); }
-.bwt-wrap [data-bwt-scan-result] > .bwt-notice:first-child,
-.bwt-wrap [data-bwt-find-key-result] > .bwt-notice:first-child,
 .bwt-wrap [data-bwt-sync-result] > .bwt-notice:first-child { margin-top: 10px; }
-.bwt-wrap [data-bwt-scan-result] > .bwt-table-wrap,
-.bwt-wrap [data-bwt-find-key-result] > .bwt-table-wrap { margin-top: 10px; }
 
 /* فیلد تمام‌عرض در گرید تنظیمات (v3.2) */
 .bwt-form-grid > .bwt-field--wide { grid-column: 1 / -1; }

@@ -72,6 +72,9 @@ function add_action($hook, $callback, $priority = 10, $args = 1) {
     $GLOBALS['bwt_actions'][$hook][$priority][] = array('cb' => $callback, 'args' => $args);
     return true;
 }
+function has_action($hook) {
+    return !empty($GLOBALS['bwt_actions'][$hook]);
+}
 function add_filter($hook, $callback, $priority = 10, $args = 1) {
     $GLOBALS['bwt_filters'][$hook][$priority][] = array('cb' => $callback, 'args' => $args);
     return true;
@@ -732,7 +735,7 @@ t('فرم کوتاه‌کد ثبت شده و فیلد موبایل اجباری 
     && strpos(bwt_tracking_search_form(), 'bwt-field__input') !== false);
 
 /* ================= ۵) تنظیمات، کشف منبع، اسکن ================= */
-section('۵) تنظیمات و کشف منبع');
+section('۵) تنظیمات و کلید منبع');
 $GLOBALS['bwt_options'] = array();
 $defaults = bwt_get_settings();
 t('تنظیمات پیش‌فرض: جارو روشن، یادداشت روشن، Push خاموش و لینک پست',
@@ -758,27 +761,9 @@ t('لینک پیگیری، کد را URL-encode می‌کند', bwt_tracking_url
 $GLOBALS['bwt_orders'] = array();
 $GLOBALS['bwt_options'] = array();
 bwt_save_settings(array('source_keys' => array('_sorna_barcode'), 'scan_notes' => 1));
-for ($i = 1; $i <= 4; $i++) {
-    $GLOBALS['bwt_orders'][4000 + $i] = new BWT_Test_Order(4000 + $i, array(
-        '_sorna_barcode' => 'RR12345678' . $i . 'IR',
-        '_billing_phone' => '0912123456' . $i,
-    ));
-}
-$GLOBALS['bwt_orders'][4010] = new BWT_Test_Order(4010, array('_tracking_code' => 'RR999999999IR'));
-$GLOBALS['bwt_customer_notes'][4010] = array((object) array('content' => 'کد رهگیری: RR777777777IR'));
-$scan = bwt_scan_order_sources(10);
-t('اسکن منابع، نمونهٔ سفارش‌ها را می‌شمارد', $scan['sampled'] === 5);
-$scan_keys = array();
-foreach ($scan['keys'] as $row) {
-    $scan_keys[$row['key']] = $row;
-}
-t('منبع انتخاب‌شده در نتیجهٔ اسکن علامت‌دار است', !empty($scan_keys['_sorna_barcode']['selected']));
-t('ستون «شبیه کد رهگیری» برای کلید سورنا پر است', $scan_keys['_sorna_barcode']['tracking_like'] === 4);
-t('کلید کانونیک به‌عنوان پیشنهاد منبع معرفی نمی‌شود', empty($scan_keys['_tracking_code']['suggested']));
-t('کدهای موجود در یادداشت‌ها جداگانه گزارش می‌شوند', $scan['notes']['orders'] === 1 && $scan['notes']['samples'] === array('RR777777777IR'));
 
 bwt_save_settings(array('source_keys' => array()));
-$_POST = array('nonce' => 'nonce-bwt_scan_sources', 'keys' => array('_sorna_barcode', 'bad key!', '_sorna_barcode'));
+$_POST = array('nonce' => 'nonce-bwt_save_sources', 'keys' => array('_sorna_barcode', 'bad key!', '_sorna_barcode'));
 $saved_sources = null;
 try {
     bwt_ajax_save_sources();
@@ -789,13 +774,13 @@ t('ذخیرهٔ منابع، کلید نامعتبر و تکراری را حذف
 t('منبع ذخیره‌شده در تنظیمات می‌نشیند', bwt_get_settings()['source_keys'] === array('_sorna_barcode'));
 
 $_POST = array('nonce' => 'wrong');
-$scan_denied = null;
+$save_denied = null;
 try {
-    bwt_ajax_scan_sources();
+    bwt_ajax_save_sources();
 } catch (BWT_Test_Response $response) {
-    $scan_denied = $response;
+    $save_denied = $response;
 }
-t('اسکن منابع بدون نانس معتبر رد می‌شود', $scan_denied instanceof BWT_Test_Response && !$scan_denied->success);
+t('ذخیرهٔ کلید منبع بدون نانس معتبر رد می‌شود', $save_denied instanceof BWT_Test_Response && !$save_denied->success);
 $_POST = array();
 
 /* ================= ۶) همگام‌سازی دسته‌ای ================= */
@@ -979,7 +964,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.2.1') !== false);
+    && strpos($hero, 'v3.3.0') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -994,29 +979,34 @@ t('صفحهٔ اصلی، شورت‌کد، فرم دستی، نشانی Push و 
     && strpos($page, 'data-key="_sorna_barcode"') !== false
     && strpos($page, 'data-bwt-sync-mode="missing"') !== false);
 t('صفحهٔ اصلی، غیرفعال‌بودن CSV را نشان می‌دهد (بدون فیلد فایل)', strpos($page, 'type="file"') === false);
-t('صفحهٔ اصلی، ابزار «پیدا کردن کلید با کد» و «منبع جدول اختصاصی» را دارد',
-    strpos($page, 'data-bwt-find-key-form') !== false
-    && strpos($page, 'data-bwt-find-key-input') !== false
-    && strpos($page, 'name="table_source_table"') !== false
+t('صفحهٔ اصلی، «منبع جدول اختصاصی» را دارد',
+    strpos($page, 'name="table_source_table"') !== false
     && strpos($page, 'name="table_source_code_col"') !== false);
 t('جدول‌های مشکوک در صفحهٔ تنظیمات فهرست می‌شوند', strpos($page, 'bwt-chip--table') !== false && strpos($page, 'wp_sorna_orders') !== false);
 
-t('صفحهٔ اصلی چهار بخش شماره‌دار ۱ تا ۴ و کارت‌های تازهٔ v3.2 را دارد',
-    strpos($page, '۱. منبع کد رهگیری') !== false
-    && strpos($page, '۲. پیدا کردن کلید با خود کد رهگیری') !== false
-    && strpos($page, '۳. همگام‌سازی سفارش‌ها') !== false
-    && strpos($page, '۴. تنظیمات') !== false
+t('صفحهٔ اصلی سه بخش شماره‌دار ۱ تا ۳ است و ابزار «پیدا کردن کلید» حذف شده',
+    strpos($page, '۱. کلید متای کد رهگیری') !== false
+    && strpos($page, '۲. همگام‌سازی سفارش‌ها') !== false
+    && strpos($page, '۳. تنظیمات') !== false
+    && strpos($page, 'پیدا کردن کلید') === false
+    && strpos($page, 'شناسایی منابع') === false
+    && strpos($page, 'تعداد سفارش نمونه') === false
     && strpos($page, 'bwt-card__head') !== false
-    && strpos($page, 'bwt-stack') !== false
-    && strpos($page, 'تعداد سفارش نمونه') !== false
-    && strpos($page, '<option value="300" selected>') !== false);
-t('صفحهٔ اصلی، همهٔ قلاب‌های JS تازه را دارد',
-    strpos($page, 'data-bwt-scan-limit') !== false
-    && strpos($page, 'data-bwt-scan-result') !== false
-    && strpos($page, 'data-bwt-find-key-result') !== false
+    && strpos($page, 'bwt-stack') !== false);
+t('صفحهٔ اصلی، قلاب‌های JS لازم را دارد و قلاب‌های حذف‌شده را نه',
+    strpos($page, 'data-bwt-source-form') !== false
+    && strpos($page, 'data-bwt-source-key') !== false
+    && strpos($page, 'data-bwt-source-status') !== false
     && strpos($page, 'data-bwt-sync-counters') !== false
-    && strpos($page, 'data-bwt-source-chips') !== false);
-t('صفحهٔ اصلی، پیش‌فرض نمونه‌گیری ۳۰۰ سفارش است', BWT_SCAN_SAMPLE_ORDERS === 300);
+    && strpos($page, 'data-bwt-source-chips') !== false
+    && strpos($page, 'data-bwt-scan') === false
+    && strpos($page, 'data-bwt-find-key') === false);
+t('مسیرهای کشف خودکار کلید از افزونه حذف شده‌اند',
+    !function_exists('bwt_scan_order_sources')
+    && !function_exists('bwt_find_meta_keys_by_value')
+    && !defined('BWT_SCAN_SAMPLE_ORDERS')
+    && !has_action('wp_ajax_bwt_scan_sources')
+    && !has_action('wp_ajax_bwt_find_key'));
 $notice_probe = bwt_admin_notice('danger', 'x');
 t('پیام‌های پیشخوان کلاس bwt-notice دارند',
     strpos($notice_probe, 'bwt-notice') !== false && strpos($notice_probe, 'tisa-notice--danger') !== false);
@@ -1104,66 +1094,10 @@ t('صفحهٔ پاک‌سازی با Job نامعتبر، پیام خطا و ه�
 $_GET = array();
 
 /* ================= ۱۰) پیدا کردن کلید با کد + جدول اختصاصی ================= */
-section('۱۰) پیدا کردن کلید با خود کد و منبع جدول اختصاصی');
+section('۱۰) منبع جدول اختصاصی (پشتیبان)');
 
 // همان کد واقعی سورناپست از پنل کاربر (۲۴ رقم).
 $real_code = '799400522201761978143147';
-$GLOBALS['bwt_db_results'] = array(
-    "FROM `wp_postmeta` WHERE meta_value = '{$real_code}'" => array(
-        (object) array('meta_key' => '_sorna_tracking_code', 'n' => 12),
-        (object) array('meta_key' => '_billing_phone', 'n' => 3),
-    ),
-    "FROM `wp_wc_orders_meta` WHERE meta_value = '{$real_code}'" => array(
-        (object) array('meta_key' => '_sorna_tracking_code', 'n' => 5),
-    ),
-);
-$found = bwt_find_meta_keys_by_value($real_code);
-t('جست‌وجوی کد در هر دو جدول متا انجام و شمارش‌ها جمع می‌شود',
-    $found['found']
-    && $found['matches'][0]['key'] === '_sorna_tracking_code'
-    && $found['matches'][0]['count'] === 17
-    && count($found['matches'][0]['tables']) === 2);
-t('کلید مرتبط پیشنهاد می‌شود و کلید نامرتبط نه',
-    $found['matches'][0]['suggested'] === true
-    && $found['matches'][1]['key'] === '_billing_phone'
-    && $found['matches'][1]['tracking_like'] === false);
-
-$found_persian = bwt_find_meta_keys_by_value('۷۹۹۴۰۰۵۲۲۲۰۱۷۶۱۹۷۸۱۴۳۱۴۷');
-t('کد با ارقام فارسی هم جست‌وجو می‌شود', in_array($real_code, $found_persian['variants'], true));
-
-$GLOBALS['bwt_db_results'] = array();
-$not_found = bwt_find_meta_keys_by_value('123456789012345678901234');
-t('کد ناموجود، found=false و بدون خطا برمی‌گردد', $not_found['found'] === false && $not_found['matches'] === array());
-t('ورودی خالی/بیش‌ازحد بلند رد می‌شود',
-    bwt_find_meta_keys_by_value('')['found'] === false
-    && bwt_find_meta_keys_by_value(str_repeat('9', 200))['found'] === false);
-
-$GLOBALS['bwt_options'] = array();
-$GLOBALS['bwt_transients'] = array();
-$_POST = array('nonce' => 'wrong', 'code' => $real_code);
-$find_denied = null;
-try {
-    bwt_ajax_find_key();
-} catch (BWT_Test_Response $response) {
-    $find_denied = $response;
-}
-t('AJAX پیدا کردن کلید بدون نانس معتبر رد می‌شود', $find_denied instanceof BWT_Test_Response && !$find_denied->success);
-
-$GLOBALS['bwt_db_results'] = array(
-    "FROM `wp_postmeta` WHERE meta_value = '{$real_code}'" => array((object) array('meta_key' => '_sorna_tracking_code', 'n' => 2)),
-);
-$_POST = array('nonce' => 'nonce-bwt_scan_sources', 'code' => $real_code);
-$find_ok = null;
-try {
-    bwt_ajax_find_key();
-} catch (BWT_Test_Response $response) {
-    $find_ok = $response;
-}
-t('AJAX پیدا کردن کلید، کلید و جدول‌های مشکوک را برمی‌گرداند',
-    $find_ok instanceof BWT_Test_Response && $find_ok->success
-    && $find_ok->payload['matches'][0]['key'] === '_sorna_tracking_code'
-    && isset($find_ok->payload['tables']));
-$_POST = array();
 
 $tables_found = bwt_candidate_tables();
 $table_names = array_column($tables_found, 'table');
@@ -1231,7 +1165,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.2.1 است', defined('BWT_VERSION') && BWT_VERSION === '3.2.1');
+t('نسخهٔ افزونه 3.3.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.3.0');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

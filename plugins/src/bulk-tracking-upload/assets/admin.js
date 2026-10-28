@@ -1,5 +1,5 @@
-/* کد رهگیری پستی — رفتار پیشخوان (v3.2)
-   چهار بخش: شناسایی/ذخیرهٔ منبع کد، پیدا کردن کلید با خود کد، همگام‌سازی دسته‌ای، پاک‌سازی دسته‌ای. */
+/* کد رهگیری پستی — رفتار پیشخوان (v3.3)
+   سه بخش: ذخیرهٔ کلید متای کد، همگام‌سازی دسته‌ای، پاک‌سازی دسته‌ای. */
 (function () {
     'use strict';
 
@@ -199,30 +199,26 @@
         startOrResume();
     }
 
-    /* ---------- ۲) شناسایی منبع کد ---------- */
-    function initSourceScanner() {
-        var scanButton = document.querySelector('[data-bwt-scan]');
-        var limitSelect = document.querySelector('[data-bwt-scan-limit]');
-        var resultNode = document.querySelector('[data-bwt-scan-result]');
-        var statusNode = document.querySelector('[data-bwt-scan-status]');
+    /* ---------- ۲) کلید متای کد رهگیری ---------- */
+    function initSourceKeys() {
         var chipsNode = document.querySelector('[data-bwt-source-chips]');
         var form = document.querySelector('[data-bwt-source-form]');
+        var statusNode = document.querySelector('[data-bwt-source-status]');
         var conf = config();
-        if (!scanButton || !resultNode || !conf.ajaxUrl) return;
+        if (!chipsNode || !form || !conf.ajaxUrl || !conf.sourceNonce) return;
 
+        var input = form.querySelector('[data-bwt-source-key]');
         var selected = [];
-        if (chipsNode) {
-            Array.prototype.forEach.call(chipsNode.querySelectorAll('.bwt-chip'), function (chip) {
-                var key = chip.getAttribute('data-key');
-                if (key && selected.indexOf(key) === -1) selected.push(key);
-            });
-        }
+
+        Array.prototype.forEach.call(chipsNode.querySelectorAll('.bwt-chip'), function (chip) {
+            var key = chip.getAttribute('data-key');
+            if (key && selected.indexOf(key) === -1) selected.push(key);
+        });
 
         function renderChips() {
-            if (!chipsNode) return;
             chipsNode.replaceChildren();
             if (!selected.length) {
-                chipsNode.appendChild(create('span', 'bwt-hint', 'هیچ منبع دستی انتخاب نشده؛ فقط کلیدهای شناخته‌شده بررسی می‌شوند.'));
+                chipsNode.appendChild(create('span', 'bwt-hint', 'هیچ کلیدی ثبت نشده؛ فقط کلیدهای شناخته‌شده و یادداشت سفارش بررسی می‌شوند.'));
                 return;
             }
             selected.forEach(function (key) {
@@ -242,349 +238,43 @@
             });
         }
 
-        function save(silent) {
-            return post('bwt_save_sources', { nonce: conf.scanNonce, keys: selected }).then(function (data) {
+        renderChips();
+
+        function save() {
+            return post('bwt_save_sources', { nonce: conf.sourceNonce, keys: selected }).then(function (data) {
                 selected = data.source_keys || selected;
                 renderChips();
-                if (!silent) setStatus(statusNode, data.message || 'منبع ذخیره شد.', 'ok');
+                setStatus(statusNode, data.message || 'کلید ذخیره شد.', 'ok');
                 return data;
             }).catch(function (error) {
-                setStatus(statusNode, error.message || 'ذخیرهٔ منبع ناموفق بود.', 'bad');
+                setStatus(statusNode, error.message || 'ذخیرهٔ کلید ناموفق بود.', 'bad');
             });
-        }
-
-        function addKey(key) {
-            key = String(key || '').trim();
-            if (!key) return Promise.resolve();
-            if (selected.indexOf(key) === -1) selected.push(key);
-            renderChips();
-            return save();
-        }
-
-        if (form) {
-            form.addEventListener('submit', function (event) {
-                event.preventDefault();
-                var input = form.querySelector('[data-bwt-source-key]');
-                var key = input ? String(input.value || '').trim() : '';
-                if (!key) {
-                    setStatus(statusNode, 'نام کلید متا را وارد کنید.', 'bad');
-                    return;
-                }
-                addKey(key).then(function () {
-                    if (input) input.value = '';
-                });
-            });
-        }
-
-        scanButton.addEventListener('click', function () {
-            var limit = limitSelect ? String(limitSelect.value || '300') : '300';
-            scanButton.disabled = true;
-            setStatus(statusNode, 'در حال خواندن ' + digits(limit) + ' سفارش اخیر…');
-            resultNode.replaceChildren();
-            post('bwt_scan_sources', { nonce: conf.scanNonce, limit: limit }).then(function (data) {
-                scanButton.disabled = false;
-                renderScan(data);
-            }).catch(function (error) {
-                scanButton.disabled = false;
-                setStatus(statusNode, error.message || 'شناسایی منابع ناموفق بود.', 'bad');
-            });
-        });
-
-        function renderScan(data) {
-            if (!data.sampled) {
-                setStatus(statusNode, 'سفارشی برای نمونه‌گیری پیدا نشد.', 'bad');
-                return;
-            }
-
-            var storage = data.storage || {};
-            var parts = ['نمونه: ' + digits(data.sampled) + ' سفارش اخیر'];
-            parts.push('دارای کد: ' + digits(data.with_code));
-            if (Number(data.sorna_orders) > 0) {
-                parts.push('سفارش با نشانهٔ سورناپست: ' + digits(data.sorna_orders));
-            }
-            parts.push('جای ذخیره: ' + (storage.label || storage.hpos || '—'));
-            resultNode.replaceChildren();
-
-            // کلیدهایی که مقدارشان نشانهٔ سورناپست دارد، خودکار به منابع اضافه می‌شوند (بدون کار دستی).
-            var autokeys = (data.keys || [])
-                .filter(function (row) {
-                    return row.post_service
-                        && (Number(row.tracking_like) > 0 || row.key_match)
-                        && selected.indexOf(row.key) === -1;
-                })
-                .map(function (row) { return row.key; })
-                .slice(0, 3);
-            if (autokeys.length) {
-                selected = selected.concat(autokeys);
-                renderChips();
-                parts.push('منبع پیشنهادی ذخیره شد: ' + autokeys.join('، '));
-                save(true).catch(function () { /* پیام خطا در save نمایش داده می‌شود */ });
-            }
-
-            setStatus(statusNode, parts.join(' · '), Number(data.with_code) > 0 || autokeys.length ? 'ok' : 'bad');
-
-            var sornaKeys = data.sorna_keys || [];
-            var sornaLabels = sornaKeys.map(function (item) {
-                if (typeof item === 'string') return item;
-                return item && item.key ? String(item.key) : '';
-            }).filter(function (label) { return label !== ''; });
-            if (sornaLabels.length) {
-                resultNode.appendChild(notice(
-                    'warning',
-                    'کلیدهایی که مقدارشان نشانهٔ سورناپست دارد: ' + sornaLabels.join('، ')
-                    + ' — اگر یکی از این‌ها کد رهگیری را نگه می‌دارد، همان را انتخاب کنید.'
-                ));
-            } else if (!Number(data.detected)) {
-                resultNode.appendChild(notice(
-                    'warning',
-                    'در این ' + digits(data.sampled) + ' سفارش، نه کدی پیدا شد و نه نشانه‌ای از سورناپست. '
-                    + 'یعنی احتمالاً سورناپست کد را در متای سفارش ذخیره نمی‌کند و در جدول اختصاصی خودش است. '
-                    + 'از کارت ۲ (پیدا کردن کلید با خود کد) استفاده کنید یا جدول اختصاصی را در تنظیمات وارد کنید.'
-                ));
-            }
-
-            var keys = data.keys || [];
-            if (!keys.length) {
-                resultNode.appendChild(create('p', 'bwt-hint', 'هیچ کلید متایی در سفارش‌های نمونه پیدا نشد.'));
-            } else {
-                var head = create('thead');
-                var headRow = create('tr');
-                [
-                    { label: 'انتخاب', className: 'bwt-cell-pick' },
-                    { label: 'کلید متا' },
-                    { label: 'تعداد سفارش' },
-                    { label: 'کد رهگیری', className: 'bwt-cell-num' },
-                    { label: 'نمونهٔ مقدار', className: 'bwt-cell-sample' }
-                ].forEach(function (column) {
-                    headRow.appendChild(create('th', column.className || '', column.label));
-                });
-                head.appendChild(headRow);
-
-                var body = create('tbody');
-                keys.forEach(function (row) {
-                    var tr = create('tr');
-                    if (row.post_service) tr.classList.add('bwt-row--sorna');
-                    else if (row.selected) tr.classList.add('bwt-row--suggested');
-
-                    var pick = create('td', 'bwt-cell-pick');
-                    var checkbox = create('input');
-                    checkbox.type = 'checkbox';
-                    checkbox.value = row.key;
-                    checkbox.checked = selected.indexOf(row.key) !== -1;
-                    checkbox.setAttribute('aria-label', 'انتخاب کلید ' + row.key);
-                    checkbox.addEventListener('change', function () {
-                        if (checkbox.checked) {
-                            if (selected.indexOf(row.key) === -1) selected.push(row.key);
-                        } else {
-                            selected = selected.filter(function (item) { return item !== row.key; });
-                        }
-                        renderChips();
-                        save();
-                    });
-                    pick.appendChild(checkbox);
-                    tr.appendChild(pick);
-
-                    var keyCell = create('td', 'bwt-cell-key');
-                    keyCell.setAttribute('dir', 'ltr');
-                    keyCell.appendChild(document.createTextNode(row.key));
-                    if (row.builtin) keyCell.appendChild(create('span', 'bwt-tag', 'شناخته‌شده'));
-                    if (row.post_service) keyCell.appendChild(create('span', 'bwt-tag bwt-tag--sorna', 'سورناپست'));
-                    else if (row.suggested) keyCell.appendChild(create('span', 'bwt-tag bwt-tag--ok', 'پیشنهاد'));
-                    tr.appendChild(keyCell);
-
-                    tr.appendChild(create('td', 'bwt-cell-num', digits(row.orders)));
-                    tr.appendChild(create('td', 'bwt-cell-num', row.tracking_like ? 'بله' : '—'));
-
-                    var sample = create('td', 'bwt-cell-sample');
-                    var firstSample = row.samples && row.samples.length ? row.samples[0] : '';
-                    var sampleValue = firstSample || row.sorna_value || '';
-                    if (sampleValue) {
-                        sample.appendChild(create('span', '', sampleValue));
-                        sample.setAttribute('dir', 'ltr');
-                        if (row.sorna_value && row.sorna_value !== sampleValue) {
-                            sample.setAttribute('title', 'مقدار نشانهٔ سورناپست: ' + row.sorna_value);
-                        }
-                    } else {
-                        sample.appendChild(document.createTextNode('—'));
-                    }
-                    tr.appendChild(sample);
-
-                    body.appendChild(tr);
-                });
-
-                var scroll = create('div', 'bwt-table-wrap');
-                var node = create('table', 'bwt-table');
-                node.appendChild(head);
-                node.appendChild(body);
-                scroll.appendChild(node);
-                resultNode.appendChild(scroll);
-                resultNode.appendChild(create('p', 'bwt-hint', 'تیک زدن هر کلید همان لحظه ذخیره می‌شود؛ همگام‌سازی و جاروی خودکار از همین فهرست می‌خوانند.'));
-            }
-
-            var notes = data.notes || {};
-            if (notes.orders) {
-                var details = create('details', 'bwt-details');
-                details.appendChild(create('summary', '', 'یادداشت‌های سفارش‌های نمونه'));
-                details.appendChild(create('p', 'bwt-hint', notes.orders));
-                if (notes.samples && notes.samples.length) {
-                    var list = create('p', 'bwt-hint');
-                    list.setAttribute('dir', 'rtl');
-                    list.textContent = 'نمونه‌ها: ' + notes.samples.slice(0, 5).join(' | ');
-                    details.appendChild(list);
-                }
-                resultNode.appendChild(details);
-            }
-
-            renderTables(data.tables || []);
-        }
-
-        function renderTables(tables) {
-            if (!tables.length) return;
-            var box = create('details', 'bwt-details');
-            box.appendChild(create('summary', '', 'جدول‌های مشکوک به سورناپست/پست روی این سایت (' + digits(tables.length) + ')'));
-            tables.forEach(function (item) {
-                var row = create('p', 'bwt-hint');
-                row.appendChild(create('code', '', item.table));
-                row.setAttribute('dir', 'ltr');
-                row.appendChild(document.createTextNode(' → ' + (item.columns || []).join(', ')));
-                box.appendChild(row);
-            });
-            box.appendChild(create('p', 'bwt-hint', 'اگر کد در یکی از این جدول‌ها بود، در تنظیمات → «منبع جدول اختصاصی سورناپست» نام جدول و ستون‌ها را وارد کنید.'));
-            resultNode.appendChild(box);
-        }
-    }
-
-    /* ---------- ۳) پیدا کردن کلید با خود کد رهگیری ---------- */
-    function initKeyFinder() {
-        var form = document.querySelector('[data-bwt-find-key-form]');
-        var resultNode = document.querySelector('[data-bwt-find-key-result]');
-        var statusNode = document.querySelector('[data-bwt-find-key-status]');
-        var conf = config();
-        if (!form || !resultNode || !conf.ajaxUrl || !conf.scanNonce) return;
-
-        var input = form.querySelector('[data-bwt-find-key-input]');
-        var chipsNode = document.querySelector('[data-bwt-source-chips]');
-
-        function addSourceKey(key) {
-            var keys = [];
-            if (chipsNode) {
-                Array.prototype.forEach.call(chipsNode.querySelectorAll('.bwt-chip'), function (chip) {
-                    var value = chip.getAttribute('data-key');
-                    if (value) keys.push(value);
-                });
-            }
-            if (keys.indexOf(key) === -1) keys.push(key);
-            return post('bwt_save_sources', { nonce: conf.scanNonce, keys: keys }).then(function (data) {
-                if (!chipsNode) return data;
-                chipsNode.replaceChildren();
-                (data.source_keys || keys).forEach(function (value) {
-                    var chip = create('span', 'bwt-chip', value);
-                    chip.setAttribute('data-key', value);
-                    chip.setAttribute('dir', 'ltr');
-                    chipsNode.appendChild(chip);
-                });
-                setStatus(statusNode, 'کلید ' + key + ' به منابع اضافه شد.', 'ok');
-                return data;
-            });
-        }
-
-        function render(data) {
-            resultNode.replaceChildren();
-            if (!data.found) {
-                setStatus(statusNode, 'این کد در هیچ متای سفارشی پیدا نشد. اگر سورناپست کد را در جدول خودش نگه می‌دارد، از «منبع جدول اختصاصی سورناپست» در تنظیمات استفاده کنید.', 'bad');
-                renderTables(data.tables || []);
-                return;
-            }
-            setStatus(statusNode, 'این کد در ' + digits(data.matches.length) + ' کلید پیدا شد. کلیدی که نامش هم مرتبط است انتخاب کنید.', 'ok');
-
-            var head = create('thead');
-            var headRow = create('tr');
-            ['کلید متا', 'تعداد رکورد', 'جدول', 'ارتباط با کد رهگیری', 'افزودن'].forEach(function (label) {
-                headRow.appendChild(create('th', '', label));
-            });
-            head.appendChild(headRow);
-
-            var body = create('tbody');
-            data.matches.forEach(function (row) {
-                var tr = create('tr');
-                if (row.suggested) tr.classList.add('bwt-row--suggested');
-
-                var keyCell = create('td', 'bwt-cell-key');
-                keyCell.setAttribute('dir', 'ltr');
-                keyCell.appendChild(document.createTextNode(row.key));
-                if (row.suggested) keyCell.appendChild(create('span', 'bwt-tag bwt-tag--ok', 'پیشنهاد'));
-                tr.appendChild(keyCell);
-
-                tr.appendChild(create('td', 'bwt-cell-num', digits(row.count)));
-                var tablesCell = create('td', '');
-                tablesCell.setAttribute('dir', 'ltr');
-                tablesCell.textContent = (row.tables || []).join(' · ') || '—';
-                tr.appendChild(tablesCell);
-                tr.appendChild(create('td', '', row.tracking_like ? 'بله' : 'نامرتبط'));
-
-                var actionCell = create('td', 'bwt-cell-action');
-                var button = create('button', 'bwt-btn bwt-btn--ghost bwt-btn--sm', 'استفاده');
-                button.type = 'button';
-                button.addEventListener('click', function () {
-                    button.disabled = true;
-                    addSourceKey(row.key).then(function () {
-                        button.textContent = 'اضافه شد';
-                    }).catch(function () {
-                        button.disabled = false;
-                    });
-                });
-                actionCell.appendChild(button);
-                tr.appendChild(actionCell);
-
-                body.appendChild(tr);
-            });
-
-            var scroll = create('div', 'bwt-table-wrap');
-            var node = create('table', 'bwt-table');
-            node.appendChild(head);
-            node.appendChild(body);
-            scroll.appendChild(node);
-            resultNode.appendChild(scroll);
-            renderTables(data.tables || []);
-        }
-
-        function renderTables(tables) {
-            if (!tables.length) return;
-            var box = create('details', 'bwt-details');
-            box.appendChild(create('summary', '', 'جدول‌های مشکوک به سورناپست/پست روی این سایت (' + digits(tables.length) + ')'));
-            tables.forEach(function (item) {
-                var row = create('p', 'bwt-hint');
-                row.setAttribute('dir', 'ltr');
-                row.appendChild(create('code', '', item.table));
-                row.appendChild(document.createTextNode(' → ' + (item.columns || []).join(', ')));
-                box.appendChild(row);
-            });
-            box.appendChild(create('p', 'bwt-hint', 'اگر کد در یکی از این جدول‌ها بود، در تنظیمات → «منبع جدول اختصاصی سورناپست» نام جدول و ستون‌ها را وارد کنید.'));
-            resultNode.appendChild(box);
         }
 
         form.addEventListener('submit', function (event) {
             event.preventDefault();
-            var code = input ? String(input.value || '').trim() : '';
-            if (!code) {
-                setStatus(statusNode, 'کد رهگیری را وارد کنید.', 'bad');
+            var key = input ? String(input.value || '').trim() : '';
+            if (key === '') {
+                setStatus(statusNode, 'نام کلید متا را وارد کنید.', 'bad');
                 return;
             }
-            var button = form.querySelector('button[type="submit"]');
-            if (button) button.disabled = true;
-            setStatus(statusNode, 'در حال جست‌وجو در متاهای سفارش‌ها…');
-            resultNode.replaceChildren();
-            post('bwt_find_key', { nonce: conf.scanNonce, code: code }).then(function (data) {
-                if (button) button.disabled = false;
-                render(data);
-            }).catch(function (error) {
-                if (button) button.disabled = false;
-                setStatus(statusNode, error && error.message ? error.message : 'جست‌وجو ناموفق بود.', 'bad');
+            if (!/^[A-Za-z0-9_\-:.]{1,191}$/.test(key)) {
+                setStatus(statusNode, 'نام کلید معتبر نیست؛ فقط حروف لاتین، رقم، خط تیره و آندرلاین مجاز است.', 'bad');
+                return;
+            }
+            if (selected.indexOf(key) !== -1) {
+                setStatus(statusNode, 'این کلید از قبل ثبت شده است.', 'bad');
+                return;
+            }
+            selected = selected.concat([key]);
+            renderChips();
+            save().then(function () {
+                if (input) input.value = '';
             });
         });
     }
 
-    /* ---------- ۴) همگام‌سازی دسته‌ای ---------- */
+    /* ---------- ۳) همگام‌سازی دسته‌ای ---------- */
     function initSyncRunner() {
         var buttons = document.querySelectorAll('[data-bwt-sync-mode]');
         var root = document.getElementById('bwt-sync-progress');
@@ -710,8 +400,7 @@
 
     function init() {
         initCleanupProcessor();
-        initSourceScanner();
-        initKeyFinder();
+        initSourceKeys();
         initSyncRunner();
     }
 

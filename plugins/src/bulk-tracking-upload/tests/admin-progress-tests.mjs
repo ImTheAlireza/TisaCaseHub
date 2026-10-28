@@ -1,5 +1,5 @@
 /**
- * تست jsdom برای رفتار پیشخوان (پاک‌سازی/شناسایی منبع/همگام‌سازی) و فرم پیگیری مشتری.
+ * تست jsdom برای رفتار پیشخوان (پاک‌سازی/کلید منبع/همگام‌سازی) و فرم پیگیری مشتری.
  * اجرا: node tests/admin-progress-tests.mjs
  */
 import assert from 'node:assert/strict';
@@ -88,222 +88,113 @@ async function waitFor(predicate, timeout = 1500) {
     dom.window.close();
 }
 
-/* ================= ۲) شناسایی و ذخیرهٔ منبع ================= */
+/* ================= ۲) کلید متای کد رهگیری ================= */
 {
     const markup = `<!doctype html><html><body>
-        <select data-bwt-scan-limit>
-            <option value="100">۱۰۰</option>
-            <option value="300" selected>۳۰۰</option>
-            <option value="500">۵۰۰</option>
-        </select>
-        <button data-bwt-scan>scan</button>
-        <div data-bwt-scan-status></div>
-        <div data-bwt-scan-result></div>
-        <form data-bwt-source-form><input data-bwt-source-key /><button type="submit">add</button></form>
+        <form data-bwt-source-form>
+            <input data-bwt-source-key />
+            <button type="submit">ذخیره</button>
+        </form>
+        <div data-bwt-source-status></div>
         <div data-bwt-source-chips><span class="bwt-chip" data-key="_old_key">_old_key</span></div>
     </body></html>`;
     const dom = new JSDOM(markup, {
         url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload',
         runScripts: 'outside-only',
     });
-    const savedKeys = [];
-    const scanLimits = [];
-    const scan = {
-        sampled: 300,
-        limit: 300,
-        with_code: 12,
-        detected: 2,
-        sorna_orders: 2,
-        sorna_keys: [{ key: '_sorna_barcode', orders: 80 }],
-        storage: { hpos: 'hpos', label: 'جدول سفارش HPOS' },
-        keys: [
-            { key: '_sorna_barcode', orders: 80, tracking_like: 80, samples: ['RR123456789IR'], sorna_value: 'surena-post', post_service: true, selected: false, builtin: false, suggested: true },
-            { key: '_billing_phone', orders: 300, tracking_like: 300, samples: ['09121234567'], post_service: false, selected: false, builtin: false, suggested: false },
-            { key: '_tracking_code', orders: 20, tracking_like: 20, samples: ['RR999999999IR'], post_service: false, selected: false, builtin: true, suggested: false },
-        ],
-        notes: { orders: 'چند یادداشت نمونه', samples: ['RR777777777IR'], enabled: true },
-        tables: [{ table: 'wp_surena_post_orders', columns: ['id', 'order_id', 'tracking_code'] }],
-        source_keys: ['_old_key'],
-    };
-    dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
+    const saveCalls = [];
+    let unexpected = [];
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', sourceNonce: 'src-nonce' };
     dom.window.fetch = async (_url, options) => {
         const body = readBody(options);
         const action = body.get('action');
-        if (action === 'bwt_scan_sources') {
-            scanLimits.push(body.get('limit'));
-            return jsonResponse(scan);
+        if (action !== 'bwt_save_sources') {
+            unexpected.push(action);
+            throw new Error('unexpected action: ' + action);
         }
-        if (action === 'bwt_save_sources') {
-            const keys = body.getAll('keys[]');
-            savedKeys.push(keys);
-            return jsonResponse({ source_keys: keys, message: 'منبع ذخیره شد.' });
-        }
-        throw new Error('unexpected action: ' + action);
+        const keys = body.getAll('keys[]');
+        saveCalls.push({ keys, nonce: body.get('nonce') });
+        return jsonResponse({ source_keys: keys, message: 'کلید ذخیره شد.' });
     };
     await boot(dom, adminSource);
     const doc = dom.window.document;
-    doc.querySelector('[data-bwt-scan]').click();
-    await waitFor(() => doc.querySelectorAll('[data-bwt-scan-result] tbody tr').length === 3);
+    const input = doc.querySelector('[data-bwt-source-key]');
+    const form = doc.querySelector('[data-bwt-source-form]');
+    const status = doc.querySelector('[data-bwt-source-status]');
+    const submit = () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
 
-    assert.equal(scanLimits[0], '300', 'مقدار پیش‌فرض نمونه‌گیری ۳۰۰ سفارش است');
-    const rows = doc.querySelectorAll('[data-bwt-scan-result] tbody tr');
-    assert.equal(rows.length, 3);
-    assert.equal(rows[0].querySelector('input[type="checkbox"]').value, '_sorna_barcode');
-    assert.match(rows[0].textContent, /سورناپست/);
-    assert.match(rows[0].textContent, /RR123456789IR/);
-    assert.equal(rows[1].querySelector('input[type="checkbox"]').checked, false);
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /۳۰۰ سفارش/);
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /دارای کد: ۱۲/);
-    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /سورناپست/);
-    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /wp_surena_post_orders/);
-    assert.doesNotMatch(doc.querySelector('[data-bwt-scan-result]').textContent, /object Object/);
-    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /یادداشت/);
-
-    // کلید دارای نشانهٔ سورناپست خودکار ذخیره می‌شود (بدون کار دستی)
-    await waitFor(() => savedKeys.length === 1);
-    assert.deepEqual(savedKeys[0], ['_old_key', '_sorna_barcode']);
+    // افزودن کلید واقعی
+    input.value = ' _surena_barcode ';
+    submit();
+    await waitFor(() => saveCalls.length === 1);
+    assert.deepEqual(saveCalls[0].keys, ['_old_key', '_surena_barcode']);
+    assert.equal(saveCalls[0].nonce, 'src-nonce');
+    await waitFor(() => input.value === '');
+    assert.equal(input.value, '', 'پس از ذخیره، فیلد خالی می‌شود');
     assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 2);
+    assert.match(status.textContent, /ذخیره/);
+    assert.match(status.className, /bwt-status-line--ok/);
 
-    // حذف چیپ، منبع را از سرور حذف می‌کند
-    doc.querySelector('[data-bwt-source-chips] .bwt-chip[data-key="_sorna_barcode"] .bwt-chip-x').click();
-    await waitFor(() => savedKeys.length === 2);
-    assert.deepEqual(savedKeys[1], ['_old_key']);
+    // کلید نامعتبر سمت مرورگر رد می‌شود (بدون درخواست)
+    input.value = 'bad key!';
+    submit();
+    await waitFor(() => /معتبر نیست/.test(status.textContent));
+    assert.match(status.textContent, /معتبر نیست/);
+    assert.equal(saveCalls.length, 1, 'درخواستی ارسال نمی‌شود');
+
+    // کلید تکراری
+    input.value = '_old_key';
+    submit();
+    await waitFor(() => /از قبل/.test(status.textContent));
+    assert.match(status.textContent, /از قبل ثبت شده/);
+    assert.equal(saveCalls.length, 1);
+
+    // ورودی خالی
+    input.value = '   ';
+    submit();
+    await waitFor(() => /نام کلید متا/.test(status.textContent));
+    assert.match(status.textContent, /نام کلید متا/);
+    assert.equal(saveCalls.length, 1);
+
+    // حذف چیپ، سرور را هم به‌روز می‌کند
+    doc.querySelector('[data-bwt-source-chips] .bwt-chip[data-key="_surena_barcode"] .bwt-chip-x').click();
+    await waitFor(() => saveCalls.length === 2);
+    assert.deepEqual(saveCalls[1].keys, ['_old_key']);
     assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 1);
 
-    // افزودن دستی کلید
-    const input = doc.querySelector('[data-bwt-source-key]');
-    input.value = '_sorna_tracking_code';
-    doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => savedKeys.length === 3);
-    assert.deepEqual(savedKeys[2], ['_old_key', '_sorna_tracking_code']);
-    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 2);
-
-    // کلید خالی رد می‌شود
-    input.value = '   ';
-    doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => /نام کلید/.test(doc.querySelector('[data-bwt-scan-status]').textContent));
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /نام کلید/);
+    assert.deepEqual(unexpected, [], 'هیچ اکشن حذف‌شده‌ای فراخوانی نمی‌شود');
     dom.window.close();
 }
 
-/* ================= ۲.a) نمونهٔ بدون کد و بدون نشانهٔ سورناپست ================= */
 {
+    // بدون کلید ذخیره‌شده: راهنما نشان داده می‌شود و حذف آخرین کلید، فهرست را خالی نگه می‌دارد
     const markup = `<!doctype html><html><body>
-        <select data-bwt-scan-limit><option value="100">۱۰۰</option><option value="500">۵۰۰</option></select>
-        <button data-bwt-scan>scan</button>
-        <div data-bwt-scan-status></div>
-        <div data-bwt-scan-result></div>
-        <div data-bwt-source-chips></div>
-    </body></html>`;
-    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
-    const limits = [];
-    dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
-    dom.window.fetch = async (_url, options) => {
-        const body = readBody(options);
-        if (body.get('action') !== 'bwt_scan_sources') throw new Error('unexpected');
-        limits.push(body.get('limit'));
-        return jsonResponse({
-            sampled: 500, limit: 500, with_code: 0, detected: 0, sorna_orders: 0,
-            sorna_keys: [], storage: { hpos: 'posts', label: 'جدول سفارش کلاسیک' },
-            keys: [{ key: '_billing_phone', orders: 500, tracking_like: 0, samples: ['0912...'], post_service: false, selected: false, builtin: false, suggested: false }],
-            notes: { orders: '', samples: [], enabled: true }, tables: [], source_keys: [],
-        });
-    };
-    await boot(dom, adminSource);
-    const doc = dom.window.document;
-    const select = doc.querySelector('[data-bwt-scan-limit]');
-    select.value = '500';
-    doc.querySelector('[data-bwt-scan]').click();
-    await waitFor(() => doc.querySelectorAll('[data-bwt-scan-result] tbody tr').length === 1);
-    assert.equal(limits[0], '500');
-    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /جدول اختصاصی/);
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /جدول سفارش کلاسیک/);
-    dom.window.close();
-}
-
-/* ================= ۲.b) پیدا کردن کلید با خود کد ================= */
-{
-    const realCode = '799400522201761978143147';
-    const markup = `<!doctype html><html><body>
-        <form data-bwt-find-key-form>
-            <input data-bwt-find-key-input value="${realCode}" />
-            <button type="submit">پیدا کن</button>
-        </form>
-        <div data-bwt-find-key-status></div>
-        <div data-bwt-find-key-result></div>
+        <form data-bwt-source-form><input data-bwt-source-key value="_surena_barcode" /><button type="submit">ذخیره</button></form>
+        <div data-bwt-source-status></div>
         <div data-bwt-source-chips></div>
     </body></html>`;
     const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
     const calls = [];
-    dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', sourceNonce: 'src-nonce' };
     dom.window.fetch = async (_url, options) => {
         const body = readBody(options);
-        const action = body.get('action');
-        calls.push({ action, code: body.get('code'), keys: body.getAll('keys[]') });
-        if (action === 'bwt_find_key') {
-            return jsonResponse({
-                code: realCode,
-                variants: [realCode],
-                found: true,
-                matches: [
-                    { key: '_sorna_tracking_code', count: 17, tables: ['wp_postmeta', 'wp_wc_orders_meta'], tracking_like: true, suggested: true },
-                    { key: '_billing_phone', count: 3, tables: ['wp_postmeta'], tracking_like: false, suggested: false },
-                ],
-                tables: [{ table: 'wp_sorna_orders', columns: ['id', 'order_id', 'tracking_code'] }],
-                source_keys: [],
-            });
-        }
-        if (action === 'bwt_save_sources') {
-            return jsonResponse({ source_keys: body.getAll('keys[]'), message: 'ذخیره شد' });
-        }
-        throw new Error('unexpected action ' + action);
+        const keys = body.getAll('keys[]');
+        calls.push(keys);
+        return jsonResponse({ source_keys: keys, message: 'کلید ذخیره شد.' });
     };
     await boot(dom, adminSource);
     const doc = dom.window.document;
-    doc.querySelector('[data-bwt-find-key-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => doc.querySelectorAll('[data-bwt-find-key-result] tbody tr').length === 2);
+    assert.match(doc.querySelector('[data-bwt-source-chips]').textContent, /هیچ کلیدی ثبت نشده/);
 
-    assert.equal(calls[0].action, 'bwt_find_key');
-    assert.equal(calls[0].code, realCode);
-    const rows = doc.querySelectorAll('[data-bwt-find-key-result] tbody tr');
-    assert.equal(rows.length, 2);
-    assert.match(rows[0].textContent, /_sorna_tracking_code/);
-    assert.match(rows[0].textContent, /۱۷/);
-    assert.match(rows[0].textContent, /پیشنهاد/);
-    assert.match(doc.querySelector('[data-bwt-find-key-result]').textContent, /wp_sorna_orders/);
-    assert.match(doc.querySelector('[data-bwt-find-key-status]').textContent, /کلید/);
+    doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => calls.length === 1);
+    assert.deepEqual(calls[0], ['_surena_barcode']);
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 1);
 
-    // «استفاده» کلید را به منابع اضافه می‌کند
-    rows[0].querySelector('button').click();
-    await waitFor(() => calls.some((entry) => entry.action === 'bwt_save_sources'));
-    const saveCall = calls.find((entry) => entry.action === 'bwt_save_sources');
-    assert.deepEqual(saveCall.keys, ['_sorna_tracking_code']);
-    await waitFor(() => doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length === 1);
-    assert.equal(doc.querySelector('[data-bwt-source-chips] .bwt-chip').getAttribute('data-key'), '_sorna_tracking_code');
-    dom.window.close();
-}
-
-{
-    const markup = `<!doctype html><html><body>
-        <form data-bwt-find-key-form><input data-bwt-find-key-input value="1234567890123456" /><button type="submit">پیدا کن</button></form>
-        <div data-bwt-find-key-status></div>
-        <div data-bwt-find-key-result></div>
-    </body></html>`;
-    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
-    dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
-    dom.window.fetch = async (_url, options) => {
-        const action = readBody(options).get('action');
-        if (action === 'bwt_find_key') {
-            return jsonResponse({ code: '123', variants: ['123'], found: false, matches: [], tables: [], source_keys: [] });
-        }
-        throw new Error('unexpected');
-    };
-    await boot(dom, adminSource);
-    const doc = dom.window.document;
-    doc.querySelector('[data-bwt-find-key-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => /پیدا نشد/.test(doc.querySelector('[data-bwt-find-key-status]').textContent));
-    assert.match(doc.querySelector('[data-bwt-find-key-status]').textContent, /پیدا نشد/);
-    assert.match(doc.querySelector('[data-bwt-find-key-status]').textContent, /جدول اختصاصی/);
+    doc.querySelector('[data-bwt-source-chips] .bwt-chip-x').click();
+    await waitFor(() => calls.length === 2);
+    assert.deepEqual(calls[1], []);
+    assert.match(doc.querySelector('[data-bwt-source-chips]').textContent, /هیچ کلیدی ثبت نشده/);
     dom.window.close();
 }
 
@@ -503,4 +394,4 @@ async function trackingDom(payload) {
     dom.window.close();
 }
 
-console.log('✓ ۳۳ سنجهٔ رابط: پاک‌سازی، منابع، پیدا کردن کلید، همگام‌سازی، فرم پیگیری و جعبهٔ PDF جایگزین سالم است.');
+console.log('✓ ۳۱ سنجهٔ رابط: پاک‌سازی، کلید منبع، همگام‌سازی، فرم پیگیری و جعبهٔ PDF جایگزین سالم است.');
