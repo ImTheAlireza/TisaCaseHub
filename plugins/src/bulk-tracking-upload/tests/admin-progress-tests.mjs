@@ -91,6 +91,11 @@ async function waitFor(predicate, timeout = 1500) {
 /* ================= ۲) شناسایی و ذخیرهٔ منبع ================= */
 {
     const markup = `<!doctype html><html><body>
+        <select data-bwt-scan-limit>
+            <option value="100">۱۰۰</option>
+            <option value="300" selected>۳۰۰</option>
+            <option value="500">۵۰۰</option>
+        </select>
         <button data-bwt-scan>scan</button>
         <div data-bwt-scan-status></div>
         <div data-bwt-scan-result></div>
@@ -102,14 +107,22 @@ async function waitFor(predicate, timeout = 1500) {
         runScripts: 'outside-only',
     });
     const savedKeys = [];
+    const scanLimits = [];
     const scan = {
-        sampled: 100,
+        sampled: 300,
+        limit: 300,
+        with_code: 12,
+        detected: 2,
+        sorna_orders: 2,
+        sorna_keys: [{ key: '_sorna_barcode', orders: 80 }],
+        storage: { hpos: 'hpos', label: 'جدول سفارش HPOS' },
         keys: [
-            { key: '_sorna_barcode', orders: 80, tracking_like: 80, samples: ['RR123456789IR'], selected: false, builtin: false, suggested: true },
-            { key: '_billing_phone', orders: 100, tracking_like: 100, samples: ['09121234567'], selected: false, builtin: false, suggested: false },
-            { key: '_tracking_code', orders: 20, tracking_like: 20, samples: ['RR999999999IR'], selected: false, builtin: true, suggested: false },
+            { key: '_sorna_barcode', orders: 80, tracking_like: 80, samples: ['RR123456789IR'], sorna_value: 'surena-post', post_service: true, selected: false, builtin: false, suggested: true },
+            { key: '_billing_phone', orders: 300, tracking_like: 300, samples: ['09121234567'], post_service: false, selected: false, builtin: false, suggested: false },
+            { key: '_tracking_code', orders: 20, tracking_like: 20, samples: ['RR999999999IR'], post_service: false, selected: false, builtin: true, suggested: false },
         ],
-        notes: { orders: 3, samples: ['RR777777777IR'], enabled: true },
+        notes: { orders: 'چند یادداشت نمونه', samples: ['RR777777777IR'], enabled: true },
+        tables: [{ table: 'wp_surena_post_orders', columns: ['id', 'order_id', 'tracking_code'] }],
         source_keys: ['_old_key'],
     };
     dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
@@ -117,6 +130,7 @@ async function waitFor(predicate, timeout = 1500) {
         const body = readBody(options);
         const action = body.get('action');
         if (action === 'bwt_scan_sources') {
+            scanLimits.push(body.get('limit'));
             return jsonResponse(scan);
         }
         if (action === 'bwt_save_sources') {
@@ -129,36 +143,81 @@ async function waitFor(predicate, timeout = 1500) {
     await boot(dom, adminSource);
     const doc = dom.window.document;
     doc.querySelector('[data-bwt-scan]').click();
-    await waitFor(() => doc.querySelectorAll('.bwt-source-table tbody tr').length === 3);
+    await waitFor(() => doc.querySelectorAll('[data-bwt-scan-result] tbody tr').length === 3);
 
-    const rows = doc.querySelectorAll('.bwt-source-table tbody tr');
+    assert.equal(scanLimits[0], '300', 'مقدار پیش‌فرض نمونه‌گیری ۳۰۰ سفارش است');
+    const rows = doc.querySelectorAll('[data-bwt-scan-result] tbody tr');
     assert.equal(rows.length, 3);
     assert.equal(rows[0].querySelector('input[type="checkbox"]').value, '_sorna_barcode');
-    assert.equal(rows[0].querySelector('input[type="checkbox"]').checked, true, 'پیشنهاد باید تیک بخورد');
+    assert.match(rows[0].textContent, /سورناپست/);
+    assert.match(rows[0].textContent, /RR123456789IR/);
     assert.equal(rows[1].querySelector('input[type="checkbox"]').checked, false);
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /۱۰۰ سفارش/);
-    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /یادداشت سفارش/);
+    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /۳۰۰ سفارش/);
+    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /دارای کد: ۱۲/);
+    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /سورناپست/);
+    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /wp_surena_post_orders/);
+    assert.doesNotMatch(doc.querySelector('[data-bwt-scan-result]').textContent, /object Object/);
+    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /یادداشت/);
 
-    // ذخیره: کلید پیشنهادی + کلید قبلی
-    const saveButton = doc.querySelector('[data-bwt-scan-result] .bwt-actions button');
-    saveButton.click();
+    // کلید دارای نشانهٔ سورناپست خودکار ذخیره می‌شود (بدون کار دستی)
     await waitFor(() => savedKeys.length === 1);
-    assert.deepEqual(savedKeys[0].sort(), ['_old_key', '_sorna_barcode'].sort());
+    assert.deepEqual(savedKeys[0], ['_old_key', '_sorna_barcode']);
     assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 2);
+
+    // حذف چیپ، منبع را از سرور حذف می‌کند
+    doc.querySelector('[data-bwt-source-chips] .bwt-chip[data-key="_sorna_barcode"] .bwt-chip-x').click();
+    await waitFor(() => savedKeys.length === 2);
+    assert.deepEqual(savedKeys[1], ['_old_key']);
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 1);
 
     // افزودن دستی کلید
     const input = doc.querySelector('[data-bwt-source-key]');
     input.value = '_sorna_tracking_code';
     doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => savedKeys.length === 2);
-    assert.ok(savedKeys[1].includes('_sorna_tracking_code'));
-    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 3);
+    await waitFor(() => savedKeys.length === 3);
+    assert.deepEqual(savedKeys[2], ['_old_key', '_sorna_tracking_code']);
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 2);
 
-    // کلید نامعتبر
-    input.value = 'bad key!';
+    // کلید خالی رد می‌شود
+    input.value = '   ';
     doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
-    await waitFor(() => /معتبر نیست/.test(doc.querySelector('[data-bwt-scan-status]').textContent));
-    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /معتبر نیست/);
+    await waitFor(() => /نام کلید/.test(doc.querySelector('[data-bwt-scan-status]').textContent));
+    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /نام کلید/);
+    dom.window.close();
+}
+
+/* ================= ۲.a) نمونهٔ بدون کد و بدون نشانهٔ سورناپست ================= */
+{
+    const markup = `<!doctype html><html><body>
+        <select data-bwt-scan-limit><option value="100">۱۰۰</option><option value="500">۵۰۰</option></select>
+        <button data-bwt-scan>scan</button>
+        <div data-bwt-scan-status></div>
+        <div data-bwt-scan-result></div>
+        <div data-bwt-source-chips></div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
+    const limits = [];
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', scanNonce: 's-nonce' };
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        if (body.get('action') !== 'bwt_scan_sources') throw new Error('unexpected');
+        limits.push(body.get('limit'));
+        return jsonResponse({
+            sampled: 500, limit: 500, with_code: 0, detected: 0, sorna_orders: 0,
+            sorna_keys: [], storage: { hpos: 'posts', label: 'جدول سفارش کلاسیک' },
+            keys: [{ key: '_billing_phone', orders: 500, tracking_like: 0, samples: ['0912...'], post_service: false, selected: false, builtin: false, suggested: false }],
+            notes: { orders: '', samples: [], enabled: true }, tables: [], source_keys: [],
+        });
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    const select = doc.querySelector('[data-bwt-scan-limit]');
+    select.value = '500';
+    doc.querySelector('[data-bwt-scan]').click();
+    await waitFor(() => doc.querySelectorAll('[data-bwt-scan-result] tbody tr').length === 1);
+    assert.equal(limits[0], '500');
+    assert.match(doc.querySelector('[data-bwt-scan-result]').textContent, /جدول اختصاصی/);
+    assert.match(doc.querySelector('[data-bwt-scan-status]').textContent, /جدول سفارش کلاسیک/);
     dom.window.close();
 }
 

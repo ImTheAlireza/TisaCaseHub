@@ -5,6 +5,9 @@
 ولی «/» مستقیم به صفحهٔ پیش‌نمایش می‌رود (بدون فهرست پوشه).
 
     python3 tools/preview-tracking.py [port]        # پیش‌فرض 8000
+
+صفحهٔ پیش‌فرض، پیش‌نمایش پیشخوان است؛ فرم مشتری در
+/design/preview/tracking-form/index.html در دسترس است.
 """
 
 import os
@@ -12,7 +15,7 @@ import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LANDING = "/design/preview/tracking-form/index.html"
+LANDING = "/design/preview/admin/index.html"
 
 
 class PreviewHandler(SimpleHTTPRequestHandler):

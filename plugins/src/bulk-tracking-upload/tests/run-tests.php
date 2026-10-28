@@ -947,7 +947,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.1.0') !== false);
+    && strpos($hero, 'v3.2.0') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -968,6 +968,26 @@ t('صفحهٔ اصلی، ابزار «پیدا کردن کلید با کد» و 
     && strpos($page, 'name="table_source_table"') !== false
     && strpos($page, 'name="table_source_code_col"') !== false);
 t('جدول‌های مشکوک در صفحهٔ تنظیمات فهرست می‌شوند', strpos($page, 'bwt-chip--table') !== false && strpos($page, 'wp_sorna_orders') !== false);
+
+t('صفحهٔ اصلی چهار بخش شماره‌دار ۱ تا ۴ و کارت‌های تازهٔ v3.2 را دارد',
+    strpos($page, '۱. منبع کد رهگیری') !== false
+    && strpos($page, '۲. پیدا کردن کلید با خود کد رهگیری') !== false
+    && strpos($page, '۳. همگام‌سازی سفارش‌ها') !== false
+    && strpos($page, '۴. تنظیمات') !== false
+    && strpos($page, 'bwt-card__head') !== false
+    && strpos($page, 'bwt-stack') !== false
+    && strpos($page, 'تعداد سفارش نمونه') !== false
+    && strpos($page, '<option value="300" selected>') !== false);
+t('صفحهٔ اصلی، همهٔ قلاب‌های JS تازه را دارد',
+    strpos($page, 'data-bwt-scan-limit') !== false
+    && strpos($page, 'data-bwt-scan-result') !== false
+    && strpos($page, 'data-bwt-find-key-result') !== false
+    && strpos($page, 'data-bwt-sync-counters') !== false
+    && strpos($page, 'data-bwt-source-chips') !== false);
+t('صفحهٔ اصلی، پیش‌فرض نمونه‌گیری ۳۰۰ سفارش است', BWT_SCAN_SAMPLE_ORDERS === 300);
+$notice_probe = bwt_admin_notice('danger', 'x');
+t('پیام‌های پیشخوان کلاس bwt-notice دارند',
+    strpos($notice_probe, 'bwt-notice') !== false && strpos($notice_probe, 'tisa-notice--danger') !== false);
 
 $_POST = array(
     'bwt_manual_save'      => '1',
@@ -1179,7 +1199,7 @@ t('توابع قدیمی آپلود CSV حذف شده‌اند',
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
 t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.1.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.1.0');
+t('نسخهٔ افزونه 3.2.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.2.0');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";
