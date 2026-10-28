@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.4.2
+ * Version: 3.4.3
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.4.2');
+define('BWT_VERSION', '3.4.3');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);

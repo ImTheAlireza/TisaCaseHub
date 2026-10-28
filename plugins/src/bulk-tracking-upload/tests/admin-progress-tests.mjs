@@ -434,20 +434,22 @@ async function trackingDom(payload) {
 {
     // قاعده‌های چیدمان در CSS سمت کاربر (نه پیشخوان)
     const css = fs.readFileSync(new URL('../assets/tracking.css', import.meta.url), 'utf8');
-    assert.match(css, /\.bwt-track__form\s*\{[^}]*display:\s*flex/, 'ردیف فرم فلکس است');
-    assert.match(css, /\.bwt-track__form\s*\{[^}]*align-items:\s*flex-end/, 'تراز از پایین برای هم‌ارتفاعی فیلد و دکمه');
-    assert.match(css, /\.bwt-track__fields\s*\{[^}]*display:\s*contents/, 'فیلدها فرزندِ همان ردیف‌اند');
-    assert.match(css, /\.bwt-track__fields > \.bwt-field\s*\{[^}]*max-width:\s*420px/, 'عرض فیلدها سقف دارد تا کشیده نشود');
+    assert.match(css, /\.bwt-track__form\s*\{[^}]*display:\s*grid/, 'ردیف فرم گرید است');
+    assert.match(css, /grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\) 210px/, 'دو فیلد کشسان کل عرض را می‌گیرند و دکمه ستون ثابت دارد');
+    assert.match(css, /\.bwt-track__form\s*\{[^}]*align-items:\s*end/, 'تراز از پایین برای هم‌ارتفاعی فیلد و دکمه');
+    assert.match(css, /\.bwt-track__fields\s*\{[^}]*display:\s*contents/, 'فیلدها فرزندِ همان گرید می‌شوند');
+    assert.match(css, /\.bwt-track__fields > \.bwt-field\s*\{[^}]*max-width:\s*none/, 'فیلدها سقف عرض ندارند و فضای خالی نمی‌گذارند');
+    assert.doesNotMatch(css, /max-width:\s*420px/, 'سقف ۴۲۰px برداشته شد تا کادر کامل پر شود');
     assert.match(css, /\.bwt-track\s*\{[^}]*container-type:\s*inline-size/, 'کارت ظرف کوئری است');
-    assert.match(css, /\.bwt-track__head\s*\{[^}]*flex:\s*1 1 100%/, 'تیتر و توضیح یک سطر کامل بالای فیلدها هستند');
-    assert.match(css, /\.bwt-track__head\s*\{[^}]*max-width:\s*100%/, 'عرض سرصفحه محدود و باریک نیست');
+    assert.match(css, /\.bwt-track__head\s*\{[^}]*grid-column:\s*1 \/ -1/, 'تیتر و توضیح یک سطر کامل بالای فیلدها هستند');
     assert.match(css, /\.bwt-track__head\s*\{[^}]*text-align:\s*start/, 'سرصفحه راست‌چین می‌ماند حتی اگر قالب وسط‌چین کند');
     assert.match(css, /\.bwt-track__head-title\s*\{[^}]*display:\s*block/, 'تیتر در سطر جدا از توضیح است');
     assert.match(css, /\.bwt-track__head-text\s*\{[^}]*display:\s*block/, 'توضیح زیر تیتر می‌آید');
     assert.doesNotMatch(css, /@container bwt-track \(max-width:\s*900px\)/, 'سرصفحه مشروط به عرض کارت نیست و همیشه بالاست');
+    assert.match(css, /@container bwt-track \(max-width:\s*860px\)/, 'شکست ۸۶۰px بر اساس عرض کارت');
+    assert.match(css, /@container bwt-track \(max-width:\s*560px\)/, 'شکست ۵۶۰px بر اساس عرض کارت');
     assert.match(css, /@supports not \(display: contents\)/, 'برای مرورگرهای قدیمی جانشین display:contents هست');
     assert.match(css, /@supports not \(container-type: inline-size\)/, 'برای مرورگرهای قدیمی جانشین container query هست');
-    assert.match(css, /@container bwt-track \(max-width:\s*640px\)/, 'شکست ۶۴۰px بر اساس عرض کارت');
     assert.match(css, /\.bwt-track\s*\{[^}]*max-width:\s*100%/, 'کارت تمام‌عرض ستون محتواست');
     assert.doesNotMatch(css, /max-width:\s*640px;\s*\n\s*margin:\s*0 auto/, 'کارت دیگر وسط‌چین و باریک نیست');
     const adminCss = fs.readFileSync(new URL('../assets/admin.css', import.meta.url), 'utf8');
