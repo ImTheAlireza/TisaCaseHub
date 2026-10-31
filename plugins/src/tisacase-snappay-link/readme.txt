@@ -3,7 +3,7 @@ Contributors: ImTheAlireza
 Tags: woocommerce, snappay, installment, manual-payment, rtl
 Requires at least: 6.4
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -25,6 +25,9 @@ License URI: https://www.gnu.org/licenses/gpl-2.0.html
 از تنظیمات درگاه می‌توان لینک، عنوان و توضیح روش، متن معرفی کارمزد، نرخ و عنوان کارمزد، عنوان‌های مبلغ، هشدار و یادآوری کد، متن تأیید هشدار، عنوان/راهنمای فیلد کد رهگیری، متن دکمه تسویه‌حساب، دکمه پرداخت، دکمه کپی، دکمه ثبت پرداخت، پیام‌های قبل/بعد از پرداخت، پیام تأیید نهایی، راهنمای کپی، توضیح زیر دکمه و رنگ دکمه/متن آن را تغییر داد.
 
 == Changelog ==
+
+= 1.2.1 =
+* حذف پیام تکراری کد رهگیری از بالای دکمهٔ لینک پرداخت.
 
 = 1.2.0 =
 * بازطراحی مبلغ نهایی و دکمه کپی با کنتراست و اندازهٔ خواناتر.

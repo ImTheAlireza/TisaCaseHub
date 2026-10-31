@@ -203,7 +203,6 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         echo '<button type="button" class="tspay-copy-button" data-tspay-copy="' . esc_attr( $copy_amount ) . '" data-copy-success="' . esc_attr( $copy_success ) . '"><svg class="tspay-copy-icon" aria-hidden="true" viewBox="0 0 24 24" fill="none"><rect x="8" y="8" width="12" height="12" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" stroke="currentColor" stroke-width="1.8"/></svg><span data-copy-label>' . esc_html( $copy_button ) . '</span></button>';
         echo '<p class="tspay-copy-feedback" role="status" aria-live="polite">مبلغ را با همین واحد در لینک وارد کنید.</p></div>';
         if ( $warning ) { echo '<div class="tspay-warning" role="alert"><strong>هشدار مهم</strong><div>' . wp_kses_post( wpautop( $warning ) ) . '</div></div>'; }
-        if ( $can_report && $this->setting_text( 'tracking_reminder' ) ) { echo '<div class="tspay-tracking-reminder">' . wp_kses_post( wpautop( $this->setting_text( 'tracking_reminder' ) ) ) . '</div>'; }
         if ( $can_pay ) {
             echo '<a class="tspay-button" style="' . esc_attr( $style ) . '" href="' . esc_url( $url ) . '" target="_blank" rel="noopener noreferrer">' . esc_html( $button ) . '<span aria-hidden="true"> ←</span></a>';
             if ( $this->setting_text( 'payment_footnote' ) ) { echo '<p class="tspay-footnote">' . wp_kses_post( wpautop( $this->setting_text( 'payment_footnote' ) ) ) . '</p>'; }
