@@ -1,0 +1,663 @@
+/*!
+ * TisaCase — فرم پیگیری سفارش | استایل سمت کاربر (v3.5) — کارت دوستونه
+ * ------------------------------------------------------------------
+ * هدف: هم‌شکل با قالب فروشگاه (Woodmart) و نه یک «جزیرهٔ» مستقل.
+ * ۱) هیچ فونت/رنگ اجباری‌ای تحمیل نمی‌شود؛ اول از توکن‌های قالب
+ *    (--wd-primary-color / --wd-form-height / --wd-brd-radius ...)
+ *    و بعد از توکن‌های TisaCase (--tisa-*) و در آخر فال‌بک استفاده می‌شود.
+ * ۲) ارتفاع کنترل‌ها = ارتفاع کنترل‌های قالب؛ گوشه‌ها = گوشهٔ قالب
+ *    (با کف ۸px تا اگر قالب «صفر» گذاشته بود، تیز نشود).
+ * ۳) ساختار: کارت آرام، لیبل‌های ساده، دکمهٔ اصلی همرنگ برند.
+ * RTL با ویژگی‌های منطقی نوشته شده است.
+ */
+
+.bwt-track {
+	/* رنگ برند: اول رنگ قالب، بعد برند تیساکیس */
+	--bwt-primary: var(--wd-primary-color, var(--tisa-primary, #0E7C6B));
+	--bwt-on-primary: #fff;
+	--bwt-text: var(--wd-text-color, var(--tisa-text, #2A3439));
+	--bwt-title: var(--wd-title-color, var(--tisa-ink, #1F2A2E));
+	--bwt-muted: var(--color-gray-500, var(--tisa-muted, #77828A));
+	--bwt-border: var(--brdcolor-gray-300, var(--tisa-border, #E3E1DA));
+	--bwt-border-strong: var(--wd-form-brd-color-focus, #C9DCD7);
+	--bwt-surface: var(--wd-main-bgcolor, #fff);
+	--bwt-surface-2: var(--bgcolor-gray-100, #FAFAF8);
+	--bwt-danger: var(--tisa-danger, #B5453A);
+	--bwt-danger-soft: var(--tisa-danger-soft, #FBECEA);
+	--bwt-success: var(--tisa-success, #1A7F37);
+
+	/* هندسه: هم‌اندازهٔ کنترل‌های قالب */
+	--bwt-radius: max(var(--wd-brd-radius, 0px), 8px);
+	--bwt-height: var(--wd-form-height, 44px);
+	--bwt-fs: var(--wd-text-font-size, 14px);
+	--bwt-fs-sm: 13px;
+	--bwt-gap: 16px;
+	--bwt-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 12px 32px -18px rgba(31, 42, 46, .22);
+
+	box-sizing: border-box;
+	position: relative;
+	width: 100%;
+	max-width: 100%;
+	margin: 0;
+	padding: 18px 22px 20px;
+	border: 1px solid var(--bwt-border);
+	border-radius: 14px;
+	border-radius: max(var(--wd-brd-radius, 0px), 14px);
+	background: var(--bwt-surface);
+	color: var(--bwt-text);
+	font-size: var(--bwt-fs);
+	line-height: 1.8;
+	box-shadow: var(--bwt-shadow);
+
+	/* چیدمان A+: کارت تمام‌عرضِ ستون محتوا و واکنش‌گرا با عرض خودش */
+	container-type: inline-size;
+	container-name: bwt-track;
+}
+
+.bwt-track *,
+.bwt-track *::before,
+.bwt-track *::after {
+	box-sizing: border-box;
+}
+
+/* ---------- چیدمان: متن معرفی + پنل فرم ---------- */
+.bwt-track__layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 18px;
+	align-items: center;
+}
+
+.bwt-track__head {
+	display: flex;
+	align-items: flex-start;
+	gap: 14px;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	text-align: start;
+	color: var(--bwt-muted);
+	font-size: 12.5px;
+	line-height: 1.9;
+}
+
+.bwt-track__badge {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 46px;
+	height: 46px;
+	border-radius: 14px;
+	background: var(--bwt-surface-2);
+	background: color-mix(in srgb, var(--bwt-primary) 10%, #fff);
+	color: var(--bwt-primary);
+}
+
+.bwt-track__badge svg {
+	width: 23px;
+	height: 23px;
+}
+
+.bwt-track__head-body {
+	min-width: 0;
+}
+
+.bwt-track__head-title {
+	display: block;
+	margin: 0 0 3px;
+	color: var(--bwt-title);
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1.7;
+}
+
+.bwt-track__head-text {
+	display: block;
+	max-width: 54ch;
+	margin: 0;
+	padding: 0;
+	font-size: 12.5px;
+	line-height: 1.95;
+}
+
+/* پنل فرم: کادر آرام داخل کارت تا فیلدها کشیده به‌نظر نرسند */
+.bwt-track__panel {
+	min-width: 0;
+	padding: 16px;
+	border: 1px solid var(--bwt-border);
+	border-radius: 12px;
+	border-radius: max(var(--wd-brd-radius, 0px), 12px);
+	background: var(--bwt-surface-2);
+	background: color-mix(in srgb, var(--bwt-primary) 4%, var(--bwt-surface));
+}
+
+.bwt-track__form {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: 12px;
+	align-items: end;
+	margin: 0;
+}
+
+.bwt-track__fields {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	gap: 12px;
+	min-width: 0;
+}
+
+.bwt-track__fields > .bwt-field {
+	min-width: 0;
+	width: 100%;
+	max-width: none;
+}
+
+.bwt-track .bwt-track__form > .bwt-btn {
+	width: 100%;
+	height: 46px;
+	min-height: 46px;
+	margin: 4px 0 0;
+	font-size: 14px;
+}
+
+.bwt-track__btn-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.bwt-track__btn-icon svg {
+	width: 17px;
+	height: 17px;
+}
+
+/* قالب‌هایی که همهٔ پاراگراف‌ها/دیوها را وسط‌چین می‌کنند نباید فرم را به‌هم بزنند */
+.bwt-track__form p,
+.bwt-track__form div,
+.bwt-track__form span,
+.bwt-track__form b,
+.bwt-track__head p,
+.bwt-track__head div,
+.bwt-track__head span,
+.bwt-track__head b {
+	text-align: start;
+}
+
+.bwt-field {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	width: 100%;
+	max-width: none;
+	margin: 0;
+}
+
+.bwt-field__label {
+	display: block;
+	margin: 0 0 6px;
+	color: var(--bwt-title);
+	font-size: var(--bwt-fs-sm);
+	font-weight: 600;
+	line-height: 1.6;
+}
+
+.bwt-field__hint {
+	margin: 6px 0 0;
+	color: var(--bwt-muted);
+	font-size: 11.5px;
+	line-height: 1.7;
+}
+
+.bwt-track .bwt-field__input {
+	display: block;
+	width: 100%;
+	height: var(--bwt-height);
+	min-height: var(--bwt-height);
+	margin: 0;
+	padding: 0 14px;
+	border: 1px solid var(--wd-form-brd-color, var(--bwt-border));
+	border-radius: var(--bwt-radius, 10px);
+	background: var(--bwt-surface);
+	color: var(--bwt-title);
+	font-family: inherit;
+	font-size: var(--bwt-fs);
+	line-height: 1.4;
+	box-shadow: none;
+	transition: border-color .2s ease, box-shadow .2s ease;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.bwt-track .bwt-field__input::placeholder {
+	color: var(--bwt-muted);
+	color: color-mix(in srgb, var(--bwt-muted) 70%, transparent);
+	opacity: 1;
+}
+
+.bwt-track .bwt-field__input:focus,
+.bwt-track .bwt-field__input:focus-visible {
+	border-color: var(--bwt-primary);
+	outline: 0;
+	box-shadow: 0 0 0 3px rgba(14, 124, 107, .18);
+	box-shadow: 0 0 0 3px color-mix(in srgb, var(--bwt-primary) 18%, transparent);
+}
+
+.bwt-track .bwt-field__input[dir="ltr"] {
+	direction: ltr;
+	text-align: left;
+	font-variant-numeric: tabular-nums;
+}
+
+/* ---------- دکمه‌ها: هم‌رفتار با دکمه‌های قالب ---------- */
+.bwt-track .bwt-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 8px;
+	height: var(--bwt-height);
+	margin: 0;
+	padding: 0 22px;
+	border: 1px solid transparent;
+	border-radius: var(--bwt-radius);
+	background: var(--bwt-surface-2);
+	color: var(--bwt-title);
+	font-family: inherit;
+	font-size: var(--bwt-fs-sm);
+	font-weight: 600;
+	line-height: 1;
+	text-align: center;
+	text-decoration: none;
+	cursor: pointer;
+	transition: background .2s ease, color .2s ease, border-color .2s ease, transform .12s ease;
+	-webkit-appearance: none;
+	appearance: none;
+}
+
+.bwt-track .bwt-btn:active {
+	transform: translateY(1px);
+}
+
+.bwt-track .bwt-btn--primary {
+	background: var(--bwt-primary);
+	border-color: var(--bwt-primary);
+	color: var(--bwt-on-primary);
+}
+
+.bwt-track .bwt-btn--primary:hover {
+	background: var(--bwt-primary);
+	border-color: var(--bwt-primary);
+	color: var(--bwt-on-primary);
+	filter: brightness(.93);
+}
+
+.bwt-track .bwt-btn--ghost {
+	border-color: var(--bwt-primary);
+	background: transparent;
+	color: var(--bwt-primary);
+}
+
+.bwt-track .bwt-btn--ghost:hover {
+	background: rgba(14, 124, 107, .08);
+	background: color-mix(in srgb, var(--bwt-primary) 8%, transparent);
+	color: var(--bwt-primary);
+}
+
+.bwt-track .bwt-btn--soft {
+	border-color: transparent;
+	background: var(--bwt-surface-2);
+	color: var(--bwt-title);
+}
+
+.bwt-track .bwt-btn--soft:hover {
+	background: #F0F0EE;
+	background: color-mix(in srgb, var(--bwt-text) 6%, var(--bwt-surface-2));
+	color: var(--bwt-title);
+}
+
+.bwt-track .bwt-btn[disabled] {
+	opacity: .6;
+	cursor: progress;
+}
+
+/* ---------- نتیجه ---------- */
+.bwt-track__result {
+	margin-top: 20px;
+	padding: 18px 20px;
+	border: 1px solid var(--bwt-border);
+	border-radius: 12px;
+	border-radius: max(var(--wd-brd-radius, 0px), 12px);
+	background: var(--bwt-surface-2);
+	font-size: var(--bwt-fs);
+	line-height: 1.9;
+	animation: bwt-fade .18s ease both;
+}
+
+.bwt-track__result[hidden] {
+	display: none;
+}
+
+.bwt-track__result--ready {
+	border-color: var(--bwt-border-strong);
+	border-color: color-mix(in srgb, var(--bwt-success) 26%, var(--bwt-border));
+	background: var(--bwt-surface);
+}
+
+.bwt-track__result--error {
+	border-color: var(--bwt-danger);
+	border-color: color-mix(in srgb, var(--bwt-danger) 30%, var(--bwt-border));
+	background: var(--bwt-danger-soft);
+	color: var(--bwt-danger);
+}
+
+.bwt-result__title {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 14px;
+	color: var(--bwt-title);
+	font-size: 15px;
+	font-weight: 700;
+	line-height: 1.5;
+}
+
+.bwt-track__result--error .bwt-result__title {
+	color: var(--bwt-danger);
+}
+
+.bwt-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 26px;
+	height: 26px;
+	border-radius: 50%;
+	background: rgba(26, 127, 55, .12);
+	background: color-mix(in srgb, var(--bwt-success) 14%, transparent);
+	color: var(--bwt-success);
+	font-size: 13px;
+	line-height: 1;
+}
+
+.bwt-track__result--error .bwt-badge {
+	background: rgba(181, 69, 58, .12);
+	background: color-mix(in srgb, var(--bwt-danger) 14%, transparent);
+	color: var(--bwt-danger);
+}
+
+/* ---------- فایل PDF جایگزین (فقط در حالت خطا) ---------- */
+.bwt-track__fallback {
+	margin-top: 14px;
+	padding: 18px 20px;
+	border: 1px dashed var(--bwt-border-strong);
+	border: 1px dashed color-mix(in srgb, var(--bwt-primary) 34%, var(--bwt-border));
+	border-radius: 12px;
+	border-radius: max(var(--wd-brd-radius, 0px), 12px);
+	background: var(--bwt-surface);
+	text-align: center;
+	animation: bwt-fade .18s ease both;
+}
+
+.bwt-track__fallback[hidden] {
+	display: none;
+}
+
+.bwt-track__fallback .bwt-track__fallback-text {
+	margin: 0 auto 14px;
+	max-width: 46em;
+	color: var(--bwt-text);
+	font-size: var(--bwt-fs-sm);
+	line-height: 2;
+}
+
+.bwt-track__fallback .bwt-btn {
+	min-width: 215px;
+}
+
+.bwt-track__fallback-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+}
+
+.bwt-track__fallback-icon svg {
+	display: block;
+	width: 16px;
+	height: 16px;
+}
+
+/* ردیف‌های اطلاعات سفارش */
+.bwt-rows {
+	display: grid;
+	gap: 2px;
+	margin: 0;
+	padding: 0;
+}
+
+.bwt-row {
+	display: grid;
+	grid-template-columns: 148px 1fr;
+	gap: 10px;
+	padding: 8px 0;
+	border-bottom: 1px dashed var(--bwt-border);
+}
+
+.bwt-row:last-child {
+	border-bottom: 0;
+}
+
+.bwt-row__label {
+	margin: 0;
+	color: var(--bwt-muted);
+	font-size: var(--bwt-fs-sm);
+	font-weight: 400;
+}
+
+.bwt-row__value {
+	margin: 0;
+	color: var(--bwt-title);
+	font-size: var(--bwt-fs-sm);
+	font-weight: 600;
+	word-break: break-word;
+}
+
+/* کد رهگیری */
+.bwt-codes {
+	display: grid;
+	gap: 12px;
+	margin-top: 16px;
+}
+
+.bwt-code {
+	padding: 14px 16px;
+	border: 1px dashed var(--bwt-border-strong);
+	border: 1px dashed color-mix(in srgb, var(--bwt-primary) 38%, var(--bwt-border));
+	border-radius: var(--bwt-radius, 10px);
+	background: var(--bwt-surface);
+	background: color-mix(in srgb, var(--bwt-primary) 4%, var(--bwt-surface));
+	text-align: center;
+}
+
+.bwt-code__label {
+	margin: 0 0 6px;
+	color: var(--bwt-muted);
+	font-size: 11.5px;
+	letter-spacing: .2px;
+}
+
+.bwt-code__value {
+	display: block;
+	margin: 0 0 12px;
+	color: var(--bwt-title);
+	font-family: var(--tisa-mono, ui-monospace, "SFMono-Regular", Consolas, monospace);
+	font-size: 18px;
+	font-weight: 700;
+	letter-spacing: 1.4px;
+	direction: ltr;
+	word-break: break-all;
+	font-variant-numeric: tabular-nums;
+}
+
+.bwt-code__actions {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: 8px;
+}
+
+.bwt-code__actions .bwt-btn {
+	height: calc(var(--bwt-height) - 6px);
+	padding: 0 16px;
+	font-size: 12.5px;
+}
+
+/* حالت انتظار */
+.bwt-pending {
+	margin: 0;
+}
+
+.bwt-pending p {
+	margin: 0 0 10px;
+	color: var(--bwt-text);
+	font-size: var(--bwt-fs-sm);
+	line-height: 2;
+}
+
+.bwt-pending p:last-child {
+	margin-bottom: 0;
+}
+
+.bwt-result__actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin-top: 14px;
+}
+
+.bwt-poll-note {
+	margin: 12px 0 0;
+	color: var(--bwt-muted);
+	font-size: 11.5px;
+	font-variant-numeric: tabular-nums;
+}
+
+.bwt-spinner {
+	margin: 0;
+	color: var(--bwt-muted);
+	font-size: var(--bwt-fs-sm);
+}
+
+.bwt-spinner::before {
+	content: "";
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	margin-inline-end: 8px;
+	border: 2px solid rgba(14, 124, 107, .3);
+	border: 2px solid color-mix(in srgb, var(--bwt-primary) 30%, transparent);
+	border-top-color: var(--bwt-primary);
+	border-radius: 50%;
+	vertical-align: -1px;
+	animation: bwt-spin .7s linear infinite;
+}
+
+@keyframes bwt-spin {
+	to { transform: rotate(360deg); }
+}
+
+@keyframes bwt-fade {
+	from { opacity: 0; transform: translateY(4px); }
+	to   { opacity: 1; transform: none; }
+}
+
+/* ---------- واکنش‌گرایی بر اساس عرض خودِ کارت ---------- */
+@container bwt-track (min-width: 900px) {
+	.bwt-track__layout {
+		grid-template-columns: minmax(0, 1fr) minmax(360px, 580px);
+		gap: 34px;
+	}
+}
+
+@container bwt-track (max-width: 620px) {
+	.bwt-track__fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.bwt-track__badge {
+		width: 40px;
+		height: 40px;
+		border-radius: 12px;
+	}
+}
+
+/* مرورگرهای قدیمی بدون container query: چیدمان از روی عرض پنجره */
+@supports not (container-type: inline-size) {
+	@media (min-width: 1000px) {
+		.bwt-track__layout {
+			grid-template-columns: minmax(0, 1fr) minmax(360px, 580px);
+			gap: 30px;
+		}
+	}
+
+	@media (max-width: 640px) {
+		.bwt-track__fields {
+			grid-template-columns: minmax(0, 1fr);
+		}
+	}
+}
+
+/* ---------- موبایل ---------- */
+@media (max-width: 782px) {
+	.bwt-track {
+		padding: 16px;
+	}
+
+	.bwt-track__form {
+		gap: 14px;
+	}
+
+	.bwt-row {
+		grid-template-columns: 1fr;
+		gap: 2px;
+	}
+
+	.bwt-row__label {
+		font-size: 11.5px;
+	}
+
+	.bwt-code__value {
+		font-size: 16px;
+	}
+
+	.bwt-code__actions .bwt-btn {
+		flex: 1 1 100%;
+	}
+
+	.bwt-track__fallback {
+		padding: 16px;
+	}
+
+	.bwt-track__fallback .bwt-track__fallback-text {
+		font-size: 12.5px;
+	}
+
+	.bwt-track__fallback .bwt-btn {
+		display: flex;
+		width: 100%;
+		min-width: 0;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.bwt-track *,
+	.bwt-track *::before,
+	.bwt-track *::after {
+		animation-duration: .001ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: .001ms !important;
+	}
+}
