@@ -211,8 +211,9 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="tspay-report-form">';
             echo '<input type="hidden" name="action" value="tspay_report_paid"><input type="hidden" name="order_id" value="' . esc_attr( $order->get_id() ) . '"><input type="hidden" name="order_key" value="' . esc_attr( $order->get_order_key() ) . '">';
             wp_nonce_field( 'tspay_report_paid_' . $order->get_id() . '_' . $order->get_order_key() );
-            echo '<label class="tspay-tracking-field"><span class="tspay-tracking-label">' . esc_html( $this->setting_text( 'tracking_field_label' ) ?: 'کد رهگیری اسنپ‌پی' ) . ' <em>الزامی</em></span><input type="text" name="tspay_tracking_code" maxlength="120" required autocomplete="off" dir="ltr" placeholder="' . esc_attr( $this->setting_text( 'tracking_placeholder' ) ?: 'کد رهگیری درج‌شده در نتیجه پرداخت' ) . '"><small>' . esc_html( $this->setting_text( 'tracking_help' ) ?: 'کد را دقیقاً از صفحه نتیجه پرداخت اسنپ‌پی وارد کنید.' ) . '</small></label>';
+            echo '<label class="tspay-tracking-field"><span class="tspay-tracking-label">' . esc_html( $this->setting_text( 'tracking_field_label' ) ?: 'کد رهگیری اسنپ‌پی' ) . ' <em>الزامی</em></span><input type="text" name="tspay_tracking_code" maxlength="120" required autocomplete="off" dir="ltr" placeholder="' . esc_attr( $this->setting_text( 'tracking_placeholder' ) ?: 'کد رهگیری درج‌شده در نتیجه پرداخت' ) . '"></label>';
             echo '<button type="submit" class="tspay-report-button"><span class="tspay-report-check" aria-hidden="true">✓</span>' . esc_html( $this->report_button_text() ) . '</button>';
+            echo '<small class="tspay-tracking-help">' . esc_html( $this->setting_text( 'tracking_help' ) ?: 'کد را دقیقاً از صفحه نتیجه پرداخت اسنپ‌پی وارد کنید.' ) . '</small>';
             if ( $this->report_hint_text() ) { echo '<p>' . wp_kses_post( wpautop( $this->report_hint_text() ) ) . '</p>'; }
             echo '</form>';
         }
