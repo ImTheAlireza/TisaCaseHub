@@ -480,3 +480,71 @@ select.bwt-input { padding-inline-end: 30px; }
 
 /* یادداشت زیر کارت‌های خلاصه (v3.3.1) */
 .bwt-kpi-note { margin: -6px 2px 0; font-size: 11.5px; line-height: 1.9; color: var(--tisa-muted, #77828A); }
+
+/* ---------- آپلود فایل CSV (v3.6) ---------- */
+.bwt-csv-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: 12px;
+}
+
+.bwt-file {
+	position: relative;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex: 1 1 320px;
+	min-width: 0;
+	margin: 0;
+	padding: 12px 14px;
+	border: 1px dashed var(--tisa-border-strong, #C9DCD7);
+	border-radius: 12px;
+	background: #FAFAF8;
+	cursor: pointer;
+	transition: border-color .18s ease, background .18s ease;
+}
+
+.bwt-file:hover,
+.bwt-file:focus-within {
+	border-color: var(--tisa-primary, #0E7C6B);
+	background: #F4FAF8;
+}
+
+.bwt-file input[type="file"] {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+	cursor: pointer;
+}
+
+.bwt-file__icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	background: #EAF4F1;
+	color: var(--tisa-primary, #0E7C6B);
+}
+
+.bwt-file__icon svg { width: 20px; height: 20px; }
+
+.bwt-file__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bwt-file__text b { font-size: 12.5px; color: var(--tisa-ink, #1F2A2E); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bwt-file__text small { font-size: 11px; color: var(--tisa-muted, #77828A); line-height: 1.7; }
+
+.bwt-csv-form > .bwt-btn { flex: 0 0 auto; align-self: center; }
+
+.bwt-csv-job { margin-top: 14px; }
+.bwt-csv-job[hidden] { display: none; }
+
+.bwt-wrap table.bwt-table--compact th,
+.bwt-wrap table.bwt-table--compact td { padding: 6px 10px; font-size: 11.5px; }
+.bwt-table__num { width: 60px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.bwt-hint ul { margin: 6px 0 0; padding-inline-start: 18px; }

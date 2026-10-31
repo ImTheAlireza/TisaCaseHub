@@ -1,5 +1,5 @@
-/* کد رهگیری پستی — رفتار پیشخوان (v3.3)
-   سه بخش: ذخیرهٔ کلید متای کد، همگام‌سازی دسته‌ای، پاک‌سازی دسته‌ای. */
+/* کد رهگیری پستی — رفتار پیشخوان (v3.6)
+   چهار بخش: ذخیرهٔ کلید متای کد، همگام‌سازی دسته‌ای، آپلود CSV و پاک‌سازی دسته‌ای. */
 (function () {
     'use strict';
 
@@ -398,10 +398,137 @@
         if (resumeButton) resumeButton.addEventListener('click', resume);
     }
 
+    function initCsvUploader() {
+        var form = document.querySelector('[data-bwt-csv-form]');
+        var fileInput = document.querySelector('[data-bwt-csv-file]');
+        var nameNode = document.querySelector('[data-bwt-csv-name]');
+        var jobNode = document.querySelector('[data-bwt-csv-job]');
+        var conf = config();
+
+        if (fileInput && nameNode) {
+            fileInput.addEventListener('change', function () {
+                var file = fileInput.files && fileInput.files[0];
+                nameNode.textContent = file ? file.name : 'فایل CSV را انتخاب کنید';
+            });
+        }
+
+        if (!jobNode || !conf.ajaxUrl || !conf.csvNonce) return;
+
+        var progressNode = jobNode.querySelector('[data-bwt-csv-progress]');
+        var countersNode = jobNode.querySelector('[data-bwt-csv-counters]');
+        var resultNode = jobNode.querySelector('[data-bwt-csv-result]');
+        var runButton = jobNode.querySelector('[data-bwt-csv-run]');
+        var resumeButton = jobNode.querySelector('[data-bwt-csv-resume]');
+        var running = false;
+        var jobId = jobNode.getAttribute('data-bwt-csv-job') || '';
+
+        function setCounters(text) {
+            if (countersNode) countersNode.textContent = text;
+        }
+
+        function update(data) {
+            var percent = Math.max(0, Math.min(100, Number(data.progress) || 0));
+            if (progressNode) progressNode.value = percent;
+            setCounters(
+                'پردازش‌شده: ' + digits(data.offset) + ' از ' + digits(data.total)
+                + ' · ثبت جدید: ' + digits(data.created)
+                + ' · به‌روزشده: ' + digits(data.updated)
+                + ' · بدون تغییر: ' + digits(data.unchanged)
+                + ' · ناموفق: ' + digits(data.invalid)
+            );
+        }
+
+        function showResult(data) {
+            if (!resultNode) return;
+            resultNode.replaceChildren();
+            var written = Number(data.created) + Number(data.updated);
+            resultNode.appendChild(notice(
+                written > 0 ? 'success' : 'warning',
+                written > 0
+                    ? 'تمام شد؛ ' + digits(written) + ' سفارش کد رهگیری گرفت (' + digits(data.created) + ' جدید، ' + digits(data.updated) + ' به‌روزشده).'
+                    : 'تمام شد؛ هیچ کدی روی سفارش‌ها نوشته نشد.'
+            ));
+
+            var skipped = Array.isArray(data.skipped) ? data.skipped : [];
+            var skippedTotal = Number(data.skipped_total) || skipped.length;
+            if (skippedTotal > 0) {
+                var body = create('tbody');
+                skipped.slice(0, 12).forEach(function (row) {
+                    var tr = create('tr');
+                    tr.appendChild(create('td', 'bwt-table__num', digits(row.line)));
+                    tr.appendChild(create('td', '', row.message || ''));
+                    tr.appendChild(create('td', '', row.value || ''));
+                    body.appendChild(tr);
+                });
+                resultNode.appendChild(create('p', 'bwt-hint', digits(skippedTotal) + ' ردیف رد شد:'));
+                resultNode.appendChild(table([
+                    { label: 'خط', className: 'bwt-table__num' },
+                    { label: 'دلیل' },
+                    { label: 'مقدار' }
+                ], body, 'bwt-table--compact'));
+            }
+
+            var errors = Array.isArray(data.errors) ? data.errors : [];
+            if (errors.length) {
+                var list = create('ul', 'bwt-hint');
+                errors.slice(0, 10).forEach(function (message) {
+                    list.appendChild(create('li', '', message));
+                });
+                resultNode.appendChild(list);
+            }
+        }
+
+        function showRetry(message) {
+            setCounters(message || 'ارتباط قطع شد؛ می‌توانید ادامه دهید.');
+            if (resumeButton) {
+                resumeButton.hidden = false;
+                resumeButton.textContent = conf.retryLabel || 'ادامهٔ ثبت';
+            }
+        }
+
+        function runBatch() {
+            return post('bwt_csv_batch', { nonce: conf.csvNonce, job_id: jobId });
+        }
+
+        async function processBatches() {
+            for (;;) {
+                var data = await runBatch();
+                update(data);
+                if (data.done) {
+                    showResult(data);
+                    return;
+                }
+                await delay(30);
+            }
+        }
+
+        async function start() {
+            if (running || !jobId) return;
+            running = true;
+            if (runButton) runButton.disabled = true;
+            if (resumeButton) resumeButton.hidden = true;
+            if (resultNode) resultNode.replaceChildren();
+            if (progressNode) progressNode.value = 0;
+            setCounters('در حال ثبت کدها روی سفارش‌ها…');
+            try {
+                await processBatches();
+            } catch (error) {
+                showRetry(error && error.message ? error.message : 'ثبت کدها متوقف شد.');
+            } finally {
+                running = false;
+                if (runButton) runButton.disabled = false;
+            }
+        }
+
+        if (runButton) runButton.addEventListener('click', start);
+        if (resumeButton) resumeButton.addEventListener('click', start);
+    }
+
     function init() {
         initCleanupProcessor();
         initSourceKeys();
         initSyncRunner();
+        initCsvUploader();
     }
 
     if (document.readyState === 'loading') {

@@ -405,6 +405,94 @@ async function trackingDom(payload) {
     dom.window.close();
 }
 
+/* ================= ۵ب) آپلود فایل CSV ================= */
+{
+    const jobId = 'c0ffee1234567890c0ffee1234567890';
+    const markup = `<!doctype html><html><body>
+        <form data-bwt-csv-form>
+            <input type="file" data-bwt-csv-file />
+            <b data-bwt-csv-name>فایل CSV را انتخاب کنید</b>
+        </form>
+        <div data-bwt-csv-job="${jobId}">
+            <progress data-bwt-csv-progress max="100" value="0"></progress>
+            <p data-bwt-csv-counters></p>
+            <button type="button" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
+            <button type="button" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+            <div data-bwt-csv-result></div>
+        </div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
+    dom.window.BWTAdmin = {
+        ajaxUrl: '/ajax',
+        csvNonce: 'csv-nonce',
+        syncNonce: 'sync-nonce',
+        cleanupNonce: 'cleanup-nonce',
+        sourceNonce: 'source-nonce',
+        retryLabel: 'ادامه',
+        genericError: 'خطا',
+    };
+    const batches = [
+        { done: false, progress: 50, offset: 10, total: 20, created: 8, updated: 1, unchanged: 1, invalid: 0 },
+        {
+            done: true, progress: 100, offset: 20, total: 20, created: 15, updated: 3, unchanged: 2, invalid: 0,
+            skipped: [{ line: 4, message: 'کد رهگیری نامعتبر است.', value: 'xx' }], skipped_total: 1, errors: [],
+        },
+    ];
+    const sent = [];
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        sent.push(body);
+        return jsonResponse(batches[Math.min(sent.length - 1, batches.length - 1)]);
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-csv-run]').click();
+    await waitFor(() => /تمام شد/.test(doc.querySelector('[data-bwt-csv-result]').textContent));
+    assert.equal(sent.length, 2, 'دو دسته تا پایان آپلود فرستاده می‌شود');
+    assert.equal(sent[0].get('action'), 'bwt_csv_batch');
+    assert.equal(sent[0].get('job_id'), jobId);
+    assert.equal(sent[0].get('nonce'), 'csv-nonce');
+    assert.match(doc.querySelector('[data-bwt-csv-counters]').textContent, /پردازش‌شده/);
+    assert.equal(doc.querySelector('[data-bwt-csv-progress]').value, 100);
+    const result = doc.querySelector('[data-bwt-csv-result]');
+    assert.match(result.textContent, /۱۸ سفارش کد رهگیری گرفت/, '۱۵ جدید + ۳ به‌روزشده');
+    assert.match(result.textContent, /۱ ردیف رد شد/);
+    assert.match(result.textContent, /کد رهگیری نامعتبر است/);
+    dom.window.close();
+}
+
+{
+    // خطای شبکه: دکمهٔ ادامه ظاهر می‌شود و کار از همان‌جا ادامه می‌یابد
+    const jobId = 'beefbeef1234567890abcdef12345678';
+    const markup = `<!doctype html><html><body>
+        <div data-bwt-csv-job="${jobId}">
+            <progress data-bwt-csv-progress max="100" value="0"></progress>
+            <p data-bwt-csv-counters></p>
+            <button type="button" data-bwt-csv-run>ثبت</button>
+            <button type="button" data-bwt-csv-resume hidden>ادامه</button>
+            <div data-bwt-csv-result></div>
+        </div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/', runScripts: 'outside-only' });
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', csvNonce: 'n', retryLabel: 'ادامه', genericError: 'خطا' };
+    let calls = 0;
+    dom.window.fetch = async () => {
+        calls += 1;
+        if (calls === 1) return errorResponse('سرور پاسخ نداد.', 500);
+        return jsonResponse({ done: true, progress: 100, offset: 5, total: 5, created: 5, updated: 0, unchanged: 0, invalid: 0 });
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-csv-run]').click();
+    await waitFor(() => doc.querySelector('[data-bwt-csv-resume]').hidden === false);
+    assert.match(doc.querySelector('[data-bwt-csv-counters]').textContent, /سرور پاسخ نداد/);
+    doc.querySelector('[data-bwt-csv-resume]').click();
+    await waitFor(() => /تمام شد/.test(doc.querySelector('[data-bwt-csv-result]').textContent));
+    assert.equal(calls, 2);
+    assert.match(doc.querySelector('[data-bwt-csv-result]').textContent, /۵ سفارش/);
+    dom.window.close();
+}
+
 /* ================= ۶) چیدمان دوستونهٔ فرم پیگیری ================= */
 {
     // فرم واقعی انتخاب‌شده: متن راهنمای کوتاه + دو فیلد + دکمه در یک ردیف
@@ -429,9 +517,8 @@ async function trackingDom(payload) {
     assert.ok(panel, 'فرم داخل پنل اختصاصی است');
     assert.ok(panel.contains(card.querySelector('form[data-bwt-form]')), 'فرم داخل پنل است و پنل کل فرم را می‌گیرد');
     assert.ok(card.querySelector('.bwt-track__badge svg'), 'آیکون معرفی (بسته) رندر می‌شود');
-    const chips = card.querySelectorAll('.bwt-track__chip');
-    assert.equal(chips.length, 3, 'سه نشان کوتاه کنار متن معرفی هست');
-    assert.match([...chips].map((c) => c.textContent).join(' '), /بدون آپلود فایل/);
+    assert.equal(card.querySelectorAll('.bwt-track__chip').length, 0, 'نشان‌های کوتاه حذف شده‌اند');
+    assert.doesNotMatch(card.textContent, /بدون آپلود فایل|کد مستقیم از پست|همیشه به‌روز/, 'متن نشان‌ها در فرم نیست');
     assert.ok(card.querySelector('.bwt-track__btn-icon svg'), 'دکمه آیکون جست‌وجو دارد');
     const submit = card.querySelector('form[data-bwt-form] button[type="submit"]');
     assert.ok(submit.classList.contains('bwt-btn--primary'));
@@ -455,7 +542,7 @@ async function trackingDom(payload) {
     assert.match(css, /\.bwt-track__head\s*\{[^}]*text-align:\s*start/, 'سرصفحه راست‌چین می‌ماند حتی اگر قالب وسط‌چین کند');
     assert.match(css, /\.bwt-track__head-title\s*\{[^}]*display:\s*block/, 'تیتر در سطر جدا از توضیح است');
     assert.match(css, /\.bwt-track__head-text\s*\{[^}]*display:\s*block/, 'توضیح زیر تیتر می‌آید');
-    assert.match(css, /\.bwt-track__chip\s*\{[^}]*border-radius:\s*999px/, 'نشان‌ها قرصی‌شکل‌اند');
+    assert.doesNotMatch(css, /bwt-track__chip/, 'استایل نشان‌های حذف‌شده پاک شده است');
     assert.match(css, /@supports not \(container-type: inline-size\)/, 'برای مرورگرهای قدیمی جانشین container query هست');
     assert.match(css, /\.bwt-track\s*\{[^}]*max-width:\s*100%/, 'کارت تمام‌عرض ستون محتواست');
     assert.doesNotMatch(css, /max-width:\s*640px;\s*\n\s*margin:\s*0 auto/, 'کارت دیگر وسط‌چین و باریک نیست');

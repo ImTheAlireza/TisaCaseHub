@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.5.0
+ * Version: 3.6.0
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,10 +15,13 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.5.0');
+define('BWT_VERSION', '3.6.0');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
+if (!defined('BWT_CSV_MAX_SIZE')) { define('BWT_CSV_MAX_SIZE', 2 * 1024 * 1024); }
+if (!defined('BWT_CSV_MAX_ROWS')) { define('BWT_CSV_MAX_ROWS', 5000); }
+if (!defined('BWT_CSV_BATCH_SIZE')) { define('BWT_CSV_BATCH_SIZE', 20); }
 define('BWT_SYNC_MAX_ORDERS', 500);
 define('BWT_SWEEP_MAX_ORDERS', 50);
 define('BWT_SWEEP_DAYS', 45);
@@ -1119,6 +1122,277 @@ function bwt_ajax_sync_batch() {
     wp_send_json_success($payload);
 }
 
+// ========== 7b. آپلود فایل CSV کد رهگیری (برای فایل‌های قدیمی) ==========
+/**
+ * ستون‌های قابل‌شناسایی در سرصفحهٔ فایل.
+ * خروجی: نگاشت «شمارهٔ سفارش» و «کد» به شمارهٔ ستون، یا آرایهٔ خالی.
+ */
+function bwt_csv_header_map($cells) {
+    // کلمات با فاصله نرمال می‌شوند تا «order_id» و «order id» یکی باشند.
+    $order_words = array('order', 'order id', 'orderid', 'order number', 'id', 'order code', 'سفارش', 'شماره سفارش', 'شناسه سفارش');
+    $code_words = array('tracking', 'code', 'tracking code', 'tracking number', 'barcode', 'post code', 'post barcode', 'رهگیری', 'کد رهگیری', 'کد', 'بارکد');
+    $map = array();
+    foreach ((array) $cells as $index => $cell) {
+        $value = strtolower(trim(bwt_normalize_digits((string) $cell)));
+        $value = str_replace(array("\xEF\xBB\xBF", '_', '-', '‌'), array('', ' ', ' ', ' '), $value);
+        $value = trim(preg_replace('/\s+/u', ' ', $value));
+        if ($value === '') {
+            continue;
+        }
+        if (!isset($map['order']) && in_array($value, $order_words, true)) {
+            $map['order'] = (int) $index;
+            continue;
+        }
+        if (!isset($map['code']) && in_array($value, $code_words, true)) {
+            $map['code'] = (int) $index;
+        }
+    }
+    return isset($map['order'], $map['code']) ? $map : array();
+}
+
+/**
+ * خواندن فایل CSV و تبدیل هر خط به «شمارهٔ سفارش + کد».
+ * خروجی: rows (معتبرها)، skipped (خط‌های ناخوانا با شمارهٔ خط)، total (خط‌های داده)، error.
+ */
+function bwt_csv_parse_rows($contents) {
+    $result = array('rows' => array(), 'skipped' => array(), 'total' => 0, 'has_header' => false, 'error' => '');
+    if (!is_string($contents) || trim($contents) === '') {
+        $result['error'] = 'فایل خالی است.';
+        return $result;
+    }
+
+    $contents = str_replace("\xEF\xBB\xBF", '', $contents);
+    $lines = preg_split('/\r\n|\r|\n/', $contents);
+    if (!is_array($lines)) {
+        $result['error'] = 'خواندن فایل ممکن نشد.';
+        return $result;
+    }
+
+    // جداکننده: هر کدام از «،» و «;» و tab که در خط اول بیشتر دیده شود.
+    $first_line = '';
+    foreach ($lines as $line) {
+        if (trim((string) $line) !== '') {
+            $first_line = (string) $line;
+            break;
+        }
+    }
+    $delimiter = ',';
+    $best = -1;
+    foreach (array(',', ';', "\t", '|') as $candidate) {
+        $count = substr_count($first_line, $candidate);
+        if ($count > $best) {
+            $best = $count;
+            $delimiter = $candidate;
+        }
+    }
+
+    $map = array();
+    $line_number = 0;
+    foreach ($lines as $line) {
+        $line_number++;
+        $line = (string) $line;
+        if (trim($line) === '') {
+            continue;
+        }
+        $cells = str_getcsv($line, $delimiter);
+        if (!is_array($cells)) {
+            continue;
+        }
+        if (!$map) {
+            $header = bwt_csv_header_map($cells);
+            if ($header) {
+                $map = $header;
+                $result['has_header'] = true;
+                continue;
+            }
+            // بدون سرصفحهٔ شناخته‌شده: ستون اول شمارهٔ سفارش، ستون دوم کد.
+            $map = array('order' => 0, 'code' => 1);
+        }
+
+        $result['total']++;
+        $order_id = isset($cells[$map['order']]) ? (int) preg_replace('/[^0-9]/', '', bwt_normalize_digits((string) $cells[$map['order']])) : 0;
+        $raw_code = isset($cells[$map['code']]) ? (string) $cells[$map['code']] : '';
+        $code = bwt_clean_code($raw_code);
+
+        if ($order_id <= 0) {
+            $result['skipped'][] = array('line' => $line_number, 'message' => 'شمارهٔ سفارش نامعتبر است.', 'value' => trim((string) $line));
+            continue;
+        }
+        if ($code === '' || !bwt_is_tracking_like($code)) {
+            $result['skipped'][] = array('line' => $line_number, 'message' => 'کد رهگیری نامعتبر است.', 'value' => trim($raw_code));
+            continue;
+        }
+        $result['rows'][] = array('order_id' => $order_id, 'code' => $code);
+    }
+
+    if (!$result['rows']) {
+        $result['error'] = 'هیچ ردیف معتبری پیدا نشد. قالب درست: order_id,tracking_code';
+    }
+    return $result;
+}
+
+/** بررسی امنیتی و خواندن فایل آپلودشده (بدون ذخیرهٔ دائمی). */
+function bwt_csv_read_upload($file) {
+    if (!is_array($file) || !isset($file['tmp_name']) || !isset($file['error'])) {
+        return array('contents' => '', 'error' => 'فایلی انتخاب نشد.');
+    }
+    if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+        $messages = array(
+            UPLOAD_ERR_INI_SIZE   => 'حجم فایل از سقف سرور بیشتر است.',
+            UPLOAD_ERR_FORM_SIZE  => 'حجم فایل بیش از حد مجاز است.',
+            UPLOAD_ERR_PARTIAL    => 'فایل ناقص آپلود شد؛ دوباره تلاش کنید.',
+            UPLOAD_ERR_NO_FILE    => 'فایلی انتخاب نشد.',
+            UPLOAD_ERR_NO_TMP_DIR => 'پوشهٔ موقت سرور در دسترس نیست.',
+            UPLOAD_ERR_CANT_WRITE => 'نوشتن فایل روی سرور ممکن نشد.',
+        );
+        $code = (int) $file['error'];
+        return array('contents' => '', 'error' => isset($messages[$code]) ? $messages[$code] : 'آپلود فایل ناموفق بود.');
+    }
+    $name = isset($file['name']) ? (string) $file['name'] : '';
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!in_array($ext, array('csv', 'txt'), true)) {
+        return array('contents' => '', 'error' => 'فقط فایل CSV یا TXT مجاز است.');
+    }
+    $size = isset($file['size']) ? (int) $file['size'] : 0;
+    if ($size <= 0 || $size > BWT_CSV_MAX_SIZE) {
+        return array('contents' => '', 'error' => 'حجم فایل باید بین ۱ بایت و ۲ مگابایت باشد.');
+    }
+    $path = (string) $file['tmp_name'];
+    if (!is_readable($path)) {
+        return array('contents' => '', 'error' => 'فایل آپلودشده قابل خواندن نیست.');
+    }
+    $contents = @file_get_contents($path);
+    if (!is_string($contents)) {
+        return array('contents' => '', 'error' => 'خواندن فایل ممکن نشد.');
+    }
+    return array('contents' => $contents, 'error' => '');
+}
+
+function bwt_csv_job_key($job_id) {
+    return 'bwt_csv_job_' . md5((string) $job_id);
+}
+
+function bwt_get_csv_job($job_id) {
+    $job_id = bwt_sanitize_job_id($job_id);
+    if ($job_id === '') {
+        return false;
+    }
+    return get_transient(bwt_csv_job_key($job_id));
+}
+
+function bwt_create_csv_job($rows, $skipped = array()) {
+    $rows = is_array($rows) ? array_slice(array_values($rows), 0, BWT_CSV_MAX_ROWS) : array();
+    if (!$rows) {
+        return array('job_id' => '', 'error' => 'ردیف معتبری برای ثبت وجود ندارد.');
+    }
+    try {
+        $raw = function_exists('wp_generate_uuid4') ? str_replace('-', '', wp_generate_uuid4()) : bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        $raw = md5(uniqid('bwt-csv', true));
+    }
+    $job_id = bwt_sanitize_job_id($raw);
+    if ($job_id === '') {
+        return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار آپلود ناموفق بود.');
+    }
+    $skipped = is_array($skipped) ? array_slice(array_values($skipped), 0, 100) : array();
+    $job = array(
+        'user_id'    => (int) get_current_user_id(),
+        'rows'       => $rows,
+        'total'      => count($rows),
+        'offset'     => 0,
+        'created'    => 0,
+        'updated'    => 0,
+        'unchanged'  => 0,
+        'invalid'    => 0,
+        'skipped'    => $skipped,
+        'skipped_total' => count($skipped),
+        'errors'     => array(),
+        'done'       => false,
+        'created_at' => time(),
+    );
+    if (!set_transient(bwt_csv_job_key($job_id), $job, HOUR_IN_SECONDS)) {
+        return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت آپلود ممکن نشد؛ دوباره تلاش کنید.');
+    }
+    return array('job_id' => $job_id, 'error' => '');
+}
+
+function bwt_csv_job_payload($job) {
+    $total = isset($job['total']) ? (int) $job['total'] : 0;
+    $offset = isset($job['offset']) ? (int) $job['offset'] : 0;
+    $done = !empty($job['done']);
+    return array(
+        'done'          => $done,
+        'progress'      => $done ? 100 : ($total > 0 ? min(99, (int) floor(100 * $offset / $total)) : 0),
+        'total'         => $total,
+        'offset'        => $offset,
+        'created'       => isset($job['created']) ? (int) $job['created'] : 0,
+        'updated'       => isset($job['updated']) ? (int) $job['updated'] : 0,
+        'unchanged'     => isset($job['unchanged']) ? (int) $job['unchanged'] : 0,
+        'invalid'       => isset($job['invalid']) ? (int) $job['invalid'] : 0,
+        'skipped'       => isset($job['skipped']) ? (array) $job['skipped'] : array(),
+        'skipped_total' => isset($job['skipped_total']) ? (int) $job['skipped_total'] : 0,
+        'errors'        => isset($job['errors']) ? (array) $job['errors'] : array(),
+    );
+}
+
+/** ثبت یک دسته از ردیف‌های فایل روی سفارش‌ها. */
+function bwt_process_csv_batch(&$job, $batch_size = BWT_CSV_BATCH_SIZE) {
+    $rows = isset($job['rows']) && is_array($job['rows']) ? $job['rows'] : array();
+    $batch_size = max(1, min(BWT_CSV_BATCH_SIZE, (int) $batch_size));
+    $end = min(count($rows), (int) $job['offset'] + $batch_size);
+    for ($i = (int) $job['offset']; $i < $end; $i++) {
+        $row = $rows[$i];
+        $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+        $code = isset($row['code']) ? (string) $row['code'] : '';
+        $order = ($order_id > 0 && function_exists('wc_get_order')) ? wc_get_order($order_id) : null;
+        if (!$order) {
+            $job['invalid']++;
+            if (count($job['errors']) < 50) {
+                $job['errors'][] = 'سفارش #' . $order_id . ' پیدا نشد.';
+            }
+            continue;
+        }
+        $result = bwt_apply_tracking_codes($order, array($code), 'csv_upload', 'csv_upload');
+        $status = isset($result['status']) ? (string) $result['status'] : 'invalid';
+        if (isset($job[$status]) && is_int($job[$status])) {
+            $job[$status]++;
+        } else {
+            $job['invalid']++;
+        }
+    }
+    $processed = max(0, $end - (int) $job['offset']);
+    $job['offset'] = $end;
+    $job['done'] = $end >= count($rows);
+    return $processed;
+}
+
+function bwt_ajax_csv_batch() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_csv_batch', 'nonce');
+    $job_id = isset($_POST['job_id']) ? bwt_sanitize_job_id(wp_unslash($_POST['job_id'])) : '';
+    $job = $job_id !== '' ? bwt_get_csv_job($job_id) : false;
+    if (!$job || !is_array($job) || empty($job['user_id']) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+        wp_send_json_error(array('message' => 'کار آپلود پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
+    }
+    $payload = bwt_csv_job_payload($job);
+    if (empty($job['done'])) {
+        if (!bwt_acquire_lock('csv_job_' . $job_id, 120)) {
+            wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
+        }
+        $job = bwt_get_csv_job($job_id);
+        if (is_array($job) && empty($job['done'])) {
+            bwt_process_csv_batch($job, BWT_CSV_BATCH_SIZE);
+            set_transient(bwt_csv_job_key($job_id), $job, HOUR_IN_SECONDS);
+        }
+        bwt_release_lock('csv_job_' . $job_id);
+        $payload = is_array($job) ? bwt_csv_job_payload($job) : $payload;
+    }
+    $payload['job_id'] = $job_id;
+    wp_send_json_success($payload);
+}
+
 // ========== 8. نقطهٔ ورود بیرونی (Push API با HMAC) ==========
 add_action('rest_api_init', 'bwt_register_rest_routes');
 
@@ -1258,6 +1532,7 @@ function bwt_admin_assets($hook) {
         'cleanupNonce'  => wp_create_nonce('bwt_cleanup_batch'),
         'sourceNonce'   => wp_create_nonce('bwt_save_sources'),
         'syncNonce'     => wp_create_nonce('bwt_sync_batch'),
+        'csvNonce'      => wp_create_nonce('bwt_csv_batch'),
         'retryLabel'    => 'تلاش دوباره / ادامه پردازش',
         'genericError'  => 'ارتباط با سرور ناموفق بود.',
     ));
@@ -1370,6 +1645,36 @@ function bwt_tracking_page() {
         }
     }
 
+    $csv_job_id = '';
+    if (isset($_POST['bwt_csv_upload'])) {
+        if (!isset($_POST['bwt_csv_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_csv_nonce'])), 'bwt_csv_action')) {
+            $message = bwt_admin_notice('danger', 'خطای امنیتی: نانس نامعتبر است. صفحه را رفرش کنید.');
+        } else {
+            $read = bwt_csv_read_upload(isset($_FILES['bwt_csv_file']) ? $_FILES['bwt_csv_file'] : array());
+            if ($read['error'] !== '') {
+                $message = bwt_admin_notice('danger', $read['error']);
+            } else {
+                $parsed = bwt_csv_parse_rows($read['contents']);
+                if ($parsed['error'] !== '') {
+                    $message = bwt_admin_notice('danger', $parsed['error']);
+                } else {
+                    $created = bwt_create_csv_job($parsed['rows'], $parsed['skipped']);
+                    if (empty($created['job_id'])) {
+                        $message = bwt_admin_notice('danger', $created['error']);
+                    } else {
+                        $csv_job_id = $created['job_id'];
+                        $message = bwt_admin_notice(
+                            'success',
+                            'فایل خوانده شد: ' . bwt_fmt_digits(number_format_i18n(count($parsed['rows']))) . ' ردیف معتبر'
+                            . (count($parsed['skipped']) ? ' و ' . bwt_fmt_digits(number_format_i18n(count($parsed['skipped']))) . ' ردیف ناخوانا (رد شد)' : '')
+                            . '. حالا دکمهٔ «ثبت روی سفارش‌ها» را بزنید.'
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     $with_code = bwt_count_orders_with_code(true);
     $without_code = bwt_count_orders_with_code(false);
     $total_recent = bwt_count_orders_recent();
@@ -1462,11 +1767,49 @@ function bwt_tracking_page() {
                 </div>
             </section>
 
+            <section class="bwt-card" id="bwt-csv">
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۳. آپلود فایل کد رهگیری</h2>
+                        <p class="bwt-card__desc">برای فایل‌هایی که از قبل دارید: یک CSV با دو ستون <code dir="ltr">order_id, tracking_code</code> بدهید تا کدها روی همان سفارش‌ها بنشینند. کد هر سفارش جایگزین کد قبلی می‌شود.</p>
+                    </div>
+                    <span class="bwt-badge-soft">اختیاری</span>
+                </header>
+                <div class="bwt-card__body">
+                    <form method="post" enctype="multipart/form-data" class="bwt-csv-form" data-bwt-csv-form>
+                        <?php wp_nonce_field('bwt_csv_action', 'bwt_csv_nonce'); ?>
+                        <label class="bwt-file bwt-file--drop">
+                            <input type="file" name="bwt_csv_file" accept=".csv,.txt,text/csv" required data-bwt-csv-file />
+                            <span class="bwt-file__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></svg>
+                            </span>
+                            <span class="bwt-file__text">
+                                <b data-bwt-csv-name>فایل CSV را انتخاب کنید</b>
+                                <small>حداکثر ۲ مگابایت · تا ۵٬۰۰۰ ردیف · ستون اول شماره سفارش، ستون دوم کد</small>
+                            </span>
+                        </label>
+                        <button type="submit" name="bwt_csv_upload" value="1" class="bwt-btn bwt-btn--primary">خواندن فایل</button>
+                    </form>
+
+                    <p class="bwt-hint">ردیف اول می‌تواند سرصفحه باشد (مثل <span dir="ltr">order_id,tracking_code</span>)؛ اگر نباشد، ستون اول شمارهٔ سفارش و ستون دوم کد در نظر گرفته می‌شود. جداکنندهٔ «،» و «;» هم پشتیبانی می‌شود.</p>
+
+                    <div class="bwt-csv-job" data-bwt-csv-job="<?php echo esc_attr($csv_job_id); ?>" <?php echo $csv_job_id === '' ? 'hidden' : ''; ?>>
+                        <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-csv-progress max="100" value="0" aria-label="پیشرفت ثبت کدها"></progress></div>
+                        <p class="bwt-progress__meta" data-bwt-csv-counters>آماده</p>
+                        <div class="bwt-actions">
+                            <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
+                            <button type="button" class="bwt-btn bwt-btn--sm" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+                        </div>
+                        <div data-bwt-csv-result></div>
+                    </div>
+                </div>
+            </section>
+
             <form method="post" class="bwt-card" id="bwt-settings">
                 <?php wp_nonce_field('bwt_settings_action', 'bwt_settings_nonce'); ?>
                 <header class="bwt-card__head">
                     <div>
-                        <h2 class="bwt-card__title">۳. تنظیمات</h2>
+                        <h2 class="bwt-card__title">۴. تنظیمات</h2>
                         <p class="bwt-card__desc">پیش‌فرض‌ها برای سایت شما مناسب‌اند؛ این بخش را فقط اگر لازم شد باز کنید.</p>
                     </div>
                     <span class="bwt-badge-soft">پیشرفته</span>
@@ -1787,11 +2130,6 @@ function bwt_tracking_search_form($atts = array()) {
                 <div class="bwt-track__head-body">
                     <b class="bwt-track__head-title">کد رهگیری مرسوله</b>
                     <span class="bwt-track__head-text">شمارهٔ سفارش و موبایلی که سفارش با آن ثبت شده را وارد کنید؛ کد رهگیری همان لحظه نمایش داده می‌شود.</span>
-                    <span class="bwt-track__chips">
-                        <span class="bwt-track__chip">بدون آپلود فایل</span>
-                        <span class="bwt-track__chip">کد مستقیم از پست</span>
-                        <span class="bwt-track__chip">همیشه به‌روز</span>
-                    </span>
                 </div>
             </div>
 
@@ -1932,6 +2270,7 @@ function bwt_ajax_track_lookup() {
 // ========== 11. پاک کردن کدها (Job قابل ادامه) ==========
 add_action('wp_ajax_bwt_cleanup_batch', 'bwt_ajax_cleanup_batch');
 add_action('wp_ajax_bwt_cleanup_status', 'bwt_ajax_cleanup_status');
+add_action('wp_ajax_bwt_csv_batch', 'bwt_ajax_csv_batch');
 
 function bwt_cleanup_job_key($job_id) {
     return 'bwt_cleanup_job_' . md5((string) $job_id);

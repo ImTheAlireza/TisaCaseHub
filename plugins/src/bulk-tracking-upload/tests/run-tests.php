@@ -1034,7 +1034,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.5.0') !== false);
+    && strpos($hero, 'v3.6.0') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1048,16 +1048,23 @@ t('صفحهٔ اصلی، شورت‌کد، فرم دستی، نشانی Push و 
     && strpos($page, 'wp-json/bwt/v1/tracking') !== false
     && strpos($page, 'data-key="_sorna_barcode"') !== false
     && strpos($page, 'data-bwt-sync-mode="missing"') !== false);
-t('صفحهٔ اصلی، غیرفعال‌بودن CSV را نشان می‌دهد (بدون فیلد فایل)', strpos($page, 'type="file"') === false);
+t('صفحهٔ اصلی، کارت آپلود CSV را با فیلد فایل نشان می‌دهد',
+    strpos($page, 'type="file"') !== false
+    && strpos($page, 'name="bwt_csv_file"') !== false
+    && strpos($page, 'name="bwt_csv_upload"') !== false
+    && strpos($page, 'bwt_csv_nonce') !== false
+    && strpos($page, 'data-bwt-csv-job') !== false
+    && strpos($page, 'آپلود فایل کد رهگیری') !== false);
 t('صفحهٔ اصلی، «منبع جدول اختصاصی» را دارد',
     strpos($page, 'name="table_source_table"') !== false
     && strpos($page, 'name="table_source_code_col"') !== false);
 t('جدول‌های مشکوک در صفحهٔ تنظیمات فهرست می‌شوند', strpos($page, 'bwt-chip--table') !== false && strpos($page, 'wp_sorna_orders') !== false);
 
-t('صفحهٔ اصلی سه بخش شماره‌دار ۱ تا ۳ است و ابزار «پیدا کردن کلید» حذف شده',
+t('صفحهٔ اصلی چهار بخش شماره‌دار ۱ تا ۴ است و ابزار «پیدا کردن کلید» حذف شده',
     strpos($page, '۱. کلید متای کد رهگیری') !== false
     && strpos($page, '۲. همگام‌سازی سفارش‌ها') !== false
-    && strpos($page, '۳. تنظیمات') !== false
+    && strpos($page, '۳. آپلود فایل کد رهگیری') !== false
+    && strpos($page, '۴. تنظیمات') !== false
     && strpos($page, 'پیدا کردن کلید') === false
     && strpos($page, 'شناسایی منابع') === false
     && strpos($page, 'تعداد سفارش نمونه') === false
@@ -1271,15 +1278,43 @@ t('ستون ناموجود در جدول، منبع را بی‌اثر می‌ک
 
 bwt_save_settings(array('table_source' => array()));
 
-/* ================= ۱۱) حذف مسیر CSV ================= */
-section('۱۱) حذف کامل مسیر CSV');
-t('توابع قدیمی آپلود CSV حذف شده‌اند',
+/* ================= ۱۱) آپلود فایل CSV (بازگشته) ================= */
+section('۱۱) آپلود فایل CSV');
+t('مسیر جدید آپلود CSV وجود دارد',
+    function_exists('bwt_csv_parse_rows')
+    && function_exists('bwt_create_csv_job')
+    && function_exists('bwt_process_csv_batch')
+    && function_exists('bwt_ajax_csv_batch'));
+t('اکشن AJAX آپلود CSV ثبت شده است', isset($GLOBALS['bwt_actions']['wp_ajax_bwt_csv_batch']));
+t('توابع قدیمی و ناامن آپلود برنگشته‌اند',
     !function_exists('bwt_create_upload_job')
-    && !function_exists('bwt_process_tracking_csv_row')
     && !function_exists('bwt_process_csv_batch_handle')
     && !function_exists('bwt_ajax_upload_batch'));
-t('هیچ اکشن آپلود فایلی ثبت نشده است', !isset($GLOBALS['bwt_actions']['wp_ajax_bwt_upload_batch']));
-t('نسخهٔ افزونه 3.5.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.5.0');
+
+$csv_plain = bwt_csv_parse_rows("order_id,tracking_code\n424172,RR123456789IR\n424173,RR987654321IR\n");
+t('CSV با سرصفحه: دو ردیف معتبر خوانده می‌شود', count($csv_plain['rows']) === 2 && empty($csv_plain['skipped']));
+t('CSV: شمارهٔ سفارش و کد درست جدا می‌شوند',
+    $csv_plain['rows'][0]['order_id'] === 424172 && $csv_plain['rows'][0]['code'] === 'RR123456789IR');
+t('CSV: سرصفحه تشخیص داده می‌شود', $csv_plain['has_header'] === true && $csv_plain['total'] === 2);
+
+$csv_no_header = bwt_csv_parse_rows("424172;RR123456789IR\n424173;RR987654321IR");
+t('CSV بدون سرصفحه و با جداکنندهٔ «;» هم خوانده می‌شود',
+    count($csv_no_header['rows']) === 2 && $csv_no_header['rows'][1]['order_id'] === 424173);
+
+$csv_persian = bwt_csv_parse_rows("شماره سفارش,کد رهگیری\n۴۲۴۱۷۲,RR123456789IR\n");
+t('سرصفحهٔ فارسی و ارقام فارسی پشتیبانی می‌شوند',
+    count($csv_persian['rows']) === 1 && $csv_persian['rows'][0]['order_id'] === 424172);
+
+$csv_bad = bwt_csv_parse_rows("order_id,tracking_code\n0,RR123456789IR\n424174,xx\n424175,RR111111111IR\n");
+t('ردیف‌های ناخوانا رد می‌شوند و خطشان گزارش می‌شود',
+    count($csv_bad['rows']) === 1 && count($csv_bad['skipped']) === 2 && $csv_bad['skipped'][0]['line'] === 2);
+t('فایل بدون ردیف معتبر خطا می‌دهد', bwt_csv_parse_rows("")['error'] !== '');
+t('آپلود فایل با پسوند غیرمجاز رد می‌شود',
+    bwt_csv_read_upload(array('name' => 'codes.xlsx', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__))['error'] !== '');
+t('آپلود بدون فایل پیام روشن می‌دهد',
+    bwt_csv_read_upload(array('name' => '', 'error' => UPLOAD_ERR_NO_FILE, 'size' => 0, 'tmp_name' => ''))['error'] !== '');
+
+t('نسخهٔ افزونه 3.6.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.6.0');
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

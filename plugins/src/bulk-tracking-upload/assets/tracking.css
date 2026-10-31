@@ -121,37 +121,6 @@
 	line-height: 1.95;
 }
 
-.bwt-track__chips {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 6px;
-	margin-top: 11px;
-}
-
-.bwt-track__chip {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	padding: 4px 10px;
-	border: 1px solid var(--bwt-border);
-	border-radius: 999px;
-	background: var(--bwt-surface);
-	color: var(--bwt-muted);
-	font-size: 11px;
-	line-height: 1.8;
-	white-space: nowrap;
-}
-
-.bwt-track__chip::before {
-	content: "";
-	flex: 0 0 auto;
-	width: 5px;
-	height: 5px;
-	border-radius: 50%;
-	background: var(--bwt-primary);
-	opacity: .55;
-}
-
 /* پنل فرم: کادر آرام داخل کارت تا فیلدها کشیده به‌نظر نرسند */
 .bwt-track__panel {
 	min-width: 0;

@@ -20,7 +20,7 @@
                     <h1 class="bwt-hero-title">کد رهگیری پستی</h1>
                     <p class="bwt-hero-sub">بدون فایل و بدون کار دستی — کدی که سورناپست صادر می‌کند، خودکار روی سفارش می‌نشیند</p>
                 </div>
-                <span class="bwt-hero-ver" dir="ltr">v3.5.0</span>
+                <span class="bwt-hero-ver" dir="ltr">v3.6.0</span>
             </div>
             <nav class="bwt-tabs">
                 <a class="bwt-tab is-active" href="#sync">همگام‌سازی خودکار</a>
@@ -100,10 +100,47 @@
                 </div>
             </section>
 
+            <section class="bwt-card" id="bwt-csv">
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۳. آپلود فایل کد رهگیری</h2>
+                        <p class="bwt-card__desc">برای فایل‌هایی که از قبل دارید: یک CSV با دو ستون <code dir="ltr">order_id, tracking_code</code> بدهید تا کدها روی همان سفارش‌ها بنشینند. کد هر سفارش جایگزین کد قبلی می‌شود.</p>
+                    </div>
+                    <span class="bwt-badge-soft">اختیاری</span>
+                </header>
+                <div class="bwt-card__body">
+                    <form method="post" enctype="multipart/form-data" class="bwt-csv-form" data-bwt-csv-form>
+                        <label class="bwt-file bwt-file--drop">
+                            <input type="file" name="bwt_csv_file" accept=".csv,.txt,text/csv" data-bwt-csv-file />
+                            <span class="bwt-file__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></svg>
+                            </span>
+                            <span class="bwt-file__text">
+                                <b data-bwt-csv-name>فایل CSV را انتخاب کنید</b>
+                                <small>حداکثر ۲ مگابایت · تا ۵٬۰۰۰ ردیف · ستون اول شماره سفارش، ستون دوم کد</small>
+                            </span>
+                        </label>
+                        <button type="submit" class="bwt-btn bwt-btn--primary">خواندن فایل</button>
+                    </form>
+
+                    <p class="bwt-hint">ردیف اول می‌تواند سرصفحه باشد (مثل <span dir="ltr">order_id,tracking_code</span>)؛ اگر نباشد، ستون اول شمارهٔ سفارش و ستون دوم کد در نظر گرفته می‌شود. جداکنندهٔ «،» و «;» هم پشتیبانی می‌شود.</p>
+
+                    <div class="bwt-csv-job" data-bwt-csv-job="demo0123456789abcdef0123456789ab">
+                        <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-csv-progress max="100" value="0" aria-label="پیشرفت ثبت کدها"></progress></div>
+                        <p class="bwt-progress__meta" data-bwt-csv-counters>آماده — ۱۲۴ ردیف خوانده شده</p>
+                        <div class="bwt-actions">
+                            <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
+                            <button type="button" class="bwt-btn bwt-btn--sm" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+                        </div>
+                        <div data-bwt-csv-result></div>
+                    </div>
+                </div>
+            </section>
+
             <form method="post" class="bwt-card" id="bwt-settings">
                 <header class="bwt-card__head">
                     <div>
-                        <h2 class="bwt-card__title">۳. تنظیمات</h2>
+                        <h2 class="bwt-card__title">۴. تنظیمات</h2>
                         <p class="bwt-card__desc">پیش‌فرض‌ها برای سایت شما مناسب‌اند؛ این بخش را فقط اگر لازم شد باز کنید.</p>
                     </div>
                     <span class="bwt-badge-soft">پیشرفته</span>
