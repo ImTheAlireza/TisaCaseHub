@@ -1,41 +1,1557 @@
 <?php
 /**
- * Plugin Name: Bulk Tracking Code Upload for WooCommerce
- * Description: آپلود انبوه کد رهگیری از اکسل و نمایش اطلاعات کامل سفارش + لینک پیگیری پست
- * Version: 2.6.0
+ * Plugin Name: Automatic Postal Tracking for WooCommerce
+ * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
+ * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
+ * Version: 3.7.0
  * Author: علیرضا شعبان زاده
+ * Requires PHP: 7.4
+ * Requires Plugins: woocommerce
+ *
+ * @package Bulk_Tracking_Upload
  */
 
 if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '2.6.0');
-define('BWT_UPLOAD_MAX_SIZE', 5 * 1024 * 1024);
-define('BWT_UPLOAD_BATCH_SIZE', 50);
-define('BWT_UPLOAD_BATCH_SECONDS', 4);
-define('BWT_UPLOAD_MAX_ERROR_DETAILS', 500);
+define('BWT_VERSION', '3.7.0');
+define('BWT_OPTION_SETTINGS', 'bwt_settings');
+define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
+define('BWT_SYNC_BATCH_SIZE', 50);
+if (!defined('BWT_TRACK_CODE_LENGTH')) { define('BWT_TRACK_CODE_LENGTH', 24); }
+if (!defined('BWT_CSV_MAX_SIZE')) { define('BWT_CSV_MAX_SIZE', 2 * 1024 * 1024); }
+if (!defined('BWT_CSV_MAX_ROWS')) { define('BWT_CSV_MAX_ROWS', 5000); }
+if (!defined('BWT_CSV_BATCH_SIZE')) { define('BWT_CSV_BATCH_SIZE', 20); }
+define('BWT_SYNC_MAX_ORDERS', 500);
+define('BWT_SWEEP_MAX_ORDERS', 50);
+define('BWT_SWEEP_DAYS', 45);
 define('BWT_CLEANUP_BATCH_SIZE', 500);
 define('BWT_CLEANUP_SELECTED_BATCH_SIZE', 50);
 define('BWT_CLEANUP_MAX_SELECTED', 1000);
+define('BWT_TRACK_MAX_CODES', 10);
+define('BWT_TRACK_URL_DEFAULT', 'https://tracking.post.ir/?id=%s');
+// فایل PDF جایگزین (وقتی جست‌وجوی مشتری خطا می‌دهد داخل فرم نمایش داده می‌شود).
+define('BWT_FALLBACK_PDF_DEFAULT', 'https://tisacase.com/wp-content/uploads/2026/10/tracking.pdf');
 
-// ========== 1. افزودن منو به پیشخوان ==========
+// ========== 1. تنظیمات ==========
+function bwt_default_settings() {
+    return array(
+        'source_keys'   => array(),
+        'scan_notes'    => 1,
+        'sweep_enabled' => 1,
+        'push_enabled'  => 0,
+        'push_secret'   => '',
+        'tracking_url'  => BWT_TRACK_URL_DEFAULT,
+        'fallback_pdf'  => BWT_FALLBACK_PDF_DEFAULT,
+        'table_source'  => array('table' => '', 'order_col' => '', 'code_col' => ''),
+    );
+}
+
+/** نام جدول/ستون فقط با حروف لاتین، رقم و آندرلاین (برای درج امن در SQL). */
+function bwt_sanitize_identifier($value) {
+    $value = is_scalar($value) ? trim((string) $value) : '';
+    return preg_match('/^[A-Za-z0-9_]{1,64}$/', $value) ? $value : '';
+}
+
+function bwt_sanitize_table_source($input) {
+    $input = is_array($input) ? $input : array();
+    $clean = array(
+        'table'     => bwt_sanitize_identifier(isset($input['table']) ? $input['table'] : ''),
+        'order_col' => bwt_sanitize_identifier(isset($input['order_col']) ? $input['order_col'] : ''),
+        'code_col'  => bwt_sanitize_identifier(isset($input['code_col']) ? $input['code_col'] : ''),
+    );
+    if ($clean['table'] === '' || $clean['order_col'] === '' || $clean['code_col'] === '' || $clean['order_col'] === $clean['code_col']) {
+        return array('table' => '', 'order_col' => '', 'code_col' => '');
+    }
+    return $clean;
+}
+
+function bwt_sanitize_source_key($key) {
+    $key = is_scalar($key) ? (string) $key : '';
+    $key = trim($key);
+    if ($key === '' || strlen($key) > 191) {
+        return '';
+    }
+    // کلید متای وردپرس: حروف/رقم/ـ/دوطبع؛ کلید یادداشت سفارش هم پذیرفته می‌شود.
+    return preg_match('/^[A-Za-z0-9_\-:.]{1,191}$/', $key) ? $key : '';
+}
+
+function bwt_sanitize_settings($input) {
+    $defaults = bwt_default_settings();
+    $input = is_array($input) ? $input : array();
+
+    $keys = array();
+    foreach ((array) (isset($input['source_keys']) ? $input['source_keys'] : array()) as $key) {
+        $key = bwt_sanitize_source_key($key);
+        if ($key !== '' && !in_array($key, $keys, true)) {
+            $keys[] = $key;
+        }
+        if (count($keys) >= 20) {
+            break;
+        }
+    }
+
+    $url = isset($input['tracking_url']) ? trim((string) $input['tracking_url']) : '';
+    if ($url === '' || strpos($url, '%s') === false || strpos($url, 'http') !== 0) {
+        $url = BWT_TRACK_URL_DEFAULT;
+    }
+
+    // فایل PDF جایگزین: خالی = غیرفعال؛ فقط http/https پذیرفته می‌شود.
+    $fallback_pdf = isset($input['fallback_pdf']) ? trim((string) $input['fallback_pdf']) : (string) $defaults['fallback_pdf'];
+    if ($fallback_pdf !== '') {
+        $fallback_pdf = esc_url_raw($fallback_pdf);
+        if (!preg_match('#^https?://#i', $fallback_pdf)) {
+            $fallback_pdf = '';
+        }
+    }
+
+    $secret = isset($input['push_secret']) ? (string) $input['push_secret'] : (string) $defaults['push_secret'];
+    $secret = preg_replace('/[^A-Za-z0-9_\-]/', '', $secret);
+    if (strlen($secret) > 64) {
+        $secret = substr($secret, 0, 64);
+    }
+
+    return array(
+        'source_keys'   => $keys,
+        'scan_notes'    => empty($input['scan_notes']) ? 0 : 1,
+        'sweep_enabled' => empty($input['sweep_enabled']) ? 0 : 1,
+        'push_enabled'  => empty($input['push_enabled']) ? 0 : 1,
+        'push_secret'   => $secret,
+        'tracking_url'  => $url,
+        'fallback_pdf'  => $fallback_pdf,
+        'table_source'  => bwt_sanitize_table_source(isset($input['table_source']) ? $input['table_source'] : array()),
+    );
+}
+
+function bwt_get_settings() {
+    $stored = get_option(BWT_OPTION_SETTINGS, array());
+    if (!is_array($stored)) {
+        $stored = array();
+    }
+    $merged = array_merge(bwt_default_settings(), $stored);
+    return bwt_sanitize_settings($merged);
+}
+
+function bwt_save_settings($settings) {
+    $clean = bwt_sanitize_settings($settings);
+    update_option(BWT_OPTION_SETTINGS, $clean, false);
+    return $clean;
+}
+
+function bwt_generate_push_secret() {
+    try {
+        return 'bwt_' . bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        return 'bwt_' . md5(uniqid('bwt-push', true));
+    }
+}
+
+// ========== 2. ابزارهای کد رهگیری ==========
+/** تبدیل ارقام فارسی/عربی به لاتین (بدون تغییر بقیهٔ کاراکترها). */
+function bwt_normalize_digits($str) {
+    $str = (string) $str;
+    $map = array(
+        '۰' => '0', '۱' => '1', '۲' => '2', '۳' => '3', '۴' => '4',
+        '۵' => '5', '۶' => '6', '۷' => '7', '۸' => '8', '۹' => '9',
+        '٠' => '0', '١' => '1', '٢' => '2', '٣' => '3', '٤' => '4',
+        '٥' => '5', '٦' => '6', '٧' => '7', '٨' => '8', '٩' => '9',
+    );
+    return strtr($str, $map);
+}
+
+/** پاک‌سازی کد: حذف فاصله/خط‌تیره، بزرگ‌کردن حروف، سقف طول. */
+function bwt_clean_code($value) {
+    if (!is_scalar($value) || is_bool($value)) {
+        return '';
+    }
+    $code = bwt_normalize_digits(trim((string) $value));
+    $code = preg_replace('/[\s\x{200c}\x{200f}\x{200e}\-_]+/u', '', $code);
+    if (!is_string($code)) {
+        return '';
+    }
+    $code = strtoupper($code);
+    if (strlen($code) < 4 || strlen($code) > 60) {
+        return '';
+    }
+    return $code;
+}
+
+/** طول استاندارد کد رهگیری پست ایران: ۲۴ رقم. با فیلتر bwt_tracking_code_length قابل تغییر است. */
+function bwt_tracking_code_length() {
+    $length = (int) apply_filters('bwt_tracking_code_length', BWT_TRACK_CODE_LENGTH);
+    return $length > 0 ? $length : 24;
+}
+
+/**
+ * تنها شکل معتبر کد رهگیری: دقیقاً ۲۴ رقم (بارکد ملی پست).
+ * هر چیز دیگری — شمارهٔ سفارش، شمارهٔ موبایل، کد پستی، زمان همگام‌سازی — کد رهگیری نیست.
+ */
+function bwt_is_tracking_like($value) {
+    $code = bwt_clean_code($value);
+    if ($code === '') {
+        return false;
+    }
+    $length = bwt_tracking_code_length();
+    if (!preg_match('/^\d{' . $length . '}$/', $code)) {
+        return false;
+    }
+    return (bool) apply_filters('bwt_tracking_code_allowed', true, $code);
+}
+
+/** آیا این رشته «شکل کد رهگیری» دارد؟ (برای تشخیص کدهای خرابِ ثبت‌شده) */
+function bwt_code_is_valid($value) {
+    return bwt_is_tracking_like($value);
+}
+
+function bwt_unique_codes($codes) {
+    $out = array();
+    foreach ((array) $codes as $code) {
+        $clean = bwt_clean_code($code);
+        if ($clean === '' || !bwt_is_tracking_like($clean)) {
+            continue;
+        }
+        if (!in_array($clean, $out, true)) {
+            $out[] = $clean;
+        }
+        if (count($out) >= BWT_TRACK_MAX_CODES) {
+            break;
+        }
+    }
+    return $out;
+}
+
+/** کلیدهایی که به‌طور معمول کد رهگیری را نگه می‌دارند (قابل توسعه با فیلتر). */
+function bwt_builtin_tracking_keys() {
+    $keys = array(
+        '_tracking_code',
+        '_tracking_number',
+        '_tracking_no',
+        'tracking_code',
+        'tracking_number',
+        '_post_tracking_code',
+        '_post_tracking_number',
+        '_post_barcode',
+        '_barcode',
+        'barcode',
+        '_sorna_tracking_code',
+        '_sorna_post_tracking_code',
+        '_sorna_tracking_number',
+        '_sorna_barcode',
+        '_shipment_tracking_code',
+        '_shipment_tracking_number',
+        '_wc_shipment_tracking_items',
+        'wc_shipment_tracking_items',
+        '_wcst_tracking_number',
+        '_delivery_tracking_code',
+    );
+    return (array) apply_filters('bwt_tracking_meta_keys', $keys);
+}
+
+/** کلیدهای عمومی که «شبیه» نگه‌دارندهٔ کد رهگیری‌اند. */
+function bwt_key_looks_like_tracking($key) {
+    $key = (string) $key;
+    if ($key === '' || bwt_is_internal_meta_key($key)) {
+        return false;
+    }
+    return (bool) preg_match('/(track|barcode|رهگیری|بارکد|post_?code|shipping_?code|parcel)/iu', $key);
+}
+
+/**
+ * کلیدهای خودِ افزونه (و کلیدهای فنی سفارش) هرگز منبع کد نیستند.
+ * نمونهٔ واقعی: `_bwt_tracking_synced_at` که فقط یک زمان UNIX است ولی کلمهٔ track دارد
+ * و قبلاً به‌اشتباه «کد رهگیری» خوانده می‌شد.
+ */
+function bwt_is_internal_meta_key($key) {
+    $key = strtolower(trim((string) $key));
+    if ($key === '') {
+        return true;
+    }
+    if (strpos($key, '_bwt') === 0 || strpos($key, 'bwt_') === 0) {
+        return true;
+    }
+    $denied = array(
+        '_tracking_codes',
+        '_edit_lock',
+        '_edit_last',
+        '_order_currency',
+        '_order_total',
+        '_order_tax',
+        '_order_shipping',
+        '_payment_method',
+        '_payment_method_title',
+        '_customer_user',
+        '_billing_phone',
+        '_billing_postcode',
+        '_cart_hash',
+    );
+    return in_array($key, $denied, true);
+}
+
+/** استخراج کد از هر شکل مقدار: رشته، عدد، آرایهٔ تودرتو، JSON، آبجکت. */
+function bwt_extract_codes_from_value($value, $depth = 0) {
+    if ($depth > 3) {
+        return array();
+    }
+    if (is_object($value)) {
+        $value = (array) $value;
+    }
+    if (is_array($value)) {
+        $preferred = array('tracking_number', 'tracking_code', 'tracking_no', 'barcode', 'code', 'number');
+        $codes = array();
+        foreach ($preferred as $field) {
+            if (isset($value[$field])) {
+                $codes = array_merge($codes, bwt_extract_codes_from_value($value[$field], $depth + 1));
+            }
+        }
+        if ($codes) {
+            return bwt_unique_codes($codes);
+        }
+        foreach ($value as $item) {
+            $codes = array_merge($codes, bwt_extract_codes_from_value($item, $depth + 1));
+        }
+        return bwt_unique_codes($codes);
+    }
+    if (is_bool($value) || $value === null) {
+        return array();
+    }
+    $raw = trim((string) $value);
+    if ($raw === '') {
+        return array();
+    }
+    if (preg_match('/^[\[\{]/', $raw)) {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            return bwt_extract_codes_from_value($decoded, $depth + 1);
+        }
+    }
+    return bwt_is_tracking_like($raw) ? array(bwt_clean_code($raw)) : array();
+}
+
+/** نقشهٔ همهٔ متاهای سفارش، مستقل از ذخیره‌سازی (HPOS یا postmeta). */
+function bwt_order_meta_map($order) {
+    $map = array();
+    if (!is_object($order)) {
+        return $map;
+    }
+    if (method_exists($order, 'get_meta_data')) {
+        foreach ((array) $order->get_meta_data() as $meta) {
+            if (is_object($meta) && method_exists($meta, 'get_data')) {
+                $data = (array) $meta->get_data();
+            } elseif (is_array($meta)) {
+                $data = $meta;
+            } else {
+                continue;
+            }
+            if (!isset($data['key']) || !is_scalar($data['key'])) {
+                continue;
+            }
+            $key = (string) $data['key'];
+            if ($key === '') {
+                continue;
+            }
+            $map[$key] = isset($data['value']) ? $data['value'] : '';
+        }
+    }
+    if (!$map && function_exists('get_post_meta') && method_exists($order, 'get_id')) {
+        $all = get_post_meta((int) $order->get_id());
+        if (is_array($all)) {
+            foreach ($all as $key => $values) {
+                $value = is_array($values) && count($values) === 1 ? $values[0] : $values;
+                $map[(string) $key] = $value;
+            }
+        }
+    }
+    return $map;
+}
+
+/** کد رهگیری از یادداشت‌های سفارش (سورناپست گاهی فقط یادداشت می‌گذارد). */
+function bwt_extract_codes_from_order_notes($order) {
+    if (!is_object($order)) {
+        return array();
+    }
+    $contents = array();
+    if (method_exists($order, 'get_customer_order_notes')) {
+        foreach ((array) $order->get_customer_order_notes() as $note) {
+            if (is_object($note) && isset($note->content)) {
+                $contents[] = (string) $note->content;
+            } elseif (is_array($note) && isset($note['content'])) {
+                $contents[] = (string) $note['content'];
+            }
+        }
+    }
+    if (!$contents && function_exists('wc_get_order_notes') && method_exists($order, 'get_id')) {
+        $notes = wc_get_order_notes(array('order_id' => (int) $order->get_id(), 'limit' => 50));
+        foreach ((array) $notes as $note) {
+            if (is_object($note) && isset($note->content)) {
+                $contents[] = (string) $note->content;
+            } elseif (is_array($note) && isset($note['content'])) {
+                $contents[] = (string) $note['content'];
+            }
+        }
+    }
+
+    $codes = array();
+    foreach ($contents as $content) {
+        if (!preg_match('/(رهگیری|بارکد|مرسوله|tracking|barcode|parcel)/iu', $content)) {
+            continue;
+        }
+        $normalized = bwt_normalize_digits($content);
+        $length = bwt_tracking_code_length();
+        if (preg_match_all('/(?<!\d)\d{' . $length . '}(?!\d)/', $normalized, $matches)) {
+            $codes = array_merge($codes, bwt_unique_codes($matches[0]));
+        }
+    }
+    return bwt_unique_codes($codes);
+}
+
+/**
+ * حل کد رهگیری یک سفارش از همهٔ منابع.
+ * خروجی: source (کلید برنده)، codes (کدهای برنده)، sources (همهٔ منابع پیدا‌شده).
+ */
+function bwt_resolve_order_tracking($order) {
+    $meta = bwt_order_meta_map($order);
+    $settings = bwt_get_settings();
+
+    $ordered_keys = array();
+    foreach ((array) $settings['source_keys'] as $key) {
+        if (!bwt_is_internal_meta_key($key)) {
+            $ordered_keys[] = (string) $key;
+        }
+    }
+    foreach (bwt_builtin_tracking_keys() as $key) {
+        if (!bwt_is_internal_meta_key($key)) {
+            $ordered_keys[] = (string) $key;
+        }
+    }
+    $meta_keys = array_keys($meta);
+    sort($meta_keys);
+    foreach ($meta_keys as $key) {
+        if (bwt_key_looks_like_tracking($key)) {
+            $ordered_keys[] = (string) $key;
+        }
+    }
+
+    $sources = array();
+    foreach (array_unique($ordered_keys) as $key) {
+        if ($key === '' || !isset($meta[$key])) {
+            continue;
+        }
+        $codes = bwt_extract_codes_from_value($meta[$key]);
+        if ($codes) {
+            $sources[$key] = $codes;
+        }
+    }
+
+    $notes_selected = in_array('order_note', (array) $settings['source_keys'], true);
+    if (!empty($settings['scan_notes']) || $notes_selected) {
+        $note_codes = bwt_extract_codes_from_order_notes($order);
+        if ($note_codes) {
+            $sources['order_note'] = $note_codes;
+        }
+    }
+
+    // آخرین راه‌حل: جدول اختصاصی سرویس پستی (اگر ادمین معرفی کرده باشد).
+    if (!empty($settings['table_source']['table']) && method_exists($order, 'get_id')) {
+        $table_codes = bwt_custom_table_codes((int) $order->get_id());
+        if ($table_codes) {
+            $sources['table:' . $settings['table_source']['table'] . '.' . $settings['table_source']['code_col']] = $table_codes;
+        }
+    }
+
+    $canonical_keys = array('_tracking_code', '_tracking_codes');
+    $winner_key = '';
+    $winner_codes = array();
+    foreach ($sources as $key => $codes) {
+        if (in_array($key, $canonical_keys, true)) {
+            continue;
+        }
+        $winner_key = $key;
+        $winner_codes = $codes;
+        break;
+    }
+    $external = $winner_key !== '';
+    if (!$external) {
+        foreach ($canonical_keys as $key) {
+            if (!empty($sources[$key])) {
+                $winner_codes = $sources[$key];
+                break;
+            }
+        }
+    }
+
+    return array(
+        'source'   => $winner_key,
+        'codes'    => $winner_codes,
+        'sources'  => $sources,
+        'external' => $external,
+    );
+}
+
+function bwt_tracking_url($code) {
+    $settings = bwt_get_settings();
+    $template = isset($settings['tracking_url']) ? (string) $settings['tracking_url'] : '';
+    if ($template === '' || strpos($template, '%s') === false) {
+        $template = BWT_TRACK_URL_DEFAULT;
+    }
+    return sprintf($template, rawurlencode((string) $code));
+}
+
+/** نمایش عدد با ارقام فارسی (مستقل از زبان وردپرس). */
+function bwt_fmt_digits($value) {
+    return strtr((string) $value, array(
+        '0' => '۰', '1' => '۱', '2' => '۲', '3' => '۳', '4' => '۴',
+        '5' => '۵', '6' => '۶', '7' => '۷', '8' => '۸', '9' => '۹',
+        ',' => '٬',
+    ));
+}
+
+function bwt_flush_order_counts_cache() {
+    delete_transient('bwt_count_with_code');
+    delete_transient('bwt_count_without_code');
+    delete_transient('bwt_count_total');
+}
+
+/**
+ * نوشتن کد(ها) روی سفارش + ثبت منبع. تنها نقطهٔ نوشتن متای کد است.
+ */
+function bwt_apply_tracking_codes($order, $codes, $source = '', $context = 'sync', $save = true) {
+    $codes = bwt_unique_codes($codes);
+    if (!is_object($order) || !method_exists($order, 'get_id') || !method_exists($order, 'update_meta_data') || !$codes) {
+        return array('status' => 'no_source', 'order_id' => 0, 'codes' => array(), 'source' => '');
+    }
+    $order_id = (int) $order->get_id();
+    if ($order_id <= 0) {
+        return array('status' => 'no_source', 'order_id' => 0, 'codes' => array(), 'source' => '');
+    }
+
+    $current = method_exists($order, 'get_meta') ? bwt_clean_code($order->get_meta('_tracking_code')) : '';
+    $stored_list = method_exists($order, 'get_meta') ? $order->get_meta('_tracking_codes') : array();
+    $stored_list = is_array($stored_list) ? bwt_unique_codes($stored_list) : array();
+    $stored_source = method_exists($order, 'get_meta') ? (string) $order->get_meta('_bwt_tracking_source') : '';
+    $primary = $codes[0];
+    if (!$stored_list && $current !== '') {
+        // سفارش‌های تک‌کدی که فهرست جدا ندارند، برای مقایسه یکتا می‌شوند.
+        $stored_list = array($current);
+    }
+
+    if ($current === $primary && $stored_list === $codes && ($source === '' || $stored_source === $source)) {
+        return array('status' => 'unchanged', 'order_id' => $order_id, 'codes' => $codes, 'source' => $stored_source);
+    }
+
+    $order->update_meta_data('_tracking_code', $primary);
+    if (count($codes) > 1) {
+        $order->update_meta_data('_tracking_codes', array_values($codes));
+    } elseif (method_exists($order, 'delete_meta_data')) {
+        $order->delete_meta_data('_tracking_codes');
+    }
+    if ($source !== '') {
+        $order->update_meta_data('_bwt_tracking_source', $source);
+    }
+    $order->update_meta_data('_bwt_tracking_synced_at', time());
+    if (method_exists($order, 'delete_meta_data')) {
+        // نوشتن عمدی کد، قفل «همگام‌سازی خودکار خاموش» را برمی‌دارد.
+        $order->delete_meta_data('_bwt_autosync_off');
+    }
+    if ($save && method_exists($order, 'save')) {
+        $order->save();
+    }
+    bwt_flush_order_counts_cache();
+    do_action('bwt_tracking_synced', $order_id, $codes, $source, $context);
+
+    return array(
+        'status'   => $current === '' ? 'created' : 'updated',
+        'order_id' => $order_id,
+        'codes'    => $codes,
+        'source'   => $source,
+    );
+}
+
+function bwt_order_autosync_disabled($order) {
+    if (!is_object($order) || !method_exists($order, 'get_meta')) {
+        return false;
+    }
+    return (bool) $order->get_meta('_bwt_autosync_off');
+}
+
+/** همگام‌سازی یک سفارش از منابع بیرونی. */
+function bwt_sync_order_tracking($order, $context = 'event') {
+    static $running = array();
+    if (!is_object($order) || !method_exists($order, 'get_id')) {
+        return array('status' => 'skipped', 'order_id' => 0, 'codes' => array(), 'source' => '');
+    }
+    $order_id = (int) $order->get_id();
+    if ($order_id <= 0) {
+        return array('status' => 'skipped', 'order_id' => 0, 'codes' => array(), 'source' => '');
+    }
+    if (!empty($running[$order_id])) {
+        return array('status' => 'skipped', 'order_id' => $order_id, 'codes' => array(), 'source' => '');
+    }
+    $running[$order_id] = true;
+    try {
+        if (bwt_order_autosync_disabled($order)) {
+            return array('status' => 'disabled', 'order_id' => $order_id, 'codes' => array(), 'source' => '');
+        }
+        $resolved = bwt_resolve_order_tracking($order);
+        if (empty($resolved['codes']) || empty($resolved['external'])) {
+            return array('status' => 'no_source', 'order_id' => $order_id, 'codes' => array(), 'source' => '');
+        }
+        $result = bwt_apply_tracking_codes($order, $resolved['codes'], $resolved['source'], $context);
+        if (!isset($result['order_id']) || !$result['order_id']) {
+            $result['order_id'] = $order_id;
+        }
+        return $result;
+    } finally {
+        unset($running[$order_id]);
+    }
+}
+
+function bwt_is_order_syncable($order) {
+    if (!is_object($order) || !method_exists($order, 'get_status')) {
+        return true;
+    }
+    $status = (string) $order->get_status();
+    return !in_array($status, array('checkout-draft', 'trash', 'auto-draft'), true);
+}
+
+// ========== 2.b کار با دیتابیس: جدول اختصاصی و پیدا کردن کلید ==========
+function bwt_db_table_exists($table) {
+    global $wpdb;
+    static $cache = array();
+    $table = bwt_sanitize_identifier($table);
+    if ($table === '' || !is_object($wpdb) || !method_exists($wpdb, 'get_var')) {
+        return false;
+    }
+    if (!array_key_exists($table, $cache)) {
+        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table));
+        $cache[$table] = ($found === $table);
+    }
+    return $cache[$table];
+}
+
+function bwt_db_table_columns($table) {
+    global $wpdb;
+    static $cache = array();
+    $table = bwt_sanitize_identifier($table);
+    if ($table === '' || !bwt_db_table_exists($table) || !method_exists($wpdb, 'get_col')) {
+        return array();
+    }
+    if (!isset($cache[$table])) {
+        $columns = $wpdb->get_col("SHOW COLUMNS FROM `{$table}`");
+        $cache[$table] = is_array($columns) ? array_values(array_map('strval', $columns)) : array();
+    }
+    return $cache[$table];
+}
+
+/** جدول‌هایی که ممکن است سورناپست/سرویس پستی خودش ساخته باشد. */
+function bwt_candidate_tables() {
+    global $wpdb;
+    if (!is_object($wpdb) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'get_results')) {
+        return array();
+    }
+    $tables = $wpdb->get_col('SHOW TABLES');
+    $out = array();
+    foreach ((array) $tables as $table) {
+        $table = (string) $table;
+        if (!preg_match('/(sorna|surena|shipment|parcel|track|barcode|_post_)/iu', $table)) {
+            continue;
+        }
+        if (in_array($table, bwt_meta_tables(), true)) {
+            continue;
+        }
+        $columns = bwt_db_table_columns($table);
+        if (!$columns) {
+            continue;
+        }
+        $out[] = array('table' => $table, 'columns' => array_slice($columns, 0, 40));
+        if (count($out) >= 8) {
+            break;
+        }
+    }
+    return $out;
+}
+
+function bwt_meta_tables() {
+    global $wpdb;
+    $tables = array();
+    if (is_object($wpdb) && !empty($wpdb->postmeta)) {
+        $tables[] = $wpdb->postmeta;
+    }
+    if (is_object($wpdb) && !empty($wpdb->prefix)) {
+        $hpos = $wpdb->prefix . 'wc_orders_meta';
+        if (bwt_db_table_exists($hpos)) {
+            $tables[] = $hpos;
+        }
+    }
+    return $tables;
+}
+
+/**
+ * آخرین راه‌حل: خواندن کد از جدول اختصاصی سرویس پستی (اگر متا نباشد).
+ * فقط وقتی ادمین جدول/ستون‌ها را در تنظیمات مشخص کرده باشد اجرا می‌شود.
+ */
+function bwt_custom_table_codes($order_id) {
+    global $wpdb;
+    static $cache = array();
+    $order_id = (int) $order_id;
+    if ($order_id <= 0 || !is_object($wpdb) || !method_exists($wpdb, 'get_col')) {
+        return array();
+    }
+    if (isset($cache[$order_id])) {
+        return $cache[$order_id];
+    }
+    $cache[$order_id] = array();
+    $settings = bwt_get_settings();
+    $source = isset($settings['table_source']) ? $settings['table_source'] : array();
+    if (empty($source['table'])) {
+        return array();
+    }
+    $columns = bwt_db_table_columns($source['table']);
+    if (!$columns || !in_array($source['order_col'], $columns, true) || !in_array($source['code_col'], $columns, true)) {
+        return array();
+    }
+    $sql = $wpdb->prepare(
+        "SELECT `{$source['code_col']}` FROM `{$source['table']}` WHERE `{$source['order_col']}` = %d LIMIT 10",
+        $order_id
+    );
+    $values = $wpdb->get_col($sql);
+    $cache[$order_id] = bwt_unique_codes(is_array($values) ? $values : array());
+    return $cache[$order_id];
+}
+
+// ========== 3. گرفتن لحظه‌ای کد از افزونهٔ حمل‌ونقل ==========
+add_action('woocommerce_new_order', 'bwt_on_order_event', 20, 1);
+add_action('woocommerce_update_order', 'bwt_on_order_event', 20, 1);
+add_action('woocommerce_order_status_changed', 'bwt_on_order_status_changed', 20, 4);
+
+function bwt_on_order_event($order_id) {
+    if (!function_exists('wc_get_order')) {
+        return;
+    }
+    $order = wc_get_order($order_id);
+    if (!$order || !bwt_is_order_syncable($order)) {
+        return;
+    }
+    bwt_sync_order_tracking($order, 'order_event');
+}
+
+function bwt_on_order_status_changed($order_id, $from = '', $to = '', $order = null) {
+    if (!$order && function_exists('wc_get_order')) {
+        $order = wc_get_order($order_id);
+    }
+    if (!$order || !bwt_is_order_syncable($order)) {
+        return;
+    }
+    bwt_sync_order_tracking($order, 'status_changed');
+}
+
+// ========== 4. جاروی دوره‌ای (پوشش نوشتن‌های بدون رویداد) ==========
+add_filter('cron_schedules', 'bwt_cron_schedules');
+add_action('init', 'bwt_maybe_schedule_cron');
+add_action('bwt_tracking_sweep', 'bwt_run_tracking_sweep');
+
+function bwt_cron_schedules($schedules) {
+    if (!isset($schedules['bwt_fifteen_min'])) {
+        $schedules['bwt_fifteen_min'] = array(
+            'interval' => 15 * MINUTE_IN_SECONDS,
+            'display'  => 'هر ۱۵ دقیقه (کد رهگیری تیساکیس)',
+        );
+    }
+    return $schedules;
+}
+
+function bwt_maybe_schedule_cron() {
+    if (!function_exists('wp_next_scheduled') || !function_exists('wp_schedule_event')) {
+        return;
+    }
+    if (!wp_next_scheduled('bwt_tracking_sweep')) {
+        wp_schedule_event(time() + 5 * MINUTE_IN_SECONDS, 'bwt_fifteen_min', 'bwt_tracking_sweep');
+    }
+}
+
+function bwt_deactivate_plugin() {
+    if (function_exists('wp_clear_scheduled_hook')) {
+        wp_clear_scheduled_hook('bwt_tracking_sweep');
+    }
+}
+
+function bwt_query_orders_missing_tracking($limit = BWT_SWEEP_MAX_ORDERS) {
+    if (!function_exists('wc_get_orders') || !function_exists('wc_get_order')) {
+        return array();
+    }
+    $limit = max(1, (int) $limit);
+    // پنج برابر ظرفیت نگاه می‌کنیم تا بعد از کنارگذاشتن سفارش‌های دارای کد، به تعداد کافی برسیم.
+    $candidates = bwt_recent_order_ids(BWT_SWEEP_DAYS, min(2500, $limit * 5));
+    $missing = array_values(array_diff($candidates, bwt_ids_with_tracking_code($candidates)));
+    $missing = array_slice($missing, 0, $limit);
+
+    $orders = array();
+    foreach ($missing as $id) {
+        $order = wc_get_order($id);
+        if ($order) {
+            $orders[] = $order;
+        }
+    }
+    return $orders;
+}
+
+function bwt_sync_orders($orders, $context = 'sweep') {
+    $stats = array('scanned' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'no_source' => 0, 'disabled' => 0, 'invalid' => 0);
+    foreach ((array) $orders as $order) {
+        $stats['scanned']++;
+        if (!is_object($order)) {
+            $stats['invalid']++;
+            continue;
+        }
+        $result = bwt_sync_order_tracking($order, $context);
+        $status = isset($result['status']) ? $result['status'] : 'skipped';
+        if (isset($stats[$status])) {
+            $stats[$status]++;
+        }
+    }
+    return $stats;
+}
+
+function bwt_run_tracking_sweep() {
+    $settings = bwt_get_settings();
+    if (empty($settings['sweep_enabled'])) {
+        return array('scanned' => 0, 'created' => 0, 'updated' => 0, 'unchanged' => 0, 'no_source' => 0, 'disabled' => 0, 'invalid' => 0);
+    }
+    $orders = bwt_query_orders_missing_tracking(BWT_SWEEP_MAX_ORDERS);
+    $stats = bwt_sync_orders($orders, 'sweep');
+    $stats['time'] = time();
+    $stats['trigger'] = 'cron';
+    update_option(BWT_OPTION_LAST_SWEEP, $stats, false);
+    return $stats;
+}
+
+function bwt_last_sweep() {
+    $last = get_option(BWT_OPTION_LAST_SWEEP, array());
+    return is_array($last) ? $last : array();
+}
+
+// ========== 5. شمارش برای داشبورد ==========
+/**
+ * آیا HPOS (جدول‌های سفارش سفارشی) فعال است؟
+ * خواندن متا با HPOS از wp_postmeta انجام نمی‌شود، از {prefix}wc_orders_meta.
+ */
+function bwt_is_hpos_enabled() {
+    $util = '\Automattic\WooCommerce\Utilities\OrderUtil';
+    if (class_exists($util) && method_exists($util, 'custom_orders_table_usage_is_enabled')) {
+        return (bool) call_user_func(array($util, 'custom_orders_table_usage_is_enabled'));
+    }
+    return false;
+}
+
+/** وضعیت‌هایی که «سفارش واقعی» حساب می‌شوند. */
+function bwt_counted_statuses() {
+    return array('processing', 'completed', 'on-hold', 'shipped');
+}
+
+/**
+ * شناسهٔ سفارش‌های بازهٔ اخیر — فقط شناسه (سبک).
+ *
+ * نکتهٔ مهم: فیلتر متا (meta_query) در HPOS نادیده گرفته می‌شود؛ به همین دلیل
+ * «داشتن/نداشتن کد» با همین شناسه‌ها و متای واقعی سنجیده می‌شود، نه با meta_query.
+ *
+ * @param int $days تعداد روزهای گذشته.
+ * @param int $max  صفر = بدون سقف (سقف سخت ۵۰۰۰ برای امنیت).
+ */
+function bwt_recent_order_ids($days = BWT_SWEEP_DAYS, $max = 0) {
+    if (!function_exists('wc_get_orders')) {
+        return array();
+    }
+    $limit = $max > 0 ? (int) $max : 5000;
+    $ids = wc_get_orders(array(
+        'limit'        => min(5000, $limit),
+        'type'         => 'shop_order',
+        'status'       => bwt_counted_statuses(),
+        'date_created' => '>' . (time() - max(1, (int) $days) * DAY_IN_SECONDS),
+        'orderby'      => 'date',
+        'order'        => 'DESC',
+        'return'       => 'ids',
+    ));
+    if (!is_array($ids)) {
+        return array();
+    }
+    $out = array();
+    foreach ($ids as $id) {
+        $id = (int) $id;
+        if ($id > 0 && !isset($out[$id])) {
+            $out[$id] = $id;
+        }
+    }
+    return array_values($out);
+}
+
+/**
+ * از میان شناسه‌های داده‌شده، آن‌هایی که متای کد رهگیری دارند.
+ * یک کوئری روی جدول متای همان ذخیره‌سازی (postmeta یا wc_orders_meta).
+ */
+function bwt_ids_with_tracking_code($ids) {
+    global $wpdb;
+    $ids = array_values(array_unique(array_filter(array_map('intval', (array) $ids))));
+    if (!$ids || !is_object($wpdb) || !method_exists($wpdb, 'get_col') || !method_exists($wpdb, 'prepare')) {
+        return array();
+    }
+    $hpos = bwt_is_hpos_enabled();
+    $table = $hpos ? $wpdb->prefix . 'wc_orders_meta' : (empty($wpdb->postmeta) ? $wpdb->prefix . 'postmeta' : $wpdb->postmeta);
+    $column = $hpos ? 'order_id' : 'post_id';
+
+    $found = array();
+    foreach (array_chunk($ids, 500) as $chunk) {
+        $placeholders = implode(',', array_fill(0, count($chunk), '%d'));
+        $sql = $wpdb->prepare(
+            "SELECT DISTINCT `{$column}` FROM `{$table}` WHERE meta_key = %s AND meta_value <> '' AND `{$column}` IN ({$placeholders})",
+            array_merge(array('_tracking_code'), $chunk)
+        );
+        $rows = $wpdb->get_col($sql);
+        foreach ((array) $rows as $row) {
+            $row = (int) $row;
+            if ($row > 0) {
+                $found[$row] = $row;
+            }
+        }
+    }
+    return array_values($found);
+}
+
+/**
+ * شمارش سفارش‌های بازهٔ ۴۵ روز اخیر بر اساس وجود متای کد رهگیری.
+ * «بدون کد» همیشه از تفاضل کل منهای «دارای کد» به دست می‌آید تا دو عدد همیشه با هم بخوانند.
+ */
+function bwt_count_orders_with_code($has_code = true) {
+    if (!function_exists('wc_get_orders')) {
+        return 0;
+    }
+    $cached = get_transient('bwt_count_with_code');
+    if ($cached !== false) {
+        if ($has_code) {
+            return (int) $cached;
+        }
+        $cached_without = get_transient('bwt_count_without_code');
+        if ($cached_without !== false) {
+            return (int) $cached_without;
+        }
+    }
+
+    $ids = bwt_recent_order_ids(BWT_SWEEP_DAYS);
+    $with_code = count(bwt_ids_with_tracking_code($ids));
+    $without_code = max(0, count($ids) - $with_code);
+
+    set_transient('bwt_count_with_code', $with_code, 5 * MINUTE_IN_SECONDS);
+    set_transient('bwt_count_without_code', $without_code, 5 * MINUTE_IN_SECONDS);
+
+    return $has_code ? $with_code : $without_code;
+}
+
+/** کل سفارش‌های بازهٔ اخیر (برای نمایش «از چند سفارش»). */
+function bwt_count_orders_recent($days = BWT_SWEEP_DAYS) {
+    $cached = get_transient('bwt_count_total');
+    if ($cached !== false) {
+        return (int) $cached;
+    }
+    $total = count(bwt_recent_order_ids($days));
+    set_transient('bwt_count_total', $total, 5 * MINUTE_IN_SECONDS);
+    return $total;
+}
+
+// ========== 6. منبع کد رهگیری (ذخیرهٔ کلید متا) ==========
+add_action('wp_ajax_bwt_save_sources', 'bwt_ajax_save_sources');
+
+/** ذخیرهٔ فهرست کلیدهای متایی که کد رهگیری را نگه می‌دارند. */
+function bwt_ajax_save_sources() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_save_sources', 'nonce');
+    $keys = isset($_POST['keys']) ? wp_unslash($_POST['keys']) : array();
+    if (!is_array($keys)) {
+        $keys = array_filter(array_map('trim', explode(',', (string) $keys)));
+    }
+    $settings = bwt_get_settings();
+    $settings['source_keys'] = $keys;
+    $saved = bwt_save_settings($settings);
+    wp_send_json_success(array(
+        'source_keys' => $saved['source_keys'],
+        'message'     => empty($saved['source_keys']) ? 'هیچ منبعی انتخاب نشد؛ فقط کلیدهای شناخته‌شده بررسی می‌شوند.' : 'منبع ذخیره شد.',
+    ));
+}
+
+// ========== 7. همگام‌سازی دسته‌ای (بک‌فیل) ==========
+add_action('wp_ajax_bwt_sync_create', 'bwt_ajax_sync_create');
+add_action('wp_ajax_bwt_sync_batch', 'bwt_ajax_sync_batch');
+
+function bwt_lock_key($name) {
+    return 'bwt_lock_' . md5((string) $name);
+}
+
+function bwt_acquire_lock($name, $ttl = 60) {
+    $key = bwt_lock_key($name);
+    $now = time();
+    $existing = get_option($key);
+    if ($existing !== false && (int) $existing > $now) {
+        return false;
+    }
+    update_option($key, $now + (int) $ttl, false);
+    return (int) get_option($key) === $now + (int) $ttl;
+}
+
+function bwt_release_lock($name) {
+    delete_option(bwt_lock_key($name));
+}
+
+function bwt_collect_sync_order_ids($mode) {
+    if ($mode === 'missing') {
+        // همهٔ سفارش‌های بازه را می‌گیریم و سفارش‌های دارای کد را با متای واقعی کنار می‌گذاریم
+        // (meta_query در HPOS نادیده گرفته می‌شود و باعث می‌شد سفارش‌های «بدون کد» اشتباه انتخاب شوند).
+        $candidates = bwt_recent_order_ids(BWT_SWEEP_DAYS, min(5000, BWT_SYNC_MAX_ORDERS * 10));
+        $ids = array_values(array_diff($candidates, bwt_ids_with_tracking_code($candidates)));
+        $ids = array_slice($ids, 0, BWT_SYNC_MAX_ORDERS);
+    } else {
+        // حالت «بازبینی اخیر»: سفارش‌های دارای کد هم دوباره خوانده می‌شوند تا تغییر منبع به‌روز شود.
+        $ids = bwt_recent_order_ids(BWT_SWEEP_DAYS, 300);
+    }
+    $out = array();
+    foreach ((array) $ids as $id) {
+        $id = (int) $id;
+        if ($id > 0) {
+            $out[$id] = $id;
+        }
+    }
+    return array_values($out);
+}
+
+function bwt_create_sync_job($mode) {
+    if (!current_user_can('manage_options')) {
+        return array('job_id' => '', 'error' => 'دسترسی غیرمجاز است.');
+    }
+    if (!in_array($mode, array('missing', 'recent'), true)) {
+        return array('job_id' => '', 'error' => 'نوع همگام‌سازی نامعتبر است.');
+    }
+    $ids = bwt_collect_sync_order_ids($mode);
+    if (!$ids) {
+        return array('job_id' => '', 'error' => 'سفارشی برای بررسی پیدا نشد.');
+    }
+    try {
+        $raw = function_exists('wp_generate_uuid4') ? str_replace('-', '', wp_generate_uuid4()) : bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        $raw = md5(uniqid('bwt-sync', true));
+    }
+    $job_id = bwt_sanitize_job_id($raw);
+    if ($job_id === '') {
+        return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار همگام‌سازی ناموفق بود.');
+    }
+    $job = array(
+        'user_id'    => (int) get_current_user_id(),
+        'mode'       => $mode,
+        'ids'        => $ids,
+        'total'      => count($ids),
+        'offset'     => 0,
+        'scanned'    => 0,
+        'created'    => 0,
+        'updated'    => 0,
+        'unchanged'  => 0,
+        'no_source'  => 0,
+        'disabled'   => 0,
+        'invalid'    => 0,
+        'done'       => false,
+        'created_at' => time(),
+    );
+    if (!set_transient(bwt_sync_job_key($job_id), $job, HOUR_IN_SECONDS)) {
+        return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت همگام‌سازی ممکن نشد؛ دوباره تلاش کنید.');
+    }
+    return array('job_id' => $job_id, 'error' => '');
+}
+
+function bwt_sync_job_key($job_id) {
+    return 'bwt_sync_job_' . md5((string) $job_id);
+}
+
+function bwt_sanitize_job_id($job_id) {
+    $job_id = is_scalar($job_id) ? strtolower(trim((string) $job_id)) : '';
+    return preg_match('/^[a-f0-9]{8,64}$/', $job_id) ? $job_id : '';
+}
+
+function bwt_get_sync_job($job_id) {
+    $job_id = bwt_sanitize_job_id($job_id);
+    if ($job_id === '') {
+        return false;
+    }
+    return get_transient(bwt_sync_job_key($job_id));
+}
+
+function bwt_sync_job_payload($job) {
+    $total = isset($job['total']) ? (int) $job['total'] : 0;
+    $offset = isset($job['offset']) ? (int) $job['offset'] : 0;
+    $done = !empty($job['done']);
+    return array(
+        'mode'      => isset($job['mode']) ? (string) $job['mode'] : 'missing',
+        'done'      => $done,
+        'progress'  => $done ? 100 : ($total > 0 ? min(99, (int) floor(100 * $offset / $total)) : 0),
+        'total'     => $total,
+        'offset'    => $offset,
+        'scanned'   => isset($job['scanned']) ? (int) $job['scanned'] : 0,
+        'created'   => isset($job['created']) ? (int) $job['created'] : 0,
+        'updated'   => isset($job['updated']) ? (int) $job['updated'] : 0,
+        'unchanged' => isset($job['unchanged']) ? (int) $job['unchanged'] : 0,
+        'no_source' => isset($job['no_source']) ? (int) $job['no_source'] : 0,
+        'disabled'  => isset($job['disabled']) ? (int) $job['disabled'] : 0,
+        'invalid'   => isset($job['invalid']) ? (int) $job['invalid'] : 0,
+        'error'     => '',
+    );
+}
+
+function bwt_process_sync_batch(&$job, $batch_size = BWT_SYNC_BATCH_SIZE) {
+    $ids = isset($job['ids']) && is_array($job['ids']) ? $job['ids'] : array();
+    $batch_size = max(1, min(BWT_SYNC_BATCH_SIZE, (int) $batch_size));
+    $end = min(count($ids), (int) $job['offset'] + $batch_size);
+    for ($i = (int) $job['offset']; $i < $end; $i++) {
+        $job['scanned']++;
+        $order = function_exists('wc_get_order') ? wc_get_order((int) $ids[$i]) : null;
+        if (!$order) {
+            $job['invalid']++;
+            continue;
+        }
+        $result = bwt_sync_order_tracking($order, 'manual_sync');
+        $status = isset($result['status']) ? $result['status'] : 'skipped';
+        if (isset($job[$status])) {
+            $job[$status]++;
+        }
+    }
+    $processed = max(0, $end - (int) $job['offset']);
+    $job['offset'] = $end;
+    $job['done'] = $end >= count($ids);
+    return $processed;
+}
+
+function bwt_ajax_sync_create() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_sync_batch', 'nonce');
+    $mode = isset($_POST['mode']) ? sanitize_text_field(wp_unslash($_POST['mode'])) : 'missing';
+    $created = bwt_create_sync_job($mode);
+    if (empty($created['job_id'])) {
+        wp_send_json_error(array('message' => $created['error']), 400);
+    }
+    $job = bwt_get_sync_job($created['job_id']);
+    $payload = is_array($job) ? bwt_sync_job_payload($job) : array();
+    $payload['job_id'] = $created['job_id'];
+    wp_send_json_success($payload);
+}
+
+function bwt_ajax_sync_batch() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_sync_batch', 'nonce');
+    $job_id = isset($_POST['job_id']) ? bwt_sanitize_job_id(wp_unslash($_POST['job_id'])) : '';
+    $job = $job_id !== '' ? bwt_get_sync_job($job_id) : false;
+    if (!$job || !is_array($job) || empty($job['user_id']) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+        wp_send_json_error(array('message' => 'کار همگام‌سازی پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
+    }
+    $payload = bwt_sync_job_payload($job);
+    if (empty($job['done'])) {
+        if (!bwt_acquire_lock('sync_job_' . $job_id, 120)) {
+            wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
+        }
+        $job = bwt_get_sync_job($job_id);
+        if (is_array($job) && empty($job['done'])) {
+            bwt_process_sync_batch($job, BWT_SYNC_BATCH_SIZE);
+            set_transient(bwt_sync_job_key($job_id), $job, HOUR_IN_SECONDS);
+        }
+        bwt_release_lock('sync_job_' . $job_id);
+        $payload = is_array($job) ? bwt_sync_job_payload($job) : $payload;
+    }
+    $payload['job_id'] = $job_id;
+    wp_send_json_success($payload);
+}
+
+// ========== 7b. آپلود فایل CSV کد رهگیری (برای فایل‌های قدیمی) ==========
+/**
+ * ستون‌های قابل‌شناسایی در سرصفحهٔ فایل.
+ * خروجی: نگاشت «شمارهٔ سفارش» و «کد» به شمارهٔ ستون، یا آرایهٔ خالی.
+ */
+function bwt_csv_header_map($cells) {
+    // کلمات با فاصله نرمال می‌شوند تا «order_id» و «order id» یکی باشند.
+    $order_words = array('order', 'order id', 'orderid', 'order number', 'id', 'order code', 'سفارش', 'شماره سفارش', 'شناسه سفارش');
+    $code_words = array('tracking', 'code', 'tracking code', 'tracking number', 'barcode', 'post code', 'post barcode', 'رهگیری', 'کد رهگیری', 'کد', 'بارکد');
+    $map = array();
+    foreach ((array) $cells as $index => $cell) {
+        $value = strtolower(trim(bwt_normalize_digits((string) $cell)));
+        $value = str_replace(array("\xEF\xBB\xBF", '_', '-', '‌'), array('', ' ', ' ', ' '), $value);
+        $value = trim(preg_replace('/\s+/u', ' ', $value));
+        if ($value === '') {
+            continue;
+        }
+        if (!isset($map['order']) && in_array($value, $order_words, true)) {
+            $map['order'] = (int) $index;
+            continue;
+        }
+        if (!isset($map['code']) && in_array($value, $code_words, true)) {
+            $map['code'] = (int) $index;
+        }
+    }
+    return isset($map['order'], $map['code']) ? $map : array();
+}
+
+/**
+ * خواندن فایل CSV و تبدیل هر خط به «شمارهٔ سفارش + کد».
+ * خروجی: rows (معتبرها)، skipped (خط‌های ناخوانا با شمارهٔ خط)، total (خط‌های داده)، error.
+ */
+function bwt_csv_parse_rows($contents) {
+    $result = array('rows' => array(), 'skipped' => array(), 'total' => 0, 'has_header' => false, 'error' => '');
+    if (!is_string($contents) || trim($contents) === '') {
+        $result['error'] = 'فایل خالی است.';
+        return $result;
+    }
+
+    $contents = str_replace("\xEF\xBB\xBF", '', $contents);
+    $lines = preg_split('/\r\n|\r|\n/', $contents);
+    if (!is_array($lines)) {
+        $result['error'] = 'خواندن فایل ممکن نشد.';
+        return $result;
+    }
+
+    // جداکننده: هر کدام از «،» و «;» و tab که در خط اول بیشتر دیده شود.
+    $first_line = '';
+    foreach ($lines as $line) {
+        if (trim((string) $line) !== '') {
+            $first_line = (string) $line;
+            break;
+        }
+    }
+    $delimiter = ',';
+    $best = -1;
+    foreach (array(',', ';', "\t", '|') as $candidate) {
+        $count = substr_count($first_line, $candidate);
+        if ($count > $best) {
+            $best = $count;
+            $delimiter = $candidate;
+        }
+    }
+
+    $map = array();
+    $line_number = 0;
+    foreach ($lines as $line) {
+        $line_number++;
+        $line = (string) $line;
+        if (trim($line) === '') {
+            continue;
+        }
+        $cells = str_getcsv($line, $delimiter);
+        if (!is_array($cells)) {
+            continue;
+        }
+        if (!$map) {
+            $header = bwt_csv_header_map($cells);
+            if ($header) {
+                $map = $header;
+                $result['has_header'] = true;
+                continue;
+            }
+            // بدون سرصفحهٔ شناخته‌شده: ستون اول شمارهٔ سفارش، ستون دوم کد.
+            $map = array('order' => 0, 'code' => 1);
+        }
+
+        $result['total']++;
+        $order_id = isset($cells[$map['order']]) ? (int) preg_replace('/[^0-9]/', '', bwt_normalize_digits((string) $cells[$map['order']])) : 0;
+        $raw_code = isset($cells[$map['code']]) ? (string) $cells[$map['code']] : '';
+        $code = bwt_clean_code($raw_code);
+
+        if ($order_id <= 0) {
+            $result['skipped'][] = array('line' => $line_number, 'message' => 'شمارهٔ سفارش نامعتبر است.', 'value' => trim((string) $line));
+            continue;
+        }
+        if ($code === '' || !bwt_is_tracking_like($code)) {
+            $result['skipped'][] = array('line' => $line_number, 'message' => 'کد رهگیری نامعتبر است.', 'value' => trim($raw_code));
+            continue;
+        }
+        $result['rows'][] = array('order_id' => $order_id, 'code' => $code);
+    }
+
+    if (!$result['rows']) {
+        $result['error'] = 'هیچ ردیف معتبری پیدا نشد. قالب درست: order_id,tracking_code';
+    }
+    return $result;
+}
+
+/** بررسی امنیتی و خواندن فایل آپلودشده (بدون ذخیرهٔ دائمی). */
+function bwt_csv_read_upload($file) {
+    if (!is_array($file) || !isset($file['tmp_name']) || !isset($file['error'])) {
+        return array('contents' => '', 'error' => 'فایلی انتخاب نشد.');
+    }
+    if ((int) $file['error'] !== UPLOAD_ERR_OK) {
+        $messages = array(
+            UPLOAD_ERR_INI_SIZE   => 'حجم فایل از سقف سرور بیشتر است.',
+            UPLOAD_ERR_FORM_SIZE  => 'حجم فایل بیش از حد مجاز است.',
+            UPLOAD_ERR_PARTIAL    => 'فایل ناقص آپلود شد؛ دوباره تلاش کنید.',
+            UPLOAD_ERR_NO_FILE    => 'فایلی انتخاب نشد.',
+            UPLOAD_ERR_NO_TMP_DIR => 'پوشهٔ موقت سرور در دسترس نیست.',
+            UPLOAD_ERR_CANT_WRITE => 'نوشتن فایل روی سرور ممکن نشد.',
+        );
+        $code = (int) $file['error'];
+        return array('contents' => '', 'error' => isset($messages[$code]) ? $messages[$code] : 'آپلود فایل ناموفق بود.');
+    }
+    $name = isset($file['name']) ? (string) $file['name'] : '';
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if (!in_array($ext, array('csv', 'txt'), true)) {
+        return array('contents' => '', 'error' => 'فقط فایل CSV یا TXT مجاز است.');
+    }
+    $size = isset($file['size']) ? (int) $file['size'] : 0;
+    if ($size <= 0 || $size > BWT_CSV_MAX_SIZE) {
+        return array('contents' => '', 'error' => 'حجم فایل باید بین ۱ بایت و ۲ مگابایت باشد.');
+    }
+    $path = (string) $file['tmp_name'];
+    if (!is_readable($path)) {
+        return array('contents' => '', 'error' => 'فایل آپلودشده قابل خواندن نیست.');
+    }
+    $contents = @file_get_contents($path);
+    if (!is_string($contents)) {
+        return array('contents' => '', 'error' => 'خواندن فایل ممکن نشد.');
+    }
+    return array('contents' => $contents, 'error' => '');
+}
+
+function bwt_csv_job_key($job_id) {
+    return 'bwt_csv_job_' . md5((string) $job_id);
+}
+
+function bwt_get_csv_job($job_id) {
+    $job_id = bwt_sanitize_job_id($job_id);
+    if ($job_id === '') {
+        return false;
+    }
+    return get_transient(bwt_csv_job_key($job_id));
+}
+
+function bwt_create_csv_job($rows, $skipped = array()) {
+    $rows = is_array($rows) ? array_slice(array_values($rows), 0, BWT_CSV_MAX_ROWS) : array();
+    if (!$rows) {
+        return array('job_id' => '', 'error' => 'ردیف معتبری برای ثبت وجود ندارد.');
+    }
+    try {
+        $raw = function_exists('wp_generate_uuid4') ? str_replace('-', '', wp_generate_uuid4()) : bin2hex(random_bytes(16));
+    } catch (Throwable $e) {
+        $raw = md5(uniqid('bwt-csv', true));
+    }
+    $job_id = bwt_sanitize_job_id($raw);
+    if ($job_id === '') {
+        return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار آپلود ناموفق بود.');
+    }
+    $skipped = is_array($skipped) ? array_slice(array_values($skipped), 0, 100) : array();
+    $job = array(
+        'user_id'    => (int) get_current_user_id(),
+        'rows'       => $rows,
+        'total'      => count($rows),
+        'offset'     => 0,
+        'created'    => 0,
+        'updated'    => 0,
+        'unchanged'  => 0,
+        'invalid'    => 0,
+        'skipped'    => $skipped,
+        'skipped_total' => count($skipped),
+        'errors'     => array(),
+        'done'       => false,
+        'created_at' => time(),
+    );
+    if (!set_transient(bwt_csv_job_key($job_id), $job, HOUR_IN_SECONDS)) {
+        return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت آپلود ممکن نشد؛ دوباره تلاش کنید.');
+    }
+    return array('job_id' => $job_id, 'error' => '');
+}
+
+function bwt_csv_job_payload($job) {
+    $total = isset($job['total']) ? (int) $job['total'] : 0;
+    $offset = isset($job['offset']) ? (int) $job['offset'] : 0;
+    $done = !empty($job['done']);
+    return array(
+        'done'          => $done,
+        'progress'      => $done ? 100 : ($total > 0 ? min(99, (int) floor(100 * $offset / $total)) : 0),
+        'total'         => $total,
+        'offset'        => $offset,
+        'created'       => isset($job['created']) ? (int) $job['created'] : 0,
+        'updated'       => isset($job['updated']) ? (int) $job['updated'] : 0,
+        'unchanged'     => isset($job['unchanged']) ? (int) $job['unchanged'] : 0,
+        'invalid'       => isset($job['invalid']) ? (int) $job['invalid'] : 0,
+        'skipped'       => isset($job['skipped']) ? (array) $job['skipped'] : array(),
+        'skipped_total' => isset($job['skipped_total']) ? (int) $job['skipped_total'] : 0,
+        'errors'        => isset($job['errors']) ? (array) $job['errors'] : array(),
+    );
+}
+
+/** ثبت یک دسته از ردیف‌های فایل روی سفارش‌ها. */
+function bwt_process_csv_batch(&$job, $batch_size = BWT_CSV_BATCH_SIZE) {
+    $rows = isset($job['rows']) && is_array($job['rows']) ? $job['rows'] : array();
+    $batch_size = max(1, min(BWT_CSV_BATCH_SIZE, (int) $batch_size));
+    $end = min(count($rows), (int) $job['offset'] + $batch_size);
+    for ($i = (int) $job['offset']; $i < $end; $i++) {
+        $row = $rows[$i];
+        $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+        $code = isset($row['code']) ? (string) $row['code'] : '';
+        $order = ($order_id > 0 && function_exists('wc_get_order')) ? wc_get_order($order_id) : null;
+        if (!$order) {
+            $job['invalid']++;
+            if (count($job['errors']) < 50) {
+                $job['errors'][] = 'سفارش #' . $order_id . ' پیدا نشد.';
+            }
+            continue;
+        }
+        $result = bwt_apply_tracking_codes($order, array($code), 'csv_upload', 'csv_upload');
+        $status = isset($result['status']) ? (string) $result['status'] : 'invalid';
+        if (isset($job[$status]) && is_int($job[$status])) {
+            $job[$status]++;
+        } else {
+            $job['invalid']++;
+        }
+    }
+    $processed = max(0, $end - (int) $job['offset']);
+    $job['offset'] = $end;
+    $job['done'] = $end >= count($rows);
+    return $processed;
+}
+
+function bwt_ajax_csv_batch() {
+    if (!current_user_can('manage_options')) {
+        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
+    }
+    check_ajax_referer('bwt_csv_batch', 'nonce');
+    $job_id = isset($_POST['job_id']) ? bwt_sanitize_job_id(wp_unslash($_POST['job_id'])) : '';
+    $job = $job_id !== '' ? bwt_get_csv_job($job_id) : false;
+    if (!$job || !is_array($job) || empty($job['user_id']) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+        wp_send_json_error(array('message' => 'کار آپلود پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
+    }
+    $payload = bwt_csv_job_payload($job);
+    if (empty($job['done'])) {
+        if (!bwt_acquire_lock('csv_job_' . $job_id, 120)) {
+            wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
+        }
+        $job = bwt_get_csv_job($job_id);
+        if (is_array($job) && empty($job['done'])) {
+            bwt_process_csv_batch($job, BWT_CSV_BATCH_SIZE);
+            set_transient(bwt_csv_job_key($job_id), $job, HOUR_IN_SECONDS);
+        }
+        bwt_release_lock('csv_job_' . $job_id);
+        $payload = is_array($job) ? bwt_csv_job_payload($job) : $payload;
+    }
+    $payload['job_id'] = $job_id;
+    wp_send_json_success($payload);
+}
+
+// ========== 8. نقطهٔ ورود بیرونی (Push API با HMAC) ==========
+add_action('rest_api_init', 'bwt_register_rest_routes');
+
+function bwt_register_rest_routes() {
+    if (!function_exists('register_rest_route')) {
+        return;
+    }
+    register_rest_route('bwt/v1', '/tracking', array(
+        'methods'             => 'POST',
+        'callback'            => 'bwt_rest_push_tracking',
+        'permission_callback' => 'bwt_rest_push_permission',
+    ));
+}
+
+function bwt_rest_push_permission($request) {
+    $settings = bwt_get_settings();
+    if (empty($settings['push_enabled']) || $settings['push_secret'] === '') {
+        return new WP_Error('bwt_push_disabled', 'دریافت کد از سرویس بیرونی خاموش است.', array('status' => 403));
+    }
+    $signature = '';
+    if (is_object($request) && method_exists($request, 'get_header')) {
+        $signature = (string) $request->get_header('x_bwt_signature');
+    }
+    $raw = '';
+    if (is_object($request) && method_exists($request, 'get_body')) {
+        $raw = (string) $request->get_body();
+    }
+    $expected = hash_hmac('sha256', $raw, $settings['push_secret']);
+    if ($signature === '' || !hash_equals($expected, strtolower(trim($signature)))) {
+        return new WP_Error('bwt_push_signature', 'امضای درخواست معتبر نیست.', array('status' => 401));
+    }
+    return true;
+}
+
+/** کد ورودی از سرویس بیرونی: کدهای غیراستاندارد هم پذیرفته می‌شوند (حداقل ۴ رقم). */
+function bwt_sanitize_pushed_code($value) {
+    $code = bwt_clean_code($value);
+    if ($code === '') {
+        return '';
+    }
+    if (preg_match_all('/\d/', $code, $matches) && count($matches[0]) < 4) {
+        return '';
+    }
+    return $code;
+}
+
+function bwt_rest_push_tracking($request) {
+    $params = array();
+    if (is_object($request) && method_exists($request, 'get_json_params')) {
+        $json = $request->get_json_params();
+        if (is_array($json)) {
+            $params = $json;
+        }
+    }
+    if (!$params && is_object($request) && method_exists($request, 'get_params')) {
+        $params = (array) $request->get_params();
+    }
+
+    $order_id = isset($params['order_id']) ? (int) bwt_normalize_digits($params['order_id']) : 0;
+    if ($order_id <= 0) {
+        return new WP_Error('bwt_push_order', 'شمارهٔ سفارش معتبر نیست.', array('status' => 400));
+    }
+
+    $raw_codes = array();
+    if (isset($params['tracking_codes']) && is_array($params['tracking_codes'])) {
+        $raw_codes = $params['tracking_codes'];
+    } elseif (isset($params['tracking_codes'])) {
+        $raw_codes = array($params['tracking_codes']);
+    } elseif (isset($params['tracking_code'])) {
+        $raw_codes = array($params['tracking_code']);
+    }
+    $codes = array();
+    foreach ($raw_codes as $raw) {
+        $code = bwt_sanitize_pushed_code($raw);
+        if ($code !== '' && !in_array($code, $codes, true)) {
+            $codes[] = $code;
+        }
+        if (count($codes) >= BWT_TRACK_MAX_CODES) {
+            break;
+        }
+    }
+    if (!$codes) {
+        return new WP_Error('bwt_push_code', 'کد رهگیری معتبر نیست.', array('status' => 400));
+    }
+
+    $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+    if (!$order) {
+        return new WP_Error('bwt_push_not_found', 'سفارش با این شماره پیدا نشد.', array('status' => 404));
+    }
+
+    $result = bwt_apply_tracking_codes($order, $codes, 'push_api', 'push_api');
+    return array(
+        'status'        => $result['status'],
+        'order_id'      => $order_id,
+        'tracking_code' => isset($result['codes'][0]) ? $result['codes'][0] : '',
+        'tracking_codes' => isset($result['codes']) ? array_values($result['codes']) : array(),
+        'source'        => 'push_api',
+    );
+}
+
+// ========== 9. پیشخوان: منو، استایل، صفحهٔ همگام‌سازی و پاک‌سازی ==========
 add_action('admin_menu', 'bwt_add_admin_menu');
-add_action('wp_ajax_bwt_upload_batch', 'bwt_ajax_upload_batch');
-add_action('wp_ajax_bwt_upload_status', 'bwt_ajax_upload_status');
-add_action('wp_ajax_bwt_cleanup_batch', 'bwt_ajax_cleanup_batch');
-add_action('wp_ajax_bwt_cleanup_status', 'bwt_ajax_cleanup_status');
-add_action('bwt_cleanup_upload_temp_files', 'bwt_cleanup_stale_upload_files');
+add_action('admin_enqueue_scripts', 'bwt_admin_assets');
+
 function bwt_add_admin_menu() {
     add_submenu_page(
         'woocommerce',
-        'آپلود کد رهگیری انبوه',
-        'آپلود کد رهگیری',
+        'کد رهگیری پستی',
+        'کد رهگیری',
         'manage_options',
         'bulk-tracking-upload',
-        'bwt_upload_page'
+        'bwt_tracking_page'
     );
-    
     add_submenu_page(
         'woocommerce',
         'پاک کردن کدهای رهگیری',
@@ -46,8 +1562,6 @@ function bwt_add_admin_menu() {
     );
 }
 
-// استایل ادمین فقط روی دو صفحهٔ خودمان (بعد از لایهٔ توکن هاب اگر فعال باشد)
-add_action('admin_enqueue_scripts', 'bwt_admin_assets');
 function bwt_admin_assets($hook) {
     if ($hook !== 'woocommerce_page_bulk-tracking-upload' && $hook !== 'woocommerce_page_bwt-cleanup') {
         return;
@@ -58,23 +1572,23 @@ function bwt_admin_assets($hook) {
         wp_style_is('tisacase-ui', 'registered') ? array('tisacase-ui') : array(),
         BWT_VERSION
     );
-    if ($hook === 'woocommerce_page_bulk-tracking-upload' || $hook === 'woocommerce_page_bwt-cleanup') {
-        $is_cleanup = $hook === 'woocommerce_page_bwt-cleanup';
-        wp_enqueue_script('bwt-admin', plugin_dir_url(__FILE__) . 'assets/admin.js', array(), BWT_VERSION, true);
-        wp_localize_script('bwt-admin', 'BWTAdmin', array(
-            'ajaxUrl' => admin_url('admin-ajax.php'),
-            'nonce' => wp_create_nonce($is_cleanup ? 'bwt_cleanup_batch' : 'bwt_upload_batch'),
-            'retryLabel' => 'تلاش دوباره / ادامه پردازش',
-        ));
-    }
+    wp_enqueue_script('bwt-admin', plugin_dir_url(__FILE__) . 'assets/admin.js', array(), BWT_VERSION, true);
+    wp_localize_script('bwt-admin', 'BWTAdmin', array(
+        'ajaxUrl'       => admin_url('admin-ajax.php'),
+        'cleanupNonce'  => wp_create_nonce('bwt_cleanup_batch'),
+        'sourceNonce'   => wp_create_nonce('bwt_save_sources'),
+        'syncNonce'     => wp_create_nonce('bwt_sync_batch'),
+        'csvNonce'      => wp_create_nonce('bwt_csv_batch'),
+        'retryLabel'    => 'تلاش دوباره / ادامه پردازش',
+        'genericError'  => 'ارتباط با سرور ناموفق بود.',
+    ));
 }
 
-
-// سر سبز مشترک دو صفحه (زبان طراحی TisaCase)
+/** سر سبز مشترک دو صفحه (زبان طراحی TisaCase). */
 function bwt_render_hero($active) {
     $tabs = array(
-        'upload'  => array('label' => 'آپلود کد رهگیری', 'url' => admin_url('admin.php?page=bulk-tracking-upload')),
-        'cleanup' => array('label' => 'پاک کردن کدها',   'url' => admin_url('admin.php?page=bwt-cleanup')),
+        'sync'    => array('label' => 'همگام‌سازی خودکار', 'url' => admin_url('admin.php?page=bulk-tracking-upload')),
+        'cleanup' => array('label' => 'پاک کردن کدها', 'url' => admin_url('admin.php?page=bwt-cleanup')),
     );
     ?>
     <header class="bwt-hero">
@@ -84,711 +1598,519 @@ function bwt_render_hero($active) {
             </div>
             <div class="bwt-hero-text">
                 <h1 class="bwt-hero-title">کد رهگیری پستی</h1>
-                <p class="bwt-hero-sub">افزودن انبوه کد رهگیری از CSV و پاک‌کردن کدها — به همراه فرم پیگیری سفارش برای مشتری</p>
+                <p class="bwt-hero-sub">بدون فایل و بدون کار دستی — کدی که سورناپست صادر می‌کند، خودکار روی سفارش می‌نشیند</p>
             </div>
             <span class="bwt-hero-ver" dir="ltr">v<?php echo esc_html(BWT_VERSION); ?></span>
         </div>
         <nav class="bwt-tabs">
-            <?php foreach ($tabs as $key => $t) : ?>
-                <a class="bwt-tab <?php echo $key === $active ? 'is-active' : ''; ?>" href="<?php echo esc_url($t['url']); ?>"><?php echo esc_html($t['label']); ?></a>
+            <?php foreach ($tabs as $key => $tab) : ?>
+                <a class="bwt-tab <?php echo $key === $active ? 'is-active' : ''; ?>" href="<?php echo esc_url($tab['url']); ?>"><?php echo esc_html($tab['label']); ?></a>
             <?php endforeach; ?>
         </nav>
     </header>
     <?php
 }
 
-// ========== 2. صفحه آپلود اکسل ==========
-function bwt_upload_page() {
+function bwt_admin_notice($type, $text) {
+    return '<div class="tisa-notice tisa-notice--' . esc_attr($type) . ' bwt-notice"><p>' . esc_html($text) . '</p></div>';
+}
+
+function bwt_tracking_page() {
     if (!current_user_can('manage_options')) {
         wp_die('دسترسی غیر مجاز');
     }
 
-    $upload_error = '';
-    $upload_job_id = '';
+    $settings = bwt_get_settings();
+    $message = '';
 
-    // فقط آپلود و ایجاد Job در درخواست صفحه انجام می‌شود؛ ردیف‌ها در درخواست‌های AJAX کوچک پردازش می‌شوند.
-    if (isset($_POST['bwt_upload'])) {
-        if (!isset($_POST['bwt_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_nonce'])), 'bwt_upload_action')) {
-            $upload_error = 'خطای امنیتی: نانس نامعتبر است. لطفا صفحه را رفرش کنید.';
-        } elseif (empty($_FILES['tracking_file']) || $_FILES['tracking_file']['error'] !== UPLOAD_ERR_OK) {
-            $upload_error = bwt_get_upload_error_message($_FILES['tracking_file']['error'] ?? UPLOAD_ERR_NO_FILE);
+    if (isset($_POST['bwt_save_settings'])) {
+        if (!isset($_POST['bwt_settings_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_settings_nonce'])), 'bwt_settings_action')) {
+            $message = bwt_admin_notice('danger', 'خطای امنیتی: نانس نامعتبر است. صفحه را رفرش کنید.');
         } else {
-            $file = $_FILES['tracking_file'];
-            if ((int) $file['size'] > BWT_UPLOAD_MAX_SIZE) {
-                $upload_error = 'حجم فایل بیش از حد مجاز است (حداکثر ۵ مگابایت).';
-            } elseif (!is_uploaded_file($file['tmp_name'])) {
-                $upload_error = 'خطای آپلود: فایل به درستی آپلود نشده است.';
-            } else {
-                $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-                if ($ext !== 'csv') {
-                    $upload_error = 'فرمت فایل نامعتبر است. فقط فایل CSV مجاز است.';
-                } elseif (empty($upload_error)) {
-                    $created_job = bwt_create_upload_job($file['tmp_name']);
-                    if (empty($created_job['job_id'])) {
-                        $upload_error = !empty($created_job['error']) ? $created_job['error'] : 'ساخت کار پردازش فایل ناموفق بود.';
+            $input = array(
+                'source_keys'   => $settings['source_keys'],
+                'scan_notes'    => isset($_POST['scan_notes']) ? 1 : 0,
+                'sweep_enabled' => isset($_POST['sweep_enabled']) ? 1 : 0,
+                'push_enabled'  => isset($_POST['push_enabled']) ? 1 : 0,
+                'push_secret'   => isset($_POST['push_secret']) ? sanitize_text_field(wp_unslash($_POST['push_secret'])) : '',
+                'tracking_url'  => isset($_POST['tracking_url']) ? esc_url_raw(wp_unslash($_POST['tracking_url'])) : '',
+                'fallback_pdf'  => isset($_POST['fallback_pdf']) ? esc_url_raw(wp_unslash($_POST['fallback_pdf'])) : '',
+            );
+            if (!empty($_POST['bwt_regenerate_secret'])) {
+                $input['push_secret'] = bwt_generate_push_secret();
+            } elseif ($input['push_secret'] === '') {
+                $input['push_secret'] = $settings['push_secret'];
+            }
+            if ($input['push_secret'] === '') {
+                $input['push_secret'] = bwt_generate_push_secret();
+            }
+            $table_source = array(
+                'table'     => isset($_POST['table_source_table']) ? sanitize_text_field(wp_unslash($_POST['table_source_table'])) : '',
+                'order_col' => isset($_POST['table_source_order_col']) ? sanitize_text_field(wp_unslash($_POST['table_source_order_col'])) : '',
+                'code_col'  => isset($_POST['table_source_code_col']) ? sanitize_text_field(wp_unslash($_POST['table_source_code_col'])) : '',
+            );
+            $input['table_source'] = $table_source;
+            $settings = bwt_save_settings($input);
+            $message = bwt_admin_notice('success', 'تنظیمات ذخیره شد.');
+            if ($table_source['table'] !== '') {
+                $wanted = bwt_sanitize_table_source($table_source);
+                if (empty($settings['table_source']['table'])) {
+                    $message = bwt_admin_notice('warning', 'نام جدول/ستون نامعتبر بود و ذخیره نشد (فقط حروف لاتین، رقم و آندرلاین).');
+                } else {
+                    $columns = bwt_db_table_columns($settings['table_source']['table']);
+                    if (!$columns) {
+                        $message = bwt_admin_notice('warning', 'جدول «' . $settings['table_source']['table'] . '» پیدا نشد؛ منبع جدول ذخیره شد ولی تا وجود جدول غیرفعال می‌ماند.');
+                    } elseif (!in_array($settings['table_source']['order_col'], $columns, true) || !in_array($settings['table_source']['code_col'], $columns, true)) {
+                        $message = bwt_admin_notice('warning', 'ستون‌های واردشده در جدول نیستند: ' . implode('، ', array_slice($columns, 0, 12)));
                     } else {
-                        $upload_job_id = $created_job['job_id'];
+                        $message = bwt_admin_notice('success', 'تنظیمات و منبع جدول ذخیره شد.');
+                    }
+                }
+                if ($wanted['table'] === '') {
+                    $settings['table_source'] = array('table' => '', 'order_col' => '', 'code_col' => '');
+                }
+            }
+        }
+    }
+
+    if (isset($_POST['bwt_manual_save'])) {
+        if (!isset($_POST['bwt_manual_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_manual_nonce'])), 'bwt_manual_action')) {
+            $message = bwt_admin_notice('danger', 'خطای امنیتی: نانس نامعتبر است.');
+        } else {
+            $order_id = (int) bwt_normalize_digits(isset($_POST['manual_order_id']) ? wp_unslash($_POST['manual_order_id']) : '');
+            $code = bwt_sanitize_pushed_code(isset($_POST['manual_tracking_code']) ? wp_unslash($_POST['manual_tracking_code']) : '');
+            $order = ($order_id > 0 && function_exists('wc_get_order')) ? wc_get_order($order_id) : null;
+            if (!$order) {
+                $message = bwt_admin_notice('danger', 'سفارش با شمارهٔ ' . $order_id . ' پیدا نشد.');
+            } elseif ($code === '') {
+                $message = bwt_admin_notice('danger', 'کد رهگیری معتبر نیست (حداقل ۴ کاراکتر و ۴ رقم).');
+            } else {
+                $result = bwt_apply_tracking_codes($order, array($code), 'manual', 'admin_manual');
+                $message = bwt_admin_notice('success', 'کد رهگیری سفارش #' . $order_id . ' ثبت شد.');
+            }
+        }
+    }
+
+    $csv_job_id = '';
+    if (isset($_POST['bwt_csv_upload'])) {
+        if (!isset($_POST['bwt_csv_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_csv_nonce'])), 'bwt_csv_action')) {
+            $message = bwt_admin_notice('danger', 'خطای امنیتی: نانس نامعتبر است. صفحه را رفرش کنید.');
+        } else {
+            $read = bwt_csv_read_upload(isset($_FILES['bwt_csv_file']) ? $_FILES['bwt_csv_file'] : array());
+            if ($read['error'] !== '') {
+                $message = bwt_admin_notice('danger', $read['error']);
+            } else {
+                $parsed = bwt_csv_parse_rows($read['contents']);
+                if ($parsed['error'] !== '') {
+                    $message = bwt_admin_notice('danger', $parsed['error']);
+                } else {
+                    $created = bwt_create_csv_job($parsed['rows'], $parsed['skipped']);
+                    if (empty($created['job_id'])) {
+                        $message = bwt_admin_notice('danger', $created['error']);
+                    } else {
+                        $csv_job_id = $created['job_id'];
+                        $message = bwt_admin_notice(
+                            'success',
+                            'فایل خوانده شد: ' . bwt_fmt_digits(number_format_i18n(count($parsed['rows']))) . ' ردیف معتبر'
+                            . (count($parsed['skipped']) ? ' و ' . bwt_fmt_digits(number_format_i18n(count($parsed['skipped']))) . ' ردیف ناخوانا (رد شد)' : '')
+                            . '. حالا دکمهٔ «ثبت روی سفارش‌ها» را بزنید.'
+                        );
                     }
                 }
             }
         }
-    } elseif (isset($_GET['bwt_job'])) {
-        $requested_job_id = bwt_sanitize_upload_job_id(wp_unslash($_GET['bwt_job']));
-        $requested_job = $requested_job_id ? bwt_get_upload_job($requested_job_id) : false;
-        if ($requested_job && (int) $requested_job['user_id'] === (int) get_current_user_id()) {
-            $upload_job_id = $requested_job_id;
-        } else {
-            $upload_error = 'کار پردازش فایل پیدا نشد یا منقضی شده است. فایل را دوباره انتخاب کنید.';
-        }
     }
 
+    $with_code = bwt_count_orders_with_code(true);
+    $without_code = bwt_count_orders_with_code(false);
+    $total_recent = bwt_count_orders_recent();
+    $last_sweep = bwt_last_sweep();
+    $push_endpoint = function_exists('rest_url') ? rest_url('bwt/v1/tracking') : home_url('/wp-json/bwt/v1/tracking');
+    $prefill_order = isset($_GET['bwt_order']) ? (int) bwt_normalize_digits(wp_unslash($_GET['bwt_order'])) : 0;
     ?>
     <div class="wrap tisa-wrap bwt-wrap" dir="rtl">
-        <?php bwt_render_hero('upload'); ?>
+        <?php bwt_render_hero('sync'); ?>
+        <?php echo wp_kses_post($message); ?>
 
-        <?php
-        // نمایش خطای آپلود کلی
-        if (!empty($upload_error)) {
-            echo '<div class="tisa-notice tisa-notice--danger bwt-notice">' . esc_html($upload_error) . '</div>';
-        }
+        <div class="bwt-stack">
 
-        if ('' !== $upload_job_id) {
-            ?>
-            <section id="bwt-upload-progress" class="bwt-card bwt-upload-progress" data-job-id="<?php echo esc_attr($upload_job_id); ?>" aria-live="polite">
-                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پردازش فایل CSV</h2><p data-bwt-status>در حال آماده‌سازی پردازش دسته‌ای…</p></div></div>
-                <div class="bwt-card-body">
-                    <progress class="bwt-progress-bar" data-bwt-progress max="100" value="0" aria-label="پیشرفت پردازش"></progress>
-                    <div class="bwt-progress-meta" data-bwt-counters></div>
-                    <button type="button" class="tisa-btn tisa-btn--secondary" data-bwt-resume hidden>ادامهٔ پردازش</button>
-                    <noscript><p class="bwt-hint">برای اجرای پردازش دسته‌ای، جاوااسکریپت مرورگر را فعال کنید.</p></noscript>
+            <section class="bwt-kpis" aria-label="خلاصهٔ وضعیت">
+                <div class="bwt-kpi">
+                    <span class="bwt-kpi__label">دارای کد رهگیری</span>
+                    <span class="bwt-kpi__value"><?php echo esc_html(bwt_fmt_digits(number_format_i18n($with_code))); ?></span>
+                    <span class="bwt-kpi__meta">از <?php echo esc_html(bwt_fmt_digits(number_format_i18n($total_recent))); ?> سفارش ۴۵ روز اخیر</span>
+                </div>
+                <div class="bwt-kpi <?php echo $without_code > 0 ? 'bwt-kpi--warn' : ''; ?>">
+                    <span class="bwt-kpi__label">بدون کد رهگیری</span>
+                    <span class="bwt-kpi__value"><?php echo esc_html(bwt_fmt_digits(number_format_i18n($without_code))); ?></span>
+                    <span class="bwt-kpi__meta"><?php echo $without_code > 0 ? 'در انتظار صدور از سورناپست' : 'همهٔ سفارش‌ها کد دارند'; ?></span>
+                </div>
+                <div class="bwt-kpi">
+                    <span class="bwt-kpi__label">آخرین جاروی خودکار</span>
+                    <span class="bwt-kpi__value bwt-kpi__value--sm"><?php echo esc_html(!empty($last_sweep['time']) ? bwt_fmt_digits(human_time_diff((int) $last_sweep['time'])) . ' پیش' : 'اجرا نشده'); ?></span>
+                    <span class="bwt-kpi__meta"><?php echo !empty($settings['sweep_enabled']) ? 'هر ۱۵ دقیقه فعال است' : 'خاموش است'; ?></span>
                 </div>
             </section>
-            <div id="bwt-upload-result" data-bwt-result hidden></div>
-            <?php
-        }
+            <p class="bwt-hint bwt-kpi-note">هر دو عدد از سفارش‌های ۴۵ روز اخیر (در حال انجام، تکمیل‌شده، در انتظار بررسی و ارسال‌شده) شمرده می‌شوند؛ «دارای کد» + «بدون کد» همیشه برابر کل سفارش‌های همین بازه است.</p>
 
-        ?>
+            <section class="bwt-card" id="bwt-source">
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۱. کلید متای کد رهگیری</h2>
+                        <p class="bwt-card__desc">نام متایی که سورناپست کد رهگیری را زیر آن روی سفارش می‌نویسد. یک بار ذخیره کنید؛ همگام‌سازی و جاروی خودکار از همین کلید می‌خوانند.</p>
+                    </div>
+                    <span class="bwt-badge-soft">گام ۱</span>
+                </header>
 
-        <div class="bwt-grid">
-            <form method="post" enctype="multipart/form-data" class="bwt-card bwt-form">
-                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>آپلود فایل CSV</h2><p>دو ستون <span class="tisa-code">order_id, tracking_code</span> — ردیف اول هدر است و نادیده گرفته می‌شود.</p></div></div>
-                <div class="bwt-card-body">
-                    <label for="bwt_tracking_file" class="bwt-label">فایل CSV</label>
-                    <input type="file" id="bwt_tracking_file" name="tracking_file" accept=".csv" required class="bwt-file" />
-                    <p class="bwt-hint">اگر ستون دوم خالی باشد، کد رهگیری آن سفارش حذف می‌شود.</p>
-                    <?php wp_nonce_field('bwt_upload_action', 'bwt_nonce'); ?>
-                    <div class="bwt-actions"><button type="submit" name="bwt_upload" class="tisa-btn tisa-btn--primary tisa-btn--lg">آپلود و بروزرسانی</button></div>
+                <div class="bwt-card__body">
+                    <form class="bwt-field-row bwt-field-row--tight" data-bwt-source-form>
+                        <input type="text" class="bwt-input bwt-input--mono" dir="rtl" placeholder="_surena_barcode" data-bwt-source-key aria-label="نام کلید متا" />
+                        <button type="submit" class="bwt-btn bwt-btn--primary">ذخیرهٔ کلید</button>
+                    </form>
+                    <div class="bwt-status-line" data-bwt-source-status aria-live="polite"></div>
+
+                    <div class="bwt-divider"></div>
+
+                    <h3 class="bwt-subtitle">کلیدهای فعال</h3>
+                    <div class="bwt-chips" data-bwt-source-chips>
+                        <?php foreach ((array) $settings['source_keys'] as $key) : ?>
+                            <span class="bwt-chip" data-key="<?php echo esc_attr($key); ?>" dir="ltr"><?php echo esc_html($key); ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="bwt-hint">هر کلیدی که اینجا اضافه کنید با اولویت خوانده می‌شود. کلیدهای رایج (<code dir="ltr">_tracking_code</code>، <code dir="ltr">_post_barcode</code>، <code dir="ltr">_wc_shipment_tracking_items</code>) و کد داخل یادداشت‌های سفارش هم بدون افزودن بررسی می‌شوند.</p>
+                </div>
+            </section>
+
+            <section class="bwt-card">
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۲. همگام‌سازی سفارش‌ها</h2>
+                        <p class="bwt-card__desc">سفارش‌های قبلی را یک‌بار پر کنید؛ هر دسته ۵۰ سفارش است و اگر صفحه بسته شد، از همان‌جا ادامه می‌دهد.</p>
+                    </div>
+                    <span class="bwt-badge-soft">گام ۲</span>
+                </header>
+                <div class="bwt-card__body">
+                    <div class="bwt-actions">
+                        <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-sync-mode="missing">همگام‌سازی سفارش‌های بدون کد</button>
+                        <button type="button" class="bwt-btn" data-bwt-sync-mode="recent">بازبینی ۳۰۰ سفارش اخیر</button>
+                    </div>
+
+                    <div id="bwt-sync-progress" class="bwt-progress" data-job-id="" aria-live="polite">
+                        <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-progress max="100" value="0" aria-label="پیشرفت همگام‌سازی"></progress></div>
+                        <p class="bwt-progress__meta" data-bwt-sync-counters>آماده</p>
+                        <div class="bwt-actions"><button type="button" class="bwt-btn bwt-btn--sm" data-bwt-resume hidden>ادامهٔ همگام‌سازی</button></div>
+                        <div data-bwt-sync-result></div>
+                    </div>
+
+                    <p class="bwt-hint">
+                        جاروی خودکار هر ۱۵ دقیقه سفارش‌های ۴۵ روز اخیر را بررسی می‌کند.
+                        <?php if (!empty($last_sweep['time'])) : ?>
+                            آخرین اجرا: <?php echo esc_html(date_i18n('j F Y - H:i', (int) $last_sweep['time'])); ?>
+                            · بررسی‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n(isset($last_sweep['scanned']) ? (int) $last_sweep['scanned'] : 0))); ?>
+                            · ثبت‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n((isset($last_sweep['created']) ? (int) $last_sweep['created'] : 0) + (isset($last_sweep['updated']) ? (int) $last_sweep['updated'] : 0)))); ?>
+                        <?php endif; ?>
+                    </p>
+                </div>
+            </section>
+
+            <section class="bwt-card" id="bwt-csv">
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۳. آپلود فایل کد رهگیری</h2>
+                        <p class="bwt-card__desc">برای فایل‌هایی که از قبل دارید: یک CSV با دو ستون <code dir="ltr">order_id, tracking_code</code> بدهید تا کدها روی همان سفارش‌ها بنشینند. کد هر سفارش جایگزین کد قبلی می‌شود.</p>
+                    </div>
+                    <span class="bwt-badge-soft">اختیاری</span>
+                </header>
+                <div class="bwt-card__body">
+                    <form method="post" enctype="multipart/form-data" class="bwt-csv-form" data-bwt-csv-form>
+                        <?php wp_nonce_field('bwt_csv_action', 'bwt_csv_nonce'); ?>
+                        <label class="bwt-file bwt-file--drop">
+                            <input type="file" name="bwt_csv_file" accept=".csv,.txt,text/csv" required data-bwt-csv-file />
+                            <span class="bwt-file__icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7 9 5-5 5 5"/><path d="M5 20h14"/></svg>
+                            </span>
+                            <span class="bwt-file__text">
+                                <b data-bwt-csv-name>فایل CSV را انتخاب کنید</b>
+                                <small>حداکثر ۲ مگابایت · تا ۵٬۰۰۰ ردیف · ستون اول شماره سفارش، ستون دوم کد</small>
+                            </span>
+                        </label>
+                        <button type="submit" name="bwt_csv_upload" value="1" class="bwt-btn bwt-btn--primary">خواندن فایل</button>
+                    </form>
+
+                    <p class="bwt-hint">ردیف اول می‌تواند سرصفحه باشد (مثل <span dir="ltr">order_id,tracking_code</span>)؛ اگر نباشد، ستون اول شمارهٔ سفارش و ستون دوم کد در نظر گرفته می‌شود. جداکنندهٔ «،» و «;» هم پشتیبانی می‌شود.</p>
+
+                    <div class="bwt-csv-job" data-bwt-csv-job="<?php echo esc_attr($csv_job_id); ?>" <?php echo $csv_job_id === '' ? 'hidden' : ''; ?>>
+                        <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-csv-progress max="100" value="0" aria-label="پیشرفت ثبت کدها"></progress></div>
+                        <p class="bwt-progress__meta" data-bwt-csv-counters>آماده</p>
+                        <div class="bwt-actions">
+                            <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
+                            <button type="button" class="bwt-btn bwt-btn--sm" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+                        </div>
+                        <div data-bwt-csv-result></div>
+                    </div>
+                </div>
+            </section>
+
+            <form method="post" class="bwt-card" id="bwt-settings">
+                <?php wp_nonce_field('bwt_settings_action', 'bwt_settings_nonce'); ?>
+                <header class="bwt-card__head">
+                    <div>
+                        <h2 class="bwt-card__title">۴. تنظیمات</h2>
+                        <p class="bwt-card__desc">پیش‌فرض‌ها برای سایت شما مناسب‌اند؛ این بخش را فقط اگر لازم شد باز کنید.</p>
+                    </div>
+                    <span class="bwt-badge-soft">پیشرفته</span>
+                </header>
+                <div class="bwt-card__body">
+                    <div class="bwt-switches">
+                        <label class="bwt-switch">
+                            <input type="checkbox" name="sweep_enabled" value="1" <?php checked(!empty($settings['sweep_enabled'])); ?> />
+                            <span class="bwt-switch__ui" aria-hidden="true"></span>
+                            <span class="bwt-switch__text">جاروی خودکار هر ۱۵ دقیقه<small>سفارش‌های ۴۵ روز اخیر را می‌گردد.</small></span>
+                        </label>
+                        <label class="bwt-switch">
+                            <input type="checkbox" name="scan_notes" value="1" <?php checked(!empty($settings['scan_notes'])); ?> />
+                            <span class="bwt-switch__ui" aria-hidden="true"></span>
+                            <span class="bwt-switch__text">خواندن کد از یادداشت‌های سفارش<small>اگر سورناپست فقط یادداشت بگذارد.</small></span>
+                        </label>
+                        <label class="bwt-switch">
+                            <input type="checkbox" name="push_enabled" value="1" <?php checked(!empty($settings['push_enabled'])); ?> />
+                            <span class="bwt-switch__ui" aria-hidden="true"></span>
+                            <span class="bwt-switch__text">فعال‌کردن Push API<small>دریافت کد از سرویس بیرونی با امضای HMAC.</small></span>
+                        </label>
+                    </div>
+
+                    <div class="bwt-form-grid">
+                        <label class="bwt-field">
+                            <span class="bwt-field__label">الگوی لینک پیگیری <code>%s</code> = کد</span>
+                            <input type="text" name="tracking_url" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['tracking_url']); ?>" />
+                            <span class="bwt-field__help">پیش‌فرض: <span dir="ltr">https://tracking.post.ir/?id=%s</span></span>
+                        </label>
+                        <label class="bwt-field">
+                            <span class="bwt-field__label">کلید امضای Push</span>
+                            <input type="text" name="push_secret" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['push_secret']); ?>" autocomplete="off" />
+                            <span class="bwt-field__help"><label class="bwt-check"><input type="checkbox" name="bwt_regenerate_secret" value="1" /> ساخت کلید جدید</label></span>
+                        </label>
+                        <label class="bwt-field bwt-field--wide">
+                            <span class="bwt-field__label">فایل PDF کدهای رهگیری (اختیاری)</span>
+                            <input type="text" name="fallback_pdf" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['fallback_pdf']); ?>" placeholder="https://example.com/tracking.pdf" />
+                            <span class="bwt-field__help">وقتی جست‌وجوی مشتری خطا می‌دهد، همین فایل داخل فرم و زیر پیام خطا نمایش داده می‌شود. خالی بگذارید تا نمایش داده نشود.</span>
+                        </label>
+                    </div>
+
+                    <details class="bwt-details">
+                        <summary>دریافت کد از سرویس بیرونی (Push API)</summary>
+                        <p class="bwt-hint">نشانی: <code dir="ltr"><?php echo esc_html($push_endpoint); ?></code></p>
+                        <pre class="bwt-code-block" dir="ltr">POST <?php echo esc_html($push_endpoint); ?>
+
+{ "order_id": 1234, "tracking_code": "RR123456789IR" }
+
+Header: X-BWT-Signature: hex( hmac_sha256( raw_body, secret ) )</pre>
+                    </details>
+
+                    <details class="bwt-details">
+                        <summary>منبع جدول اختصاصی سورناپست (اگر کد در متای سفارش نیست)</summary>
+                        <div class="bwt-form-grid bwt-form-grid--3">
+                            <label class="bwt-field">
+                                <span class="bwt-field__label">نام جدول</span>
+                                <input type="text" name="table_source_table" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['table_source']['table']); ?>" placeholder="wp_surena_post_orders" />
+                            </label>
+                            <label class="bwt-field">
+                                <span class="bwt-field__label">ستون شمارهٔ سفارش</span>
+                                <input type="text" name="table_source_order_col" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['table_source']['order_col']); ?>" placeholder="order_id" />
+                            </label>
+                            <label class="bwt-field">
+                                <span class="bwt-field__label">ستون کد رهگیری</span>
+                                <input type="text" name="table_source_code_col" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['table_source']['code_col']); ?>" placeholder="tracking_code" />
+                            </label>
+                        </div>
+                        <?php $candidates = bwt_candidate_tables(); ?>
+                        <?php if ($candidates) : ?>
+                            <p class="bwt-hint">جدول‌های مشکوک روی این سایت (نشانگر را روی نام جدول نگه دارید تا ستون‌ها را ببینید):</p>
+                            <div class="bwt-chips">
+                                <?php foreach ($candidates as $candidate) : ?>
+                                    <span class="bwt-chip bwt-chip--table" dir="ltr" title="<?php echo esc_attr(implode(', ', $candidate['columns'])); ?>"><?php echo esc_html($candidate['table']); ?></span>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php else : ?>
+                            <p class="bwt-hint">جدولی با نام مرتبط با پست/سورنا روی این سایت پیدا نشد.</p>
+                        <?php endif; ?>
+                    </details>
+
+                    <div class="bwt-actions">
+                        <button type="submit" name="bwt_save_settings" class="bwt-btn bwt-btn--primary">ذخیرهٔ تنظیمات</button>
+                    </div>
                 </div>
             </form>
 
-            <section class="bwt-card">
-                <div class="bwt-card-head"><span class="bwt-dot bwt-dot--muted"></span><div><h2>نمونه فایل صحیح</h2></div></div>
-                <div class="bwt-card-body">
-                    <pre class="bwt-sample">order_id,tracking_code
-1234,12345678901234567890
-1235,98765432109876543210
-1236,</pre>
-                    <ul class="bwt-help">
-                        <li>شماره سفارش‌ها می‌توانند با ارقام فارسی هم باشند.</li>
-                        <li>ردیف آخر (بدون کد) = حذف کد رهگیری سفارش ۱۲۳۶.</li>
-                        <li>شورت‌کد فرم پیگیری مشتری: <span class="tisa-code">[tracking_search]</span></li>
-                    </ul>
-                </div>
-            </section>
+            <div class="bwt-grid-2">
+                <section class="bwt-card">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">ثبت دستی (اضطراری)</h2>
+                            <p class="bwt-card__desc">فقط وقتی خودکار پیدا نشد.</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <form method="post" class="bwt-form-stack">
+                            <?php wp_nonce_field('bwt_manual_action', 'bwt_manual_nonce'); ?>
+                            <label class="bwt-field">
+                                <span class="bwt-field__label">شمارهٔ سفارش</span>
+                                <input type="text" name="manual_order_id" class="bwt-input bwt-input--mono" dir="ltr" inputmode="numeric" value="<?php echo esc_attr($prefill_order > 0 ? $prefill_order : ''); ?>" />
+                            </label>
+                            <label class="bwt-field">
+                                <span class="bwt-field__label">کد رهگیری</span>
+                                <input type="text" name="manual_tracking_code" class="bwt-input bwt-input--mono" dir="ltr" />
+                            </label>
+                            <button type="submit" name="bwt_manual_save" class="bwt-btn">ثبت کد</button>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="bwt-card">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">فرم پیگیری مشتری</h2>
+                            <p class="bwt-card__desc">این شورت‌کد را در صفحهٔ «پیگیری سفارش» بگذارید.</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <code class="bwt-shortcode" dir="ltr">[tracking_search_form]</code>
+                        <p class="bwt-hint">مشتری با شمارهٔ سفارش + موبایل ثبت‌شده، کد رهگیری و لینک پیگیری پست را همان‌جا می‌بیند. تا وقتی کد نیامده، متن آماده‌سازی و بررسی خودکار نمایش داده می‌شود.</p>
+                    </div>
+                </section>
+            </div>
+
         </div>
     </div>
     <?php
 }
 
-function bwt_get_upload_error_message($code) {
-    switch ($code) {
-        case UPLOAD_ERR_INI_SIZE:
-        case UPLOAD_ERR_FORM_SIZE:
-            return 'حجم فایل بیش از حد مجاز سرور است.';
-        case UPLOAD_ERR_PARTIAL:
-            return 'فایل ناقص آپلود شده. دوباره تلاش کنید.';
-        case UPLOAD_ERR_NO_FILE:
-            return 'لطفاً یک فایل انتخاب کنید.';
-        case UPLOAD_ERR_NO_TMP_DIR:
-            return 'پوشه موقت سرور یافت نشد. با هاستینگ تماس بگیرید.';
-        case UPLOAD_ERR_CANT_WRITE:
-            return 'خطا در نوشتن فایل روی دیسک.';
-        case UPLOAD_ERR_EXTENSION:
-            return 'آپلود توسط افزونه PHP متوقف شد.';
-        default:
-            return 'خطای نامشخص در آپلود فایل.';
+/** کدهای ذخیره‌شده روی سفارش (کانونیک + فهرست)، هر کدام یک‌بار. */
+function bwt_read_stored_codes($order) {
+    $codes = array();
+    if (!is_object($order) || !method_exists($order, 'get_meta')) {
+        return $codes;
     }
-}
-
-// ========== 3. پردازش فایل CSV ==========
-function bwt_csv_error_excerpt($value, $limit = 200) {
-    $value = (string) $value;
-    $length = function_exists('mb_strlen') ? mb_strlen($value, 'UTF-8') : strlen($value);
-    if ($length <= $limit) {
-        return $value;
+    $primary = bwt_clean_code($order->get_meta('_tracking_code'));
+    if ($primary !== '') {
+        $codes[] = $primary;
     }
-    $excerpt = function_exists('mb_substr') ? mb_substr($value, 0, $limit, 'UTF-8') : substr($value, 0, $limit);
-    return $excerpt . '…';
-}
-
-function bwt_process_tracking_csv_row($data, $row_num) {
-    $data = is_array($data) ? $data : array();
-    if ($row_num === 1 && isset($data[0])) {
-        $data[0] = preg_replace('/^\xEF\xBB\xBF/', '', (string) $data[0]);
-        $first_cell = strtolower(trim((string) $data[0]));
-        if (!is_numeric(bwt_normalize_digits($first_cell))) {
-            return array('updated' => 0, 'error' => null, 'header' => true, 'skipped' => true);
+    $list = $order->get_meta('_tracking_codes');
+    if (is_array($list)) {
+        foreach ($list as $code) {
+            $clean = bwt_clean_code($code);
+            if ($clean !== '' && !in_array($clean, $codes, true)) {
+                $codes[] = $clean;
+            }
         }
     }
-
-    $is_empty_line = true;
-    foreach ($data as $cell) {
-        if (trim((string) $cell) !== '') {
-            $is_empty_line = false;
-            break;
-        }
-    }
-    if ($is_empty_line) {
-        return array('updated' => 0, 'error' => null, 'header' => false, 'skipped' => true);
-    }
-
-    $order_id_raw = isset($data[0]) ? trim((string) $data[0]) : '';
-    $tracking_code_raw = isset($data[1]) ? trim((string) $data[1]) : '';
-    $make_error = static function ($reason) use ($row_num, $order_id_raw, $tracking_code_raw) {
-        return array(
-            'updated' => 0,
-            'error' => array(
-                'row' => $row_num,
-                'order_id_raw' => bwt_csv_error_excerpt($order_id_raw, 100),
-                'tracking_code_raw' => bwt_csv_error_excerpt($tracking_code_raw),
-                'reason' => $reason,
-            ),
-            'header' => false,
-            'skipped' => false,
-        );
-    };
-
-    if ($order_id_raw === '') {
-        return $make_error('شماره سفارش خالی است.');
-    }
-    $order_id_normalized = bwt_normalize_digits($order_id_raw);
-    if (!ctype_digit($order_id_normalized)) {
-        return $make_error('شماره سفارش باید عددی باشد.');
-    }
-    $order_id = intval($order_id_normalized);
-    if ($order_id <= 0) {
-        return $make_error('شماره سفارش نامعتبر است (باید بزرگتر از صفر باشد).');
-    }
-
-    $order = wc_get_order($order_id);
-    if (!$order) {
-        return $make_error('سفارش با این شماره یافت نشد ( #' . $order_id . ' وجود ندارد ).');
-    }
-    $order_type = $order->get_type();
-    if ($order_type !== 'shop_order' && $order_type !== 'shop_order_placehold') {
-        return $make_error('شناسه #' . $order_id . ' سفارش فروشگاهی نیست (نوع: ' . $order_type . ').');
-    }
-
-    $tracking_code = sanitize_text_field($tracking_code_raw);
-    $tracking_length = function_exists('mb_strlen') ? mb_strlen($tracking_code, 'UTF-8') : strlen($tracking_code);
-    if ($tracking_code !== '' && $tracking_length > 100) {
-        return $make_error('کد رهگیری خیلی طولانی است (حداکثر ۱۰۰ کاراکتر).');
-    }
-
-    if ($tracking_code === '') {
-        delete_post_meta($order_id, '_tracking_code');
-        if (method_exists($order, 'delete_meta_data')) {
-            $order->delete_meta_data('_tracking_code');
-            $order->save();
-        }
-    } else {
-        update_post_meta($order_id, '_tracking_code', $tracking_code);
-        if (method_exists($order, 'update_meta_data')) {
-            $order->update_meta_data('_tracking_code', $tracking_code);
-            $order->save();
-        }
-    }
-
-    return array('updated' => 1, 'error' => null, 'header' => false, 'skipped' => false);
-}
-
-/** پردازش محدود یک دسته از CSV روی یک file handle قابل seek. */
-function bwt_process_csv_batch_handle($handle, $offset = 0, $row_num = 0, $has_header = false, $max_rows = BWT_UPLOAD_BATCH_SIZE, $time_budget = BWT_UPLOAD_BATCH_SECONDS) {
-    if (!is_resource($handle)) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'offset' => 0, 'row_num' => $row_num, 'has_header' => $has_header, 'done' => true, 'file_error' => 'فایل قابل خواندن نیست.');
-    }
-    $offset = max(0, (int) $offset);
-    if (0 !== fseek($handle, $offset)) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'offset' => $offset, 'row_num' => $row_num, 'has_header' => $has_header, 'done' => true, 'file_error' => 'ادامهٔ خواندن فایل CSV ممکن نشد.');
-    }
-
-    $updated = 0;
-    $errors = 0;
-    $details = array();
-    $records = 0;
-    $started = microtime(true);
-    $done = false;
-    $max_rows = max(1, min(500, (int) $max_rows));
-    $time_budget = max(0.1, (float) $time_budget);
-
-    while ($records < $max_rows) {
-        if ($records > 0 && (microtime(true) - $started) >= $time_budget) {
-            break;
-        }
-        $data = fgetcsv($handle, 0, ',');
-        if ($data === false) {
-            $done = true;
-            break;
-        }
-        $row_num++;
-        $records++;
-        $row = bwt_process_tracking_csv_row($data, $row_num);
-        if (!empty($row['header'])) {
-            $has_header = true;
-        }
-        $updated += (int) $row['updated'];
-        if (!empty($row['error'])) {
-            $errors++;
-            $details[] = $row['error'];
-        }
-    }
-
-    $next_offset = ftell($handle);
-    $next_offset = false === $next_offset ? $offset : (int) $next_offset;
-    $stats = fstat($handle);
-    if (!$done && is_array($stats) && isset($stats['size']) && $next_offset >= (int) $stats['size']) {
-        $done = true;
-    }
-
-    return array(
-        'updated' => $updated,
-        'errors' => $errors,
-        'details' => $details,
-        'offset' => $next_offset,
-        'row_num' => $row_num,
-        'has_header' => $has_header,
-        'done' => $done,
-        'file_error' => '',
-    );
+    return $codes;
 }
 
 /**
- * پردازش سازگارِ محدود برای فراخوان‌های قدیمی؛ هر فراخوان فقط یک دسته را اجرا می‌کند.
- * برای ادامه، offset/row_num/has_header برگشتی را در فراخوان بعدی ارسال کنید.
+ * برچسب خوانا برای منبع کد.
  */
-function bwt_process_uploaded_file($file_path, $original_name = '', $offset = 0, $row_num = 0, $has_header = false) {
-    $size = @filesize($file_path);
-    if (!is_readable($file_path) || false === $size) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'فایل قابل خواندن نیست.');
+function bwt_source_label($source) {
+    $source = (string) $source;
+    if ($source === '') {
+        return 'نامشخص';
     }
-    if ($size > BWT_UPLOAD_MAX_SIZE) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'حجم فایل بیش از حد مجاز است (حداکثر ۵ مگابایت).');
+    if ($source === 'manual') {
+        return 'ثبت دستی';
     }
-    $handle = @fopen($file_path, 'rb');
-    if ($handle === false) {
-        return array('updated' => 0, 'errors' => 0, 'details' => array(), 'done' => true, 'file_error' => 'خطا در باز کردن فایل. لطفاً از فرمت CSV استفاده کنید.');
+    if ($source === 'csv_upload') {
+        return 'آپلود فایل CSV';
     }
-    $batch = bwt_process_csv_batch_handle($handle, $offset, $row_num, $has_header, BWT_UPLOAD_BATCH_SIZE, BWT_UPLOAD_BATCH_SECONDS);
-    fclose($handle);
-    if (!empty($batch['done']) && empty($batch['file_error']) && ((int) $batch['row_num'] === 0 || ((int) $batch['row_num'] === 1 && !empty($batch['has_header']))) ) {
-        $batch['file_error'] = 'فایل خالی است یا فقط شامل هدر است. داده‌ای برای پردازش یافت نشد.';
+    if ($source === 'push_api') {
+        return 'دریافت از سرویس بیرونی';
     }
-    return $batch;
+    if ($source === 'order_note') {
+        return 'یادداشت سفارش';
+    }
+    if (strpos($source, 'table:') === 0) {
+        return 'جدول سرویس پستی';
+    }
+    return $source;
 }
 
-function bwt_path_is_within_root($path, $root) {
-    $path = realpath($path);
-    $root = realpath($root);
-    if ($path === false || $root === false) {
-        return false;
+/** نمایش خلاصهٔ کد رهگیری در صفحهٔ سفارش (فقط خواندنی). */
+add_action('add_meta_boxes', 'bwt_add_order_meta_box');
+
+function bwt_add_order_meta_box() {
+    if (!function_exists('add_meta_box')) {
+        return;
     }
-    $root = rtrim($root, '/\\') . DIRECTORY_SEPARATOR;
-    return $path === rtrim($root, DIRECTORY_SEPARATOR) || strpos($path, $root) === 0;
+    $screen = function_exists('wc_get_page_screen_id') ? wc_get_page_screen_id('shop-order') : 'shop_order';
+    add_meta_box('bwt-tracking-summary', 'کد رهگیری پستی', 'bwt_render_order_tracking_box', $screen ? $screen : 'shop_order', 'side', 'high');
 }
 
-function bwt_upload_temp_dir() {
-    $candidates = array();
-    if (function_exists('get_temp_dir')) {
-        $candidates[] = get_temp_dir();
+function bwt_render_order_tracking_box($post_or_order) {
+    $order = null;
+    if (is_object($post_or_order) && method_exists($post_or_order, 'get_id')) {
+        $order = $post_or_order;
+    } elseif (is_object($post_or_order) && isset($post_or_order->ID) && function_exists('wc_get_order')) {
+        $order = wc_get_order((int) $post_or_order->ID);
     }
-    $candidates[] = sys_get_temp_dir();
-    foreach (array_unique($candidates) as $candidate) {
-        $dir = realpath((string) $candidate);
-        if ($dir === false || !is_dir($dir) || !is_writable($dir) || bwt_path_is_within_root($dir, ABSPATH)) {
-            continue;
-        }
-        if (defined('WP_CONTENT_DIR') && bwt_path_is_within_root($dir, WP_CONTENT_DIR)) {
-            continue;
-        }
-        return rtrim($dir, '/\\') . DIRECTORY_SEPARATOR;
+    if (!$order) {
+        echo '<p>سفارش قابل خواندن نیست.</p>';
+        return;
     }
-    return '';
-}
-
-function bwt_upload_temp_prefix() {
-    $site_identity = function_exists('get_option') ? get_option('siteurl') : ABSPATH;
-    if (!is_string($site_identity) || $site_identity === '') {
-        $site_identity = ABSPATH;
-    }
-    return 'bwt-upload-job-' . substr(md5($site_identity), 0, 12) . '-';
-}
-
-function bwt_is_upload_temp_path($path) {
-    if (!is_string($path) || $path === '' || is_link($path) || !is_file($path)) {
-        return false;
-    }
-    $base = basename($path);
-    if (strpos($base, bwt_upload_temp_prefix()) !== 0) {
-        return false;
-    }
-    $actual_dir = realpath(dirname($path));
-    $temp_dir = realpath(bwt_upload_temp_dir());
-    return $actual_dir !== false && $temp_dir !== false && $actual_dir === $temp_dir;
-}
-
-function bwt_cleanup_stale_upload_files() {
-    $temp_dir = bwt_upload_temp_dir();
-    if ($temp_dir === '') {
-        return 0;
-    }
-    $files = glob($temp_dir . bwt_upload_temp_prefix() . '*');
-    if (!is_array($files)) {
-        return 0;
-    }
-    $removed = 0;
-    foreach ($files as $file) {
-        if (is_link($file) || !is_file($file)) {
-            continue;
-        }
-        $modified = @filemtime($file);
-        if ($modified && (time() - $modified) > DAY_IN_SECONDS) {
-            if (@unlink($file)) {
-                $removed++;
-            }
-        }
-    }
-    return $removed;
-}
-
-function bwt_sanitize_upload_job_id($job_id) {
-    if (!is_scalar($job_id)) {
-        return '';
-    }
-    $job_id = strtolower(preg_replace('/[^a-f0-9]/i', '', (string) $job_id));
-    return strlen($job_id) === 32 ? $job_id : '';
-}
-
-function bwt_upload_job_key($job_id) {
-    return 'bwt_upload_job_' . md5((string) $job_id);
-}
-
-function bwt_get_upload_job($job_id) {
-    $job_id = bwt_sanitize_upload_job_id($job_id);
-    return $job_id !== '' ? get_transient(bwt_upload_job_key($job_id)) : false;
-}
-
-function bwt_create_upload_job($uploaded_path) {
-    $size = @filesize($uploaded_path);
-    if (!is_readable($uploaded_path) || false === $size || $size > BWT_UPLOAD_MAX_SIZE) {
-        return array('job_id' => '', 'error' => 'فایل موقت آپلود معتبر نیست یا از سقف ۵ مگابایت بزرگ‌تر است.');
-    }
-
-    bwt_cleanup_stale_upload_files();
-    $temp_dir = bwt_upload_temp_dir();
-    if ($temp_dir === '') {
-        return array('job_id' => '', 'error' => 'پوشهٔ موقت خصوصی و خارج از مسیر عمومی سایت در دسترس نیست.');
-    }
-    $file_path = @tempnam($temp_dir, bwt_upload_temp_prefix());
-    if (!$file_path || !@copy($uploaded_path, $file_path) || (int) @filesize($file_path) !== (int) $size || !bwt_is_upload_temp_path($file_path)) {
-        if (is_string($file_path) && is_file($file_path)) {
-            @unlink($file_path);
-        }
-        return array('job_id' => '', 'error' => 'ذخیرهٔ امن فایل موقت برای پردازش دسته‌ای ممکن نشد.');
-    }
-    @chmod($file_path, 0600);
-
-    $error_path = $file_path . '.errors.jsonl';
-    $error_handle = @fopen($error_path, 'xb');
-    if (!$error_handle) {
-        @unlink($file_path);
-        return array('job_id' => '', 'error' => 'ساخت فایل موقت گزارش خطاها ممکن نشد.');
-    }
-    fclose($error_handle);
-    @chmod($error_path, 0600);
-
-    try {
-        $job_id = function_exists('wp_generate_uuid4') ? str_replace('-', '', wp_generate_uuid4()) : bin2hex(random_bytes(16));
-    } catch (Throwable $e) {
-        @unlink($file_path);
-        @unlink($error_path);
-        return array('job_id' => '', 'error' => 'ساخت شناسهٔ امن برای کار پردازش ممکن نشد.');
-    }
-    $job_id = bwt_sanitize_upload_job_id($job_id);
-    if ($job_id === '') {
-        @unlink($file_path);
-        @unlink($error_path);
-        return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار پردازش ناموفق بود.');
-    }
-
-    $job = array(
-        'user_id' => (int) get_current_user_id(),
-        'file_path' => $file_path,
-        'error_path' => $error_path,
-        'file_size' => (int) $size,
-        'offset' => 0,
-        'row_num' => 0,
-        'has_header' => false,
-        'updated' => 0,
-        'errors' => 0,
-        'details_count' => 0,
-        'details_truncated' => 0,
-        'details_warning' => false,
-        'done' => false,
-        'file_error' => '',
-        'created_at' => time(),
-    );
-    if (!set_transient(bwt_upload_job_key($job_id), $job, 3 * HOUR_IN_SECONDS)) {
-        @unlink($file_path);
-        @unlink($error_path);
-        return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت کار پردازش ممکن نشد؛ دوباره تلاش کنید.');
-    }
-
-    if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_event') && !wp_next_scheduled('bwt_cleanup_upload_temp_files')) {
-        wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', 'bwt_cleanup_upload_temp_files');
-    }
-    return array('job_id' => $job_id, 'error' => '');
-}
-
-function bwt_read_upload_job_details($job) {
-    $path = isset($job['error_path']) ? $job['error_path'] : '';
-    if (!bwt_is_upload_temp_path($path)) {
-        return array();
-    }
-    $handle = @fopen($path, 'rb');
-    if (!$handle) {
-        return array();
-    }
-    $details = array();
-    $seen_rows = array();
-    while (!feof($handle) && count($details) < BWT_UPLOAD_MAX_ERROR_DETAILS) {
-        $line = fgets($handle);
-        if (false === $line) {
-            break;
-        }
-        $detail = json_decode($line, true);
-        if (!is_array($detail) || !isset($detail['row'])) {
-            continue;
-        }
-        $row = (int) $detail['row'];
-        if (isset($seen_rows[$row])) {
-            continue;
-        }
-        $seen_rows[$row] = true;
-        $details[] = $detail;
-    }
-    fclose($handle);
-    return $details;
-}
-
-function bwt_append_upload_job_details(&$job, $details) {
-    $saved_details = bwt_read_upload_job_details($job);
-    $seen_rows = array();
-    foreach ($saved_details as $detail) {
-        $seen_rows[(int) $detail['row']] = true;
-    }
-
-    $to_write = array();
-    $omitted = 0;
-    foreach ((array) $details as $detail) {
-        $row = isset($detail['row']) ? (int) $detail['row'] : 0;
-        if ($row && isset($seen_rows[$row])) {
-            continue;
-        }
-        if (count($saved_details) + count($to_write) < BWT_UPLOAD_MAX_ERROR_DETAILS) {
-            $to_write[] = $detail;
-            if ($row) {
-                $seen_rows[$row] = true;
-            }
+    $stored = bwt_read_stored_codes($order);
+    $codes = array();
+    $bad = array();
+    foreach ($stored as $code) {
+        if (bwt_is_tracking_like($code)) {
+            $codes[] = $code;
         } else {
-            $omitted++;
+            $bad[] = $code;
         }
     }
+    $source = method_exists($order, 'get_meta') ? (string) $order->get_meta('_bwt_tracking_source') : '';
+    $synced_at = method_exists($order, 'get_meta') ? (int) $order->get_meta('_bwt_tracking_synced_at') : 0;
+    $off = method_exists($order, 'get_meta') ? (bool) $order->get_meta('_bwt_autosync_off') : false;
+    $length = bwt_tracking_code_length();
 
-    $written_details = array();
-    if ($to_write) {
-        $path = isset($job['error_path']) ? $job['error_path'] : '';
-        if (!bwt_is_upload_temp_path($path)) {
-            $job['details_warning'] = true;
-            $job['details_truncated'] += count($to_write) + $omitted;
-            return array();
+    if (!$codes && !$bad) {
+        echo '<p class="bwt-hint">هنوز کدی ثبت نشده است.</p>';
+    } elseif (!$codes) {
+        echo '<p class="bwt-hint">کد معتبری ثبت نشده است. یک کد رهگیری درست، دقیقاً ' . esc_html(bwt_fmt_digits($length)) . ' رقم است.</p>';
+    } else {
+        echo '<p><strong class="bwt-ltr">' . esc_html($codes[0]) . '</strong></p>';
+        if (count($codes) > 1) {
+            echo '<p class="bwt-hint">' . esc_html(implode('، ', $codes)) . '</p>';
         }
-        $lines = array();
-        $json_flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
-        foreach ($to_write as $detail) {
-            $json = function_exists('wp_json_encode') ? wp_json_encode($detail, $json_flags) : json_encode($detail, $json_flags);
-            if (false !== $json) {
-                $lines[] = $json;
-                $written_details[] = $detail;
-            }
+        if ($source !== '') {
+            echo '<p class="bwt-hint">منبع: ' . esc_html(bwt_source_label($source)) . '</p>';
         }
-        $encoding_omitted = count($to_write) - count($written_details);
-        if ($encoding_omitted > 0) {
-            $job['details_warning'] = true;
-            $omitted += $encoding_omitted;
-        }
-        if ($lines && false === @file_put_contents($path, implode("\n", $lines) . "\n", FILE_APPEND | LOCK_EX)) {
-            $job['details_warning'] = true;
-            $job['details_truncated'] += count($written_details) + $omitted;
-            return array();
+        if ($synced_at > 0) {
+            echo '<p class="bwt-hint">آخرین همگام‌سازی: ' . esc_html(date_i18n('j F Y - H:i', $synced_at)) . '</p>';
         }
     }
-
-    $job['details_count'] = count($saved_details) + count($written_details);
-    $job['details_truncated'] += $omitted;
-    return $written_details;
+    if ($bad) {
+        echo '<p class="bwt-hint bwt-hint--warn">کد ثبت‌شده «<span class="bwt-ltr">' . esc_html(implode('، ', $bad)) . '</span>» کد رهگیری نیست (باید ' . esc_html(bwt_fmt_digits($length)) . ' رقم باشد). از صفحهٔ «پاک کردن کدها» با گزینهٔ «حذف کدهای نامعتبر» پاکش کنید.</p>';
+    }
+    if ($off) {
+        echo '<p class="bwt-hint">همگام‌سازی خودکار برای این سفارش خاموش است.</p>';
+    }
+    echo '<p><a class="button" href="' . esc_url(admin_url('admin.php?page=bulk-tracking-upload&bwt_order=' . (int) $order->get_id())) . '">ثبت/ویرایش دستی کد</a></p>';
 }
 
-function bwt_upload_job_payload($job, $include_all_details = false, $batch_details = array()) {
-    $done = !empty($job['done']);
-    $size = max(0, isset($job['file_size']) ? (int) $job['file_size'] : 0);
-    $offset = max(0, isset($job['offset']) ? (int) $job['offset'] : 0);
-    $progress = $done ? 100 : ($size > 0 ? min(99, (int) floor(100 * $offset / $size)) : 0);
-    return array(
-        'done' => $done,
-        'progress' => $progress,
-        'processed' => (int) $job['updated'] + (int) $job['errors'],
-        'updated' => (int) $job['updated'],
-        'errors' => (int) $job['errors'],
-        'details' => $include_all_details ? bwt_read_upload_job_details($job) : (array) $batch_details,
-        'details_truncated' => (int) $job['details_truncated'],
-        'details_warning' => !empty($job['details_warning']),
-        'file_error' => isset($job['file_error']) ? (string) $job['file_error'] : '',
-    );
-}
-
-function bwt_ajax_upload_authorize() {
-    if (!current_user_can('manage_options')) {
-        wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
-    }
-    check_ajax_referer('bwt_upload_batch', 'nonce');
-    $job_id = isset($_POST['job_id']) ? bwt_sanitize_upload_job_id(wp_unslash($_POST['job_id'])) : '';
-    $job = $job_id !== '' ? bwt_get_upload_job($job_id) : false;
-    if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
-        wp_send_json_error(array('message' => 'کار پردازش پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
-    }
-    return array($job_id, $job);
-}
-
-function bwt_ajax_upload_status() {
-    list($job_id, $job) = bwt_ajax_upload_authorize();
-    wp_send_json_success(bwt_upload_job_payload($job, true));
-}
-
-function bwt_ajax_upload_batch() {
-    list($job_id, $job) = bwt_ajax_upload_authorize();
-    if (!empty($job['done'])) {
-        wp_send_json_success(bwt_upload_job_payload($job, true));
-    }
-
-    $file_path = isset($job['file_path']) ? $job['file_path'] : '';
-    if (!bwt_is_upload_temp_path($file_path)) {
-        $job['done'] = true;
-        $job['file_error'] = 'فایل موقت پردازش پیدا نشد یا دیگر قابل خواندن نیست.';
-        $job['file_path'] = '';
-        set_transient(bwt_upload_job_key($job_id), $job, 3 * HOUR_IN_SECONDS);
-        wp_send_json_success(bwt_upload_job_payload($job, true));
-    }
-
-    $handle = @fopen($file_path, 'rb');
-    if (!$handle) {
-        $job['done'] = true;
-        $job['file_error'] = 'باز کردن فایل موقت پردازش ممکن نشد.';
-        $job['file_path'] = '';
-        set_transient(bwt_upload_job_key($job_id), $job, 3 * HOUR_IN_SECONDS);
-        wp_send_json_success(bwt_upload_job_payload($job, true));
-    }
-    if (!flock($handle, LOCK_EX | LOCK_NB)) {
-        fclose($handle);
-        wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال پردازش است؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
-    }
-
-    // وضعیت را پس از گرفتن قفل دوباره می‌خوانیم تا درخواست هم‌زمان همان ردیف‌ها را دوبار جلو نبرد.
-    $job = bwt_get_upload_job($job_id);
-    if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
-        flock($handle, LOCK_UN);
-        fclose($handle);
-        wp_send_json_error(array('message' => 'کار پردازش پیدا نشد یا منقضی شده است.'), 404);
-    }
-    if (!empty($job['done'])) {
-        flock($handle, LOCK_UN);
-        fclose($handle);
-        wp_send_json_success(bwt_upload_job_payload($job, true));
-    }
-
-    $batch = bwt_process_csv_batch_handle(
-        $handle,
-        (int) $job['offset'],
-        (int) $job['row_num'],
-        !empty($job['has_header']),
-        BWT_UPLOAD_BATCH_SIZE,
-        BWT_UPLOAD_BATCH_SECONDS
-    );
-    $new_details = array();
-    $job['updated'] += (int) $batch['updated'];
-    $job['errors'] += (int) $batch['errors'];
-    if (!empty($batch['details'])) {
-        $new_details = bwt_append_upload_job_details($job, $batch['details']);
-    }
-    $job['offset'] = (int) $batch['offset'];
-    $job['row_num'] = (int) $batch['row_num'];
-    $job['has_header'] = !empty($batch['has_header']);
-
-    if (!empty($batch['file_error'])) {
-        $job['done'] = true;
-        $job['file_error'] = $batch['file_error'];
-    } elseif (!empty($batch['done'])) {
-        $job['done'] = true;
-        if ($job['row_num'] === 0 || (!empty($job['has_header']) && $job['updated'] === 0 && $job['errors'] === 0)) {
-            $job['file_error'] = 'فایل خالی است یا فقط شامل هدر است. داده‌ای برای پردازش یافت نشد.';
-        }
-    }
-
-    if (!empty($job['done'])) {
-        if (!empty($job['file_path']) && bwt_is_upload_temp_path($job['file_path'])) {
-            @unlink($job['file_path']);
-        }
-        $job['file_path'] = '';
-        if (empty($job['details_count']) && empty($job['details_truncated']) && !empty($job['error_path']) && bwt_is_upload_temp_path($job['error_path'])) {
-            @unlink($job['error_path']);
-            $job['error_path'] = '';
-        }
-    }
-
-    if (empty($job['done']) && !empty($job['file_path']) && bwt_is_upload_temp_path($job['file_path'])) {
-        @touch($job['file_path']);
-    }
-    if (!empty($job['error_path']) && bwt_is_upload_temp_path($job['error_path'])) {
-        @touch($job['error_path']);
-    }
-    set_transient(bwt_upload_job_key($job_id), $job, 3 * HOUR_IN_SECONDS);
-    flock($handle, LOCK_UN);
-    fclose($handle);
-    wp_send_json_success(bwt_upload_job_payload($job, !empty($job['done']), $new_details));
-}
-
-function bwt_normalize_digits($str) {
-    $persian = array('۰','۱','۲','۳','۴','۵','۶','۷','۸','۹');
-    $arabic  = array('٠','١','٢','٣','٤','٥','٦','٧','٨','٩');
-    $english = array('0','1','2','3','4','5','6','7','8','9');
-    $str = str_replace($persian, $english, $str);
-    $str = str_replace($arabic, $english, $str);
-    return trim($str);
-}
-
-// ========== 4. شورت‌کد جدید با اطلاعات کامل ==========
+// ========== 10. فرم پیگیری مشتری (AJAX) ==========
+add_action('wp_enqueue_scripts', 'bwt_register_frontend_assets');
 add_shortcode('tracking_search_form', 'bwt_tracking_search_form');
+add_action('wp_ajax_bwt_track_lookup', 'bwt_ajax_track_lookup');
+add_action('wp_ajax_nopriv_bwt_track_lookup', 'bwt_ajax_track_lookup');
+
+function bwt_register_frontend_assets() {
+    if (!function_exists('wp_register_script')) {
+        return;
+    }
+    wp_register_style('bwt-tracking', plugin_dir_url(__FILE__) . 'assets/tracking.css', array(), BWT_VERSION);
+    wp_register_script('bwt-tracking', plugin_dir_url(__FILE__) . 'assets/tracking.js', array(), BWT_VERSION, true);
+}
+
 /**
- * نرمال‌سازی شمارهٔ موبایل به قالب یکتای 989XXXXXXXXX.
+ * نرمال‌سازی شمارهٔ موبایل به قالب یکتای 98 9XXXXXXXXX.
  * ورودی: فارسی/عربی، فاصله/خط‌تیره/پرانتز، پیشوندهای +98 / 0098 / 98 / 0.
  * خروجی نامعتبر = رشتهٔ خالی.
  */
@@ -812,7 +2134,7 @@ function bwt_normalize_phone($input) {
     return '';
 }
 
-// مقایسهٔ شمارهٔ ثبت‌شده روی سفارش با ورودی کاربر (بدون افشای اطلاعات، زمان‌ثابت)
+// مقایسهٔ شمارهٔ ثبت‌شده روی سفارش با ورودی کاربر (زمان‌ثابت)
 function bwt_phones_match($stored, $input) {
     $a = bwt_normalize_phone($stored);
     $b = bwt_normalize_phone($input);
@@ -822,162 +2144,247 @@ function bwt_phones_match($stored, $input) {
     return hash_equals($a, $b);
 }
 
-// محدودسازی تلاش‌های ناموفق پیگیری بر اساس IP (ضد درو کردن شماره سفارش‌ها)
 function bwt_client_ip() {
     return isset($_SERVER['REMOTE_ADDR']) ? (string) $_SERVER['REMOTE_ADDR'] : 'cli';
 }
+
 function bwt_track_throttle_key() {
     return 'bwt_track_fail_' . md5(bwt_client_ip());
 }
+
 function bwt_track_is_throttled() {
     return (int) get_transient(bwt_track_throttle_key()) >= 10;
 }
+
 function bwt_track_note_fail() {
     $key = bwt_track_throttle_key();
     set_transient($key, (int) get_transient($key) + 1, 15 * MINUTE_IN_SECONDS);
 }
+
 function bwt_track_reset_fails() {
     delete_transient(bwt_track_throttle_key());
 }
 
-function bwt_tracking_search_form() {
-    ob_start();
-    $result_html = '';
-    $submitted_order_id = isset($_POST['order_id']) ? sanitize_text_field(wp_unslash($_POST['order_id'])) : '';
-    $submitted_phone    = isset($_POST['billing_phone']) ? sanitize_text_field(wp_unslash($_POST['billing_phone'])) : '';
+function bwt_pending_message_lines() {
+    return array(
+        'چنانچه در این بخش هنوز شماره مرسوله سفارش شما نمایش داده نشده است، به این معناست که سفارش در یکی از مراحل آماده‌سازی، تولید، بسته‌بندی یا ارسال قرار دارد و هنوز به شرکت حمل‌ونقل تحویل نشده است.',
+        'کالاهای عادی: حداکثر ۷ روز کاری — کالاهای چاپی و سفارشی: بین ۷ تا ۱۸ روز کاری (با توجه به فرآیند تولید).',
+        'روزهای کاری صرفاً از شنبه تا چهارشنبه محاسبه می‌شوند و پنج‌شنبه، جمعه و تعطیلات رسمی جزو روزهای کاری محسوب نمی‌گردند.',
+        'پس از تحویل سفارش به شرکت حمل‌ونقل، شماره مرسوله به‌صورت خودکار در همین صفحه ثبت و قابل مشاهده خواهد بود.',
+        'خواهشمند است تا پیش از ثبت شماره مرسوله، از ارسال درخواست یا پیگیری جداگانه از طریق پیام خصوصی یا ارتباط با ادمین خودداری فرمایید؛ زیرا تمامی مراحل اطلاع‌رسانی و ثبت اطلاعات مرسوله از طریق همین صفحه انجام می‌شود.',
+        'از شکیبایی و همراهی ارزشمند شما سپاسگزاریم.',
+    );
+}
 
-    if (isset($_POST['tracking_submit'])) {
-        if (bwt_track_is_throttled()) {
-            $result_html = '<div class="bwt-result error">❌ تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً ۱۵ دقیقه دیگر دوباره تلاش کنید.</div>';
-        } else {
-            $order_id_raw = $submitted_order_id;
-            $order_id_normalized = bwt_normalize_digits($order_id_raw);
+function bwt_tracking_search_form($atts = array()) {
+    $defaults_atts = array('pdf' => '', 'pdf_text' => '');
+    $atts = is_array($atts) ? $atts : array();
+    if (function_exists('shortcode_atts')) {
+        $atts = shortcode_atts($defaults_atts, $atts, 'tracking_search_form');
+    } else {
+        $atts = array_merge($defaults_atts, array_filter($atts, 'is_scalar'));
+    }
+    $settings = bwt_get_settings();
+    $fallback_pdf = $atts['pdf'] !== '' ? $atts['pdf'] : (string) $settings['fallback_pdf'];
+    $fallback_pdf = $fallback_pdf === '' ? '' : esc_url_raw($fallback_pdf);
+    if ($fallback_pdf !== '' && !preg_match('#^https?://#i', $fallback_pdf)) {
+        $fallback_pdf = '';
+    }
+    $fallback_text = $atts['pdf_text'] !== ''
+        ? (string) $atts['pdf_text']
+        : 'اگر شماره سفارش شما یافت نشد، می‌توانید از طریق فایل زیر کد رهگیری خود را مشاهده کنید.';
 
-            if ($order_id_raw === '' || $submitted_phone === '') {
-                $result_html = '<div class="bwt-result error">❌ وارد کردن شماره سفارش و شماره موبایلی که سفارش با آن ثبت شده، الزامی است.</div>';
-            } elseif (!ctype_digit($order_id_normalized)) {
-                $result_html = '<div class="bwt-result error">❌ شماره سفارش باید عددی باشد.</div>';
-            } else {
-                $order_id = intval($order_id_normalized);
-                $order = wc_get_order($order_id);
-
-                // احراز مالکیت: شماره سفارش به‌تنهایی کافی نیست — موبایل ثبت‌شده روی سفارش هم باید بخواند.
-                // پیام خطا برای «سفارش نامعتبر» و «موبایل نامطابق» یکی است تا وجود سفارش لو نرود.
-                $verified = $order && bwt_phones_match($order->get_billing_phone(), $submitted_phone);
-
-                if (!$verified) {
-                    bwt_track_note_fail();
-                    $result_html = '<div class="bwt-result error">❌ شماره سفارش یا شماره موبایل واردشده معتبر نیست. شماره موبایل باید همان شماره‌ای باشد که سفارش با آن ثبت شده است.</div>';
-                } else {
-                    bwt_track_reset_fails();
-                    $tracking_code = get_post_meta($order_id, '_tracking_code', true);
-                    if (empty($tracking_code) && method_exists($order, 'get_meta')) {
-                        $tracking_code = $order->get_meta('_tracking_code');
-                    }
-
-                    if ($tracking_code) {
-                        $billing_first_name = $order->get_billing_first_name();
-                        $billing_last_name  = $order->get_billing_last_name();
-                        $billing_address_1  = $order->get_billing_address_1();
-                        $billing_address_2  = $order->get_billing_address_2();
-                        $billing_city       = $order->get_billing_city();
-                        $billing_state      = $order->get_billing_state();
-                        $billing_postcode   = $order->get_billing_postcode();
-
-                        $full_address = $billing_address_1;
-                        if ($billing_address_2) {
-                            $full_address .= ' - ' . $billing_address_2;
-                        }
-                        $full_address .= '، ' . $billing_city;
-                        if ($billing_state) {
-                            $full_address .= '، ' . $billing_state;
-                        }
-                        if ($billing_postcode) {
-                            $full_address .= '، کد پستی: ' . $billing_postcode;
-                        }
-
-                        $order_date = $order->get_date_created();
-                        $order_date_formatted = $order_date ? $order_date->date_i18n('j F Y - H:i') : '—';
-
-                        $post_tracking_link = 'https://tracking.post.ir/?id=' . urlencode($tracking_code);
-
-                        $result_html  = '<div class="bwt-result success">';
-                        $result_html .= '<h3>📦 اطلاعات سفارش شما</h3>';
-                        $result_html .= '<div class="order-info">';
-                        $result_html .= '<p><strong>👤 نام و نام خانوادگی:</strong> ' . esc_html($billing_first_name . ' ' . $billing_last_name) . '</p>';
-                        $result_html .= '<p><strong>📍 آدرس:</strong> ' . esc_html($full_address) . '</p>';
-                        $result_html .= '<p><strong>📅 تاریخ ثبت سفارش:</strong> ' . esc_html($order_date_formatted) . '</p>';
-                        $result_html .= '<p><strong>🔢 شماره سفارش:</strong> ' . esc_html($order_id) . '</p>';
-                        $result_html .= '<hr>';
-                        $result_html .= '<p><strong>📮 کد رهگیری پستی:</strong></p>';
-                        $result_html .= '<div class="tracking-code-box">' . esc_html($tracking_code) . '</div>';
-                        $result_html .= '<p><a href="' . esc_url($post_tracking_link) . '" target="_blank" rel="noopener noreferrer" class="post-tracking-btn">🚚 پیگیری مرسوله در سایت پست</a></p>';
-                        $result_html .= '</div></div>';
-                    } else {
-                        $result_html = '<div class="bwt-result error">'
-                        . 'چنانچه در این بخش هنوز شماره مرسوله سفارش شما نمایش داده نشده است، به این معناست که سفارش در یکی از مراحل آماده‌سازی، تولید، بسته‌بندی یا ارسال قرار دارد و هنوز به شرکت حمل‌ونقل تحویل نشده است.<br><br>'
-                        . 'زمان آماده‌سازی سفارش‌ها به شرح زیر است:<br>'
-                        . 'کالاهای عادی: حداکثر ۷ روز کاری<br>'
-                        . 'کالاهای چاپی و سفارشی: بین ۷ تا ۱۸ روز کاری (با توجه به فرآیند تولید)<br>'
-                        . 'روزهای کاری صرفاً از شنبه تا چهارشنبه محاسبه می‌شوند و پنج‌شنبه، جمعه و تعطیلات رسمی جزو روزهای کاری محسوب نمی‌گردند.<br>'
-                        . 'پس از تحویل سفارش به شرکت حمل‌ونقل، شماره مرسوله به‌صورت خودکار در همین صفحه ثبت و قابل مشاهده خواهد بود.<br><br>'
-                        . 'خواهشمند است تا پیش از ثبت شماره مرسوله، از ارسال درخواست یا پیگیری جداگانه از طریق پیام خصوصی یا ارتباط با ادمین خودداری فرمایید؛ زیرا تمامی مراحل اطلاع‌رسانی و ثبت اطلاعات مرسوله از طریق همین صفحه انجام می‌شود.<br><br>'
-                        . 'از شکیبایی و همراهی ارزشمند شما سپاسگزاریم.</div>';
-                    }
-                }
-            }
-        }
+    if (function_exists('wp_enqueue_style')) {
+        wp_enqueue_style('bwt-tracking');
+    }
+    if (function_exists('wp_enqueue_script')) {
+        wp_enqueue_script('bwt-tracking');
+        wp_localize_script('bwt-tracking', 'BWT_Tracking', array(
+            'ajaxUrl'    => admin_url('admin-ajax.php'),
+            'nonce'      => wp_create_nonce('bwt_track_lookup'),
+            'codeLength' => bwt_tracking_code_length(),
+            'pollSeconds' => 30,
+            'pollMax'     => 20,
+            'strings'    => array(
+                'sending'   => 'در حال بررسی سفارش…',
+                'generic'   => 'ارتباط با سرور ناموفق بود؛ دوباره تلاش کنید.',
+                'copy'      => 'کپی کد',
+                'copied'    => 'کپی شد',
+                'retry'     => 'بررسی مجدد',
+                'autoCheck' => 'بررسی خودکار بعدی تا',
+                'seconds'   => 'ثانیه',
+                'codeLabel' => 'کد رهگیری پستی',
+                'linkLabel' => 'پیگیری مرسوله در سایت پست',
+                'order'     => 'شماره سفارش',
+                'date'      => 'تاریخ ثبت سفارش',
+                'name'      => 'نام و نام خانوادگی',
+                'address'   => 'آدرس',
+                'status'    => 'وضعیت سفارش',
+                'stopPoll'  => 'بررسی خودکار متوقف شد؛ دکمهٔ «بررسی مجدد» را بزنید.',
+                'paused'    => 'بررسی خودکار موقتاً متوقف شد.',
+            ),
+        ));
     }
 
+    ob_start();
     ?>
-    <div class="bwt-tracking-container">
-        <form method="post" class="bwt-tracking-form">
-            <p>
-                <label for="bwt_order_id">🔍 شماره سفارش خود را وارد کنید:</label>
-                <input type="text" id="bwt_order_id" name="order_id" required placeholder="کد سفارش را به صورت لاتین وارد کنید.." value="<?php echo esc_attr($submitted_order_id); ?>" inputmode="numeric" autocomplete="off" />
-            </p>
-            <p>
-                <label for="bwt_billing_phone">📱 شماره موبایلی که سفارش با آن ثبت شده:</label>
-                <input type="text" id="bwt_billing_phone" name="billing_phone" required placeholder="مثال: ۰۹۱۲۳۴۵۶۷۸۹" value="<?php echo esc_attr($submitted_phone); ?>" inputmode="tel" autocomplete="off" />
-            </p>
-            <p>
-                <button type="submit" name="tracking_submit">پیگیری سفارش</button>
-            </p>
-        </form>
+    <div class="bwt-track" data-bwt-tracking>
+        <div class="bwt-track__layout">
+            <div class="bwt-track__head">
+                <span class="bwt-track__badge" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                </span>
+                <div class="bwt-track__head-body">
+                    <b class="bwt-track__head-title">کد رهگیری مرسوله</b>
+                    <span class="bwt-track__head-text">شمارهٔ سفارش و موبایلی که سفارش با آن ثبت شده را وارد کنید؛ کد رهگیری همان لحظه نمایش داده می‌شود.</span>
+                </div>
+            </div>
 
-        <?php echo wp_kses_post($result_html); ?>
+            <div class="bwt-track__panel">
+                <form class="bwt-track__form" data-bwt-form novalidate>
+                    <div class="bwt-track__fields">
+                        <div class="bwt-field">
+                            <label class="bwt-field__label" for="bwt_order_id">شماره سفارش</label>
+                            <input class="bwt-field__input" type="text" id="bwt_order_id" name="order_id" required dir="ltr" placeholder="مثلاً 424172" inputmode="numeric" autocomplete="off" />
+                        </div>
+                        <div class="bwt-field">
+                            <label class="bwt-field__label" for="bwt_billing_phone">شماره موبایل ثبت‌شده روی سفارش</label>
+                            <input class="bwt-field__input" type="text" id="bwt_billing_phone" name="billing_phone" required dir="ltr" placeholder="۰۹۱۲۱۲۳۴۵۶۷" inputmode="tel" autocomplete="tel" />
+                        </div>
+                    </div>
+                    <button type="submit" class="bwt-btn bwt-btn--primary">
+                        <span class="bwt-track__btn-icon" aria-hidden="true">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                        </span>
+                        پیگیری سفارش
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="bwt-track__result" data-bwt-result hidden aria-live="polite"></div>
+
+        <?php if ($fallback_pdf !== '') : ?>
+            <div class="bwt-track__fallback" data-bwt-fallback hidden>
+                <p class="bwt-track__fallback-text"><?php echo esc_html($fallback_text); ?></p>
+                <a class="bwt-btn bwt-btn--primary bwt-track__fallback-btn" href="<?php echo esc_url($fallback_pdf); ?>" download target="_blank" rel="noopener">
+                    <span class="bwt-track__fallback-icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+                    </span>
+                    دانلود فایل کدهای رهگیری
+                </a>
+            </div>
+        <?php endif; ?>
+
+        <noscript>
+            <div class="bwt-track__result bwt-track__result--error">برای پیگیری، جاوااسکریپت مرورگر را فعال کنید.</div>
+        </noscript>
     </div>
-
-    <style>
-    /* فرانت — بدون وابستگی به هاب؛ توکن‌ها اگر بودند، وگرنه fallback */
-    .bwt-tracking-container{max-width:600px;margin:0 auto;padding:24px;background:var(--tisa-surface,#fff);border:1px solid var(--tisa-border,#E3E1DA);border-radius:var(--tisa-r,14px);font-variant-numeric:tabular-nums}
-    .bwt-tracking-form label{display:block;margin-bottom:8px;font-weight:600;color:var(--tisa-ink,#1F2A2E)}
-    .bwt-tracking-form input{width:100%;padding:12px;border:1px solid var(--tisa-border,#E3E1DA);border-radius:var(--tisa-r-sm,10px);font-size:16px;box-sizing:border-box;background:var(--tisa-surface,#fff);color:var(--tisa-ink,#1F2A2E)}
-    .bwt-tracking-form input:focus{outline:none;border-color:var(--tisa-primary,#0E7C6B);box-shadow:0 0 0 3px var(--tisa-primary-soft,#E8F0EE)}
-    .bwt-tracking-form button{width:100%;padding:12px 24px;border:0;border-radius:var(--tisa-r-sm,10px);background:var(--tisa-primary,#0E7C6B);color:var(--tisa-on-primary,#fff);font-size:16px;font-weight:600;cursor:pointer;transition:background .2s}
-    .bwt-tracking-form button:hover{background:var(--tisa-primary-ink,#0A5F52)}
-    .bwt-result{margin-top:24px;padding:20px;border-radius:var(--tisa-r-sm,10px);font-size:14px;line-height:1.8;border:1px solid var(--tisa-border,#E3E1DA);background:var(--tisa-surface-2,#FAFAF8);color:var(--tisa-ink,#1F2A2E)}
-    .bwt-result.success{border-inline-start:3px solid var(--tisa-success,#1A7F37)}
-    .bwt-result.error{border-inline-start:3px solid var(--tisa-danger,#B5453A);background:var(--tisa-danger-soft,#FBECEA);color:var(--tisa-danger-ink,#8E3128)}
-    .bwt-result h3{margin:0 0 8px;font-size:16px}
-    .order-info{margin-top:8px}
-    .order-info p{margin:8px 0;font-size:15px}
-    .order-info hr{border:0;border-top:1px dashed var(--tisa-border,#E3E1DA)}
-    .tracking-code-box{margin:10px 0;padding:12px;border:1px dashed var(--tisa-border-strong,#C9DCD7);border-radius:var(--tisa-r-sm,10px);background:var(--tisa-surface,#fff);color:var(--tisa-ink,#1F2A2E);font-family:var(--tisa-mono,ui-monospace,Consolas,monospace);font-size:16px;font-weight:700;letter-spacing:1px;direction:ltr;text-align:center;word-break:break-all}
-    .post-tracking-btn{display:inline-block;margin-top:10px;padding:10px 20px;border:1px solid var(--tisa-primary,#0E7C6B);border-radius:var(--tisa-r-sm,10px);background:transparent;color:var(--tisa-primary,#0E7C6B) !important;font-weight:600;text-decoration:none;transition:background .2s,color .2s}
-    .post-tracking-btn:hover{background:var(--tisa-primary,#0E7C6B);color:var(--tisa-on-primary,#fff) !important;text-decoration:none}
-    </style>
     <?php
     return ob_get_clean();
 }
 
-// ========== 5. صفحه پاک کردن کدها (کارهای قابل ادامه و batch شده) ==========
+function bwt_ajax_track_lookup() {
+    if (function_exists('check_ajax_referer')) {
+        check_ajax_referer('bwt_track_lookup', 'nonce');
+    }
+    if (bwt_track_is_throttled()) {
+        wp_send_json_error(array('message' => 'تعداد تلاش‌های ناموفق بیش از حد مجاز است. لطفاً ۱۵ دقیقه دیگر دوباره تلاش کنید.'), 429);
+    }
+
+    $order_id_raw = isset($_POST['order_id']) ? sanitize_text_field(wp_unslash($_POST['order_id'])) : '';
+    $phone = isset($_POST['billing_phone']) ? sanitize_text_field(wp_unslash($_POST['billing_phone'])) : '';
+    $order_id_normalized = bwt_normalize_digits($order_id_raw);
+
+    if ($order_id_raw === '' || $phone === '') {
+        wp_send_json_error(array('message' => 'وارد کردن شماره سفارش و شماره موبایلی که سفارش با آن ثبت شده، الزامی است.'), 400);
+    }
+    if (!ctype_digit($order_id_normalized)) {
+        wp_send_json_error(array('message' => 'شماره سفارش باید عددی باشد.'), 400);
+    }
+
+    $order_id = (int) $order_id_normalized;
+    $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+
+    // احراز مالکیت: وجود سفارش لو نمی‌رود؛ پیام هر دو حالت یکسان است.
+    $verified = $order && method_exists($order, 'get_billing_phone') && bwt_phones_match($order->get_billing_phone(), $phone);
+    if (!$verified) {
+        bwt_track_note_fail();
+        wp_send_json_error(array('message' => 'شماره سفارش یا شماره موبایل واردشده معتبر نیست. شماره موبایل باید همان شماره‌ای باشد که سفارش با آن ثبت شده است.'), 403);
+    }
+    bwt_track_reset_fails();
+
+    $resolved = bwt_resolve_order_tracking($order);
+    $codes = $resolved['codes'];
+    if ($codes) {
+        // اگر سورناپست کد را نوشته ولی رویداد همگام‌سازی هنوز اجرا نشده، همین‌جا ثبت می‌شود.
+        if (bwt_clean_code($order->get_meta('_tracking_code')) !== $codes[0] || $order->get_meta('_tracking_codes')) {
+            bwt_apply_tracking_codes($order, $codes, $resolved['source'], 'customer_lookup');
+        }
+    }
+
+    $date = method_exists($order, 'get_date_created') ? $order->get_date_created() : null;
+    $date_formatted = ($date && method_exists($date, 'date_i18n')) ? $date->date_i18n('j F Y - H:i') : '—';
+    $status = method_exists($order, 'get_status') ? (string) $order->get_status() : '';
+    $status_label = (function_exists('wc_get_order_status_name') && $status !== '') ? wc_get_order_status_name($status) : $status;
+
+    $first_name = method_exists($order, 'get_billing_first_name') ? (string) $order->get_billing_first_name() : '';
+    $last_name = method_exists($order, 'get_billing_last_name') ? (string) $order->get_billing_last_name() : '';
+    $address_parts = array();
+    foreach (array('get_billing_address_1', 'get_billing_address_2', 'get_billing_city', 'get_billing_state') as $method) {
+        if (!method_exists($order, $method)) {
+            continue;
+        }
+        $value = trim((string) $order->{$method}());
+        if ($value !== '') {
+            $address_parts[] = $value;
+        }
+    }
+    $postcode = method_exists($order, 'get_billing_postcode') ? trim((string) $order->get_billing_postcode()) : '';
+    if ($postcode !== '') {
+        $address_parts[] = 'کد پستی: ' . $postcode;
+    }
+
+    $code_payload = array();
+    foreach ($codes as $code) {
+        $code_payload[] = array(
+            'code' => $code,
+            'url'  => bwt_tracking_url($code),
+        );
+    }
+
+    $payload = array(
+        'state'   => $codes ? 'ready' : 'pending',
+        'order'   => array(
+            'id'           => $order_id,
+            'number'       => method_exists($order, 'get_order_number') ? (string) $order->get_order_number() : (string) $order_id,
+            'date'         => $date_formatted,
+            'status'       => $status,
+            'status_label' => $status_label,
+        ),
+        'customer' => array(
+            'name'    => trim($first_name . ' ' . $last_name),
+            'address' => implode('، ', $address_parts),
+        ),
+        'codes'   => $code_payload,
+        'pending_lines' => $codes ? array() : bwt_pending_message_lines(),
+        'poll'    => array('interval' => 30, 'max_attempts' => 20),
+    );
+
+    wp_send_json_success($payload);
+}
+
+// ========== 11. پاک کردن کدها (Job قابل ادامه) ==========
+add_action('wp_ajax_bwt_cleanup_batch', 'bwt_ajax_cleanup_batch');
+add_action('wp_ajax_bwt_cleanup_status', 'bwt_ajax_cleanup_status');
+add_action('wp_ajax_bwt_csv_batch', 'bwt_ajax_csv_batch');
+
 function bwt_cleanup_job_key($job_id) {
     return 'bwt_cleanup_job_' . md5((string) $job_id);
 }
 
 function bwt_get_cleanup_job($job_id) {
-    $job_id = bwt_sanitize_upload_job_id($job_id);
+    $job_id = bwt_sanitize_job_id($job_id);
     return $job_id !== '' ? get_transient(bwt_cleanup_job_key($job_id)) : false;
 }
 
@@ -985,11 +2392,18 @@ function bwt_create_cleanup_job($mode, $order_ids = array()) {
     if (!current_user_can('manage_options')) {
         return array('job_id' => '', 'error' => 'دسترسی غیرمجاز است.');
     }
-    if ($mode !== 'all' && $mode !== 'selected') {
+    if ($mode !== 'all' && $mode !== 'selected' && $mode !== 'invalid') {
         return array('job_id' => '', 'error' => 'نوع پاک‌سازی نامعتبر است.');
     }
     $ids = array();
-    if ($mode === 'selected') {
+    if ($mode === 'invalid') {
+        // همهٔ سفارش‌های ۴۵ روز اخیر که کد دارند؛ در هر دسته فقط کدهای بی‌شکل پاک می‌شوند.
+        $ids = bwt_ids_with_tracking_code(bwt_recent_order_ids(BWT_SWEEP_DAYS, 5000));
+        $ids = array_slice(array_values($ids), 0, 2000);
+        if (!$ids) {
+            return array('job_id' => '', 'error' => 'سفارشی با کد رهگیری در ۴۵ روز اخیر پیدا نشد.');
+        }
+    } elseif ($mode === 'selected') {
         $examined = 0;
         foreach ((array) $order_ids as $id) {
             if (++$examined > BWT_CLEANUP_MAX_SELECTED) {
@@ -1013,52 +2427,49 @@ function bwt_create_cleanup_job($mode, $order_ids = array()) {
     } catch (Throwable $e) {
         return array('job_id' => '', 'error' => 'ساخت شناسهٔ امن برای پاک‌سازی ممکن نشد.');
     }
-    $job_id = bwt_sanitize_upload_job_id($job_id);
+    $job_id = bwt_sanitize_job_id($job_id);
     if ($job_id === '') {
         return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار پاک‌سازی ناموفق بود.');
     }
     $job = array(
-        'user_id' => (int) get_current_user_id(),
-        'mode' => $mode,
-        'ids' => $ids,
-        'offset' => 0,
-        'processed' => 0,
-        'deleted' => 0,
-        'not_found' => 0,
-        'invalid' => 0,
-        'details' => array(),
+        'user_id'           => (int) get_current_user_id(),
+        'mode'              => $mode,
+        'ids'               => $ids,
+        'offset'            => 0,
+        'processed'         => 0,
+        'deleted'           => 0,
+        'not_found'         => 0,
+        'invalid'           => 0,
+        'details'           => array(),
         'details_truncated' => 0,
-        'table_index' => 0,
-        'done' => false,
-        'file_error' => '',
-        'created_at' => time(),
+        'table_index'       => 0,
+        'done'              => false,
+        'file_error'        => '',
+        'created_at'        => time(),
     );
     if (!set_transient(bwt_cleanup_job_key($job_id), $job, 3 * HOUR_IN_SECONDS)) {
         return array('job_id' => '', 'error' => 'ذخیرهٔ وضعیت پاک‌سازی ممکن نشد؛ دوباره تلاش کنید.');
-    }
-    if (function_exists('wp_next_scheduled') && function_exists('wp_schedule_event') && !wp_next_scheduled('bwt_cleanup_upload_temp_files')) {
-        wp_schedule_event(time() + DAY_IN_SECONDS, 'daily', 'bwt_cleanup_upload_temp_files');
     }
     return array('job_id' => $job_id, 'error' => '');
 }
 
 function bwt_cleanup_job_payload($job) {
-    $selected = isset($job['mode']) && $job['mode'] === 'selected';
+    $selected = isset($job['mode']) && in_array($job['mode'], array('selected', 'invalid'), true);
     $total = $selected && isset($job['ids']) && is_array($job['ids']) ? count($job['ids']) : 0;
     $processed = max(0, (int) $job['processed']);
     $progress = !empty($job['done']) ? 100 : ($selected && $total > 0 ? min(99, (int) floor(100 * $processed / $total)) : min(99, (int) $job['table_index'] * 50));
     return array(
-        'mode' => $selected ? 'selected' : 'all',
-        'done' => !empty($job['done']),
-        'progress' => $progress,
-        'processed' => $processed,
-        'total' => $total,
-        'deleted' => max(0, (int) $job['deleted']),
-        'not_found' => max(0, (int) $job['not_found']),
-        'invalid' => max(0, (int) $job['invalid']),
-        'details' => isset($job['details']) && is_array($job['details']) ? array_slice($job['details'], 0, 20) : array(),
+        'mode'              => isset($job['mode']) ? (string) $job['mode'] : 'all',
+        'done'              => !empty($job['done']),
+        'progress'          => $progress,
+        'processed'         => $processed,
+        'total'             => $total,
+        'deleted'           => max(0, (int) $job['deleted']),
+        'not_found'         => max(0, (int) $job['not_found']),
+        'invalid'           => max(0, (int) $job['invalid']),
+        'details'           => isset($job['details']) && is_array($job['details']) ? array_slice($job['details'], 0, 20) : array(),
         'details_truncated' => max(0, (int) $job['details_truncated']),
-        'file_error' => isset($job['file_error']) ? (string) $job['file_error'] : '',
+        'file_error'        => isset($job['file_error']) ? (string) $job['file_error'] : '',
     );
 }
 
@@ -1067,30 +2478,16 @@ function bwt_cleanup_job_authorize() {
         wp_send_json_error(array('message' => 'دسترسی غیرمجاز است.'), 403);
     }
     check_ajax_referer('bwt_cleanup_batch', 'nonce');
-    $job_id = isset($_POST['job_id']) ? bwt_sanitize_upload_job_id(wp_unslash($_POST['job_id'])) : '';
+    $job_id = isset($_POST['job_id']) ? bwt_sanitize_job_id(wp_unslash($_POST['job_id'])) : '';
     $job = $job_id !== '' ? bwt_get_cleanup_job($job_id) : false;
-    if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
+    if (!$job || !is_array($job) || empty($job['user_id']) || (int) $job['user_id'] !== (int) get_current_user_id()) {
         wp_send_json_error(array('message' => 'کار پاک‌سازی پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
     }
     return array($job_id, $job);
 }
 
-function bwt_cleanup_ajax_lock($job_id) {
-    $dir = bwt_upload_temp_dir();
-    if ($dir === '') {
-        return false;
-    }
-    $path = $dir . bwt_upload_temp_prefix() . 'cleanup-' . $job_id . '.lock';
-    $handle = @fopen($path, 'c');
-    if (!$handle) {
-        return false;
-    }
-    @chmod($path, 0600);
-    if (!flock($handle, LOCK_EX | LOCK_NB)) {
-        fclose($handle);
-        return false;
-    }
-    return $handle;
+function bwt_cleanup_meta_keys() {
+    return array('_tracking_code', '_tracking_codes');
 }
 
 /** محدود به حداکثر ۵۰۰ ردیف در هر دستور؛ نام جدول فقط از فهرست داخلی می‌آید. */
@@ -1104,47 +2501,96 @@ function bwt_delete_tracking_meta_batch($table, $limit = BWT_CLEANUP_BATCH_SIZE)
         return false;
     }
     $limit = max(1, min(BWT_CLEANUP_BATCH_SIZE, (int) $limit));
-    $sql = $wpdb->prepare("DELETE FROM {$table} WHERE meta_key = %s LIMIT %d", '_tracking_code', $limit);
+    $keys = bwt_cleanup_meta_keys();
+    $placeholders = implode(', ', array_fill(0, count($keys), '%s'));
+    $sql = $wpdb->prepare("DELETE FROM {$table} WHERE meta_key IN ({$placeholders}) LIMIT %d", array_merge($keys, array($limit)));
     $result = $wpdb->query($sql);
     return false === $result ? false : (int) $result;
+}
+
+/** حذف کد از یک سفارش + خاموش‌کردن همگام‌سازی خودکار برای همان سفارش. */
+function bwt_delete_tracking_from_order($order) {
+    if (!is_object($order) || !method_exists($order, 'get_id')) {
+        return false;
+    }
+    $order_id = (int) $order->get_id();
+    if ($order_id <= 0) {
+        return false;
+    }
+    $had_code = false;
+    if (method_exists($order, 'get_meta')) {
+        $had_code = bwt_clean_code($order->get_meta('_tracking_code')) !== '' || (bool) $order->get_meta('_tracking_codes');
+    }
+    if (function_exists('delete_post_meta')) {
+        delete_post_meta($order_id, '_tracking_code');
+        delete_post_meta($order_id, '_tracking_codes');
+    }
+    if (method_exists($order, 'delete_meta_data')) {
+        $order->delete_meta_data('_tracking_code');
+        $order->delete_meta_data('_tracking_codes');
+        $order->delete_meta_data('_bwt_tracking_source');
+        $order->update_meta_data('_bwt_autosync_off', 1);
+        $order->delete_meta_data('_bwt_tracking_synced_at');
+        if (method_exists($order, 'save')) {
+            $order->save();
+        }
+    }
+    if ($had_code) {
+        bwt_flush_order_counts_cache();
+    }
+    return $had_code;
 }
 
 function bwt_process_selected_cleanup_batch(&$job, $batch_size = BWT_CLEANUP_SELECTED_BATCH_SIZE) {
     $ids = isset($job['ids']) && is_array($job['ids']) ? $job['ids'] : array();
     $batch_size = max(1, min(BWT_CLEANUP_SELECTED_BATCH_SIZE, (int) $batch_size));
-    $end = min(count($ids), (int) $job['offset'] + $batch_size);
-    for ($i = (int) $job['offset']; $i < $end; $i++) {
+    $start = (int) $job['offset'];
+    $end = min(count($ids), $start + $batch_size);
+    for ($i = $start; $i < $end; $i++) {
         $order_id = (int) $ids[$i];
-        $order = wc_get_order($order_id);
+        $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
         if (!$order) {
             $job['invalid']++;
-            if (count($job['details']) < 20) $job['details'][] = '#' . $order_id . ' (سفارش یافت نشد)';
-            else $job['details_truncated']++;
+            if (count($job['details']) < 20) {
+                $job['details'][] = '#' . $order_id . ' (سفارش یافت نشد)';
+            } else {
+                $job['details_truncated']++;
+            }
             continue;
         }
-        $meta_exists = get_post_meta($order_id, '_tracking_code', true);
-        if (empty($meta_exists) && method_exists($order, 'get_meta')) {
-            $meta_exists = $order->get_meta('_tracking_code');
-        }
-        if ($meta_exists) {
-            $ok1 = delete_post_meta($order_id, '_tracking_code');
-            $ok2 = false;
-            if (method_exists($order, 'delete_meta_data')) {
-                $order->delete_meta_data('_tracking_code');
-                $ok2 = $order->save();
+        if (isset($job['mode']) && $job['mode'] === 'invalid') {
+            $stored = bwt_read_stored_codes($order);
+            $bad = array();
+            foreach ($stored as $code) {
+                if (!bwt_is_tracking_like($code)) {
+                    $bad[] = $code;
+                }
             }
-            if ($ok1 || $ok2) {
-                $job['deleted']++;
-            } else {
+            if (!$bad) {
                 $job['not_found']++;
+                continue;
             }
+            bwt_delete_tracking_from_order($order);
+            $job['deleted']++;
+            if (count($job['details']) < 20) {
+                $job['details'][] = '#' . $order_id . ' ← ' . implode('، ', $bad);
+            } else {
+                $job['details_truncated']++;
+            }
+            continue;
+        }
+        if (bwt_delete_tracking_from_order($order)) {
+            $job['deleted']++;
         } else {
             $job['not_found']++;
-            if (count($job['details']) < 20) $job['details'][] = '#' . $order_id . ' (کد نداشت)';
-            else $job['details_truncated']++;
+            if (count($job['details']) < 20) {
+                $job['details'][] = '#' . $order_id . ' (کد نداشت)';
+            } else {
+                $job['details_truncated']++;
+            }
         }
     }
-    $processed = max(0, $end - (int) $job['offset']);
+    $processed = max(0, $end - $start);
     $job['offset'] = $end;
     $job['processed'] += $processed;
     $job['done'] = $end >= count($ids);
@@ -1161,23 +2607,21 @@ function bwt_ajax_cleanup_batch() {
     if (!empty($job['done'])) {
         wp_send_json_success(bwt_cleanup_job_payload($job));
     }
-    $lock = bwt_cleanup_ajax_lock($job_id);
-    if (!$lock) {
+    if (!bwt_acquire_lock('cleanup_job_' . $job_id, 120)) {
         wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
     }
     $job = bwt_get_cleanup_job($job_id);
     if (!$job || !is_array($job) || (int) $job['user_id'] !== (int) get_current_user_id()) {
-        flock($lock, LOCK_UN);
-        fclose($lock);
+        bwt_release_lock('cleanup_job_' . $job_id);
         wp_send_json_error(array('message' => 'کار پاک‌سازی پیدا نشد یا منقضی شده است.'), 404);
     }
+    $batch_error = '';
     if (empty($job['done'])) {
         if ($job['mode'] === 'selected') {
             bwt_process_selected_cleanup_batch($job, BWT_CLEANUP_SELECTED_BATCH_SIZE);
         } else {
             global $wpdb;
             $tables = array($wpdb->postmeta, $wpdb->prefix . 'wc_orders_meta');
-            $job['file_error'] = '';
             while ((int) $job['table_index'] < count($tables)) {
                 $table = $tables[(int) $job['table_index']];
                 if ($table === $tables[1]) {
@@ -1189,7 +2633,7 @@ function bwt_ajax_cleanup_batch() {
                 }
                 $deleted = bwt_delete_tracking_meta_batch($table, BWT_CLEANUP_BATCH_SIZE);
                 if (false === $deleted) {
-                    $job['file_error'] = 'حذف دسته‌ای از جدول اطلاعات سفارش ناموفق بود؛ دوباره تلاش کنید.';
+                    $batch_error = 'حذف دسته‌ای از جدول اطلاعات سفارش ناموفق بود؛ دوباره تلاش کنید.';
                     break;
                 }
                 $job['deleted'] += $deleted;
@@ -1201,14 +2645,9 @@ function bwt_ajax_cleanup_batch() {
             }
             $job['done'] = (int) $job['table_index'] >= count($tables);
         }
-        $batch_error = isset($job['file_error']) ? (string) $job['file_error'] : '';
-        $job['file_error'] = '';
         set_transient(bwt_cleanup_job_key($job_id), $job, 3 * HOUR_IN_SECONDS);
-    } else {
-        $batch_error = '';
     }
-    flock($lock, LOCK_UN);
-    fclose($lock);
+    bwt_release_lock('cleanup_job_' . $job_id);
     if ($batch_error !== '') {
         wp_send_json_error(array('message' => $batch_error), 500);
     }
@@ -1221,36 +2660,38 @@ function bwt_cleanup_page() {
     }
     $message = '';
     $cleanup_job_id = '';
-    if (isset($_POST['bwt_delete_all']) || isset($_POST['bwt_delete_selected'])) {
+    if (isset($_POST['bwt_delete_all']) || isset($_POST['bwt_delete_selected']) || isset($_POST['bwt_delete_invalid'])) {
         if (!isset($_POST['bwt_cleanup_nonce']) || !wp_verify_nonce(sanitize_text_field(wp_unslash($_POST['bwt_cleanup_nonce'])), 'bwt_cleanup_action')) {
-            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>خطای امنیتی: نانس نامعتبر.</p></div>';
+            $message = bwt_admin_notice('danger', 'خطای امنیتی: نانس نامعتبر.');
         } else {
-            $mode = isset($_POST['bwt_delete_all']) ? 'all' : 'selected';
+            $mode = isset($_POST['bwt_delete_all']) ? 'all' : (isset($_POST['bwt_delete_invalid']) ? 'invalid' : 'selected');
             $order_ids = array();
             if ($mode === 'selected') {
                 $raw = isset($_POST['order_ids']) ? sanitize_text_field(wp_unslash($_POST['order_ids'])) : '';
                 if (strlen($raw) > 24000) {
-                    $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>فهرست شماره سفارش‌ها بیش از حد بزرگ است. حداکثر ۱۰۰۰ شماره در هر اجرا وارد کنید.</p></div>';
+                    $message = bwt_admin_notice('danger', 'فهرست شماره سفارش‌ها بیش از حد بزرگ است. حداکثر ۱۰۰۰ شماره در هر اجرا وارد کنید.');
                 } else {
                     $parts = array_filter(array_map('trim', explode(',', bwt_normalize_digits($raw))));
                     foreach ($parts as $part) {
                         if ($part !== '' && ctype_digit($part) && (int) $part > 0) {
                             $order_ids[] = (int) $part;
-                            if (count($order_ids) > BWT_CLEANUP_MAX_SELECTED) break;
+                            if (count($order_ids) > BWT_CLEANUP_MAX_SELECTED) {
+                                break;
+                            }
                         }
                     }
                     $order_ids = array_values(array_unique($order_ids));
                     if (count($order_ids) > BWT_CLEANUP_MAX_SELECTED) {
-                        $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>حداکثر ۱۰۰۰ شماره سفارش در هر پاک‌سازی انتخابی مجاز است.</p></div>';
+                        $message = bwt_admin_notice('danger', 'حداکثر ۱۰۰۰ شماره سفارش در هر پاک‌سازی انتخابی مجاز است.');
                     } elseif (!$order_ids) {
-                        $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>شماره سفارش معتبری یافت نشد.</p></div>';
+                        $message = bwt_admin_notice('danger', 'شماره سفارش معتبری یافت نشد.');
                     }
                 }
             }
             if ($message === '') {
                 $created = bwt_create_cleanup_job($mode, $order_ids);
                 if (empty($created['job_id'])) {
-                    $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>' . esc_html($created['error']) . '</p></div>';
+                    $message = bwt_admin_notice('danger', $created['error']);
                 } else {
                     $cleanup_job_id = $created['job_id'];
                 }
@@ -1258,84 +2699,111 @@ function bwt_cleanup_page() {
         }
     }
     if (isset($_GET['bwt_cleanup_job'])) {
-        $requested_id = bwt_sanitize_upload_job_id(wp_unslash($_GET['bwt_cleanup_job']));
+        $requested_id = bwt_sanitize_job_id(wp_unslash($_GET['bwt_cleanup_job']));
         $requested_job = $requested_id !== '' ? bwt_get_cleanup_job($requested_id) : false;
         if ($requested_job && (int) $requested_job['user_id'] === (int) get_current_user_id()) {
             $cleanup_job_id = $requested_id;
         } else {
-            $message = '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>کار پاک‌سازی پیدا نشد یا منقضی شده است.</p></div>';
+            $message = bwt_admin_notice('danger', 'کار پاک‌سازی پیدا نشد یا منقضی شده است.');
         }
     }
     ?>
     <div class="wrap tisa-wrap bwt-wrap" dir="rtl">
         <?php bwt_render_hero('cleanup'); ?>
         <?php echo wp_kses_post($message); ?>
-        <?php if ($cleanup_job_id !== '') : ?>
-            <section id="bwt-cleanup-progress" class="bwt-card bwt-upload-progress" data-job-id="<?php echo esc_attr($cleanup_job_id); ?>" aria-live="polite">
-                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پاک‌سازی کدهای رهگیری</h2><p data-bwt-cleanup-status>در حال آماده‌سازی پاک‌سازی دسته‌ای…</p></div></div>
-                <div class="bwt-card-body">
-                    <progress class="bwt-progress-bar" data-bwt-cleanup-progress max="100" value="0" aria-label="پیشرفت پاک‌سازی"></progress>
-                    <div class="bwt-progress-meta" data-bwt-cleanup-counters></div>
-                    <button type="button" class="tisa-btn tisa-btn--secondary" data-bwt-cleanup-resume hidden>ادامهٔ پاک‌سازی</button>
-                    <div data-bwt-cleanup-result></div>
-                    <noscript><p class="bwt-hint">برای اجرای پاک‌سازی دسته‌ای، جاوااسکریپت مرورگر را فعال کنید.</p></noscript>
-                </div>
-            </section>
-        <?php endif; ?>
-        <form method="post" class="bwt-grid">
-            <?php wp_nonce_field('bwt_cleanup_action', 'bwt_cleanup_nonce'); ?>
-            <section class="bwt-card">
-                <div class="bwt-card-head"><span class="bwt-dot"></span><div><h2>پاک کردن انتخابی</h2><p>کد رهگیری فقط از سفارش‌هایی که وارد می‌کنید حذف می‌شود؛ حداکثر ۱۰۰۰ شماره در هر اجرا.</p></div></div>
-                <div class="bwt-card-body">
-                    <label for="bwt_order_ids" class="bwt-label">شماره سفارش‌ها (با کاما جدا کنید)</label>
-                    <input type="text" id="bwt_order_ids" name="order_ids" class="tisa-input bwt-ids" dir="ltr" inputmode="numeric" placeholder="123,124,125" />
-                    <div class="bwt-actions"><button type="submit" name="bwt_delete_selected" class="tisa-btn tisa-btn--secondary" onclick="return confirm('کد رهگیری سفارش‌های انتخابی پاک میشه؟')">پاک کردن انتخابی</button></div>
-                </div>
-            </section>
-            <section class="bwt-card bwt-card--danger">
-                <div class="bwt-card-head"><span class="bwt-dot bwt-dot--bad"></span><div><h2>پاک کردن همهٔ کدها</h2><p>غیرقابل بازگشت — از همهٔ سفارش‌ها. قبل از انجام بکاپ بگیرید.</p></div></div>
-                <div class="bwt-card-body"><div class="bwt-actions"><button type="submit" name="bwt_delete_all" class="tisa-btn tisa-btn--danger" onclick="return confirm('همه کدهای رهگیری پاک می‌شه! مطمئنی؟ این کار برگشت نداره!')">پاک کردن همه کدهای رهگیری</button></div></div>
-            </section>
-        </form>
+
+        <div class="bwt-stack">
+            <?php if ($cleanup_job_id !== '') : ?>
+                <section id="bwt-cleanup-progress" class="bwt-card" data-job-id="<?php echo esc_attr($cleanup_job_id); ?>" aria-live="polite">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">در حال پاک‌سازی</h2>
+                            <p class="bwt-card__desc" data-bwt-cleanup-status>در حال آماده‌سازی…</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-cleanup-progress max="100" value="0" aria-label="پیشرفت پاک‌سازی"></progress></div>
+                        <p class="bwt-progress__meta" data-bwt-cleanup-counters></p>
+                        <div class="bwt-actions"><button type="button" class="bwt-btn bwt-btn--sm" data-bwt-cleanup-resume hidden>ادامهٔ پاک‌سازی</button></div>
+                        <div data-bwt-cleanup-result></div>
+                        <noscript><p class="bwt-hint">برای اجرای پاک‌سازی دسته‌ای، جاوااسکریپت مرورگر را فعال کنید.</p></noscript>
+                    </div>
+                </section>
+            <?php endif; ?>
+
+            <form method="post" class="bwt-grid-2">
+                <?php wp_nonce_field('bwt_cleanup_action', 'bwt_cleanup_nonce'); ?>
+                <section class="bwt-card">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">پاک کردن انتخابی</h2>
+                            <p class="bwt-card__desc">کد فقط از سفارش‌های واردشده حذف می‌شود؛ حداکثر ۱۰۰۰ شماره در هر اجرا.</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <label class="bwt-field">
+                            <span class="bwt-field__label">شمارهٔ سفارش‌ها (با کاما جدا کنید)</span>
+                            <input type="text" id="bwt_order_ids" name="order_ids" class="bwt-input bwt-input--mono bwt-ids" dir="ltr" inputmode="numeric" placeholder="123,124,125" />
+                        </label>
+                        <p class="bwt-hint">برای این سفارش‌ها همگام‌سازی خودکار خاموش می‌شود تا کد دوباره برنگردد.</p>
+                        <div class="bwt-actions">
+                            <button type="submit" name="bwt_delete_selected" class="bwt-btn" onclick="return confirm('کد رهگیری سفارش‌های انتخابی پاک میشه؟')">پاک کردن انتخابی</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bwt-card">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">حذف کدهای نامعتبر</h2>
+                            <p class="bwt-card__desc">هر کدی که دقیقاً ۲۴ رقم نیست (شمارهٔ سفارش، موبایل، کد پستی، زمان همگام‌سازی) پاک می‌شود. کدهای درست دست نمی‌خورند.</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <p class="bwt-hint">بین سفارش‌های ۴۵ روز اخیر می‌گردد؛ حداکثر ۲۰۰۰ سفارش در هر اجرا.</p>
+                        <div class="bwt-actions">
+                            <button type="submit" name="bwt_delete_invalid" class="bwt-btn" onclick="return confirm('کدهای غیر ۲۴ رقمی پاک شوند؟ کدهای درست باقی می‌مانند.')">حذف کدهای نامعتبر</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="bwt-card">
+                    <header class="bwt-card__head">
+                        <div>
+                            <h2 class="bwt-card__title">پاک کردن همهٔ کدها</h2>
+                            <p class="bwt-card__desc">غیرقابل بازگشت. اگر سورناپست کد را داشته باشد، جاروی خودکار ممکن است دوباره ثبتش کند.</p>
+                        </div>
+                    </header>
+                    <div class="bwt-card__body">
+                        <p class="bwt-empty-note">پیشنهاد: پیش از این کار از دیتابیس بکاپ بگیرید.</p>
+                        <div class="bwt-actions">
+                            <button type="submit" name="bwt_delete_all" class="bwt-btn bwt-btn--danger" onclick="return confirm('همه کدهای رهگیری پاک میشه! مطمئنی؟ این کار برگشت نداره!')">پاک کردن همه کدهای رهگیری</button>
+                        </div>
+                    </div>
+                </section>
+            </form>
+        </div>
     </div>
     <?php
 }
 
-/** سازگاری محدود: حداکثر ۵۰۰ meta از هر جدول در هر فراخوان. */
-function bwt_delete_all_tracking_codes() {
-    if (!current_user_can('manage_options')) {
-        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
-    }
-    global $wpdb;
-    $deleted = bwt_delete_tracking_meta_batch($wpdb->postmeta, BWT_CLEANUP_BATCH_SIZE);
-    $deleted = false === $deleted ? 0 : $deleted;
-    $orders_table = $wpdb->prefix . 'wc_orders_meta';
-    $exists = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $orders_table));
-    $deleted_hpos = $exists === $orders_table ? bwt_delete_tracking_meta_batch($orders_table, BWT_CLEANUP_BATCH_SIZE) : 0;
-    $total = $deleted + (false === $deleted_hpos ? 0 : $deleted_hpos);
-    $suffix = $total >= BWT_CLEANUP_BATCH_SIZE ? ' پاک‌سازی دسته‌ای را برای ادامه اجرا کنید.' : '';
-    return '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($total) . '</strong> کد رهگیری در این دسته حذف شد.' . esc_html($suffix) . '</p></div>';
+// ========== 12. چرخهٔ عمر ==========
+if (function_exists('register_activation_hook')) {
+    register_activation_hook(__FILE__, 'bwt_activate_plugin');
+}
+if (function_exists('register_deactivation_hook')) {
+    register_deactivation_hook(__FILE__, 'bwt_deactivate_plugin');
+}
+if (function_exists('add_action')) {
+    add_action('before_woocommerce_init', 'bwt_declare_hpos_compatibility');
 }
 
-/** اجرای سازگار محدود به ۵۰ سفارش؛ رابط مدیریت از Job قابل ادامه استفاده می‌کند. */
-function bwt_delete_selected_tracking_codes($order_ids) {
-    if (!current_user_can('manage_options')) {
-        return '<div class="tisa-notice tisa-notice--danger bwt-notice"><p>دسترسی غیر مجاز.</p></div>';
+function bwt_activate_plugin() {
+    bwt_maybe_schedule_cron();
+}
+
+function bwt_declare_hpos_compatibility() {
+    if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility('custom_order_tables', __FILE__, true);
     }
-    $ids = array();
-    $examined = 0;
-    foreach ((array) $order_ids as $id) {
-        if (++$examined > BWT_CLEANUP_SELECTED_BATCH_SIZE) break;
-        $id = (int) $id;
-        if ($id > 0 && !isset($ids[$id])) $ids[$id] = $id;
-        if (count($ids) >= BWT_CLEANUP_SELECTED_BATCH_SIZE) break;
-    }
-    $job = array('ids' => array_values($ids), 'offset' => 0, 'processed' => 0, 'deleted' => 0, 'not_found' => 0, 'invalid' => 0, 'details' => array(), 'details_truncated' => 0, 'done' => false);
-    bwt_process_selected_cleanup_batch($job, BWT_CLEANUP_SELECTED_BATCH_SIZE);
-    $msg = '<div class="tisa-notice tisa-notice--success bwt-notice"><p><strong>' . esc_html($job['deleted']) . '</strong> کد رهگیری در این دسته حذف شد. ' . esc_html($job['not_found']) . ' سفارش کد نداشت و ' . esc_html($job['invalid']) . ' سفارش یافت نشد.';
-    if (count((array) $order_ids) > count($ids)) $msg .= ' برای ادامه، سفارش‌های باقی‌مانده را در اجرای بعدی وارد کنید.';
-    $msg .= '</p>';
-    if ($job['details']) $msg .= '<p class="bwt-hint">جزئیات: ' . esc_html(implode('، ', array_slice($job['details'], 0, 20))) . '</p>';
-    $msg .= '</div>';
-    return $msg;
 }
