@@ -31,20 +31,25 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             'order_amount_label' => array( 'title' => 'عنوان مبلغ سفارش', 'type' => 'text', 'default' => 'مبلغ سفارش' ),
             'amount_due_label' => array( 'title' => 'عنوان مبلغ نهایی', 'type' => 'text', 'default' => 'مبلغی که باید در لینک وارد کنید' ),
             'payment_footnote' => array( 'title' => 'توضیح زیر دکمه پرداخت', 'type' => 'textarea', 'default' => 'لینک پرداخت در صفحه‌ای جدا باز می‌شود. مبلغ را با واحد نمایش‌داده‌شده وارد کنید.' ),
-            'before_payment_message' => array( 'title' => 'پیام پیش از پرداخت', 'type' => 'textarea', 'default' => 'هنوز پرداختی برای این سفارش ثبت نشده است. پس از پرداخت در لینک اسنپ‌پی، دکمه «پرداخت را انجام دادم» را بزنید تا سفارش برای بررسی دستی اعلام شود.' ),
+            'before_payment_message' => array( 'title' => 'پیام پیش از پرداخت', 'type' => 'textarea', 'default' => 'پس از پرداخت در اسنپ‌پی، کد رهگیری نمایش‌داده‌شده را یادداشت کنید و در همین صفحه وارد کنید. با زدن دکمه ثبت، سفارش برای بررسی دستی فروشگاه ارسال می‌شود.' ),
             'copy_button_text' => array( 'title' => 'متن دکمه کپی مبلغ', 'type' => 'text', 'default' => 'کپی مبلغ نهایی' ),
             'copy_success_message' => array( 'title' => 'پیام پس از کپی مبلغ', 'type' => 'text', 'default' => 'مبلغ کپی شد؛ آن را بدون تغییر در لینک اسنپ‌پی وارد کنید.' ),
-            'report_paid_button_text' => array( 'title' => 'متن دکمه اعلام پرداخت', 'type' => 'text', 'default' => 'پرداخت را انجام دادم؛ ارسال برای بررسی' ),
-            'report_paid_hint' => array( 'title' => 'توضیح دکمه اعلام پرداخت', 'type' => 'textarea', 'default' => 'این دکمه فقط به فروشگاه خبر می‌دهد؛ پرداخت را خودکار تأیید نمی‌کند.' ),
+            'tracking_field_label' => array( 'title' => 'عنوان فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد رهگیری اسنپ‌پی' ),
+            'tracking_placeholder' => array( 'title' => 'راهنمای فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد رهگیری درج‌شده در نتیجه پرداخت' ),
+            'tracking_help' => array( 'title' => 'توضیح فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد را دقیقاً از صفحه نتیجه پرداخت اسنپ‌پی وارد کنید.' ),
+            'tracking_reminder' => array( 'title' => 'یادآوری کد رهگیری', 'type' => 'textarea', 'default' => 'پس از پرداخت، کد رهگیری را یادداشت کنید؛ برای ارسال سفارش به بررسی دستی، واردکردن این کد لازم است.' ),
+            'report_paid_button_text' => array( 'title' => 'متن دکمه ثبت پرداخت', 'type' => 'text', 'default' => 'ثبت پرداخت و ارسال کد برای بررسی' ),
+            'report_paid_hint' => array( 'title' => 'توضیح ثبت پرداخت', 'type' => 'textarea', 'default' => 'ثبت این کد فقط درخواست بررسی را ارسال می‌کند؛ پرداخت پس از بررسی فروشگاه تأیید می‌شود.' ),
             'payment_url' => array( 'title' => 'لینک پرداخت اسنپ‌پی', 'type' => 'url', 'default' => '', 'description' => 'لینک سوشال اسنپ‌پی که مشتری برای پرداخت وارد آن می‌شود.' ),
             'fee_percent' => array( 'title' => 'درصد کارمزد اسنپ‌پی', 'type' => 'number', 'default' => '12', 'custom_attributes' => array( 'min' => '0', 'max' => '100', 'step' => '0.01' ), 'description' => 'کارمزد روی مبلغ کل سفارش، پس از تخفیف و با احتساب ارسال و مالیات محاسبه می‌شود.' ),
             'fee_label' => array( 'title' => 'عنوان ردیف کارمزد', 'type' => 'text', 'default' => 'کارمزد اسنپ‌پی' ),
-            'warning' => array( 'title' => 'هشدار پیش از پرداخت', 'type' => 'textarea', 'default' => 'لطفاً در لینک اسنپ‌پی دقیقاً مبلغ اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از مبلغ اعلام‌شده، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد.' ),
+            'warning' => array( 'title' => 'هشدار پیش از پرداخت', 'type' => 'textarea', 'default' => 'در لینک اسنپ‌پی دقیقاً مبلغ نهایی اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از آن، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد. پس از پرداخت، کد رهگیری اسنپ‌پی را یادداشت کنید؛ برای ثبت درخواست بررسی، واردکردن این کد الزامی است.' ),
             'acknowledgement' => array( 'title' => 'متن تأیید هشدار', 'type' => 'text', 'default' => 'هشدار مبلغ را خواندم و متوجه شدم.' ),
             'checkout_button_text' => array( 'title' => 'متن دکمه ثبت سفارش', 'type' => 'text', 'default' => 'ثبت سفارش و ادامه به اسنپ‌پی' ),
             'payment_button_text' => array( 'title' => 'متن دکمه رفتن به درگاه', 'type' => 'text', 'default' => 'رفتن به صفحه پرداخت اسنپ‌پی' ),
             'legacy_hold_message' => array( 'title' => 'پیام سفارش‌های قدیمی در انتظار بررسی', 'type' => 'textarea', 'default' => 'این سفارش پیش از اصلاح گردش پرداخت ثبت شده و وضعیت پرداخت آن از سایت قابل تشخیص نیست. برای جلوگیری از پرداخت تکراری، قبل از پرداخت دوباره با فروشگاه هماهنگ کنید. اگر قبلاً پرداخت کرده‌اید، دکمهٔ اعلام پرداخت را بزنید.' ),
             'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'اعلام پرداخت شما ثبت شد و سفارش در انتظار بررسی دستی فروشگاه است. این پیام به معنی تأیید پرداخت نیست.' ),
+            'rejected_message' => array( 'title' => 'پیام پس از رد اعلام پرداخت', 'type' => 'textarea', 'default' => 'کد یا پرداخت اعلام‌شده تأیید نشد. علت ثبت‌شده را بررسی کنید و برای پیگیری با فروشگاه تماس بگیرید. این وضعیت به‌تنهایی به معنی بازپرداخت وجه نیست.' ),
             'approved_message' => array( 'title' => 'پیام پس از تأیید پرداخت', 'type' => 'textarea', 'default' => 'پرداخت این سفارش تأیید شده است. از خرید شما سپاسگزاریم.' ),
             'button_color' => array( 'title' => 'رنگ دکمه پرداخت', 'type' => 'text', 'default' => '#2874FC', 'description' => 'کد رنگ HEX، مانند #2874FC.' ),
             'button_text_color' => array( 'title' => 'رنگ نوشته دکمه', 'type' => 'text', 'default' => '#FFFFFF', 'description' => 'کد رنگ HEX، مانند #FFFFFF.' ),
@@ -59,15 +64,16 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
 
     public function payment_fields() {
         $description = $this->setting_text( 'description' );
-        $warning = $this->setting_text( 'warning' );
+        $warning = $this->warning_text();
         $rate = $this->fee_rate();
         if ( $description ) { echo '<div class="tspay-description">' . wp_kses_post( wpautop( $description ) ) . '</div>'; }
         if ( $rate > 0 && $this->setting_text( 'fee_hint' ) ) { echo '<p class="tspay-fee-hint">' . esc_html( str_replace( '%s', $this->format_rate( $rate ), $this->setting_text( 'fee_hint' ) ) ) . '</p>'; }
         if ( $warning ) { echo '<div class="tspay-warning" role="alert"><strong>هشدار پیش از پرداخت</strong><div>' . wp_kses_post( wpautop( $warning ) ) . '</div><label class="tspay-ack"><input type="checkbox" name="tspay_ack" value="1" required> <span>' . esc_html( $this->setting_text( 'acknowledgement' ) ) . '</span></label></div>'; }
+        if ( $this->setting_text( 'tracking_reminder' ) ) { echo '<div class="tspay-tracking-reminder">' . wp_kses_post( wpautop( $this->setting_text( 'tracking_reminder' ) ) ) . '</div>'; }
     }
 
     public function validate_fields() {
-        if ( $this->setting_text( 'warning' ) && empty( $_POST['tspay_ack'] ) ) {
+        if ( $this->warning_text() && empty( $_POST['tspay_ack'] ) ) {
             wc_add_notice( 'برای ادامه، لطفاً هشدار پرداخت اسنپ‌پی را تأیید کنید.', 'error' );
             return false;
         }
@@ -126,14 +132,19 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $order_id = isset( $_POST['order_id'] ) ? absint( wp_unslash( $_POST['order_id'] ) ) : 0;
         $order_key = isset( $_POST['order_key'] ) && is_string( $_POST['order_key'] ) ? sanitize_text_field( wp_unslash( $_POST['order_key'] ) ) : '';
         $nonce = isset( $_POST['_wpnonce'] ) && is_string( $_POST['_wpnonce'] ) ? sanitize_text_field( wp_unslash( $_POST['_wpnonce'] ) ) : '';
+        $tracking_code = isset( $_POST['tspay_tracking_code'] ) && is_string( $_POST['tspay_tracking_code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['tspay_tracking_code'] ) ) ) : '';
         $order = wc_get_order( $order_id );
         if ( 'POST' !== ( isset( $_SERVER['REQUEST_METHOD'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_SERVER['REQUEST_METHOD'] ) ) ) : '' ) || ! $order || TSPAY_GATEWAY !== $order->get_payment_method() || '' === $order_key || ! hash_equals( (string) $order->get_order_key(), $order_key ) || ! wp_verify_nonce( $nonce, 'tspay_report_paid_' . $order_id . '_' . $order_key ) ) {
             wp_die( 'درخواست معتبر نیست. صفحه سفارش را دوباره باز کنید.', '', array( 'response' => 403 ) );
         }
+        if ( '' === $tracking_code || strlen( $tracking_code ) > 480 ) {
+            wp_die( 'واردکردن کد رهگیری معتبر الزامی است. به صفحه سفارش برگردید و کد را وارد کنید.', '', array( 'response' => 400 ) );
+        }
         if ( ! $order->is_paid() && $order->has_status( array( 'pending', 'on-hold' ) ) && 'yes' !== $order->get_meta( '_tspay_customer_reported_paid', true ) ) {
-            $note = 'مشتری اعلام کرد پرداخت لینک اسنپ‌پی را انجام داده است؛ بررسی دستی مبلغ و دریافت وجه الزامی است.';
+            $note = 'مشتری اعلام کرد پرداخت لینک اسنپ‌پی را انجام داده است. کد رهگیری اعلام‌شده: ' . $tracking_code . '. بررسی دستی مبلغ و دریافت وجه الزامی است.';
             $was_pending = $order->has_status( 'pending' );
             $order->update_meta_data( '_tspay_customer_reported_paid', 'yes' );
+            $order->update_meta_data( '_tspay_customer_tracking_code', $tracking_code );
             $order->update_meta_data( '_tspay_customer_reported_at', current_time( 'mysql', true ) );
             $order->save();
             if ( $was_pending ) { $order->update_status( 'on-hold', $note ); }
@@ -162,12 +173,13 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $rate = (float) $order->get_meta( '_tspay_fee_rate', true );
         if ( 'yes' !== $order->get_meta( '_tspay_fee_applied', true ) ) { $base = (float) $order->get_total(); $fee = 0; $rate = 0; }
         $is_paid = $order->is_paid();
+        $rejected = 'rejected' === $order->get_meta( '_tspay_admin_review_state', true ) && $order->has_status( 'failed' );
         $reported = 'yes' === $order->get_meta( '_tspay_customer_reported_paid', true ) && $order->has_status( 'on-hold' );
         $legacy_hold = ! $is_paid && ! $reported && $order->has_status( 'on-hold' ) && ! $order->get_meta( '_tspay_flow_version', true );
         $can_pay = ! $is_paid && ! $reported && ! $legacy_hold && $order->has_status( 'pending' );
         $can_report = $can_pay || $legacy_hold;
-        $message = $is_paid ? $this->setting_text( 'approved_message' ) : ( $reported ? $this->setting_text( 'pending_message' ) : ( $legacy_hold ? $this->setting_text( 'legacy_hold_message' ) : ( $can_pay ? $this->setting_text( 'before_payment_message' ) : '' ) ) );
-        $warning = $can_pay ? $this->setting_text( 'warning' ) : '';
+        $message = $is_paid ? $this->setting_text( 'approved_message' ) : ( $rejected ? $this->setting_text( 'rejected_message' ) : ( $reported ? $this->setting_text( 'pending_message' ) : ( $legacy_hold ? $this->setting_text( 'legacy_hold_message' ) : ( $can_pay ? $this->setting_text( 'before_payment_message' ) : '' ) ) ) );
+        $warning = $can_pay ? $this->warning_text() : '';
         $button = $this->setting_text( 'payment_button_text' ) ?: 'رفتن به صفحه پرداخت اسنپ‌پی';
         $copy_button = $this->setting_text( 'copy_button_text' ) ?: 'کپی مبلغ نهایی';
         $copy_success = $this->setting_text( 'copy_success_message' ) ?: 'مبلغ کپی شد؛ آن را بدون تغییر در لینک اسنپ‌پی وارد کنید.';
@@ -175,9 +187,16 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $text_color = sanitize_hex_color( $this->get_option( 'button_text_color', '#FFFFFF' ) ) ?: '#FFFFFF';
         $style = '--tspay-button:' . $button_color . ';--tspay-button-text:' . $text_color . ';';
         $copy_amount = wc_format_decimal( $order->get_total(), wc_get_price_decimals() );
+        $tracking_code = ( $reported || $rejected ) ? (string) $order->get_meta( '_tspay_customer_tracking_code', true ) : '';
+        $rejection_reason = $rejected ? (string) $order->get_meta( '_tspay_admin_rejection_reason', true ) : '';
         echo '<section class="tspay-panel" dir="rtl">';
         if ( $message ) {
-            echo '<div class="tspay-status ' . ( $is_paid ? 'is-approved' : ( $reported ? 'is-review' : 'is-awaiting' ) ) . '" role="status"><span class="tspay-status-icon" aria-hidden="true">' . ( $is_paid ? '✓' : ( $reported ? '◷' : 'i' ) ) . '</span><div>' . wp_kses_post( wpautop( $message ) ) . '</div></div>';
+            $state_class = $is_paid ? 'is-approved' : ( $rejected ? 'is-rejected' : ( $reported ? 'is-review' : 'is-awaiting' ) );
+            $state_icon = $is_paid ? '✓' : ( $rejected ? '!' : ( $reported ? '◷' : 'i' ) );
+            echo '<div class="tspay-status ' . esc_attr( $state_class ) . '" role="status"><span class="tspay-status-icon" aria-hidden="true">' . esc_html( $state_icon ) . '</span><div>' . wp_kses_post( wpautop( $message ) );
+            if ( $reported && $tracking_code ) { echo '<p class="tspay-tracking-receipt">کد رهگیری ثبت‌شده: <bdi dir="ltr">' . esc_html( $tracking_code ) . '</bdi></p>'; }
+            if ( $rejected && $rejection_reason ) { echo '<p class="tspay-rejection-reason">علت ثبت‌شده: ' . esc_html( $rejection_reason ) . '</p><p class="tspay-tracking-receipt">کد رهگیری: <bdi dir="ltr">' . esc_html( $tracking_code ) . '</bdi></p>'; }
+            echo '</div></div>';
         }
         echo '<h3 class="tspay-heading">' . esc_html( $this->setting_text( 'amount_heading' ) ?: 'مبلغ قابل پرداخت در اسنپ‌پی' ) . '</h3>';
         echo '<dl class="tspay-breakdown">';
@@ -198,8 +217,10 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             echo '<form method="post" action="' . esc_url( admin_url( 'admin-post.php' ) ) . '" class="tspay-report-form">';
             echo '<input type="hidden" name="action" value="tspay_report_paid"><input type="hidden" name="order_id" value="' . esc_attr( $order->get_id() ) . '"><input type="hidden" name="order_key" value="' . esc_attr( $order->get_order_key() ) . '">';
             wp_nonce_field( 'tspay_report_paid_' . $order->get_id() . '_' . $order->get_order_key() );
-            echo '<button type="submit" class="tspay-report-button">' . esc_html( $this->setting_text( 'report_paid_button_text' ) ?: 'پرداخت را انجام دادم؛ ارسال برای بررسی' ) . '</button>';
-            if ( $this->setting_text( 'report_paid_hint' ) ) { echo '<p>' . wp_kses_post( wpautop( $this->setting_text( 'report_paid_hint' ) ) ) . '</p>'; }
+            echo '<label class="tspay-tracking-field"><span class="tspay-tracking-label">' . esc_html( $this->setting_text( 'tracking_field_label' ) ?: 'کد رهگیری اسنپ‌پی' ) . ' <em>الزامی</em></span><input type="text" name="tspay_tracking_code" maxlength="120" required autocomplete="off" dir="ltr" placeholder="' . esc_attr( $this->setting_text( 'tracking_placeholder' ) ?: 'کد رهگیری درج‌شده در نتیجه پرداخت' ) . '"></label>';
+            echo '<button type="submit" class="tspay-report-button"><span class="tspay-report-check" aria-hidden="true">✓</span>' . esc_html( $this->report_button_text() ) . '</button>';
+            echo '<small class="tspay-tracking-help">' . esc_html( $this->setting_text( 'tracking_help' ) ?: 'کد را دقیقاً از صفحه نتیجه پرداخت اسنپ‌پی وارد کنید.' ) . '</small>';
+            if ( $this->report_hint_text() ) { echo '<p>' . wp_kses_post( wpautop( $this->report_hint_text() ) ) . '</p>'; }
             echo '</form>';
         }
         echo '</section>';
@@ -212,6 +233,24 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
     }
     private function format_rate( $rate ) { return rtrim( rtrim( number_format_i18n( (float) $rate, 2 ), '0' ), (string) wc_get_price_decimal_separator() ); }
     private function setting_text( $key ) { return trim( (string) $this->get_option( $key, '' ) ); }
+    private function warning_text() {
+        $warning = $this->setting_text( 'warning' );
+        $old_default = 'لطفاً در لینک اسنپ‌پی دقیقاً مبلغ اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از مبلغ اعلام‌شده، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد.';
+        if ( $old_default === $warning ) {
+            return 'در لینک اسنپ‌پی دقیقاً مبلغ نهایی اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از آن، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد. پس از پرداخت، کد رهگیری اسنپ‌پی را یادداشت کنید؛ برای ثبت درخواست بررسی، واردکردن این کد الزامی است.';
+        }
+        return $warning;
+    }
+    private function report_button_text() {
+        $text = $this->setting_text( 'report_paid_button_text' );
+        if ( 'پرداخت را انجام دادم؛ ارسال برای بررسی' === $text ) { return 'ثبت پرداخت و ارسال کد رهگیری برای بررسی'; }
+        return $text ?: 'ثبت پرداخت و ارسال کد رهگیری برای بررسی';
+    }
+    private function report_hint_text() {
+        $text = $this->setting_text( 'report_paid_hint' );
+        if ( 'این دکمه فقط به فروشگاه خبر می‌دهد؛ پرداخت را خودکار تأیید نمی‌کند.' === $text ) { return 'کد رهگیری برای فروشگاه ثبت می‌شود؛ پرداخت فقط پس از بررسی فروشگاه تأیید خواهد شد.'; }
+        return $text;
+    }
 
     public function admin_options() {
         echo '<h2>' . esc_html( $this->get_method_title() ) . '</h2>';
