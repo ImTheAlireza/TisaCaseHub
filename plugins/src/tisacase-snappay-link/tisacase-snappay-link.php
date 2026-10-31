@@ -3,7 +3,7 @@
  * Plugin Name:       TisaCase — پرداخت اقساطی با لینک اسنپ‌پی
  * Plugin URI:        https://tisacase.com
  * Description:       روش پرداخت ووکامرس با لینک تنظیم‌پذیر اسنپ‌پی، افزودن کارمزد و بررسی دستی سفارش.
- * Version:           1.2.3
+ * Version:           1.3.0
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -14,7 +14,7 @@
  * TisaCase Hub:      key=snappay-link; title="پرداخت اقساطی با اسنپ‌پی"; icon=credit-card; group=orders; page=admin.php?page=wc-settings&tab=checkout&section=tisacase_snappay_link; parent=woocommerce; slug=wc-settings; cap=manage_woocommerce; desc="تنظیم لینک پرداخت، کارمزد و پیام‌های پرداخت اسنپ‌پی."
  */
 defined( 'ABSPATH' ) || exit;
-define( 'TSPAY_VERSION', '1.2.3' );
+define( 'TSPAY_VERSION', '1.3.0' );
 define( 'TSPAY_FILE', __FILE__ );
 define( 'TSPAY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TSPAY_URL', plugin_dir_url( __FILE__ ) );
@@ -30,6 +30,8 @@ add_action( 'plugins_loaded', function () {
         return;
     }
     require_once TSPAY_PATH . 'includes/class-tspay-gateway.php';
+    require_once TSPAY_PATH . 'includes/class-tspay-order-admin.php';
+    TSPAY_Order_Admin::init();
     add_filter( 'woocommerce_payment_gateways', function ( $gateways ) { $gateways[] = 'TSPAY_Gateway'; return $gateways; } );
     add_action( 'wp_enqueue_scripts', function () {
         if ( is_checkout() || is_account_page() ) {

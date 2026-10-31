@@ -49,6 +49,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             'payment_button_text' => array( 'title' => 'متن دکمه رفتن به درگاه', 'type' => 'text', 'default' => 'رفتن به صفحه پرداخت اسنپ‌پی' ),
             'legacy_hold_message' => array( 'title' => 'پیام سفارش‌های قدیمی در انتظار بررسی', 'type' => 'textarea', 'default' => 'این سفارش پیش از اصلاح گردش پرداخت ثبت شده و وضعیت پرداخت آن از سایت قابل تشخیص نیست. برای جلوگیری از پرداخت تکراری، قبل از پرداخت دوباره با فروشگاه هماهنگ کنید. اگر قبلاً پرداخت کرده‌اید، دکمهٔ اعلام پرداخت را بزنید.' ),
             'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'اعلام پرداخت شما ثبت شد و سفارش در انتظار بررسی دستی فروشگاه است. این پیام به معنی تأیید پرداخت نیست.' ),
+            'rejected_message' => array( 'title' => 'پیام پس از رد اعلام پرداخت', 'type' => 'textarea', 'default' => 'کد یا پرداخت اعلام‌شده تأیید نشد. علت ثبت‌شده را بررسی کنید و برای پیگیری با فروشگاه تماس بگیرید. این وضعیت به‌تنهایی به معنی بازپرداخت وجه نیست.' ),
             'approved_message' => array( 'title' => 'پیام پس از تأیید پرداخت', 'type' => 'textarea', 'default' => 'پرداخت این سفارش تأیید شده است. از خرید شما سپاسگزاریم.' ),
             'button_color' => array( 'title' => 'رنگ دکمه پرداخت', 'type' => 'text', 'default' => '#2874FC', 'description' => 'کد رنگ HEX، مانند #2874FC.' ),
             'button_text_color' => array( 'title' => 'رنگ نوشته دکمه', 'type' => 'text', 'default' => '#FFFFFF', 'description' => 'کد رنگ HEX، مانند #FFFFFF.' ),
@@ -172,11 +173,12 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $rate = (float) $order->get_meta( '_tspay_fee_rate', true );
         if ( 'yes' !== $order->get_meta( '_tspay_fee_applied', true ) ) { $base = (float) $order->get_total(); $fee = 0; $rate = 0; }
         $is_paid = $order->is_paid();
+        $rejected = 'rejected' === $order->get_meta( '_tspay_admin_review_state', true ) && $order->has_status( 'failed' );
         $reported = 'yes' === $order->get_meta( '_tspay_customer_reported_paid', true ) && $order->has_status( 'on-hold' );
         $legacy_hold = ! $is_paid && ! $reported && $order->has_status( 'on-hold' ) && ! $order->get_meta( '_tspay_flow_version', true );
         $can_pay = ! $is_paid && ! $reported && ! $legacy_hold && $order->has_status( 'pending' );
         $can_report = $can_pay || $legacy_hold;
-        $message = $is_paid ? $this->setting_text( 'approved_message' ) : ( $reported ? $this->setting_text( 'pending_message' ) : ( $legacy_hold ? $this->setting_text( 'legacy_hold_message' ) : ( $can_pay ? $this->setting_text( 'before_payment_message' ) : '' ) ) );
+        $message = $is_paid ? $this->setting_text( 'approved_message' ) : ( $rejected ? $this->setting_text( 'rejected_message' ) : ( $reported ? $this->setting_text( 'pending_message' ) : ( $legacy_hold ? $this->setting_text( 'legacy_hold_message' ) : ( $can_pay ? $this->setting_text( 'before_payment_message' ) : '' ) ) ) );
         $warning = $can_pay ? $this->warning_text() : '';
         $button = $this->setting_text( 'payment_button_text' ) ?: 'رفتن به صفحه پرداخت اسنپ‌پی';
         $copy_button = $this->setting_text( 'copy_button_text' ) ?: 'کپی مبلغ نهایی';
@@ -185,11 +187,15 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $text_color = sanitize_hex_color( $this->get_option( 'button_text_color', '#FFFFFF' ) ) ?: '#FFFFFF';
         $style = '--tspay-button:' . $button_color . ';--tspay-button-text:' . $text_color . ';';
         $copy_amount = wc_format_decimal( $order->get_total(), wc_get_price_decimals() );
-        $tracking_code = $reported ? (string) $order->get_meta( '_tspay_customer_tracking_code', true ) : '';
+        $tracking_code = ( $reported || $rejected ) ? (string) $order->get_meta( '_tspay_customer_tracking_code', true ) : '';
+        $rejection_reason = $rejected ? (string) $order->get_meta( '_tspay_admin_rejection_reason', true ) : '';
         echo '<section class="tspay-panel" dir="rtl">';
         if ( $message ) {
-            echo '<div class="tspay-status ' . ( $is_paid ? 'is-approved' : ( $reported ? 'is-review' : 'is-awaiting' ) ) . '" role="status"><span class="tspay-status-icon" aria-hidden="true">' . ( $is_paid ? '✓' : ( $reported ? '◷' : 'i' ) ) . '</span><div>' . wp_kses_post( wpautop( $message ) );
+            $state_class = $is_paid ? 'is-approved' : ( $rejected ? 'is-rejected' : ( $reported ? 'is-review' : 'is-awaiting' ) );
+            $state_icon = $is_paid ? '✓' : ( $rejected ? '!' : ( $reported ? '◷' : 'i' ) );
+            echo '<div class="tspay-status ' . esc_attr( $state_class ) . '" role="status"><span class="tspay-status-icon" aria-hidden="true">' . esc_html( $state_icon ) . '</span><div>' . wp_kses_post( wpautop( $message ) );
             if ( $reported && $tracking_code ) { echo '<p class="tspay-tracking-receipt">کد رهگیری ثبت‌شده: <bdi dir="ltr">' . esc_html( $tracking_code ) . '</bdi></p>'; }
+            if ( $rejected && $rejection_reason ) { echo '<p class="tspay-rejection-reason">علت ثبت‌شده: ' . esc_html( $rejection_reason ) . '</p><p class="tspay-tracking-receipt">کد رهگیری: <bdi dir="ltr">' . esc_html( $tracking_code ) . '</bdi></p>'; }
             echo '</div></div>';
         }
         echo '<h3 class="tspay-heading">' . esc_html( $this->setting_text( 'amount_heading' ) ?: 'مبلغ قابل پرداخت در اسنپ‌پی' ) . '</h3>';
