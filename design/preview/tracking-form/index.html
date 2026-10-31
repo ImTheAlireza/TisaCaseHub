@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پیش‌نمایش فرم پیگیری سفارش — هم‌شکل با قالب فروشگاه</title>
+<link rel="stylesheet" href="../../../plugins/src/bulk-tracking-upload/assets/tracking.css">
+<style>
+/* ==========================================================================
+   فقط برای این پیش‌نمایش: پوستهٔ شبیه‌سازی‌شدهٔ وودمارت (همان توکن‌هایی که
+   قالب واقعی روی tisacase.com در :root منتشر می‌کند)
+   ========================================================================== */
+:root {
+	color-scheme: light;
+	--wd-primary-color: #0E7C6B;
+	--wd-text-color: #242424;
+	--wd-title-color: #333333;
+	--wd-text-font-size: 14px;
+	--wd-form-height: 42px;
+	--wd-brd-radius: 0.001px;
+	--wd-form-brd-color: rgba(0, 0, 0, .1);
+	--wd-form-brd-color-focus: rgba(0, 0, 0, .15);
+	--color-gray-500: #767676;
+	--brdcolor-gray-300: rgba(0, 0, 0, .105);
+	--bgcolor-gray-100: #f7f7f7;
+	--wd-main-bgcolor: #fff;
+}
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 0 0 60px;
+	background: #fff;
+	color: var(--wd-text-color);
+	font: 400 var(--wd-text-font-size)/1.7 Vazirmatn, "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+.wd-top { border-bottom: 1px solid var(--brdcolor-gray-300); }
+.wd-top__inner,
+.wd-page {
+	width: 100%;
+	max-width: 1180px;
+	margin: 0 auto;
+	padding: 0 20px;
+}
+.wd-top__inner { display: flex; align-items: center; gap: 24px; height: 68px; }
+.wd-logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; color: var(--wd-title-color); }
+.wd-logo span { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border-radius: 8px; background: var(--wd-primary-color); color: #fff; font-size: 14px; }
+.wd-nav { display: flex; gap: 18px; margin-inline-start: auto; font-size: 13.5px; color: #555; }
+.wd-nav a { color: inherit; text-decoration: none; }
+.wd-nav a.is-here { color: var(--wd-primary-color); font-weight: 700; }
+
+.wd-page { padding-top: 34px; }
+.wd-crumbs { margin: 0 0 18px; color: var(--color-gray-500); font-size: 12.5px; }
+.wd-title { margin: 0 0 26px; color: var(--wd-title-color); font-size: 26px; font-weight: 700; line-height: 1.4; }
+.wd-content { max-width: 820px; }
+.wd-content > p { margin: 0 0 14px; font-size: 14px; }
+.wd-content > p.muted { color: var(--color-gray-500); }
+
+.wd-notice {
+	max-width: 820px; margin: 0 0 22px; padding: 14px 18px;
+	border: 1px solid color-mix(in srgb, var(--wd-primary-color) 24%, #e3e3e3);
+	border-radius: 8px;
+	background: color-mix(in srgb, var(--wd-primary-color) 5%, #fff);
+	font-size: 13px; line-height: 1.9;
+}
+.wd-notice b { color: var(--wd-title-color); }
+
+/* کنترل‌های این پیش‌نمایش (روی سایت واقعی وجود ندارند) */
+.demo-bar {
+	position: sticky; top: 0; z-index: 20;
+	display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+	padding: 10px 20px; margin: 0 0 26px;
+	background: #1D2327; color: #C3C4C7; font-size: 12px;
+}
+.demo-bar b { color: #fff; }
+.demo-bar .grow { margin-inline-start: auto; }
+.demo-bar button {
+	height: 30px; padding: 0 12px; border: 1px solid #3c434a; border-radius: 4px;
+	background: #2C3338; color: #F0F0F1; font: 600 12px/1 inherit; cursor: pointer;
+}
+.demo-bar button:hover { background: #3c434a; }
+.demo-bar label { display: inline-flex; align-items: center; gap: 6px; }
+.demo-bar input[type="color"] { width: 28px; height: 24px; padding: 0; border: 1px solid #3c434a; border-radius: 4px; background: none; }
+.demo-bar select { height: 26px; border: 1px solid #3c434a; border-radius: 4px; background: #2C3338; color: #F0F0F1; font-size: 12px; }
+.demo-side { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+.demo-notes { flex: 1 1 300px; min-width: 280px; max-width: 380px; }
+.demo-notes h3 { margin: 0 0 10px; font-size: 14px; color: var(--wd-title-color); }
+.demo-notes ul { margin: 0; padding-inline-start: 18px; color: var(--color-gray-500); font-size: 12.5px; line-height: 2; }
+</style>
+</head>
+<body>
+
+<div class="demo-bar">
+	<b>پیش‌نمایش</b>
+	<button type="button" data-demo="ready">سفارش با کد رهگیری</button>
+	<button type="button" data-demo="pending">سفارش در انتظار پست</button>
+	<button type="button" data-demo="error">موبایل نامطابق</button>
+	<span class="grow"></span>
+	<label>رنگ برند قالب <input type="color" id="demo-color" value="#0E7C6B"></label>
+	<label>گوشه‌ها
+		<select id="demo-radius">
+			<option value="0.001px">صفر (پیش‌فرض وودمارت)</option>
+			<option value="6px">۶ پیکسل</option>
+			<option value="12px" selected>۱۲ پیکسل (تیساکیس)</option>
+			<option value="22px">۲۲ پیکسل</option>
+		</select>
+	</label>
+	<label>ارتفاع کنترل
+		<select id="demo-height">
+			<option value="42px" selected>۴۲px (وودمارت)</option>
+			<option value="48px">۴۸px</option>
+			<option value="36px">۳۶px</option>
+		</select>
+	</label>
+</div>
+
+<header class="wd-top">
+	<div class="wd-top__inner">
+		<div class="wd-logo"><span>ت</span> تیساکیس</div>
+		<nav class="wd-nav">
+			<a href="#">خانه</a><a href="#">فروشگاه</a><a href="#">سوالات متداول</a><a href="#" class="is-here">پیگیری سفارش</a><a href="#">تماس با ما</a>
+		</nav>
+	</div>
+</header>
+
+<main class="wd-page">
+	<p class="wd-crumbs">خانه / پیگیری سفارشات</p>
+	<h1 class="wd-title">رهگیری مرسولات پستی</h1>
+
+	<div class="wd-notice">
+		<b>چطور کد رهگیری‌ام را ببینم؟</b>
+		شمارهٔ سفارش و شمارهٔ موبایلی که با آن خرید کرده‌اید را وارد کنید. به‌محض تحویل مرسوله به پست، کد رهگیری همان لحظه همین‌جا نمایش داده می‌شود.
+	</div>
+
+	<div class="demo-side">
+		<div style="flex: 1 1 100%; max-width: 1180px;">
+			<div class="bwt-track" data-bwt-tracking>
+				<div class="bwt-track__layout">
+					<div class="bwt-track__head">
+						<span class="bwt-track__badge" aria-hidden="true">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+						</span>
+						<div class="bwt-track__head-body">
+							<b class="bwt-track__head-title">کد رهگیری مرسوله</b>
+							<span class="bwt-track__head-text">شمارهٔ سفارش و موبایلی که سفارش با آن ثبت شده را وارد کنید؛ کد رهگیری همان لحظه نمایش داده می‌شود.</span>
+							<span class="bwt-track__chips">
+								<span class="bwt-track__chip">بدون آپلود فایل</span>
+								<span class="bwt-track__chip">کد مستقیم از پست</span>
+								<span class="bwt-track__chip">همیشه به‌روز</span>
+							</span>
+						</div>
+					</div>
+
+					<div class="bwt-track__panel">
+						<form class="bwt-track__form" data-bwt-form novalidate>
+							<div class="bwt-track__fields">
+								<div class="bwt-field">
+									<label class="bwt-field__label" for="bwt_order_id">شماره سفارش</label>
+									<input class="bwt-field__input" type="text" id="bwt_order_id" name="order_id" required dir="ltr" placeholder="مثلاً 424172" inputmode="numeric" autocomplete="off" value="424172" />
+								</div>
+								<div class="bwt-field">
+									<label class="bwt-field__label" for="bwt_billing_phone">شماره موبایل ثبت‌شده روی سفارش</label>
+									<input class="bwt-field__input" type="text" id="bwt_billing_phone" name="billing_phone" required dir="ltr" placeholder="۰۹۱۲۱۲۳۴۵۶۷" inputmode="tel" autocomplete="tel" value="09121234567" />
+								</div>
+							</div>
+							<button type="submit" class="bwt-btn bwt-btn--primary">
+								<span class="bwt-track__btn-icon" aria-hidden="true">
+									<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+								</span>
+								پیگیری سفارش
+							</button>
+						</form>
+					</div>
+				</div>
+
+				<div class="bwt-track__result" data-bwt-result hidden aria-live="polite"></div>
+
+				<div class="bwt-track__fallback" data-bwt-fallback hidden>
+					<p class="bwt-track__fallback-text">اگر شماره سفارش شما یافت نشد، می‌توانید از طریق فایل زیر کد رهگیری خود را مشاهده کنید.</p>
+					<a class="bwt-btn bwt-btn--primary bwt-track__fallback-btn" href="https://tisacase.com/wp-content/uploads/2026/10/tracking.pdf" download target="_blank" rel="noopener">
+						<span class="bwt-track__fallback-icon" aria-hidden="true">
+							<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></svg>
+						</span>
+						دانلود فایل کدهای رهگیری
+					</a>
+				</div>
+			</div>
+		</div>
+
+		<aside class="demo-notes">
+			<h3>چه چیزی هم‌شکل شده است؟</h3>
+			<ul>
+				<li><strong>رنگ برند:</strong> از <code>--wd-primary-color</code> قالب خوانده می‌شود؛ با تغییر رنگ بالا، فرم هم عوض می‌شود.</li>
+				<li><strong>ارتفاع کنترل:</strong> <code>--wd-form-height</code> قالب (۴۲px) و همان ارتفاع دکمه‌ها.</li>
+				<li><strong>گوشه‌ها:</strong> <code>--wd-brd-radius</code> قالب، با کف ۸px تا تیز نشود.</li>
+				<li><strong>فونت:</strong> <code>inherit</code> — فونت خود قالب، نه فونت تحمیلی.</li>
+				<li><strong>چیدمان دوستونه:</strong> کارت تمام‌عرض است ولی خالی نمی‌ماند — سمت راست معرفی با آیکون و سه نشان کوتاه، سمت چپ پنل فرم با دو فیلد و دکمهٔ تمام‌عرض. زیر ۹۰۰px پنل می‌رود زیر متن و زیر ۶۲۰px فیلدها تک‌ستونه می‌شوند.</li>
+				<li><strong>بدون ایموجی تزئینی:</strong> آیکون‌ها در بج نتیجه؛ ایموجی فقط روی کد رهگیری.</li>
+				<li><strong>فایل PDF جایگزین:</strong> فقط وقتی خطا رخ می‌دهد، زیر پیام خطا و با همان دکمه/گوشهٔ فرم ظاهر می‌شود (دکمهٔ «خطا» را بزنید).</li>
+			</ul>
+		</aside>
+	</div>
+</main>
+
+<script>
+// ---- شبیه‌ساز پاسخ سرور (روی سایت واقعی، admin-ajax.php پاسخ می‌دهد) ----
+(function () {
+	var mode = 'ready';
+	var pendingLines = [
+		'سفارش شما در مرحلهٔ آماده‌سازی، تولید یا بسته‌بندی است و هنوز به شرکت حمل‌ونقل تحویل نشده است.',
+		'کالاهای عادی: حداکثر ۷ روز کاری — کالاهای چاپی و سفارشی: ۷ تا ۱۸ روز کاری.',
+		'پس از تحویل به پست، کد رهگیری به‌صورت خودکار در همین صفحه ثبت و قابل مشاهده می‌شود.'
+	];
+	var responses = {
+		ready: {
+			state: 'ready',
+			order: { id: 424172, number: '424172', date: '۱۴۰۵/۰۸/۰۶ - ۰۱:۲۱', status: 'processing', status_label: 'در حال انجام' },
+			customer: { name: 'سارا رضایی', address: 'تهران، خیابان ولیعصر، پلاک ۱۲، کد پستی: 1234567890' },
+			codes: [
+				{ code: '799400522201761978143147', url: 'https://tracking.post.ir/?id=799400522201761978143147' }
+			],
+			pending_lines: [],
+			poll: { interval: 30, max_attempts: 20 }
+		},
+		pending: {
+			state: 'pending',
+			order: { id: 424172, number: '424172', date: '۱۴۰۵/۰۸/۰۶ - ۰۱:۲۱', status: 'processing', status_label: 'در حال انجام' },
+			customer: { name: 'سارا رضایی', address: 'تهران، خیابان ولیعصر، پلاک ۱۲' },
+			codes: [],
+			pending_lines: pendingLines,
+			poll: { interval: 30, max_attempts: 20 }
+		}
+	};
+
+	window.BWT_Tracking = {
+		ajaxUrl: '#demo',
+		nonce: 'demo',
+		pollSeconds: 30,
+		pollMax: 20,
+		strings: {}
+	};
+
+	window.fetch = function () {
+		var payload = mode === 'pending' ? responses.pending : responses.ready;
+		if (mode === 'error') {
+			return Promise.resolve({
+				ok: false,
+				status: 403,
+				text: function () {
+					return Promise.resolve(JSON.stringify({
+						success: false,
+						data: { message: 'شماره سفارش یا شماره موبایل واردشده معتبر نیست؛ شماره موبایل باید همان شماره‌ای باشد که سفارش با آن ثبت شده است.' }
+					}));
+				}
+			});
+		}
+		return Promise.resolve({
+			ok: true,
+			text: function () {
+				return Promise.resolve(JSON.stringify({ success: true, data: payload }));
+			}
+		});
+	};
+
+	var bar = document.querySelector('.demo-bar');
+	bar.addEventListener('click', function (event) {
+		var button = event.target.closest('[data-demo]');
+		if (!button) return;
+		mode = button.getAttribute('data-demo');
+		var form = document.querySelector('[data-bwt-form]');
+		form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+	});
+
+	function applyTheme() {
+		var color = document.getElementById('demo-color').value;
+		var radius = document.getElementById('demo-radius').value;
+		var height = document.getElementById('demo-height').value;
+		document.documentElement.style.setProperty('--wd-primary-color', color);
+		document.documentElement.style.setProperty('--wd-brd-radius', radius);
+		document.documentElement.style.setProperty('--wd-form-height', height);
+	}
+	document.getElementById('demo-color').addEventListener('input', applyTheme);
+	document.getElementById('demo-radius').addEventListener('change', applyTheme);
+	document.getElementById('demo-height').addEventListener('change', applyTheme);
+
+	document.addEventListener('DOMContentLoaded', function () {
+		// نتیجهٔ نمونه پس از بارگذاری اسکریپت افزونه
+		window.setTimeout(function () {
+			mode = 'ready';
+			document.querySelector('[data-bwt-form]').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+		}, 120);
+	});
+}());
+</script>
+<script src="../../../plugins/src/bulk-tracking-upload/assets/tracking.js"></script>
+</body>
+</html>

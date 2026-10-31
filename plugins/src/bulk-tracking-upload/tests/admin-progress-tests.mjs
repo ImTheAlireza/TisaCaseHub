@@ -1,106 +1,466 @@
+/**
+ * تست jsdom برای رفتار پیشخوان (پاک‌سازی/کلید منبع/همگام‌سازی) و فرم پیگیری مشتری.
+ * اجرا: node tests/admin-progress-tests.mjs
+ */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
 
-const source = fs.readFileSync(new URL('../assets/admin.js', import.meta.url), 'utf8');
-const markup = `<!doctype html><html><body>
-    <section id="bwt-upload-progress" data-job-id="1234567812344abc8def1234567890ab" aria-live="polite">
-        <p data-bwt-status></p><progress data-bwt-progress max="100" value="0"></progress>
-        <div data-bwt-counters></div><button data-bwt-resume hidden></button>
-    </section>
-    <div data-bwt-result hidden></div>
-</body></html>`;
-const jobId = '1234567812344abc8def1234567890ab';
-
-const dom = new JSDOM(markup, {
-    url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload',
-    runScripts: 'outside-only',
-});
-const requests = [];
-const detail = {
-    row: 9,
-    order_id_raw: '999',
-    tracking_code_raw: '<script>bad()</script>',
-    reason: 'سفارش نامعتبر است',
-};
-const payloads = {
-    bwt_upload_status: { done: false, progress: 0, processed: 0, updated: 0, errors: 0, details: [], details_truncated: 0 },
-    bwt_upload_batch: { done: true, progress: 100, processed: 1, updated: 0, errors: 1, details: [detail], details_truncated: 3 },
-};
-
-dom.window.BWTAdmin = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'test', retryLabel: 'ادامه' };
-dom.window.fetch = async function (_url, options) {
-    const body = new URLSearchParams(options.body);
-    const action = body.get('action');
-    requests.push(action);
-    return {
-        ok: true,
-        text: async () => JSON.stringify({ success: true, data: payloads[action] }),
+// شمارش واقعی سنجه‌ها تا پیام پایانی با واقعیت بخواند
+let assertionCount = 0;
+for (const key of Object.keys(assert)) {
+    if (typeof assert[key] !== 'function') continue;
+    const original = assert[key];
+    assert[key] = (...args) => {
+        assertionCount += 1;
+        return original(...args);
     };
-};
-dom.window.eval(source);
-await new Promise((resolve) => setTimeout(resolve, 100));
+}
 
-assert.deepEqual(requests, ['bwt_upload_status', 'bwt_upload_batch']);
-assert.equal(dom.window.document.querySelector('[data-bwt-progress]').value, 100);
-assert.equal(dom.window.document.querySelector('[data-bwt-result]').hidden, false);
-assert.equal(dom.window.document.querySelectorAll('[data-bwt-result] tbody tr').length, 1);
-assert.equal(dom.window.document.querySelector('[data-bwt-result] tbody tr td:nth-child(3)').textContent, '<script>bad()</script>');
-assert.equal(dom.window.document.querySelectorAll('[data-bwt-result] script').length, 0);
-assert.match(dom.window.document.querySelector('[data-bwt-result]').textContent, /۳ خطای دیگر/);
-assert.equal(new URL(dom.window.location.href).searchParams.get('bwt_job'), jobId);
-dom.window.close();
+const adminSource = fs.readFileSync(new URL('../assets/admin.js', import.meta.url), 'utf8');
+const trackingSource = fs.readFileSync(new URL('../assets/tracking.js', import.meta.url), 'utf8');
 
-const retryDom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
-let retryCount = 0;
-retryDom.window.BWTAdmin = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'test', retryLabel: 'ادامه' };
-retryDom.window.fetch = async function (_url, options) {
-    const action = new URLSearchParams(options.body).get('action');
-    retryCount++;
-    if (retryCount === 1) throw new Error('offline');
-    const data = action === 'bwt_upload_status'
-        ? { done: true, progress: 100, processed: 0, updated: 0, errors: 0, details: [], details_truncated: 0 }
-        : {};
+function readBody(options) {
+    return new URLSearchParams(options.body);
+}
+
+function jsonResponse(data) {
     return { ok: true, text: async () => JSON.stringify({ success: true, data }) };
-};
-retryDom.window.eval(source);
-await new Promise((resolve) => setTimeout(resolve, 80));
-const resumeButton = retryDom.window.document.querySelector('[data-bwt-resume]');
-assert.equal(resumeButton.hidden, false);
-assert.match(retryDom.window.document.querySelector('[data-bwt-status]').textContent, /offline/);
-resumeButton.click();
-await new Promise((resolve) => setTimeout(resolve, 80));
-assert.equal(retryDom.window.document.querySelector('[data-bwt-result]').hidden, false);
-assert.equal(retryCount, 2);
-retryDom.window.close();
+}
 
-const cleanupDom = new JSDOM(`<!doctype html><html><body>
-    <section id="bwt-cleanup-progress" data-job-id="abcdefabcdef4abc8def1234567890ab" aria-live="polite">
-        <p data-bwt-cleanup-status></p><progress data-bwt-cleanup-progress max="100" value="0"></progress>
-        <div data-bwt-cleanup-counters></div><button data-bwt-cleanup-resume hidden></button><div data-bwt-cleanup-result></div>
-    </section>
-</body></html>`, { url: 'https://example.test/wp-admin/admin.php?page=bwt-cleanup', runScripts: 'outside-only' });
-const cleanupRequests = [];
-const cleanupPayloads = {
-    bwt_cleanup_status: { mode: 'all', done: false, progress: 0, processed: 0, deleted: 0, details: [] },
-    bwt_cleanup_batch: [
-        { mode: 'all', done: false, progress: 50, processed: 500, deleted: 500, details: [] },
-        { mode: 'all', done: true, progress: 100, processed: 725, deleted: 725, details: [] },
-    ],
-};
-cleanupDom.window.BWTAdmin = { ajaxUrl: '/wp-admin/admin-ajax.php', nonce: 'cleanup-test', retryLabel: 'ادامه' };
-cleanupDom.window.fetch = async function (_url, options) {
-    const action = new URLSearchParams(options.body).get('action');
-    cleanupRequests.push(action);
-    const payload = Array.isArray(cleanupPayloads[action]) ? cleanupPayloads[action].shift() : cleanupPayloads[action];
-    return { ok: true, text: async () => JSON.stringify({ success: true, data: payload }) };
-};
-cleanupDom.window.eval(source);
-await new Promise((resolve) => setTimeout(resolve, 100));
-assert.deepEqual(cleanupRequests, ['bwt_cleanup_status', 'bwt_cleanup_batch', 'bwt_cleanup_batch']);
-assert.equal(cleanupDom.window.document.querySelector('[data-bwt-cleanup-progress]').value, 100);
-assert.equal(cleanupDom.window.document.querySelector('[data-bwt-cleanup-result]').textContent.includes('۷۲۵'), true);
-assert.equal(new URL(cleanupDom.window.location.href).searchParams.get('bwt_cleanup_job'), 'abcdefabcdef4abc8def1234567890ab');
-cleanupDom.window.close();
+function errorResponse(message, status = 400) {
+    return {
+        ok: false,
+        status,
+        text: async () => JSON.stringify({ success: false, data: { message } }),
+    };
+}
 
-console.log('✓ bulk-tracking-upload AJAX upload and cleanup progress tests passed');
+async function boot(dom, source) {
+    dom.window.eval(source);
+    await waitFor(() => dom.window.document.readyState !== 'loading');
+}
+
+async function waitFor(predicate, timeout = 1500) {
+    const started = Date.now();
+    while (Date.now() - started < timeout) {
+        if (predicate()) return true;
+        await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    return false;
+}
+
+/* ================= ۱) پاک‌سازی دسته‌ای ================= */
+{
+    const jobId = 'abcdef0123456789abcdef0123456789';
+    const markup = `<!doctype html><html><body>
+        <section id="bwt-cleanup-progress" data-job-id="${jobId}">
+            <p data-bwt-cleanup-status></p>
+            <progress data-bwt-cleanup-progress max="100" value="0"></progress>
+            <div data-bwt-cleanup-counters></div>
+            <button data-bwt-cleanup-resume hidden></button>
+            <div data-bwt-cleanup-result></div>
+        </section>
+    </body></html>`;
+    const dom = new JSDOM(markup, {
+        url: 'https://example.test/wp-admin/admin.php?page=bwt-cleanup',
+        runScripts: 'outside-only',
+    });
+    const requests = [];
+    const payloads = {
+        bwt_cleanup_status: {
+            mode: 'selected', done: false, progress: 40, processed: 4, total: 10,
+            deleted: 3, not_found: 1, invalid: 0, details: [], details_truncated: 0,
+        },
+        bwt_cleanup_batch: {
+            mode: 'selected', done: true, progress: 100, processed: 10, total: 10,
+            deleted: 7, not_found: 2, invalid: 1,
+            details: ['#12 (کد نداشت)', '<script>bad()</script>'], details_truncated: 3,
+        },
+    };
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', cleanupNonce: 'c-nonce', retryLabel: 'ادامه' };
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        const action = body.get('action');
+        requests.push({ action, nonce: body.get('nonce'), jobId: body.get('job_id') });
+        return jsonResponse(payloads[action]);
+    };
+    await boot(dom, adminSource);
+    await waitFor(() => requests.length >= 2);
+    const doc = dom.window.document;
+
+    assert.deepEqual(requests.map((entry) => entry.action), ['bwt_cleanup_status', 'bwt_cleanup_batch']);
+    assert.ok(requests.every((entry) => entry.nonce === 'c-nonce' && entry.jobId === jobId));
+    assert.equal(doc.querySelector('[data-bwt-cleanup-progress]').value, 100);
+    assert.match(doc.querySelector('[data-bwt-cleanup-result]').textContent, /پاک‌سازی کامل شد/);
+    assert.match(doc.querySelector('[data-bwt-cleanup-result]').textContent, /۳ مورد دیگر/);
+    assert.equal(doc.querySelectorAll('[data-bwt-cleanup-result] script').length, 0);
+    assert.equal(new URL(dom.window.location.href).searchParams.get('bwt_cleanup_job'), jobId);
+    dom.window.close();
+}
+
+/* ================= ۲) کلید متای کد رهگیری ================= */
+{
+    const markup = `<!doctype html><html><body>
+        <form data-bwt-source-form>
+            <input data-bwt-source-key />
+            <button type="submit">ذخیره</button>
+        </form>
+        <div data-bwt-source-status></div>
+        <div data-bwt-source-chips><span class="bwt-chip" data-key="_old_key">_old_key</span></div>
+    </body></html>`;
+    const dom = new JSDOM(markup, {
+        url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload',
+        runScripts: 'outside-only',
+    });
+    const saveCalls = [];
+    let unexpected = [];
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', sourceNonce: 'src-nonce' };
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        const action = body.get('action');
+        if (action !== 'bwt_save_sources') {
+            unexpected.push(action);
+            throw new Error('unexpected action: ' + action);
+        }
+        const keys = body.getAll('keys[]');
+        saveCalls.push({ keys, nonce: body.get('nonce') });
+        return jsonResponse({ source_keys: keys, message: 'کلید ذخیره شد.' });
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    const input = doc.querySelector('[data-bwt-source-key]');
+    const form = doc.querySelector('[data-bwt-source-form]');
+    const status = doc.querySelector('[data-bwt-source-status]');
+    const submit = () => form.dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+
+    // افزودن کلید واقعی
+    input.value = ' _surena_barcode ';
+    submit();
+    await waitFor(() => saveCalls.length === 1);
+    assert.deepEqual(saveCalls[0].keys, ['_old_key', '_surena_barcode']);
+    assert.equal(saveCalls[0].nonce, 'src-nonce');
+    await waitFor(() => input.value === '');
+    assert.equal(input.value, '', 'پس از ذخیره، فیلد خالی می‌شود');
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 2);
+    assert.match(status.textContent, /ذخیره/);
+    assert.match(status.className, /bwt-status-line--ok/);
+
+    // کلید نامعتبر سمت مرورگر رد می‌شود (بدون درخواست)
+    input.value = 'bad key!';
+    submit();
+    await waitFor(() => /معتبر نیست/.test(status.textContent));
+    assert.match(status.textContent, /معتبر نیست/);
+    assert.equal(saveCalls.length, 1, 'درخواستی ارسال نمی‌شود');
+
+    // کلید تکراری
+    input.value = '_old_key';
+    submit();
+    await waitFor(() => /از قبل/.test(status.textContent));
+    assert.match(status.textContent, /از قبل ثبت شده/);
+    assert.equal(saveCalls.length, 1);
+
+    // ورودی خالی
+    input.value = '   ';
+    submit();
+    await waitFor(() => /نام کلید متا/.test(status.textContent));
+    assert.match(status.textContent, /نام کلید متا/);
+    assert.equal(saveCalls.length, 1);
+
+    // حذف چیپ، سرور را هم به‌روز می‌کند
+    doc.querySelector('[data-bwt-source-chips] .bwt-chip[data-key="_surena_barcode"] .bwt-chip-x').click();
+    await waitFor(() => saveCalls.length === 2);
+    assert.deepEqual(saveCalls[1].keys, ['_old_key']);
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 1);
+
+    assert.deepEqual(unexpected, [], 'هیچ اکشن حذف‌شده‌ای فراخوانی نمی‌شود');
+    dom.window.close();
+}
+
+{
+    // بدون کلید ذخیره‌شده: راهنما نشان داده می‌شود و حذف آخرین کلید، فهرست را خالی نگه می‌دارد
+    const markup = `<!doctype html><html><body>
+        <form data-bwt-source-form><input data-bwt-source-key value="_surena_barcode" /><button type="submit">ذخیره</button></form>
+        <div data-bwt-source-status></div>
+        <div data-bwt-source-chips></div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
+    const calls = [];
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', sourceNonce: 'src-nonce' };
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        const keys = body.getAll('keys[]');
+        calls.push(keys);
+        return jsonResponse({ source_keys: keys, message: 'کلید ذخیره شد.' });
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    assert.match(doc.querySelector('[data-bwt-source-chips]').textContent, /هیچ کلیدی ثبت نشده/);
+
+    doc.querySelector('[data-bwt-source-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => calls.length === 1);
+    assert.deepEqual(calls[0], ['_surena_barcode']);
+    assert.equal(doc.querySelectorAll('[data-bwt-source-chips] .bwt-chip').length, 1);
+
+    doc.querySelector('[data-bwt-source-chips] .bwt-chip-x').click();
+    await waitFor(() => calls.length === 2);
+    assert.deepEqual(calls[1], []);
+    assert.match(doc.querySelector('[data-bwt-source-chips]').textContent, /هیچ کلیدی ثبت نشده/);
+    dom.window.close();
+}
+
+/* ================= ۳) همگام‌سازی دسته‌ای ================= */
+{
+    const markup = `<!doctype html><html><body>
+        <button data-bwt-sync-mode="missing">missing</button>
+        <button data-bwt-sync-mode="recent">recent</button>
+        <div id="bwt-sync-progress" data-job-id="">
+            <progress data-bwt-progress max="100" value="0"></progress>
+            <div data-bwt-sync-counters></div>
+            <button data-bwt-resume hidden></button>
+            <div data-bwt-sync-result></div>
+        </div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
+    const calls = [];
+    let batchCalls = 0;
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', syncNonce: 'y-nonce' };
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        const action = body.get('action');
+        calls.push({ action, mode: body.get('mode'), jobId: body.get('job_id') });
+        if (action === 'bwt_sync_create') {
+            return jsonResponse({ job_id: 'abc12345', mode: 'missing', done: false, progress: 0, total: 60, offset: 0, scanned: 0, created: 0, updated: 0, unchanged: 0, no_source: 0, disabled: 0, invalid: 0 });
+        }
+        if (action === 'bwt_sync_batch') {
+            batchCalls++;
+            return jsonResponse({
+                job_id: 'abc12345', mode: 'missing', done: batchCalls >= 2,
+                progress: batchCalls >= 2 ? 100 : 50,
+                total: 60, offset: batchCalls * 50, scanned: batchCalls * 50,
+                created: batchCalls * 45, updated: 0, unchanged: 0, no_source: batchCalls * 5,
+                disabled: 1, invalid: 0,
+            });
+        }
+        throw new Error('unexpected action');
+    };
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-sync-mode="missing"]').click();
+    await waitFor(() => /همگام‌سازی کامل شد/.test(doc.querySelector('[data-bwt-sync-result]').textContent), 3000);
+
+    assert.deepEqual(calls.map((entry) => entry.action), ['bwt_sync_create', 'bwt_sync_batch', 'bwt_sync_batch']);
+    assert.ok(calls.every((entry) => entry.jobId === 'abc12345' || entry.action === 'bwt_sync_create'));
+    assert.equal(doc.querySelector('[data-bwt-progress]').value, 100);
+    assert.match(doc.querySelector('[data-bwt-sync-result]').textContent, /۹۰ سفارش کد رهگیری گرفت/);
+    assert.match(doc.querySelector('[data-bwt-sync-result]').textContent, /همگام‌سازی خاموش/);
+    assert.equal(doc.querySelector('[data-bwt-resume]').hidden, true);
+    dom.window.close();
+}
+
+/* ================= ۴) خطای همگام‌سازی و دکمهٔ ادامه ================= */
+{
+    const markup = `<!doctype html><html><body>
+        <button data-bwt-sync-mode="missing">missing</button>
+        <div id="bwt-sync-progress">
+            <progress data-bwt-progress max="100" value="0"></progress>
+            <div data-bwt-sync-counters></div>
+            <button data-bwt-resume hidden></button>
+            <div data-bwt-sync-result></div>
+        </div>
+    </body></html>`;
+    const dom = new JSDOM(markup, { url: 'https://example.test/wp-admin/admin.php?page=bulk-tracking-upload', runScripts: 'outside-only' });
+    dom.window.BWTAdmin = { ajaxUrl: '/ajax', syncNonce: 'y-nonce', retryLabel: 'ادامه بده' };
+    dom.window.fetch = async () => errorResponse('سفارشی برای بررسی پیدا نشد.');
+    await boot(dom, adminSource);
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-sync-mode="missing"]').click();
+    await waitFor(() => doc.querySelector('[data-bwt-resume]').hidden === false);
+    assert.equal(doc.querySelector('[data-bwt-resume]').hidden, false);
+    assert.equal(doc.querySelector('[data-bwt-resume]').textContent, 'ادامه بده');
+    assert.match(doc.querySelector('[data-bwt-sync-counters]').textContent, /پیدا نشد/);
+    dom.window.close();
+}
+
+/* ================= ۵) فرم پیگیری مشتری ================= */
+const trackingMarkup = `<!doctype html><html><body>
+    <div data-bwt-tracking>
+        <form data-bwt-form>
+            <input name="order_id" value="3001" />
+            <input name="billing_phone" value="09121234567" />
+            <button type="submit">پیگیری</button>
+        </form>
+        <div data-bwt-result hidden></div>
+        <div class="bwt-track__fallback" data-bwt-fallback hidden>
+            <a class="bwt-btn bwt-btn--primary" href="https://example.test/tracking.pdf" download>دانلود فایل کدهای رهگیری</a>
+        </div>
+    </div>
+</body></html>`;
+
+async function trackingDom(payload) {
+    const dom = new JSDOM(trackingMarkup, { url: 'https://example.test/track', runScripts: 'outside-only' });
+    dom.window.BWT_Tracking = {
+        ajaxUrl: '/ajax',
+        nonce: 't-nonce',
+        pollSeconds: 30,
+        pollMax: 20,
+        strings: { copy: 'کپی', copied: 'کپی شد' },
+    };
+    const sent = [];
+    dom.window.fetch = async (_url, options) => {
+        const body = readBody(options);
+        sent.push({ action: body.get('action'), nonce: body.get('nonce'), orderId: body.get('order_id'), phone: body.get('billing_phone') });
+        return typeof payload === 'function' ? payload() : jsonResponse(payload);
+    };
+    await boot(dom, trackingSource);
+    return { dom, sent };
+}
+
+{
+    const { dom, sent } = await trackingDom({
+        state: 'ready',
+        order: { id: 3001, number: '3001', date: '۱۴۰۴/۰۶/۰۱', status: 'processing', status_label: 'در حال انجام' },
+        customer: { name: '<script>bad()</script>', address: 'تهران، خیابان ولیعصر' },
+        codes: [{ code: 'RR123456789IR', url: 'https://tracking.post.ir/?id=RR123456789IR' }],
+        pending_lines: [],
+    });
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => doc.querySelector('[data-bwt-result]').className.includes('bwt-track__result--ready'));
+
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0], { action: 'bwt_track_lookup', nonce: 't-nonce', orderId: '3001', phone: '09121234567' });
+    const result = doc.querySelector('[data-bwt-result]');
+    assert.equal(result.hidden, false);
+    assert.match(result.textContent, /RR123456789IR/);
+    assert.match(doc.querySelector('.bwt-code__value').textContent, /RR123456789IR/);
+    assert.equal(doc.querySelectorAll('[data-bwt-result] script').length, 0, 'داده‌ها باید با textContent رندر شوند');
+    assert.equal(doc.querySelector('.bwt-post-tracking-btn').getAttribute('href'), 'https://tracking.post.ir/?id=RR123456789IR');
+    assert.ok(doc.querySelector('.bwt-copy-btn'));
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, true, 'جعبهٔ PDF در حالت موفق مخفی است');
+    dom.window.close();
+}
+
+{
+    const { dom, sent } = await trackingDom({
+        state: 'pending',
+        order: { id: 3003, number: '3003' },
+        customer: { name: '', address: '' },
+        codes: [],
+        pending_lines: ['سفارش در مرحلهٔ آماده‌سازی است.', 'پس از تحویل به پست، کد همین‌جا ثبت می‌شود.'],
+    });
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => doc.querySelector('.bwt-retry-btn') !== null);
+    const result = doc.querySelector('[data-bwt-result]');
+    assert.match(result.textContent, /آماده‌سازی/);
+    assert.ok(doc.querySelector('.bwt-poll-note').textContent.length > 0, 'شمارندهٔ بررسی خودکار نمایش داده می‌شود');
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, true, 'جعبهٔ PDF در حالت انتظار مخفی است');
+    assert.equal(sent.length, 1, 'تا ۳۰ ثانیه درخواست اضافه‌ای ارسال نمی‌شود');
+
+    // دکمهٔ «بررسی مجدد» درخواست تازه می‌فرستد
+    doc.querySelector('.bwt-retry-btn').click();
+    await waitFor(() => sent.length === 2);
+    assert.equal(sent.length, 2);
+    dom.window.close();
+}
+
+{
+    const { dom } = await trackingDom(() => errorResponse('شماره سفارش یا شماره موبایل واردشده معتبر نیست.', 403));
+    const doc = dom.window.document;
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => doc.querySelector('[data-bwt-result]').className.includes('bwt-track__result--error'));
+    const result = doc.querySelector('[data-bwt-result]');
+    assert.match(result.className, /bwt-track__result--error/);
+    assert.match(result.textContent, /معتبر نیست/);
+    const fallback = doc.querySelector('[data-bwt-fallback]');
+    assert.equal(fallback.hidden, false, 'جعبهٔ PDF زیر پیام خطا ظاهر می‌شود');
+    assert.equal(fallback.getAttribute('href'), null);
+    assert.equal(fallback.querySelector('a').getAttribute('href'), 'https://example.test/tracking.pdf');
+    assert.ok(doc.querySelector('[data-bwt-result]').compareDocumentPosition(fallback) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING, 'جعبهٔ PDF بعد از پیام خطا قرار دارد');
+    dom.window.close();
+}
+
+{
+    // خالی‌بودن فیلدها هم خطاست و باید جعبهٔ PDF را نشان دهد (بدون درخواست به سرور)
+    const { dom, sent } = await trackingDom({ state: 'ready', codes: [] });
+    const doc = dom.window.document;
+    doc.querySelector('[name="order_id"]').value = '';
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => doc.querySelector('[data-bwt-result]').className.includes('bwt-track__result--error'));
+    assert.equal(doc.querySelector('[data-bwt-result]').className.includes('--error'), true);
+    assert.equal(doc.querySelector('[data-bwt-fallback]').hidden, false);
+    assert.equal(sent.length, 0, 'اعتبارسنجی سمت مرورگر بدون درخواست به سرور');
+    dom.window.close();
+}
+
+{
+    const { dom, sent } = await trackingDom({});
+    const doc = dom.window.document;
+    doc.querySelector('[name="billing_phone"]').value = '';
+    doc.querySelector('[data-bwt-form]').dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
+    await waitFor(() => /الزامی/.test(doc.querySelector('[data-bwt-result]').textContent));
+    assert.equal(sent.length, 0, 'فرم ناقص به سرور فرستاده نمی‌شود');
+    assert.match(doc.querySelector('[data-bwt-result]').className, /bwt-track__result--error/);
+    dom.window.close();
+}
+
+/* ================= ۶) چیدمان دوستونهٔ فرم پیگیری ================= */
+{
+    // فرم واقعی انتخاب‌شده: متن راهنمای کوتاه + دو فیلد + دکمه در یک ردیف
+    const previewPath = new URL('../../../../design/preview/tracking-form/index.html', import.meta.url);
+    const preview = new JSDOM(fs.readFileSync(previewPath, 'utf8')).window.document;
+    const card = preview.querySelector('.bwt-track');
+    assert.ok(card, 'کارت فرم در پیش‌نمایش هست');
+    const lead = card.querySelector('.bwt-track__head');
+    assert.ok(lead, 'سرصفحهٔ راهنما در فرم هست');
+    const title = lead.querySelector('.bwt-track__head-title');
+    const text = lead.querySelector('.bwt-track__head-text');
+    assert.ok(title && text, 'تیتر و توضیح دو عنصر جدا هستند');
+    assert.match(title.textContent, /کد رهگیری مرسوله/);
+    assert.match(text.textContent, /شمارهٔ سفارش/);
+    assert.equal(card.querySelectorAll('.bwt-track__head').length, 1, 'فقط یک سرصفحه');
+    assert.equal(lead.querySelectorAll('input').length, 0, 'سرصفحه فقط متن است');
+    assert.ok(lead.compareDocumentPosition(card.querySelector('.bwt-track__fields')) & lead.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING, 'سرصفحه قبل از فیلدها می‌آید');
+    assert.equal(card.querySelectorAll('.bwt-track__fields .bwt-field').length, 2, 'دو فیلد داخل ردیف');
+    assert.equal(card.querySelectorAll('.bwt-btn--block').length, 0, 'دکمهٔ کلاس block ندارد');
+    assert.ok(card.querySelector('.bwt-track__layout'), 'کارت یک لایهٔ چیدمان دوستونه دارد');
+    const panel = card.querySelector('.bwt-track__panel');
+    assert.ok(panel, 'فرم داخل پنل اختصاصی است');
+    assert.ok(panel.contains(card.querySelector('form[data-bwt-form]')), 'فرم داخل پنل است و پنل کل فرم را می‌گیرد');
+    assert.ok(card.querySelector('.bwt-track__badge svg'), 'آیکون معرفی (بسته) رندر می‌شود');
+    const chips = card.querySelectorAll('.bwt-track__chip');
+    assert.equal(chips.length, 3, 'سه نشان کوتاه کنار متن معرفی هست');
+    assert.match([...chips].map((c) => c.textContent).join(' '), /بدون آپلود فایل/);
+    assert.ok(card.querySelector('.bwt-track__btn-icon svg'), 'دکمه آیکون جست‌وجو دارد');
+    const submit = card.querySelector('form[data-bwt-form] button[type="submit"]');
+    assert.ok(submit.classList.contains('bwt-btn--primary'));
+    assert.ok(lead.compareDocumentPosition(submit) & submit.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING, 'دکمه بعد از بلوک راهنما و فیلدها می‌آید');
+    const fallback = card.querySelector('[data-bwt-fallback]');
+    assert.ok(submit.compareDocumentPosition(fallback) & submit.ownerDocument.defaultView.Node.DOCUMENT_POSITION_FOLLOWING, 'جعبهٔ PDF همچنان پایین‌تر از دکمه است');
+}
+
+{
+    // قاعده‌های چیدمان در CSS سمت کاربر (نه پیشخوان)
+    const css = fs.readFileSync(new URL('../assets/tracking.css', import.meta.url), 'utf8');
+    assert.match(css, /\.bwt-track__layout\s*\{[^}]*display:\s*grid/, 'لایهٔ چیدمان گرید است');
+    assert.match(css, /@container bwt-track \(min-width:\s*900px\)/, 'دوستونه شدن از عرض ۹۰۰px کارت');
+    assert.match(css, /\.bwt-track__layout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(360px, 580px\)/, 'ستون پنل فرم سقف ۵۸۰px دارد و کشیده نمی‌شود');
+    assert.match(css, /\.bwt-track__panel\s*\{[^}]*background:/, 'پنل فرم پس‌زمینهٔ آرام دارد');
+    assert.match(css, /\.bwt-track__form\s*\{[^}]*display:\s*grid/, 'فرم گرید است');
+    assert.match(css, /\.bwt-track__fields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/, 'دو فیلد کنار هم و هم‌عرض');
+    assert.match(css, /\.bwt-track \.bwt-track__form > \.bwt-btn\s*\{[^}]*width:\s*100%/, 'دکمه تمام عرض پنل را می‌گیرد');
+    assert.match(css, /@container bwt-track \(max-width:\s*620px\)/, 'شکست ۶۲۰px روی عرض کارت');
+    assert.match(css, /\.bwt-track\s*\{[^}]*container-type:\s*inline-size/, 'کارت ظرف کوئری است');
+    assert.match(css, /\.bwt-track__head\s*\{[^}]*text-align:\s*start/, 'سرصفحه راست‌چین می‌ماند حتی اگر قالب وسط‌چین کند');
+    assert.match(css, /\.bwt-track__head-title\s*\{[^}]*display:\s*block/, 'تیتر در سطر جدا از توضیح است');
+    assert.match(css, /\.bwt-track__head-text\s*\{[^}]*display:\s*block/, 'توضیح زیر تیتر می‌آید');
+    assert.match(css, /\.bwt-track__chip\s*\{[^}]*border-radius:\s*999px/, 'نشان‌ها قرصی‌شکل‌اند');
+    assert.match(css, /@supports not \(container-type: inline-size\)/, 'برای مرورگرهای قدیمی جانشین container query هست');
+    assert.match(css, /\.bwt-track\s*\{[^}]*max-width:\s*100%/, 'کارت تمام‌عرض ستون محتواست');
+    assert.doesNotMatch(css, /max-width:\s*640px;\s*\n\s*margin:\s*0 auto/, 'کارت دیگر وسط‌چین و باریک نیست');
+    const adminCss = fs.readFileSync(new URL('../assets/admin.css', import.meta.url), 'utf8');
+    assert.doesNotMatch(adminCss, /bwt-track__lead/, 'استایل فرم در admin.css نیست');
+}
+
+console.log(`✓ ${assertionCount} سنجهٔ رابط: پاک‌سازی، کلید منبع، همگام‌سازی، فرم پیگیری (چیدمان دوستونه)، جعبهٔ PDF جایگزین و CSS سالم است.`);

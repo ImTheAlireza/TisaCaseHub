@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>چهار ایده برای عرض فرم پیگیری سفارش</title>
+<style>
+/* ==========================================================================
+   پیش‌نمایش طراحی — فقط برای انتخاب ایده. توکن‌ها همان توکن‌های قالب سایت‌اند.
+   ========================================================================== */
+:root {
+	color-scheme: light;
+	--wd-primary-color: #2F55E8;      /* رنگ برند سایت (همان دکمهٔ زنده) */
+	--wd-text-color: #242424;
+	--wd-title-color: #333333;
+	--wd-form-height: 42px;
+	--wd-brd-radius: 0.001px;
+	--wd-form-brd-color: rgba(0, 0, 0, .12);
+	--color-gray-500: #767676;
+	--brdcolor-gray-300: rgba(0, 0, 0, .105);
+	--bgcolor-gray-100: #f7f7f7;
+
+	--p: var(--wd-primary-color);
+	--ink: var(--wd-title-color);
+	--muted: var(--color-gray-500);
+	--border: var(--brdcolor-gray-300);
+	--radius: max(var(--wd-brd-radius), 10px);
+	--h: var(--wd-form-height);
+	--page: 1180px;
+}
+
+* { box-sizing: border-box; }
+body {
+	margin: 0;
+	padding: 0 0 70px;
+	background: #fff;
+	color: var(--wd-text-color);
+	font: 400 14px/1.8 Vazirmatn, "IRANSans", -apple-system, BlinkMacSystemFont, "Segoe UI", Tahoma, sans-serif;
+}
+
+/* نوار بالای پیش‌نمایش */
+.topbar {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px 16px;
+	padding: 10px 22px;
+	background: #1D2327;
+	color: #F0F0F1;
+	font-size: 12.5px;
+}
+.topbar b { font-weight: 700; }
+.topbar a { color: #9FD8CB; text-decoration: none; }
+.topbar a:hover { text-decoration: underline; }
+.topbar .spacer { flex: 1 1 auto; }
+
+.page { width: 100%; max-width: var(--page); margin: 0 auto; padding: 0 16px; }
+
+.intro { margin: 26px 0 6px; }
+.intro h1 { margin: 0 0 6px; font-size: 24px; line-height: 1.5; color: var(--ink); }
+.intro p { margin: 0; color: var(--muted); font-size: 13px; }
+
+/* هر ایده */
+.idea { margin: 34px 0 0; }
+.idea__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 10px;
+	margin: 0 0 12px;
+}
+.idea__tag {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	background: var(--p);
+	color: #fff;
+	font-weight: 700;
+	font-size: 14px;
+}
+.idea__title { margin: 0; font-size: 15.5px; font-weight: 700; color: var(--ink); }
+.idea__why { margin: 0; width: 100%; color: var(--muted); font-size: 12.5px; }
+
+/* بوم شبیه‌سازی صفحهٔ سایت */
+.canvas {
+	position: relative;
+	padding: 26px 22px;
+	border: 1px dashed #DFE3EA;
+	border-radius: 16px;
+	background:
+		linear-gradient(#fff, #fff) padding-box,
+		repeating-linear-gradient(0deg, #F6F7F9 0 1px, transparent 1px 40px);
+	background-color: #FCFCFD;
+}
+.canvas .hintbox {
+	width: 100%;
+	margin-top: 18px;
+	padding: 14px 18px;
+	border: 1px solid rgba(47, 85, 232, .35);
+	border-radius: 12px;
+	background: #F7F9FF;
+	color: #333;
+	font-size: 12.5px;
+	line-height: 2;
+}
+
+/* ---------- پایه‌های مشترک فرم ---------- */
+.f { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; }
+.f__label { margin: 0; color: var(--ink); font-size: 12.5px; font-weight: 600; line-height: 1.6; }
+.f__input {
+	display: block;
+	width: 100%;
+	height: var(--h);
+	min-height: var(--h);
+	padding: 0 14px;
+	border: 1px solid var(--wd-form-brd-color);
+	border-radius: var(--radius);
+	background: #fff;
+	color: var(--ink);
+	font: inherit;
+	font-size: 14px;
+	direction: ltr;
+	text-align: left;
+	appearance: none;
+	box-shadow: none;
+}
+.f__input::placeholder { color: #A6ABB5; }
+.f__input:focus {
+	border-color: var(--p);
+	outline: 0;
+	box-shadow: 0 0 0 3px rgba(47, 85, 232, .16);
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	height: var(--h);
+	padding: 0 30px;
+	border: 1px solid var(--p);
+	border-radius: var(--radius);
+	background: var(--p);
+	color: #fff;
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	white-space: nowrap;
+	cursor: pointer;
+	transition: filter .18s ease, transform .12s ease;
+}
+.btn:hover { filter: brightness(.93); }
+.btn:active { transform: translateY(1px); }
+.btn--soft { background: #fff; color: var(--p); }
+.btn--soft:hover { background: rgba(47, 85, 232, .06); filter: none; }
+
+/* ---------- A) یک‌ردیفی داخل کارت ---------- */
+.v-a {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 14px;
+	padding: 18px 20px 20px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
+}
+.v-a .f { flex: 1 1 240px; }
+.v-a .btn { flex: 0 0 auto; }
+
+/* ---------- B) دو ستونه: متن + فرم ---------- */
+.v-b {
+	display: grid;
+	grid-template-columns: minmax(200px, .85fr) minmax(0, 1.7fr);
+	align-items: center;
+	gap: 26px;
+	padding: 22px 24px;
+	border: 1px solid var(--border);
+	border-radius: 14px;
+	background: #fff;
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 20px 42px -34px rgba(31, 42, 46, .35);
+}
+.v-b__text h3 { margin: 0 0 4px; font-size: 15px; color: var(--ink); }
+.v-b__text p { margin: 0; color: var(--muted); font-size: 12.5px; }
+.v-b__form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+.v-b__form .btn { grid-column: 1 / -1; }
+
+/* ---------- C) کارت عریض با دکمهٔ بزرگ ---------- */
+.v-c {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 22px;
+	padding: 22px 26px;
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	background: linear-gradient(180deg, #FFFFFF 0%, #FAFBFF 100%);
+	box-shadow: 0 1px 2px rgba(31, 42, 46, .04), 0 24px 48px -36px rgba(47, 85, 232, .45);
+}
+.v-c__fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.v-c .btn { height: 52px; padding: 0 44px; font-size: 15px; border-radius: calc(var(--radius) + 2px); }
+
+/* ---------- D) نوار سبک بدون کارت ---------- */
+.v-d {
+	display: grid;
+	grid-template-columns: 1fr 1fr auto;
+	align-items: end;
+	gap: 14px;
+	padding: 4px 2px 20px;
+	border-bottom: 1px solid var(--border);
+}
+.v-d .f__input { background: #F7F8FA; border-color: transparent; }
+.v-d .f__input:focus { background: #fff; border-color: var(--p); }
+
+/* ---------- E) شیشه‌ای روی نوار رنگی ---------- */
+.v-e {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: flex-end;
+	gap: 14px;
+	padding: 20px 22px;
+	border-radius: 16px;
+	background: linear-gradient(115deg, #2F55E8 0%, #4B6BF5 55%, #6E8BFF 100%);
+	box-shadow: 0 24px 50px -34px rgba(47, 85, 232, .65);
+}
+.v-e .f { flex: 1 1 240px; }
+.v-e .f__label { color: rgba(255, 255, 255, .92); }
+.v-e .f__input { border-color: rgba(255, 255, 255, .35); }
+.v-e .btn { flex: 0 0 auto; background: #fff; border-color: #fff; color: var(--p); }
+.v-e .btn:hover { filter: none; background: #F1F4FF; }
+
+@media (max-width: 900px) {
+	.v-b, .v-c { grid-template-columns: 1fr; gap: 16px; }
+	.v-b__form, .v-c__fields { grid-template-columns: 1fr; }
+	.v-d { grid-template-columns: 1fr; }
+	.v-d .btn, .v-e .btn, .v-a .btn { width: 100%; }
+	.v-c .btn { width: 100%; padding: 0 20px; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+	<b>پیش‌نمایش طراحی — عرض فرم پیگیری</b>
+	<span>هر پنج ایده تمام‌عرضِ همان ستون محتوا هستند (۱٬۱۸۰px)؛ فقط چیدمان داخلی‌شان فرق دارد.</span>
+	<span class="spacer"></span>
+	<a href="../tracking-form/index.html">فرم فعلی</a>
+	<a href="../admin/index.html">پیشخوان افزونه</a>
+</div>
+
+<main class="page">
+
+	<div class="intro">
+		<h1>فرم پیگیری، هم‌عرض بقیهٔ صفحه — پنج ایده</h1>
+		<p>در همهٔ گزینه‌ها فیلدها و دکمه همان ارتفاع ۴۲px و همان رنگ برند قالب را دارند؛ فقط «چطور در عرض صفحه پخش شوند» متفاوت است. یک کادر راهنمای همان‌اندازهٔ صفحهٔ واقعی زیر هر ایده گذاشته‌ام تا هم‌عرض‌بودن را ببینید.</p>
+	</div>
+
+	<!-- A -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">A</span>
+			<h2 class="idea__title">یک‌ردیفی — کارت کم‌ارتفاع</h2>
+			<p class="idea__why">هر سه کنترل در یک خط، دکمه هم‌تراز پایین فیلدها. کمترین ارتفاع را می‌گیرد و شبیه نوار جست‌وجوی فروشگاه است؛ کشیدگی هم حس نمی‌شود چون عرض بین دو فیلد تقسیم شده.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-a">
+				<label class="f">
+					<span class="f__label">شماره سفارش</span>
+					<input class="f__input" type="text" placeholder="مثلاً 424172" />
+				</label>
+				<label class="f">
+					<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+					<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+				</label>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- B -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">B</span>
+			<h2 class="idea__title">دو ستونه — متن راهنما + فرم</h2>
+			<p class="idea__why">سمت راست یک توضیح کوتاه، سمت چپ فیلدها و دکمهٔ تمام‌عرض. عرض زیاد را با محتوا پر می‌کند و برای صفحه‌ای که عنوان و توضیح ندارد مفید است.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-b">
+				<div class="v-b__text">
+					<h3>کد رهگیری مرسولهٔ شما</h3>
+					<p>شمارهٔ سفارش و موبایلی که با آن خرید کرده‌اید را وارد کنید؛ کد پستی همان لحظه نمایش داده می‌شود.</p>
+				</div>
+				<form class="v-b__form">
+					<label class="f">
+						<span class="f__label">شماره سفارش</span>
+						<input class="f__input" type="text" placeholder="مثلاً 424172" />
+					</label>
+					<label class="f">
+						<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+						<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+					</label>
+					<button class="btn" type="button">پیگیری سفارش</button>
+				</form>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- C -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">C</span>
+			<h2 class="idea__title">کارت عریض با دکمهٔ بزرگ</h2>
+			<p class="idea__why">فیلدها دو ستونه در سمت راست، یک دکمهٔ بلند و برجسته در سمت چپ. تمرکز روی «اقدام» است و کارت با یک گرادیان خیلی ملایم از بقیهٔ صفحه جدا می‌شود.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-c">
+				<div class="v-c__fields">
+					<label class="f">
+						<span class="f__label">شماره سفارش</span>
+						<input class="f__input" type="text" placeholder="مثلاً 424172" />
+					</label>
+					<label class="f">
+						<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+						<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+					</label>
+				</div>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- D -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">D</span>
+			<h2 class="idea__title">نوار سبک — بدون کارت</h2>
+			<p class="idea__why">بدون سایه و کادر؛ فقط یک خط جداکننده زیر فرم. سبک‌ترین حالت، هم‌خانواده با متن صفحه. برای سایت‌هایی که کارت‌های زیاد دارند و می‌خواهند شلوغی کم شود.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-d">
+				<label class="f">
+					<span class="f__label">شماره سفارش</span>
+					<input class="f__input" type="text" placeholder="مثلاً 424172" />
+				</label>
+				<label class="f">
+					<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+					<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+				</label>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<!-- E -->
+	<section class="idea">
+		<header class="idea__head">
+			<span class="idea__tag">E</span>
+			<h2 class="idea__title">نوار رنگی برند</h2>
+			<p class="idea__why">فرم روی یک نوار هم‌رنگ برند می‌نشیند و دکمه سفید است. بیشترین جلب توجه را دارد؛ مناسب اگر می‌خواهید فرم «پرچم‌دار» همین صفحه باشد.</p>
+		</header>
+		<div class="canvas">
+			<div class="v-e">
+				<label class="f">
+					<span class="f__label">شماره سفارش</span>
+					<input class="f__input" type="text" placeholder="مثلاً 424172" />
+				</label>
+				<label class="f">
+					<span class="f__label">شماره موبایل ثبت‌شده روی سفارش</span>
+					<input class="f__input" type="text" placeholder="۰۹۱۲۱۲۳۴۵۶۷" />
+				</label>
+				<button class="btn" type="button">پیگیری سفارش</button>
+			</div>
+			<div class="hintbox">مشتریان گرامی تیسا کیس: به منظور رفاه شما، امکان مشاهدهٔ شمارهٔ مرسوله پس از ثبت سفارش از طریق بخش پیگیری سفارشات فراهم شده است…</div>
+		</div>
+	</section>
+
+	<p class="intro" style="margin-top:34px">
+		<b>جمع‌بندی:</b> A کم‌ارتفاع‌ترین و «جست‌وجو-مانند»ترین است؛ B برای توضیح‌دادن جا دارد؛ C روی دکمه تأکید می‌کند؛ D سبک‌ترین است؛ E پررنگ‌ترین. هر کدام را انتخاب کنید، در افزونه پیاده می‌کنم و در موبایل هم تست می‌شود (زیر ۹۰۰px همه تک‌ستونه می‌شوند).
+	</p>
+
+</main>
+</body>
+</html>
