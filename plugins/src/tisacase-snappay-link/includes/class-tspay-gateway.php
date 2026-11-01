@@ -26,7 +26,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             'enabled' => array( 'title' => 'فعال‌سازی', 'type' => 'checkbox', 'label' => 'فعال‌کردن پرداخت اقساطی با لینک اسنپ‌پی', 'default' => 'no' ),
             'title' => array( 'title' => 'عنوان روش پرداخت', 'type' => 'text', 'default' => 'پرداخت اقساطی با اسنپ‌پی', 'desc_tip' => true, 'description' => 'عنوان نمایش‌داده‌شده در فهرست روش‌های پرداخت.' ),
             'description' => array( 'title' => 'توضیح روش پرداخت', 'type' => 'textarea', 'default' => 'پرداخت را در اسنپ‌پی انجام دهید. پس از ثبت کد رهگیری، پرداختتان را بررسی می‌کنیم.' ),
-            'fee_hint' => array( 'title' => 'متن کارمزد در تسویه‌حساب', 'type' => 'text', 'default' => 'کارمزد اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.', 'description' => 'برای نمایش درصد، جای‌نگهدار %s را در متن قرار دهید.' ),
+            'fee_hint' => array( 'title' => 'متن مارک‌آپ در تسویه‌حساب', 'type' => 'text', 'default' => 'مارک‌آپ اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.', 'description' => 'برای نمایش درصد، جای‌نگهدار %s را در متن قرار دهید.' ),
             'amount_heading' => array( 'title' => 'عنوان بخش مبلغ پرداخت', 'type' => 'text', 'default' => 'مبلغ قابل پرداخت در اسنپ‌پی' ),
             'order_amount_label' => array( 'title' => 'عنوان مبلغ سفارش', 'type' => 'text', 'default' => 'مبلغ سفارش' ),
             'amount_due_label' => array( 'title' => 'عنوان مبلغ نهایی', 'type' => 'text', 'default' => 'مبلغی که باید در لینک وارد کنید' ),
@@ -41,8 +41,8 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             'report_paid_button_text' => array( 'title' => 'متن دکمه ثبت پرداخت', 'type' => 'text', 'default' => 'ارسال کد رهگیری برای بررسی' ),
             'report_paid_hint' => array( 'title' => 'توضیح ثبت پرداخت', 'type' => 'textarea', 'default' => 'با ارسال کد، پرداختتان برای بررسی ثبت می‌شود.' ),
             'payment_url' => array( 'title' => 'لینک پرداخت اسنپ‌پی', 'type' => 'url', 'default' => '', 'description' => 'لینک سوشال اسنپ‌پی که مشتری برای پرداخت وارد آن می‌شود.' ),
-            'fee_percent' => array( 'title' => 'درصد کارمزد اسنپ‌پی', 'type' => 'number', 'default' => '12', 'custom_attributes' => array( 'min' => '0', 'max' => '100', 'step' => '0.01' ), 'description' => 'کارمزد روی مبلغ کل سفارش، پس از تخفیف و با احتساب ارسال و مالیات محاسبه می‌شود.' ),
-            'fee_label' => array( 'title' => 'عنوان ردیف کارمزد', 'type' => 'text', 'default' => 'کارمزد اسنپ‌پی' ),
+            'fee_percent' => array( 'title' => 'درصد مارک‌آپ اسنپ‌پی', 'type' => 'number', 'default' => '12', 'custom_attributes' => array( 'min' => '0', 'max' => '100', 'step' => '0.01' ), 'description' => 'مارک‌آپ روی مبلغ کل سفارش، پس از تخفیف و با احتساب ارسال و مالیات محاسبه می‌شود.' ),
+            'fee_label' => array( 'title' => 'عنوان ردیف مارک‌آپ', 'type' => 'text', 'default' => 'مارک‌آپ اسنپ‌پی' ),
             'warning' => array( 'title' => 'پیش از پرداخت', 'type' => 'textarea', 'default' => 'لطفاً مبلغ نهایی را در اسنپ‌پی وارد کنید تا پرداختتان راحت‌تر بررسی شود.' ),
             'acknowledgement' => array( 'title' => 'متن تأیید هشدار', 'type' => 'text', 'default' => 'مبلغ و توضیحات را بررسی کردم و آمادهٔ ادامه‌ام.' ),
             'checkout_button_text' => array( 'title' => 'متن دکمه ثبت سفارش', 'type' => 'text', 'default' => 'ثبت سفارش و ادامه به اسنپ‌پی' ),
@@ -117,7 +117,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $order->update_meta_data( '_tspay_fee_applied', 'yes' );
         if ( $fee > 0 ) {
             $item = new WC_Order_Item_Fee();
-            $label = $this->setting_text( 'fee_label' ) ?: 'کارمزد اسنپ‌پی';
+            $label = $this->setting_text( 'fee_label' ) ?: 'مارک‌آپ اسنپ‌پی';
             $item->set_name( $label . ' (' . $this->format_rate( $rate ) . '%)' );
             $item->set_amount( $fee );
             $item->set_total( $fee );
@@ -201,7 +201,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         echo '<h3 class="tspay-heading">' . esc_html( $this->setting_text( 'amount_heading' ) ?: 'مبلغ قابل پرداخت در اسنپ‌پی' ) . '</h3>';
         echo '<dl class="tspay-breakdown">';
         echo '<div><dt>' . esc_html( $this->setting_text( 'order_amount_label' ) ?: 'مبلغ سفارش' ) . '</dt><dd>' . wp_kses_post( wc_price( $base, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>';
-        if ( $fee > 0 ) { echo '<div><dt>کارمزد اسنپ‌پی (' . esc_html( $this->format_rate( $rate ) ) . '٪)</dt><dd>' . wp_kses_post( wc_price( $fee, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>'; }
+        if ( $fee > 0 ) { echo '<div><dt>مارک‌آپ اسنپ‌پی (' . esc_html( $this->format_rate( $rate ) ) . '٪)</dt><dd>' . wp_kses_post( wc_price( $fee, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>'; }
         echo '</dl>';
         echo '<div class="tspay-payable">';
         echo '<div class="tspay-payable-label">' . esc_html( $this->setting_text( 'amount_due_label' ) ?: 'مبلغ نهایی قابل پرداخت' ) . '</div>';
