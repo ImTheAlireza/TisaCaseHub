@@ -15,7 +15,7 @@ class TSPAY_Blocks extends \Automattic\WooCommerce\Blocks\Payments\Integrations\
             'description' => isset( $settings['description'] ) ? $settings['description'] : '',
             'warning' => isset( $settings['warning'] ) ? $settings['warning'] : '',
             'fee_percent' => isset( $settings['fee_percent'] ) ? (float) $settings['fee_percent'] : 12,
-            'fee_hint' => isset( $settings['fee_hint'] ) ? $settings['fee_hint'] : 'کارمزد اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.',
+            'fee_hint' => isset( $settings['fee_hint'] ) ? $settings['fee_hint'] : 'مارک‌آپ اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.',
             'supports' => array( 'products' ),
         );
     }

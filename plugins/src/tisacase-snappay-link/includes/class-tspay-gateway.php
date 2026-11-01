@@ -25,32 +25,32 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $this->form_fields = array(
             'enabled' => array( 'title' => 'فعال‌سازی', 'type' => 'checkbox', 'label' => 'فعال‌کردن پرداخت اقساطی با لینک اسنپ‌پی', 'default' => 'no' ),
             'title' => array( 'title' => 'عنوان روش پرداخت', 'type' => 'text', 'default' => 'پرداخت اقساطی با اسنپ‌پی', 'desc_tip' => true, 'description' => 'عنوان نمایش‌داده‌شده در فهرست روش‌های پرداخت.' ),
-            'description' => array( 'title' => 'توضیح روش پرداخت', 'type' => 'textarea', 'default' => 'پرداخت را در صفحه اسنپ‌پی انجام دهید. سفارش پس از بررسی فروشگاه تأیید می‌شود.' ),
-            'fee_hint' => array( 'title' => 'متن کارمزد در تسویه‌حساب', 'type' => 'text', 'default' => 'کارمزد اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.', 'description' => 'برای نمایش درصد، جای‌نگهدار %s را در متن قرار دهید.' ),
+            'description' => array( 'title' => 'توضیح روش پرداخت', 'type' => 'textarea', 'default' => 'پرداخت را در اسنپ‌پی انجام دهید. پس از ثبت کد رهگیری، پرداختتان را بررسی می‌کنیم.' ),
+            'fee_hint' => array( 'title' => 'متن مارک‌آپ در تسویه‌حساب', 'type' => 'text', 'default' => 'مارک‌آپ اسنپ‌پی (%s٪) به مبلغ کل سفارش افزوده می‌شود.', 'description' => 'برای نمایش درصد، جای‌نگهدار %s را در متن قرار دهید.' ),
             'amount_heading' => array( 'title' => 'عنوان بخش مبلغ پرداخت', 'type' => 'text', 'default' => 'مبلغ قابل پرداخت در اسنپ‌پی' ),
             'order_amount_label' => array( 'title' => 'عنوان مبلغ سفارش', 'type' => 'text', 'default' => 'مبلغ سفارش' ),
             'amount_due_label' => array( 'title' => 'عنوان مبلغ نهایی', 'type' => 'text', 'default' => 'مبلغی که باید در لینک وارد کنید' ),
             'payment_footnote' => array( 'title' => 'توضیح زیر دکمه پرداخت', 'type' => 'textarea', 'default' => 'لینک پرداخت در صفحه‌ای جدا باز می‌شود. مبلغ را با واحد نمایش‌داده‌شده وارد کنید.' ),
-            'before_payment_message' => array( 'title' => 'پیام پیش از پرداخت', 'type' => 'textarea', 'default' => 'پس از پرداخت در اسنپ‌پی، کد رهگیری نمایش‌داده‌شده را یادداشت کنید و در همین صفحه وارد کنید. با زدن دکمه ثبت، سفارش برای بررسی دستی فروشگاه ارسال می‌شود.' ),
+            'before_payment_message' => array( 'title' => 'پیام پیش از پرداخت', 'type' => 'textarea', 'default' => 'بعد از پرداخت، کد رهگیری را نگه دارید و برای بررسی وارد کنید.' ),
             'copy_button_text' => array( 'title' => 'متن دکمه کپی مبلغ', 'type' => 'text', 'default' => 'کپی مبلغ نهایی' ),
             'copy_success_message' => array( 'title' => 'پیام پس از کپی مبلغ', 'type' => 'text', 'default' => 'مبلغ کپی شد؛ آن را بدون تغییر در لینک اسنپ‌پی وارد کنید.' ),
             'tracking_field_label' => array( 'title' => 'عنوان فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد رهگیری اسنپ‌پی' ),
             'tracking_placeholder' => array( 'title' => 'راهنمای فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد رهگیری درج‌شده در نتیجه پرداخت' ),
-            'tracking_help' => array( 'title' => 'توضیح فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد را دقیقاً از صفحه نتیجه پرداخت اسنپ‌پی وارد کنید.' ),
-            'tracking_reminder' => array( 'title' => 'یادآوری کد رهگیری', 'type' => 'textarea', 'default' => 'پس از پرداخت، کد رهگیری را یادداشت کنید؛ برای ارسال سفارش به بررسی دستی، واردکردن این کد لازم است.' ),
-            'report_paid_button_text' => array( 'title' => 'متن دکمه ثبت پرداخت', 'type' => 'text', 'default' => 'ثبت پرداخت و ارسال کد برای بررسی' ),
-            'report_paid_hint' => array( 'title' => 'توضیح ثبت پرداخت', 'type' => 'textarea', 'default' => 'ثبت این کد فقط درخواست بررسی را ارسال می‌کند؛ پرداخت پس از بررسی فروشگاه تأیید می‌شود.' ),
+            'tracking_help' => array( 'title' => 'توضیح فیلد کد رهگیری', 'type' => 'text', 'default' => 'کد رهگیری پایان پرداخت را اینجا وارد کنید.' ),
+            'tracking_reminder' => array( 'title' => 'یادآوری کد رهگیری', 'type' => 'textarea', 'default' => 'کد رهگیری را نگه دارید و برای بررسی وارد کنید.' ),
+            'report_paid_button_text' => array( 'title' => 'متن دکمه ثبت پرداخت', 'type' => 'text', 'default' => 'ارسال کد رهگیری برای بررسی' ),
+            'report_paid_hint' => array( 'title' => 'توضیح ثبت پرداخت', 'type' => 'textarea', 'default' => 'با ارسال کد، پرداختتان برای بررسی ثبت می‌شود.' ),
             'payment_url' => array( 'title' => 'لینک پرداخت اسنپ‌پی', 'type' => 'url', 'default' => '', 'description' => 'لینک سوشال اسنپ‌پی که مشتری برای پرداخت وارد آن می‌شود.' ),
-            'fee_percent' => array( 'title' => 'درصد کارمزد اسنپ‌پی', 'type' => 'number', 'default' => '12', 'custom_attributes' => array( 'min' => '0', 'max' => '100', 'step' => '0.01' ), 'description' => 'کارمزد روی مبلغ کل سفارش، پس از تخفیف و با احتساب ارسال و مالیات محاسبه می‌شود.' ),
-            'fee_label' => array( 'title' => 'عنوان ردیف کارمزد', 'type' => 'text', 'default' => 'کارمزد اسنپ‌پی' ),
-            'warning' => array( 'title' => 'هشدار پیش از پرداخت', 'type' => 'textarea', 'default' => 'در لینک اسنپ‌پی دقیقاً مبلغ نهایی اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از آن، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد. پس از پرداخت، کد رهگیری اسنپ‌پی را یادداشت کنید؛ برای ثبت درخواست بررسی، واردکردن این کد الزامی است.' ),
-            'acknowledgement' => array( 'title' => 'متن تأیید هشدار', 'type' => 'text', 'default' => 'هشدار مبلغ را خواندم و متوجه شدم.' ),
+            'fee_percent' => array( 'title' => 'درصد مارک‌آپ اسنپ‌پی', 'type' => 'number', 'default' => '12', 'custom_attributes' => array( 'min' => '0', 'max' => '100', 'step' => '0.01' ), 'description' => 'مارک‌آپ روی مبلغ کل سفارش، پس از تخفیف و با احتساب ارسال و مالیات محاسبه می‌شود.' ),
+            'fee_label' => array( 'title' => 'عنوان ردیف مارک‌آپ', 'type' => 'text', 'default' => 'مارک‌آپ اسنپ‌پی' ),
+            'warning' => array( 'title' => 'پیش از پرداخت', 'type' => 'textarea', 'default' => 'لطفاً مبلغ نهایی را در اسنپ‌پی وارد کنید تا پرداختتان راحت‌تر بررسی شود.' ),
+            'acknowledgement' => array( 'title' => 'متن تأیید هشدار', 'type' => 'text', 'default' => 'مبلغ و توضیحات را بررسی کردم و آمادهٔ ادامه‌ام.' ),
             'checkout_button_text' => array( 'title' => 'متن دکمه ثبت سفارش', 'type' => 'text', 'default' => 'ثبت سفارش و ادامه به اسنپ‌پی' ),
             'payment_button_text' => array( 'title' => 'متن دکمه رفتن به درگاه', 'type' => 'text', 'default' => 'رفتن به صفحه پرداخت اسنپ‌پی' ),
             'legacy_hold_message' => array( 'title' => 'پیام سفارش‌های قدیمی در انتظار بررسی', 'type' => 'textarea', 'default' => 'این سفارش پیش از اصلاح گردش پرداخت ثبت شده و وضعیت پرداخت آن از سایت قابل تشخیص نیست. برای جلوگیری از پرداخت تکراری، قبل از پرداخت دوباره با فروشگاه هماهنگ کنید. اگر قبلاً پرداخت کرده‌اید، دکمهٔ اعلام پرداخت را بزنید.' ),
-            'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'اعلام پرداخت شما ثبت شد و سفارش در انتظار بررسی دستی فروشگاه است. این پیام به معنی تأیید پرداخت نیست.' ),
-            'rejected_message' => array( 'title' => 'پیام پس از رد اعلام پرداخت', 'type' => 'textarea', 'default' => 'کد یا پرداخت اعلام‌شده تأیید نشد. علت ثبت‌شده را بررسی کنید و برای پیگیری با فروشگاه تماس بگیرید. این وضعیت به‌تنهایی به معنی بازپرداخت وجه نیست.' ),
-            'approved_message' => array( 'title' => 'پیام پس از تأیید پرداخت', 'type' => 'textarea', 'default' => 'پرداخت این سفارش تأیید شده است. از خرید شما سپاسگزاریم.' ),
+            'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'ممنون! کدتان ثبت شد و پرداخت بررسی می‌شود.' ),
+            'rejected_message' => array( 'title' => 'پیام پس از رد اعلام پرداخت', 'type' => 'textarea', 'default' => 'نتوانستیم پرداخت را تطبیق دهیم. برای راهنمایی با پشتیبانی تماس بگیرید.' ),
+            'approved_message' => array( 'title' => 'پیام پس از تأیید پرداخت', 'type' => 'textarea', 'default' => 'پرداخت تأیید شد؛ ممنون از خریدتان!' ),
             'button_color' => array( 'title' => 'رنگ دکمه پرداخت', 'type' => 'text', 'default' => '#2874FC', 'description' => 'کد رنگ HEX، مانند #2874FC.' ),
             'button_text_color' => array( 'title' => 'رنگ نوشته دکمه', 'type' => 'text', 'default' => '#FFFFFF', 'description' => 'کد رنگ HEX، مانند #FFFFFF.' ),
         );
@@ -117,7 +117,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $order->update_meta_data( '_tspay_fee_applied', 'yes' );
         if ( $fee > 0 ) {
             $item = new WC_Order_Item_Fee();
-            $label = $this->setting_text( 'fee_label' ) ?: 'کارمزد اسنپ‌پی';
+            $label = $this->setting_text( 'fee_label' ) ?: 'مارک‌آپ اسنپ‌پی';
             $item->set_name( $label . ' (' . $this->format_rate( $rate ) . '%)' );
             $item->set_amount( $fee );
             $item->set_total( $fee );
@@ -201,7 +201,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         echo '<h3 class="tspay-heading">' . esc_html( $this->setting_text( 'amount_heading' ) ?: 'مبلغ قابل پرداخت در اسنپ‌پی' ) . '</h3>';
         echo '<dl class="tspay-breakdown">';
         echo '<div><dt>' . esc_html( $this->setting_text( 'order_amount_label' ) ?: 'مبلغ سفارش' ) . '</dt><dd>' . wp_kses_post( wc_price( $base, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>';
-        if ( $fee > 0 ) { echo '<div><dt>کارمزد اسنپ‌پی (' . esc_html( $this->format_rate( $rate ) ) . '٪)</dt><dd>' . wp_kses_post( wc_price( $fee, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>'; }
+        if ( $fee > 0 ) { echo '<div><dt>مارک‌آپ اسنپ‌پی (' . esc_html( $this->format_rate( $rate ) ) . '٪)</dt><dd>' . wp_kses_post( wc_price( $fee, array( 'currency' => $order->get_currency() ) ) ) . '</dd></div>'; }
         echo '</dl>';
         echo '<div class="tspay-payable">';
         echo '<div class="tspay-payable-label">' . esc_html( $this->setting_text( 'amount_due_label' ) ?: 'مبلغ نهایی قابل پرداخت' ) . '</div>';
@@ -237,19 +237,19 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $warning = $this->setting_text( 'warning' );
         $old_default = 'لطفاً در لینک اسنپ‌پی دقیقاً مبلغ اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از مبلغ اعلام‌شده، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد.';
         if ( $old_default === $warning ) {
-            return 'در لینک اسنپ‌پی دقیقاً مبلغ نهایی اعلام‌شده را وارد کنید. در صورت پرداخت مبلغی غیر از آن، تیساکیس مسئولیتی بابت برگشت مبلغ ندارد. پس از پرداخت، کد رهگیری اسنپ‌پی را یادداشت کنید؛ برای ثبت درخواست بررسی، واردکردن این کد الزامی است.';
+            return 'لطفاً مبلغ نهایی را در اسنپ‌پی وارد کنید تا پرداختتان راحت‌تر بررسی شود.';
         }
         return $warning;
     }
     private function report_button_text() {
         $text = $this->setting_text( 'report_paid_button_text' );
         if ( 'پرداخت را انجام دادم؛ ارسال برای بررسی' === $text ) { return 'ثبت پرداخت و ارسال کد رهگیری برای بررسی'; }
-        return $text ?: 'ثبت پرداخت و ارسال کد رهگیری برای بررسی';
+        return $text ?: 'ارسال کد رهگیری برای بررسی';
     }
     private function report_hint_text() {
         $text = $this->setting_text( 'report_paid_hint' );
         if ( 'این دکمه فقط به فروشگاه خبر می‌دهد؛ پرداخت را خودکار تأیید نمی‌کند.' === $text ) { return 'کد رهگیری برای فروشگاه ثبت می‌شود؛ پرداخت فقط پس از بررسی فروشگاه تأیید خواهد شد.'; }
-        return $text;
+        return $text ?: 'با ارسال کد، پرداختتان برای بررسی ثبت می‌شود.';
     }
 
     public function admin_options() {
