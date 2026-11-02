@@ -46,11 +46,14 @@ $GLOBALS['wpdb'] = new TCAS_Test_WPDB(); $GLOBALS['meta'] = array(); $GLOBALS['p
 class TCAS_Test_Product {
 	private $id; private $type; private $parent; private $sku; private $name; private $price; private $status; private $description;
 	private $manage = false; private $qty = null; private $stock_status = 'instock'; private $fail_save;
+	private $attributes = array();
 	public $saved = 0;
 	public function __construct( $id, $sku, $type = 'simple', $parent = 0, $fail_save = false ) { $this->id = $id; $this->sku = $sku; $this->type = $type; $this->parent = $parent; $this->fail_save = $fail_save; $this->name = 'نام اصلی ' . $sku; $this->price = 9000.0; $this->status = 'publish'; $this->description = 'توضیح اصلی'; }
 	public function get_id() { return $this->id; } public function get_parent_id() { return $this->parent; } public function get_type() { return $this->type; }
 	public function is_type( $type ) { return $this->type === $type; } public function get_sku() { return $this->sku; } public function get_name() { return $this->name; } public function set_name( $n ) { $this->name = (string) $n; }
 	public function get_regular_price() { return $this->price; } public function get_status() { return $this->status; } public function get_description() { return $this->description; }
+	public function set_attributes( $attributes ) { $this->attributes = (array) $attributes; }
+	public function get_attributes() { return $this->attributes; }
 	public function get_manage_stock( $context = 'view' ) { return $this->manage; } public function get_stock_quantity( $context = 'view' ) { return $this->qty; } public function get_stock_status( $context = 'view' ) { return $this->stock_status; }
 	public function set_manage_stock( $v ) { $this->manage = (bool) $v; } public function set_stock_quantity( $v ) { $this->qty = (float) $v; } public function set_stock_status( $v ) { $this->stock_status = $v; }
 	public function save() { if ( $this->fail_save ) throw new Exception( 'save failed' ); $this->saved++; return $this->id; }
@@ -300,6 +303,74 @@ $flag_product = local_product( 60, 'FLAG-1' );
 TCAS_Api::$responses['FLAG-R'] = remote_product( 'FLAG-R', array( 'stock' => array( 'quantity' => 0.0, 'status' => 'instock' ) ) );
 connect_pair( 'FLAG-1', 'FLAG-R' );
 pair_test( 'حالت flag فقط وضعیت را می‌نویسد و انبار عددی محلی را دست نمی‌زند', 'outofstock' === $flag_product->get_stock_status() && null === $flag_product->get_stock_quantity() && false === $flag_product->get_manage_stock() );
+
+
+// --- 1.29.0: تشخیص مرجع مشترک از Attributeها، محافظ پرچم و مدل خارج از فهرست ---
+TCAS_Core::$settings = array( 'stock_mode' => 'quantity' );
+local_product( 501, 'SKU-501' );
+local_product( 502, 'SKU-502' );
+local_product( 503, 'SKU-503' );
+$GLOBALS['products'][501]->set_attributes( array( 'pa_model' => 'A52' ) );
+$GLOBALS['products'][502]->set_attributes( array( 'pa_model' => 'A52s' ) );
+$GLOBALS['products'][503]->set_name( 'قاب چرم A54' );
+TCAS_Api::$responses['ATTR-BUNDLE'] = remote_product( 'ATTR-BUNDLE', array(
+	'name'                 => 'قاب سامسونگ',
+	'variation_attributes' => array( 'مدل' => 'Samsung A52 / A52s' ),
+	'stock'                => array( 'quantity' => 8.0, 'status' => 'instock' ),
+) );
+list( $attr_first, $attr_first_result ) = connect_pair( 'ID:501', 'ATTR-BUNDLE' );
+pair_test( 'کارت اول یک فهرست مدل موجود در Attribute همکار وصل میشود', ! is_wp_error( $attr_first_result ) && 'ATTR-BUNDLE' === TCAS_Mapping::remote_code( 501 ) );
+$attr_second = TCAS_Pairing::preview( pair_of( 'ID:502', 'ATTR-BUNDLE' ) );
+pair_test( 'بدون پرچم کلاینت، فهرست مدل از Attribute همکار شناسایی میشود', 'connect' === $attr_second['row']['status'] && ! empty( $attr_second['row']['shared_remote'] ) );
+$attr_second_result = TCAS_Pairing::connect( $attr_second );
+pair_test( 'کارت دوم همان مرجع را میگیرد و موجودی یکی مینشیند', ! is_wp_error( $attr_second_result ) && 'ATTR-BUNDLE' === TCAS_Mapping::remote_code( 502 ) && 8.0 === (float) $GLOBALS['products'][502]->get_stock_quantity() );
+
+$outside = TCAS_Pairing::preview( array_merge( pair_of( 'ID:503', 'ATTR-BUNDLE' ), array( 'shared_remote' => true ) ) );
+pair_test( 'پرچم جعلی برای مدل بیرون از فهرست، محافظ یکتایی را دور نمیزند', 'error' === $outside['row']['status'] && empty( $outside['row']['shared_remote'] ) && ! empty( $outside['row']['shared_rejected'] ) && false !== strpos( $outside['row']['message'], 'تأیید نشد' ) && '' === TCAS_Mapping::remote_code( 503 ) );
+$outside_connect = TCAS_Pairing::connect( $outside );
+pair_test( 'کارت ردشده هنگام اتصال هم نگاشتی نمیسازد', is_wp_error( $outside_connect ) && '' === TCAS_Mapping::remote_code( 503 ) );
+
+local_product( 504, 'SKU-504' );
+$GLOBALS['products'][504]->set_name( 'قاب A52s' );
+$annotated = TCAS_Pairing::annotate( array(
+	array( 'local_code' => 'ID:504', 'remote_code' => 'ATTR-BUNDLE', 'remote_label' => 'Samsung A52 / A52s', 'local_label' => 'A52s' ),
+	array( 'local_code' => 'ID:503', 'remote_code' => 'ATTR-BUNDLE', 'remote_label' => 'Samsung A52 / A52s', 'local_label' => 'قاب A54' ),
+), 'ariocase' );
+pair_test( 'تشخیص کارت فقط برای مدل داخل فهرست آزاد میماند، مدل بیرونی «اشغالشده» است', 1 === $annotated['skipped'] && ! empty( $annotated['matches'][0]['shared_remote'] ) && ! empty( $annotated['matches'][1]['reclaim'] ), json_encode( $annotated['matches'], JSON_UNESCAPED_UNICODE ) );
+
+// پرچم کلاینت بدون مدرک و بدون نگاشت همخانواده پذیرفته نمیشود.
+local_product( 510, 'SKU-510' );
+local_product( 511, 'SKU-511' );
+$GLOBALS['products'][510]->set_name( 'قاب A52' );
+$GLOBALS['products'][511]->set_name( 'قاب B99' );
+TCAS_Api::$responses['PLAIN-BUNDLE'] = remote_product( 'PLAIN-BUNDLE', array( 'name' => 'قاب ساده', 'stock' => array( 'quantity' => 2.0, 'status' => 'instock' ) ) );
+connect_pair( 'ID:510', 'PLAIN-BUNDLE' );
+$stale_flag = TCAS_Pairing::preview( array_merge( pair_of( 'ID:511', 'PLAIN-BUNDLE' ), array( 'shared_remote' => true ) ) );
+pair_test( 'پرچم کهنه با مدل ناخویشاوند و برچسب تکمدلی رد میشود', 'error' === $stale_flag['row']['status'] && empty( $stale_flag['row']['shared_remote'] ) && '' === TCAS_Mapping::remote_code( 511 ) );
+
+// فهرست کاماجدای همکار: تشخیص سروری بدون پرچم.
+local_product( 520, 'SKU-520' );
+local_product( 521, 'SKU-521' );
+$GLOBALS['products'][520]->set_name( 'قاب A30s' );
+$GLOBALS['products'][521]->set_name( 'قاب A50s' );
+TCAS_Api::$responses['COMMA-BUNDLE'] = remote_product( 'COMMA-BUNDLE', array( 'name' => 'A30s,A50,A50s', 'stock' => array( 'quantity' => 6.0, 'status' => 'instock' ) ) );
+connect_pair( 'ID:520', 'COMMA-BUNDLE' );
+$comma_second = TCAS_Pairing::preview( pair_of( 'ID:521', 'COMMA-BUNDLE' ) );
+pair_test( 'فهرست کاماجدای همکار، کارت دوم را بدون پرچم مشترک میکند', 'connect' === $comma_second['row']['status'] && ! empty( $comma_second['row']['shared_remote'] ) );
+
+// قالب «attributes» نرمالساز (name + options) هم منبع مدرک است.
+local_product( 530, 'SKU-530' );
+local_product( 531, 'SKU-531' );
+$GLOBALS['products'][530]->set_name( 'قاب A52' );
+$GLOBALS['products'][531]->set_name( 'قاب A52s' );
+TCAS_Api::$responses['OPTIONS-BUNDLE'] = remote_product( 'OPTIONS-BUNDLE', array(
+	'name'       => 'قاب ساده',
+	'attributes' => array( array( 'name' => 'مدل', 'options' => array( 'Samsung A52 / A52s' ) ) ),
+	'stock'      => array( 'quantity' => 4.0, 'status' => 'instock' ),
+) );
+connect_pair( 'ID:530', 'OPTIONS-BUNDLE' );
+$options_second = TCAS_Pairing::preview( pair_of( 'ID:531', 'OPTIONS-BUNDLE' ) );
+pair_test( 'فهرست مدل داخل optionsـِ Attribute همکار هم تشخیص داده میشود', 'connect' === $options_second['row']['status'] && ! empty( $options_second['row']['shared_remote'] ) );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

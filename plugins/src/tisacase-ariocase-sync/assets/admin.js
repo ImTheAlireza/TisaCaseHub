@@ -1031,7 +1031,24 @@
 				parts.note.hidden = false;
 				parts.note.classList.add('is-list');
 			}
+		} else if (Object.prototype.hasOwnProperty.call(row, 'shared_remote')) {
+			// سرور پرچم اشتراک را تأیید نکرد: نشان و یادداشت کهنه پاک شوند تا هنگام
+			// اتصال، درخواست «مرجع مشترک» دوباره فرستاده نشود.
+			entry.dataset.sharedRemote = '';
+			if (parts.note && (parts.note.textContent || '').includes('چند مدل را با هم دارد')) {
+				parts.note.textContent = '';
+				parts.note.hidden = true;
+			}
 		}
+		if (row.shared_rejected && parts.note) {
+			const rejectNote = 'نشان «مرجع مشترک» با فهرست مدل‌های همکار تأیید نشد؛ اتصال این کارت فقط به‌صورت تکی بررسی می‌شود.';
+			const current = parts.note.textContent || '';
+			if (!current.includes('تأیید نشد')) {
+				parts.note.textContent = current ? current + ' · ' + rejectNote : rejectNote;
+			}
+			parts.note.hidden = false;
+		}
+
 		if (row.reclaim) entry.dataset.reclaim = String(row.reclaim);
 		setPairEntryTitles(entry, row.local_name, row.remote_name);
 		if (parts.stock) {

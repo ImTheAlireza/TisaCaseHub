@@ -306,5 +306,67 @@ $result = TCAS_Matcher::match(
 );
 matcher_test( 'دو Variation محلی با مدل یکسان، فهرست مدل مبهم می‌سازد و وصل نمی‌شود', 0 === count( $result['matches'] ) );
 
+
+// --- 1.29.0: تشخیص هوشمندتر «مرجع مشترک» ---
+$comma_models = TCAS_Matcher::bundled_models( 'A30s,A50,A50s' );
+matcher_test( 'فهرست کاماجدای مدلها («A30s,A50,A50s») سه مدل میدهد', 3 === count( $comma_models ), json_encode( $comma_models, JSON_UNESCAPED_UNICODE ) );
+$newline_models = TCAS_Matcher::bundled_models( "A52; A52s\nA53" );
+matcher_test( 'نقطهویرگول و خط جدید هم جداکنندهٔ فهرست مدلاند', 3 === count( $newline_models ), json_encode( $newline_models, JSON_UNESCAPED_UNICODE ) );
+$inherited_models = TCAS_Matcher::bundled_models( 'Redmi Note 11 Pro / 12 Pro 4G' );
+matcher_test( 'واژهٔ خانواده به بخشهای فقطعددی به ارث میرسد', 2 === count( $inherited_models ) && array( '11', 'note', 'pro' ) === $inherited_models[0] && array( '12', 'note', 'pro' ) === $inherited_models[1], json_encode( $inherited_models, JSON_UNESCAPED_UNICODE ) );
+$plain_models = TCAS_Matcher::bundled_models( 'Samsung A52 / A52s' );
+matcher_test( 'مدل بدون واژهٔ خانواده («A52 / A52s») دستنخورده میماند', array( array( 'a52' ), array( 'a52s' ) ) === $plain_models, json_encode( $plain_models, JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'فهرست تکراری («A52 / A52») مرجع مشترک نمیسازد', array() === TCAS_Matcher::bundled_models( 'A52 / A52' ) );
+matcher_test( 'شناسهٔ عددی («ID:46922/46993») فهرست مدل حساب نمیشود', array() === TCAS_Matcher::bundled_models( 'ID:46922/46993' ) );
+matcher_test( 'فهرست ظرفیت («128GB / 256GB») فهرست مدل حساب نمیشود', array() === TCAS_Matcher::bundled_models( '128GB / 256GB' ) );
+
+$bundle = TCAS_Matcher::bundled_models( 'Samsung A52 / A52s' );
+matcher_test( 'واژههای تزئینی فارسی در نام Variation مانع تشخیص مدل نمیشوند', TCAS_Matcher::label_matches_models( 'A52s ـ قاب چرم باک روشن', $bundle ) );
+matcher_test( 'رنگ کنار مدل حذف میشود و مدل همچنان تشخیص داده میشود', TCAS_Matcher::label_matches_models( 'Samsung A52s / آبی', $bundle ) );
+matcher_test( 'پیشوند کوتاه SKU («CH-A52s») نادیده گرفته میشود', TCAS_Matcher::label_matches_models( 'CH-A52s', $bundle ) );
+matcher_test( 'ظرفیت کنار مدل («A52s 128GB») مانع تشخیص نمیشود', TCAS_Matcher::label_matches_models( 'A52s 128GB', $bundle ) );
+matcher_test( 'پسوند مدل («A52 Pro») دیگر با «A52» یکی گرفته نمیشود', ! TCAS_Matcher::label_matches_models( 'A52 Pro', $bundle ) );
+matcher_test( 'مدل خارج از فهرست («A54») پذیرفته نمیشود', ! TCAS_Matcher::label_matches_models( 'قاب A54', $bundle ) );
+matcher_test( 'مدل دوم همان فهرست هم تشخیص داده میشود', TCAS_Matcher::label_matches_models( 'A52s', $bundle ) );
+
+$evidence = TCAS_Matcher::shared_evidence(
+	array( 'نام محصول والد', 'ID:46922/46993', 'Samsung A52 / A52s' ),
+	array( 'قاب چرم A52s روشن', 'CH-A52s' )
+);
+matcher_test( 'مدرک مرجع مشترک از برچسب همکار + نام محلی ساخته میشود', ! empty( $evidence['shared'] ) && 'label' === $evidence['reason'] && 2 === count( $evidence['models'] ), json_encode( $evidence, JSON_UNESCAPED_UNICODE ) );
+$no_evidence = TCAS_Matcher::shared_evidence( array( 'Samsung A52 / A52s' ), array( 'قاب A54', 'SKU-999' ) );
+matcher_test( 'مدلی که در فهرست همکار نیست مدرک اشتراک نمیگیرد', empty( $no_evidence['shared'] ) && 'model_not_in_list' === $no_evidence['reason'] );
+$no_bundle = TCAS_Matcher::shared_evidence( array( 'قاب چرم ساده' ), array( 'A52' ) );
+matcher_test( 'برچسب تکمدلی هیچ مدرک اشتراکی نمیدهد', empty( $no_bundle['shared'] ) && 'no_bundle' === $no_bundle['reason'] );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:501', 'A30s', '' ), matcher_variation( 'ID:502', 'A50', '' ), matcher_variation( 'ID:503', 'A50s', '' ) ),
+	array( matcher_variation( 'ID:900/1', 'A30s,A50,A50s', '' ) )
+);
+$comma_refs = matcher_refs( $result );
+matcher_test( 'فهرست کاماجدای همکار روی سه Variation تیساکیس پخش میشود', 3 === count( $comma_refs ) && 3 === $result['summary']['list'] && in_array( 'ID:501=ID:900/1', $comma_refs, true ) && in_array( 'ID:502=ID:900/1', $comma_refs, true ) && in_array( 'ID:503=ID:900/1', $comma_refs, true ), implode( ',', $comma_refs ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:601', 'Note 11 Pro', '' ), matcher_variation( 'ID:602', 'Note 12 Pro', '' ) ),
+	array( matcher_variation( 'ID:900/2', 'Redmi Note 11 Pro / 12 Pro 4G', '' ) )
+);
+matcher_test( 'شمارهٔ مدل تنها در بخش دوم با ارثبری خانواده جفت میشود', 2 === $result['summary']['list'] && in_array( 'ID:601=ID:900/2', matcher_refs( $result ), true ) && in_array( 'ID:602=ID:900/2', matcher_refs( $result ), true ), implode( ',', matcher_refs( $result ) ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:701', 'Samsung A52', '' ), matcher_variation( 'ID:702', 'Samsung A52s', '' ), matcher_variation( 'ID:703', 'A54', '' ) ),
+	array( matcher_variation( 'ID:900/3', 'Samsung A52 / A52s', '' ) )
+);
+$shared_cards = 0;
+foreach ( $result['matches'] as $card ) {
+	if ( ! empty( $card['shared_remote'] ) ) { $shared_cards++; }
+}
+matcher_test( 'مدل بیرون از فهرست («A54») کارت مرجع مشترک نمیگیرد', 2 === $shared_cards && 2 === $result['summary']['list'] && 1 === count( $result['unmatched'] ), json_encode( $result['summary'], JSON_UNESCAPED_UNICODE ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:801', 'Samsung A52', '' ), matcher_variation( 'ID:802', 'Galaxy A52', '' ), matcher_variation( 'ID:803', 'A52s', '' ) ),
+	array( matcher_variation( 'ID:900/4', 'Samsung A52 / A52s', '' ) )
+);
+matcher_test( 'بخش مبهم فهرست، کل برچسب را کنار میگذارد (نه فقط همان بخش)', 0 === $result['summary']['list'] && 0 === count( $result['matches'] ), json_encode( $result['summary'], JSON_UNESCAPED_UNICODE ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -1204,4 +1204,54 @@ ok('کارت همگام‌سازی خودکار در تنظیمات با چرخ�
 ok('وضعیت جارو، صف و Backoff در کارت تنظیمات نمایش داده می‌شود', sweepView.includes('id="tcas-sweep-status"') && sweepView.includes('TCAS_Sweeper::summary_text()') && sweepView.includes('در صف است') && sweepView.includes('محدودیت اعمال کرده'));
 ok('دکمهٔ همگام‌سازی الان به همان عملیات AJAX وصل است', script.includes("simpleAction(sweepNow, 'sweep_now'") && script.includes("$('tcas-sweep-now')") && uiCss.includes('.tcas-sweep-status') && uiCss.includes('.tcas-sweep-actions') && uiCss.includes('.tcas-sweep-result'));
 ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکریپت و CSS واقعی تعریف شده‌اند', script.includes("list: { text: 'پیشنهاد · فهرست مدل'") && script.includes('entry.dataset.sharedRemote') && script.includes('shared_remote: entry.dataset.sharedRemote') && uiCss.includes('.tcas-pair-flag.is-list'));
+
+// ---------- ۵.۶۱) سرور پرچم «مرجع مشترک» را تأیید نکرد ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:407472', remote_code: 'ID:46922/46978', local_label: 'A52', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52'], extra: ['a52s'], shared_remote: true },
+				{ local_code: 'ID:407473', remote_code: 'ID:46922/46978', local_label: 'A54', remote_label: 'Samsung A52 / A52s', confidence: 'suggested', matched_by: 'suggested', score: 80, shared: ['a52'], extra: [] }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		if (action === 'tcas_preview_start') return reply({ token: 'e'.repeat(32), total: 2 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2, rows: [
+			pairRow(Object.assign(codes('ID:407472', 'ID:46922/46978'), { index: 0, shared_remote: true, status: 'connect', selectable: true })),
+			pairRow(Object.assign(codes('ID:407473', 'ID:46922/46978'), { index: 1, shared_remote: false, shared_rejected: true, status: 'error', selectable: false, message: 'مرجع از قبل متصل است؛ نشان مرجع مشترک تأیید نشد.' }))
+		] });
+		if (action === 'tcas_connect_start') return reply({ token: 'f'.repeat(32), total: 2 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 2, total: 2, rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('کارت تطبیقشده در ابتدا پرچم مرجع مشترک دارد', '1' === entries[0].dataset.sharedRemote);
+	const note = entries[0].querySelector('.tcas-pair-flag-note');
+	note.textContent = 'این Variation همکار چند مدل را با هم دارد؛ موجودی همان یک کد روی همهٔ کارت\u200cها یکی است.';
+	note.hidden = false;
+	// سناریوی رد: سرور همان کارت را بدون پرچم و با دلیل برمیگرداند.
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') return reply({ token: 'g'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [
+			pairRow(Object.assign(codes('ID:407472', 'ID:46922/46978'), { index: 0, shared_remote: false, shared_rejected: true, status: 'error', selectable: false, message: 'نشان مرجع مشترک تأیید نشد.' }))
+		] });
+		return reply({});
+	};
+	entries[0].querySelector('.tcas-row-select').checked = true;
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => '' === entries[0].dataset.sharedRemote, 8000);
+	ok('پرچم مرجع مشترک بعد از رد سرور از روی کارت پاک میشود', '' === entries[0].dataset.sharedRemote);
+	ok('یادداشت کهنهٔ «چند مدل» حذف و علت رد روی همان کارت نوشته میشود', !note.hidden && !note.textContent.includes('چند مدل') && note.textContent.includes('تأیید نشد'), note.textContent);
+	dom.window.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);
