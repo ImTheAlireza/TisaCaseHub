@@ -919,7 +919,7 @@ function type(entry, field, value) {
 
 	// اجرای دوم: همان صفحه با همان حافظه — فقط کارت به‌روزنشده فرستاده می‌شود.
 	const dom2 = makeDom(2); const { window: w2 } = dom2;
-	const sent = [];
+	const sent = []; let verifies = 0;
 	w2.localStorage.setItem('tcas:cards:ariocase', saved);
 	w2.fetch = async (url, options) => {
 		const action = options.body.get('action');
@@ -928,6 +928,7 @@ function type(entry, field, value) {
 		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
 		if (action === 'tcas_connect_start') return reply({ token: 'k'.repeat(32), total: 1 });
 		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'done', message: 'متصل شد', edit_url: '/edit/2' }] });
+		if (action === 'tcas_verify_pairs') { verifies++; return reply({ rows: [{ index: 0, connected: true }] }); }
 		return reply({});
 	};
 	w2.eval(script);
@@ -939,6 +940,7 @@ function type(entry, field, value) {
 	await waitFor(() => !c2[1].querySelector('.tcas-row-select').disabled, 8000);
 	w2.document.getElementById('tcas-connect-start').click();
 	await waitFor(() => sent.length > 0, 12000);
+	await waitFor(() => verifies > 0 && c2[0].classList.contains('is-saved'), 8000);
 	ok('بعد از بارگذاری تازه، کارت ذخیره‌شده بدون درخواست سبز و قفل است', c2[0].classList.contains('is-saved') && c2[0].querySelector('.tcas-row-select').disabled);
 	ok('فقط کارت به‌روزنشده برای اتصال فرستاده می‌شود', sent[0] === 'TS1 - AR1', String(sent[0]));
 	await waitFor(() => c2[1].dataset.state === 'done', 12000);
@@ -1307,6 +1309,88 @@ ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکر
 	const previewCss = fs.readFileSync(path.resolve(root, '../../../design/preview/ariocase-sync-issues.html'), 'utf8');
 	ok('پیشنمایش طراحی همان قانون قلم را دارد (جلوگیری از دوباره واگرا شدن)', previewCss.includes('--tcas-font:var(--tisa-font') && previewCss.includes('.tcas-shop-field input { width:100%; min-width:0; font-family:var(--tcas-font); font-weight:400; }'));
 	window.close();
+}
+
+
+// ---------- ۷) «متصل» فقط وقتی سرور نگاشت زنده را تأیید کند ----------
+{
+	const dom = makeDom(1); const { window } = dom; const actions = [];
+	const cached = { row: { status: 'done', message: 'جفت متصل شد', local_code: 'TS0', remote_code: 'AR0' }, mode: 'connected', ts: Date.now() };
+	window.localStorage.setItem('tcas:cards:ariocase', JSON.stringify({ 'ts0|ar0': cached }));
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action'); actions.push(action);
+		if (action === 'tcas_verify_pairs') return reply({ rows: [{ index: 0, connected: false }] });
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS0');
+	type(card, '.tcas-remote-code', 'AR0');
+	await waitFor(() => card.dataset.state === 'review', 8000);
+	ok('کارت کش‌شدهٔ «متصل» بدون نگاشت زنده، دیگر سبز نمیماند', !card.classList.contains('is-saved') && !card.querySelector('.tcas-pair-flag').textContent.includes('متصل شد'));
+	ok('علت «اتصال تأیید نشد» روی همان کارت نوشته میشود', card.querySelector('.tcas-pair-flag').textContent.includes('اتصال تأیید نشد'), card.querySelector('.tcas-pair-flag').textContent);
+	ok('کارت باطلشده دوباره قابل انتخاب و بررسی است', '' === card.dataset.savedDone && !card.querySelector('.tcas-row-select').disabled);
+	ok('رکورد کهنه از حافظهٔ مرورگر پاک میشود', !JSON.parse(window.localStorage.getItem('tcas:cards:ariocase') || '{}')['ts0|ar0']);
+	ok('تأیید فقط یک درخواست محلی میفرستد و هیچ درخواستی به همکار نمیرود', 1 === actions.filter((item) => 'tcas_verify_pairs' === item).length && !actions.includes('tcas_preview_pair'), actions.join(','));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom; const actions = [];
+	window.localStorage.setItem('tcas:cards:ariocase', JSON.stringify({ 'ts1|ar1': { row: { status: 'done', message: 'جفت متصل شد', local_code: 'TS1', remote_code: 'AR1' }, mode: 'connected', ts: Date.now() } }));
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action'); actions.push(action);
+		if (action === 'tcas_verify_pairs') return reply({ rows: [{ index: 0, connected: true }] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS1');
+	type(card, '.tcas-remote-code', 'AR1');
+	await waitFor(() => card.classList.contains('is-saved'), 8000);
+	ok('نگاشت زنده که سرور تأیید کند، کارت سبز و قفل میماند', card.dataset.state === 'done' && card.querySelector('.tcas-row-select').disabled);
+	ok('کارت تأییدشده بدون Preview تازه به همکار سبز میشود', !actions.includes('tcas_preview_pair'), actions.join(','));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: Object.assign(pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))), { status: 'connected', selectable: false, message: 'این جفت قبلاً متصل شده است.' }) });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS2');
+	type(card, '.tcas-remote-code', 'AR2');
+	await waitFor(() => card.dataset.state === 'done', 8000);
+	ok('پاسخ connected سرور، قرمز «غیرقابل اتصال» نمیشود', card.dataset.state === 'done' && card.querySelector('.tcas-pair-flag').textContent.includes('قبلاً متصل') && !card.querySelector('.tcas-pair-flag').textContent.includes('غیرقابل اتصال'), card.querySelector('.tcas-pair-flag').textContent);
+	ok('پیام «قبلاً متصل» با رنگ خطا نشان داده نمیشود', !card.querySelector('.tcas-pair-message').classList.contains('is-error'));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes('TS3', 'AR3')) });
+		if (action === 'tcas_preview_start') return reply({ token: 'n'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS3', 'AR3'), { index: 0 }))] });
+		if (action === 'tcas_connect_start') return reply({ token: 'o'.repeat(32), total: 1 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'connected', message: 'این جفت از قبل متصل است.' }] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS3');
+	type(card, '.tcas-remote-code', 'AR3');
+	await waitFor(() => card.dataset.state === 'review', 8000);
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => card.dataset.state === 'done', 8000);
+	ok('اتصال دوبارهٔ جفت متصل، خطا حساب نمیشود', card.querySelector('.tcas-pair-flag').textContent.includes('قبلاً متصل') && !card.querySelector('.tcas-pair-flag').textContent.includes('خطا'), card.querySelector('.tcas-pair-flag').textContent);
+	dom.window.close();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

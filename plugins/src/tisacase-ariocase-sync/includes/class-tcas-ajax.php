@@ -15,7 +15,7 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 		const STEP_MAX  = 20;
 
 		public static function init() {
-			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'group_action', 'clear_broken', 'clear_logs', 'sweep_now' );
+			$actions = array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'test_connection', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'verify_pairs', 'search_index', 'add_mapping', 'sync_mapping', 'disconnect_mapping', 'group_action', 'clear_broken', 'clear_logs', 'sweep_now' );
 			foreach ( $actions as $action ) {
 				add_action( 'wp_ajax_tcas_' . $action, array( __CLASS__, $action ) );
 			}
@@ -230,6 +230,11 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 				if ( is_wp_error( $result ) ) {
 					$row['status']  = 'error';
 					$row['message'] = $result->get_error_message();
+				} elseif ( ! empty( $result['already_connected'] ) ) {
+					// قبلاً متصل بوده؛ سبز «قبلاً متصل» نه خطا و نه «متصل شد» تازه.
+					$row['status']     = 'connected';
+					$row['message']    = $result['message'];
+					$row['product_id'] = (int) $result['product_id'];
 				} else {
 					$row['status']     = 'done';
 					$row['message']    = $result['message'];
@@ -449,6 +454,32 @@ if ( ! class_exists( 'TCAS_Ajax' ) ) {
 			);
 			wp_send_json_success( array( 'row' => $preview['row'] ) );
 		}
+
+
+		/**
+		 * تأیید دستهای وضعیت اتصال، فقط از نگاشت داخلی همین سایت.
+		 *
+		 * رابط بعد از بارگذاری صفحه میپرسد آیا کارتهایی که در حافظهٔ مرورگر
+		 * «متصل» ذخیره شدهاند هنوز واقعاً متصلاند. هیچ درخواستی به همکار،
+		 * هیچ نوشتن موجودی و هیچ ساخت نگاشتی انجام نمیشود.
+		 */
+		public static function verify_pairs() {
+			self::auth();
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::selected_id() : 'ariocase';
+			$raw   = isset( $_POST['pairs'] ) ? self::decode_transport( wp_unslash( $_POST['pairs'] ) ) : '';
+			$pairs = TCAS_Core::parse_pairs( $raw );
+			$rows  = array();
+			foreach ( $pairs as $index => $pair ) {
+				$rows[] = array(
+					'index'       => (int) $index,
+					'local_code'  => isset( $pair['local_code'] ) ? (string) $pair['local_code'] : '',
+					'remote_code' => isset( $pair['remote_code'] ) ? (string) $pair['remote_code'] : '',
+					'connected'   => TCAS_Pairing::connected_state( $pair, $partner_id ),
+				);
+			}
+			wp_send_json_success( array( 'rows' => $rows ) );
+		}
+
 
 		public static function test_connection() {
 			self::auth();

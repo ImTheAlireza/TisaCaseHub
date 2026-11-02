@@ -379,5 +379,37 @@ $plain_identity = TCAS_Mapping::identity_from_reference( 'ID:44616' );
 pair_test( 'هویت مرجع ID:والد/Variation درست خوانده میشود (بدون اخطار PCRE)', 44616 === $case_identity['parent_id'] && 44665 === $case_identity['remote_id'], json_encode( $case_identity ) );
 pair_test( 'هویت مرجع ID تکی همچنان درست است', 0 === $plain_identity['parent_id'] && 44616 === $plain_identity['remote_id'] );
 
+
+// --- 1.31.0: منبع حقیقت «متصل بودن» فقط نگاشت زندهٔ همین سایت ---
+local_product( 600, 'SKU-600' );
+$verify_pair = array( 'local_code' => 'ID:600', 'remote_code' => 'VERIFY-1' );
+pair_test( 'بدون نگاشت، connected_state ادعای اتصال نمیکند', ! TCAS_Pairing::connected_state( $verify_pair ) );
+TCAS_Mapping::map( 600, 'VERIFY-1', true, 'ariocase', false );
+pair_test( 'نگاشت زنده و فعال، متصل است', TCAS_Pairing::connected_state( $verify_pair ) );
+pair_test( 'مرجع متفاوت، متصل حساب نمیشود', ! TCAS_Pairing::connected_state( array( 'local_code' => 'ID:600', 'remote_code' => 'VERIFY-2' ) ) );
+TCAS_Mapping::map( 600, 'VERIFY-1', false, 'ariocase', false );
+pair_test( 'نگاشت غیرفعال، متصل حساب نمیشود', ! TCAS_Pairing::connected_state( $verify_pair ) );
+TCAS_Mapping::forget( 600 );
+pair_test( 'بعد از قطع اتصال، متصل حساب نمیشود', ! TCAS_Pairing::connected_state( $verify_pair ) );
+TCAS_Mapping::map( 600, 'VERIFY-1', true, 'ariocase', false );
+$connected_preview = TCAS_Pairing::preview( pair_of( 'ID:600', 'VERIFY-1' ) );
+pair_test( 'Preview جفت متصل، وضعیت connected برمیگرداند', 'connected' === $connected_preview['row']['status'] && false === $connected_preview['row']['selectable'] );
+$connect_again = TCAS_Pairing::connect( $connected_preview );
+pair_test( 'اتصال دوبارهٔ جفت متصل خطا نمیدهد و نگاشت دستنخورده میماند', ! is_wp_error( $connect_again ) && ! empty( $connect_again['already_connected'] ) && 'VERIFY-1' === TCAS_Mapping::remote_code( 600 ) );
+$deleted = local_product( 601, 'SKU-601' );
+TCAS_Mapping::map( 601, 'VERIFY-3', true, 'ariocase', false );
+unset( $GLOBALS['products'][601] );
+pair_test( 'محصول حدفشده با وجود نگاشت، متصل زنده حساب نمیشود', ! TCAS_Pairing::connected_state( array( 'local_code' => 'ID:601', 'remote_code' => 'VERIFY-3' ) ) );
+
+
+// نگاشت قدیمی که بهجای ID، SKU ذخیره کرده: هویت متا باید والد را هم چک کند.
+local_product( 602, 'SKU-602' );
+TCAS_Mapping::map( 602, 'AR-LEGACY', true, 'ariocase', false );
+update_post_meta( 602, TCAS_Mapping::META_REMOTE_ID, 42925 );
+update_post_meta( 602, TCAS_Mapping::META_PARENT_ID, 42678 );
+pair_test( 'نگاشت قدیمی SKU با هویت ذخیرهشدهٔ همان Variation همارز است', TCAS_Pairing::connected_state( array( 'local_code' => 'ID:602', 'remote_code' => 'ID:42678/42925' ) ) );
+update_post_meta( 602, TCAS_Mapping::META_PARENT_ID, 99999 );
+pair_test( 'والد متفاوت در نگاشت قدیمی SKU، همارز حساب نمیشود', ! TCAS_Pairing::connected_state( array( 'local_code' => 'ID:602', 'remote_code' => 'ID:42678/42925' ) ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

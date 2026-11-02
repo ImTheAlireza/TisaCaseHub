@@ -42,7 +42,7 @@ rest_test( 'فقط POST و با بررسی دسترسی ثبت می‌شود', '
 rest_test( 'دسترسی، همان کنترل صفحهٔ افزونه است', true === call_user_func( $route[2]['permission_callback'] ) );
 
 $allowed = TCAS_Rest::allowed();
-rest_test( 'همهٔ actionهای لازم از مسیر REST در دسترس‌اند', ! array_diff( array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'test_connection' ), $allowed ) );
+rest_test( 'همهٔ actionهای لازم از مسیر REST در دسترس‌اند', ! array_diff( array( 'preview_start', 'preview_step', 'connect_start', 'connect_step', 'resolve_link', 'search_products', 'match_variations', 'preview_pair', 'verify_pairs', 'test_connection' ), $allowed ) );
 rest_test( 'action غیرمجاز وارد فهرست نمی‌شود', ! in_array( 'delete_everything', $allowed, true ) );
 
 $response = TCAS_Rest::dispatch( new TCAS_Rest_Request_ArrayAccess( array( 'action' => 'delete_everything' ) ) );

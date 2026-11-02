@@ -106,14 +106,10 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 					$out['matches'][] = $match;
 					continue;
 				}
-				// ۱) همین Variation از قبل وصل است.
-				$own_code = TCAS_Mapping::remote_code( $local_id );
-				$own_same = '' !== $own_code && TCAS_Mapping::is_enabled( $local_id )
-					&& TCAS_Mapping::partner_id( $local_id ) === $partner_id
-					&& self::same_remote( $own_code, $reference, $local_id );
-				if ( $own_same ) {
+				// ۱) همین Variation از قبل وصل است (فقط نگاشت زندهٔ همین سایت).
+				if ( self::connected_state( $match, $partner_id, $local_id ) ) {
 					$match['connected']      = true;
-					$match['connected_code'] = $own_code;
+					$match['connected_code'] = TCAS_Mapping::remote_code( $local_id );
 					$out['matches'][]        = $match;
 					$out['connected']++;
 					continue;
@@ -171,12 +167,55 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				}
 				return ( ! $stored['parent_id'] || ! $fresh['parent_id'] || $stored['parent_id'] === $fresh['parent_id'] );
 			}
-			// کد ذخیره‌شده SKU است: هویت ذخیره‌شدهٔ همان محصول را مقایسه می‌کنیم.
+			// کد ذخیرهشده SKU است: هویت ذخیرهشدهٔ همان محصول را مقایسه میکنیم.
+			// والد هم وقتی هر دو معلوماند باید یکی باشد، وگرنه متای قدیمیِ یک
+			// Variation دیگر نباید «همان مرجع» جلوه کند.
 			if ( $local_id ) {
 				$identity = TCAS_Mapping::remote_identity( $local_id );
-				return $identity['remote_id'] && $identity['remote_id'] === $fresh['remote_id'];
+				if ( ! $identity['remote_id'] || $identity['remote_id'] !== $fresh['remote_id'] ) {
+					return false;
+				}
+				if ( $fresh['parent_id'] && $identity['parent_id'] && $identity['parent_id'] !== $fresh['parent_id'] ) {
+					return false;
+				}
+				return true;
 			}
 			return false;
+		}
+
+		/**
+		 * آیا این جفت **واقعاً** روی نگاشت داخلی همین سایت متصل و فعال است؟
+		 *
+		 * منبع حقیقت فقط متاهای نگاشت است؛ حافظهٔ مرورگر، Snapshot یا پاسخ
+		 * قبلی Preview هیچکدام حق ادعای «متصل شد» ندارند. هیچ درخواستی به
+		 * همکار زده نمیشود، برای همین میشود تعداد زیادی کارت را یکجا تأیید کرد.
+		 */
+		public static function connected_state( $pair, $partner_id = 'ariocase', $local_id = 0 ) {
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
+			$pair       = is_array( $pair ) ? $pair : array();
+			$local_code = isset( $pair['local_code'] ) ? trim( (string) $pair['local_code'] ) : '';
+			$reference  = isset( $pair['remote_code'] ) ? trim( (string) $pair['remote_code'] ) : '';
+			if ( '' === $local_code || '' === $reference || ! class_exists( 'TCAS_Mapping' ) ) {
+				return false;
+			}
+			// لینکها باید ابتدا به شناسه تبدیل شوند؛ نگاشت با لینک ذخیره نمیشود.
+			if ( preg_match( '#^https?://#i', $reference ) ) {
+				return false;
+			}
+			$local_id = $local_id ? absint( $local_id ) : self::reference_local_id( $local_code );
+			if ( ! $local_id ) {
+				return false;
+			}
+			$current = TCAS_Mapping::remote_code( $local_id );
+			if ( '' === $current
+				|| ! TCAS_Mapping::is_enabled( $local_id )
+				|| TCAS_Mapping::partner_id( $local_id ) !== $partner_id
+				|| ! self::same_remote( $current, $reference, $local_id ) ) {
+				return false;
+			}
+			// محصول حدفشده/خراب هم «صاحب نگاشت زنده» نیست.
+			$product = function_exists( 'wc_get_product' ) ? wc_get_product( $local_id ) : null;
+			return is_object( $product ) && ! is_wp_error( $product );
 		}
 
 		/**
@@ -373,7 +412,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
 			// قبلاً متصل شده و همان مرجع است (هویت یکی است، حتی اگر شکل کد فرق کند):
 			// هیچ درخواستی به همکار زده نمی‌شود.
-			if ( ! $is_url && '' !== $current && self::same_remote( $current, $reference, $local_id ) && TCAS_Mapping::is_enabled( $local_id ) ) {
+			if ( ! $is_url && self::connected_state( $pair, $partner_id, $local_id ) ) {
 				return array(
 					'row'      => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است؛ برای پرهیز از درخواست تکراری دوباره خوانده نمی‌شود.', $extra ),
 					'remote'   => null,
@@ -490,6 +529,15 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return new WP_Error( 'tcas_preview_missing', 'پیش‌نمایش معتبر برای این جفت در دسترس نیست.' );
 			}
 			$row = $preview['row'];
+			// اتصالی که سرور «قبلاً متصل» تشخیص داده، نباید خطا حساب شود؛ تکرار
+			// همان جفت نتیجهاش همان اتصال موجود است (Idempotent).
+			if ( 'connected' === $row['status'] ) {
+				return array(
+					'product_id'        => (int) $preview['local_id'],
+					'message'           => ! empty( $row['message'] ) ? (string) $row['message'] : 'این جفت از قبل متصل است.',
+					'already_connected' => true,
+				);
+			}
 			if ( empty( $row['selectable'] ) || 'connect' !== $row['status'] ) {
 				$message = ! empty( $row['message'] ) ? $row['message'] : 'این جفت قابل اتصال نیست.';
 				return new WP_Error( 'tcas_not_connectable', $message );

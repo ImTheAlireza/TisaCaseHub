@@ -454,6 +454,76 @@
 		saveCardStore(store);
 	}
 
+	// ---- تأیید سروری کارتهای «متصل» ذخیرهشده در حافظهٔ مرورگر ----
+	// حافظهٔ مرورگر فقط یک سرنخ است؛ منبع حقیقت نگاشت داخلی سایت است. اگر
+	// نگاشت حذف/غیرفعال شده باشد، کارت نباید همچنان سبز «متصل شد» بماند.
+	let verifyPending = [];
+	let verifyTimer = 0;
+
+	function savedConnectedRow(entry) {
+		const codes = entryCodes(entry);
+		if (!codes.local || !codes.remote) return null;
+		const saved = loadCardStore()[cardId(codes)];
+		return saved && 'connected' === saved.mode && saved.row ? saved.row : null;
+	}
+
+	function queueVerify(entry) {
+		if (!entry || '1' === entry.dataset.pendingVerify) return;
+		entry.dataset.pendingVerify = '1';
+		verifyPending.push(entry);
+		window.clearTimeout(verifyTimer);
+		verifyTimer = window.setTimeout(runVerify, 40);
+	}
+
+	function showStaleConnection(entry) {
+		entry.dataset.savedDone = '';
+		entry.dataset.verifiedConnected = '';
+		forgetCard(entry);
+		setEntryState(entry, 'review', {
+			flag: 'اتصال تأیید نشد · نیاز به بررسی',
+			tone: 'warn',
+			text: 'نگاشت فعالی برای این جفت پیدا نشد؛ «بررسی همه دوباره» و سپس «اتصال انتخابشدهها» را بزنید.'
+		});
+		setEntrySelectable(entry, true);
+		entry.dataset.checkedFor = '';
+		updateConnectAvailability();
+	}
+
+	async function runVerify() {
+		const queued = verifyPending.filter((item) => item && item.isConnected && '1' === item.dataset.pendingVerify);
+		verifyPending = [];
+		if (!queued.length) return;
+		const items = [];
+		queued.forEach((entry) => {
+			const { local, remote } = entryCodes(entry);
+			entry.dataset.pendingVerify = '';
+			if (!local || !remote) { showStaleConnection(entry); return; }
+			items.push({ entry, line: local + ' - ' + remote });
+		});
+		if (!items.length) return;
+		let data = null;
+		try {
+			data = await request('verify_pairs', { pairs: items.map((item) => item.line).join('\n') });
+		} catch (error) {
+			// پاسخی از سرور نرسید: اجازهٔ ادعای «متصل» وجود ندارد.
+			items.forEach((item) => showStaleConnection(item.entry));
+			return;
+		}
+		const rows = data && Array.isArray(data.rows) ? data.rows : [];
+		items.forEach((item, index) => {
+			const entry = item.entry;
+			if (!entry.isConnected) return;
+			if (rows[index] && rows[index].connected) {
+				const saved = savedConnectedRow(entry);
+				entry.dataset.verifiedConnected = '1';
+				entry.dataset.savedDone = '1';
+				applyConnectRow(entry, Object.assign({ index: 0 }, saved || { status: 'connected', message: 'این جفت از قبل متصل است.' }));
+			} else {
+				showStaleConnection(entry);
+			}
+		});
+	}
+
 	/** فقط رکوردی که به شناسه‌های قبلی همین کارت تعلق دارد پاک می‌شود. */
 	function forgetCard(entry) {
 		const key = entry.dataset.cardKey || '';
@@ -512,8 +582,11 @@
 			if (saved && saved.row) {
 				entry.dataset.cardKey = cardId(codes);
 				if ('connected' === saved.mode) {
+					// تا تأیید سرور «متصل» اعلام نمیشود؛ کارت موقتاً قفل و در حال تأیید است.
 					entry.dataset.savedDone = '1';
-					applyConnectRow(entry, Object.assign({ index: 0 }, saved.row));
+					setEntryState(entry, 'loading', { flag: 'در حال تأیید اتصال…', tone: 'idle', text: '' });
+					setEntrySelectable(entry, false);
+					queueVerify(entry);
 				} else {
 					applyRow(entry, saved.row);
 				}
@@ -1060,17 +1133,30 @@
 			parts.stock.textContent = cells.join(' · ');
 			parts.stock.hidden = false;
 		}
-		if (row.selectable) {
-			const outcome = flagOutcome(entry, row);
-			setEntryState(entry, outcome.state, { flag: outcome.flag, tone: outcome.tone, cls: outcome.cls, hint: outcome.hint });
-			setEntrySelectable(entry, 'connected' !== row.status);
-		} else {
-			setEntryState(entry, 'error', { flag: 'غیرقابل اتصال · نیاز به بررسی', tone: 'danger', hint: 'این کارت تا رفع مشکل قابل انتخاب و اتصال نیست.' });
+		if ('connected' === row.status) {
+			// سرور نگاشت زنده را تأیید کرده؛ قرمز «غیرقابل اتصال» پیام گمراهکنندهای است.
+			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'قبلاً متصل · بدون درخواست دوباره', tone: 'ok', hint: 'این جفت از قبل روی نگاشت داخلی سایت متصل و فعال است.' });
 			setEntrySelectable(entry, false);
+		} else {
+			if ('1' === entry.dataset.savedDone && '1' !== entry.dataset.verifiedConnected) {
+				// ادعای قبلی «متصل» دیگر معتبر نیست؛ رکورد کهنه پاک شود.
+				entry.dataset.savedDone = '';
+				forgetCard(entry);
+			}
+			if (row.selectable) {
+				const outcome = flagOutcome(entry, row);
+				setEntryState(entry, outcome.state, { flag: outcome.flag, tone: outcome.tone, cls: outcome.cls, hint: outcome.hint });
+				setEntrySelectable(entry, 'connected' !== row.status);
+			} else {
+				setEntryState(entry, 'error', { flag: 'غیرقابل اتصال · نیاز به بررسی', tone: 'danger', hint: 'این کارت تا رفع مشکل قابل انتخاب و اتصال نیست.' });
+				setEntrySelectable(entry, false);
+			}
 		}
 		if (parts.message) {
 			parts.message.textContent = row.message || '';
-			parts.message.classList.toggle('is-error', !row.selectable);
+			parts.message.classList.toggle('is-error', !row.selectable && 'connected' !== row.status);
 			// مرجع در اختیار محصول دیگری است: دکمهٔ آزادسازی دقیقاً روی همان کارت.
 			const old = parts.message.parentNode ? parts.message.parentNode.querySelector('.tcas-release-holder') : null;
 			if (old) old.remove();
@@ -1137,12 +1223,15 @@
 			return;
 		}
 		// اگر همین جفت قبلاً متصل و ذخیره شده باشد، هیچ درخواستی زده نمی‌شود.
+		// رکورد «متصل» حافظهٔ مرورگر فقط سرنخ است؛ ابتدا سرور تأیید میکند.
 		const savedCard = loadCardStore()[cardId({ local, remote })];
-		if (savedCard && 'connected' === savedCard.mode) {
+		if (savedCard && 'connected' === savedCard.mode && '1' !== entry.dataset.verifiedConnected) {
 			entry.dataset.savedDone = '1';
 			entry.dataset.cardKey = cardId({ local, remote });
 			setEntryLoading(entry, false);
-			applyConnectRow(entry, Object.assign({ index: 0 }, savedCard.row));
+			setEntryState(entry, 'loading', { flag: 'در حال تأیید اتصال…', tone: 'idle', text: '' });
+			setEntrySelectable(entry, false);
+			queueVerify(entry);
 			updateConnectAvailability();
 			return;
 		}
@@ -1204,6 +1293,7 @@
 		// از قبل متصل: نه بررسی دوباره، نه درخواست تازه به همکار.
 		if (match.connected) {
 			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
 			if (parts.stock) parts.stock.hidden = true;
 			setEntryState(entry, 'done', {
 				flag: 'قبلاً متصل · بدون درخواست دوباره',
@@ -1842,7 +1932,8 @@
 		setEntryLoading(entry, false);
 		if ('done' === row.status) {
 			entry.dataset.savedDone = '1';
-			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به‌روز شد', tone: 'ok', text: row.message || '' });
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به\u200cروز شد', tone: 'ok', text: row.message || '' });
 			setEntrySelectable(entry, false);
 			rememberCard(entry, row, 'connected');
 			if (row.edit_url && parts.message) {
@@ -1851,6 +1942,15 @@
 				if (parts.message.textContent) parts.message.appendChild(document.createTextNode(' '));
 				parts.message.appendChild(link);
 			}
+			return true;
+		}
+		if ('connected' === row.status) {
+			// تکرار همان جفت، اتصال تازهای نساخته؛ ولی خطا هم نیست.
+			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'قبلاً متصل · بدون درخواست دوباره', tone: 'ok', text: row.message || '' });
+			setEntrySelectable(entry, false);
+			rememberCard(entry, row, 'connected');
 			return true;
 		}
 		setEntryState(entry, 'error', { flag: 'خطا · نیاز به بررسی', tone: 'danger', text: row.message || '' });
