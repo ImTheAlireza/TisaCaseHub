@@ -4,7 +4,7 @@ Tags: woocommerce, stock, sync, api, inventory, partner
 Requires at least: 5.8
 Tested up to: 6.8
 Requires PHP: 7.4
-Stable tag: 1.30.0
+Stable tag: 1.30.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -145,6 +145,12 @@ SKU یا Label تکراری، چند کاندیدای هم‌امتیاز، اس
 قرارداد با Payloadهای WooCommerce آزمون شده، اما محیط ساخت اجازهٔ اتصال خروجی به ariocase.com نداشت. تست اتصال داخل سایت و Staging پیش از Production الزامی است.
 
 == Changelog ==
+
+= 1.30.1 =
+* **رفع قلم ورودی جستوجو:** در کارت «تطبیق خودکار Variationها»، فیلد جستوجوی نام محصول تیساکیس و فهرست پیشنهادهای زیرش قلم مونو (Latin) میگرفتند. حالا مثل بقیهٔ رابط از `--tisa-font` / Vazirmatn استفاده میکنند؛ placeholder و یادداشت «در حال جستوجو» هم همان قلم را دارند و متن پیشنهادها کمی درشتتر شد.
+* **قاعدهٔ مونو فقط برای کد:** قلم مونو به ورودیهای `SKU/ID` (`.tcas-local-code`، `.tcas-remote-code`، `.tcas-code-input`) محدود شد؛ تمام ورودیهای متنی، `select` و `textarea` قلم رابط میگیرند. توکنهای `--tcas-font` و `--tcas-mono` به زبان طراحی مشترک وصلاند و پیشنمایش `design/preview/ariocase-sync-issues.html` هم همسان نگه داشته شد.
+* **آزمونها:** ۴۸۷ سنجهٔ PHP و ۱۹۰ سنجهٔ jsdom، همه سبز؛ ۷ سنجهٔ تازه با `getComputedStyle` قلم واقعی ورودیها و ردیفهای پیشنهاد را قفل میکنند.
+
 
 = 1.30.0 =
 * **گزارش واقعی «A12,M12» و «A13 5G,A04s» رفع شد:** چهار Variationای که قبلاً همگی «بدون تطبیق / بدون همتا» بودند، حالا دو جفت درست میگیرند (به ترتیب با `Samsung A12` و `Samsung A13`).

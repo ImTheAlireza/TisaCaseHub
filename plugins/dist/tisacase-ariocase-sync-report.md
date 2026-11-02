@@ -1,3 +1,71 @@
+# گزارش نسخهٔ 1.30.1 — قلم ورودی جستوجوی محصول
+
+- **تاریخ:** 2026-11-02
+- **ZIP:** `plugins/dist/tisacase-ariocase-sync.zip`
+- **حجم:** 240,092 بایت (45 فایل)
+- **SHA-256:** `13cba0c1b81a37dd96936cc690eb2d0e9a8d49c9cd3edd10b2f4fd5dce726661`
+
+## گزارش کاربر (اسکرینشات)
+
+کارت «تطبیق خودکار Variationها»، فیلد جستوجوی محصول TisaCase با متن «شکوفه مای گیلاس» و یادداشت «در حال جستجو…» در فهرست پیشنهادها: قلم متن تایپشده و پیشنهادها با بقیهٔ صفحه فرق میکرد.
+
+## ریشه
+
+`assets/admin.css` این قانون را داشت:
+
+```css
+.tcas-shop-field input { width:100%; min-width:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-weight:600; }
+```
+
+یعنی **همه** ورودیهای `.tcas-shop-field` — از جمله فیلد جستوجوی آزاد نام محصول — قلم مونو لاتین میگرفتند. مرورگر برای حروف فارسی به قلم پیشفرض سیستم/وردپرس برمیگشت، پس متن تایپشده، placeholder و ردیفهای `<button>` فهرست پیشنهادها (= قلم پیشفرض دکمه) با قلم Vazirmatn صفحه ناهمخوان بودند. زبان طراحی مشترک صراحتاً میگوید: «مونو فقط برای کد (SKU، شناسه، لاگ، نام فایل)».
+
+## اصلاح
+
+| قبل | بعد |
+|---|---|
+| `--tisa-font` فقط روی `.tcas-wrap`، با fallback `Tahoma,Arial` | توکنهای `--tcas-font` (Vazirmatn → IRANSans → سیستم → Tahoma) و `--tcas-mono` روی `.tcas-wrap`، وصل به `--tisa-font` / `--tisa-mono` هاب |
+| ورودیهای متنی بدون `font-family` (قلم پیشفرض وردپرس) | قانون سراسری `.tcas-wrap input[type=text],…` قلم رابط میگیرد |
+| `.tcas-shop-field input` مونو + وزن ۶۰۰ | قلم رابط + وزن ۴۰۰ |
+| — | `.tcas-local-code` / `.tcas-remote-code` / `.tcas-code-input` همچنان `--tcas-mono` + وزن ۶۰۰ |
+| — | `::placeholder`، `.tcas-search-note` و `.tcas-search-row` صریحاً `--tcas-font` |
+| یادداشت ۱۱px / ردیف ۱۱٫۵px | هر دو ۱۲٫۵px برای خوانایی بهتر |
+| چهار `ui-monospace` پراکنده | همگی `var(--tcas-mono)` |
+
+پیشنمایش `design/preview/ariocase-sync-issues.html` (که کپیای از CSS را inline دارد) هم همراستا شد تا دوباره واگرا نشود.
+
+## آزمون
+
+| مجموعه | نتیجه |
+|---|---|
+| PHP (php-wasm 8.3) | **487** سبز · ۰ قرمز · ۰ اخطار |
+| jsdom | **190** سبز · ۰ قرمز (۷ سنجهٔ تازه) |
+| گیتهای بیلد | ۲۵۴ سنجه · ۳۹ فایل PHP داخل زیپ سالم |
+
+هفت سنجهٔ تازه CSS واقعی را داخل jsdom تزریق میکنند و با `getComputedStyle` قلم محاسبهشده را چک میکنند:
+
+```
+#tcas-smart-local  → var(--tcas-font)   (نه ui-monospace)
+#tcas-smart-remote → var(--tcas-font)
+#tcas-link-input   → var(--tcas-font)
+.tcas-local-code   → var(--tcas-mono)
+.tcas-remote-code  → var(--tcas-mono)
+.tcas-search-note  → var(--tcas-font)
+.tcas-search-row   → var(--tcas-font)
+```
+
+بهعلاوه همخوانی توکن قلم با پیشنمایش طراحی قفل شده است.
+
+## فایلها
+
+`assets/admin.css`، `design/preview/ariocase-sync-issues.html`، `tests/admin-js-tests.mjs`، `readme.txt`، `tisacase-ariocase-sync.php` و ZIP قابلنصب.
+
+## نصب
+
+`plugins/dist/tisacase-ariocase-sync.zip` → پیشخوان › افزونهها › بارگذاری، یا حذف و جایگزینی پوشه. چون `TCAS_VERSION` بامپ شده، کش مرورگر استایل تازه را میگیرد؛ در صورت نیاز یکبار صفحه را سخت رفرش کنید.
+
+
+---
+
 # گزارش نسخهٔ 1.30.0 — «A12,M12» و «A13 5G,A04s» دیگر بدونهمتا نمیمانند
 
 - **تاریخ:** 2026-11-02

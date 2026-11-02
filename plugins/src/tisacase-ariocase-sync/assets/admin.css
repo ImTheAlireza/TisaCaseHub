@@ -4,10 +4,13 @@
   --tcas-muted:var(--tisa-muted,#77828A);
   --tcas-border:var(--tisa-border,#E3E1DA);
   --tcas-soft:var(--tisa-surface-2,#FAFAF8);
+  /* قلم رابط برای متن/جستوجو؛ مونو فقط برای کد، SKU و شناسه. */
+  --tcas-font:var(--tisa-font,"Vazirmatn","IRANSans",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Tahoma,sans-serif);
+  --tcas-mono:var(--tisa-mono,ui-monospace,"SFMono-Regular",Consolas,monospace);
   max-width:1240px;
   margin:16px auto;
   color:var(--tcas-ink);
-  font-family:var(--tisa-font,Tahoma,Arial,sans-serif);
+  font-family:var(--tcas-font);
 }
 .tcas-wrap * { box-sizing:border-box; }
 .tcas-wrap [hidden] { display:none!important; }
@@ -127,7 +130,7 @@
 .tcas-label { display:block; margin:0 0 5px; color:var(--tcas-ink); font-size:var(--tisa-fs-control,13px); font-weight:600; }
 .tcas-label small { color:var(--tcas-muted); font-weight:400; }
 .tcas-textarea { width:100%; max-width:100%; min-height:112px; padding:10px 11px; line-height:1.75; resize:vertical; }
-.tcas-code-input { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:var(--tisa-fs-meta,12.5px); }
+.tcas-code-input { font-family:var(--tcas-mono); font-size:var(--tisa-fs-meta,12.5px); }
 
 .tcas-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; }
 .tcas-btn-primary.button.button-primary {
@@ -160,7 +163,7 @@
 .tcas-table .tcas-check-col { width:42px; text-align:center; }
 .tcas-code-cell { direction:rtl; text-align:right; }
 .tcas-code-cell code,.tcas-table code { direction:ltr; unicode-bidi:embed; overflow-wrap:anywhere; }
-.tcas-code-cell code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; }
+.tcas-code-cell code { font-family:var(--tcas-mono); }
 .tcas-result-connected { opacity:.66; }
 .tcas-result-error { background:var(--tisa-danger-soft,#FBECEA); }
 .tcas-results { display:grid; gap:6px; margin-top:10px; }
@@ -260,6 +263,7 @@
   border-radius:var(--tisa-r-xs,8px);
   background:var(--tisa-surface,#fff);
   color:var(--tcas-ink);
+  font-family:var(--tcas-font);
   box-shadow:none;
 }
 .tcas-wrap input:focus,.tcas-wrap select:focus,.tcas-wrap textarea:focus { border-color:var(--tcas-primary); box-shadow:0 0 0 1px var(--tcas-primary); }
@@ -397,7 +401,12 @@
 .tcas-shop-label bdi { color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); font-weight:400; }
 .tcas-shop-local .tcas-shop-label { color:var(--tisa-primary-deep,#0A5F52); }
 .tcas-shop-remote .tcas-shop-label { color:var(--tisa-info,#246B8E); }
-.tcas-shop-field input { width:100%; min-width:0; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-weight:600; }
+/* نام محصول و عبارت جستوجو با قلم رابط نوشته میشوند، نه قلم کد. */
+.tcas-shop-field input { width:100%; min-width:0; font-family:var(--tcas-font); font-weight:400; }
+.tcas-shop-field input.tcas-local-code,
+.tcas-shop-field input.tcas-remote-code,
+.tcas-shop-field input.tcas-code-input { font-family:var(--tcas-mono); font-weight:600; }
+.tcas-shop-field input::placeholder { font-family:var(--tcas-font); font-weight:400; }
 .tcas-shop-field input[readonly] { background:var(--tcas-soft); }
 .tcas-variation-title { display:block; min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); font-weight:400; line-height:1.55; overflow-wrap:anywhere; }
 .tcas-pair-link { display:grid; place-items:center; width:24px; height:34px; color:var(--tcas-muted); font-weight:700; }
@@ -461,8 +470,8 @@
 .tcas-search-host.is-open .tcas-search-results { box-shadow:0 16px 32px rgba(15,42,38,.18); }
 .tcas-search-results { position:absolute; z-index:40; inset-inline:0; top:calc(100% + 4px); display:grid; gap:2px; max-height:290px; overflow:auto; padding:5px; border:1px solid var(--tcas-border); border-radius:var(--tisa-r-xs,8px); background:#fff; box-shadow:0 10px 24px rgba(15,42,38,.12); }
 .tcas-search-results[hidden] { display:none; }
-.tcas-search-note { margin:4px 6px; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,11px); line-height:1.7; }
-.tcas-search-row { display:grid; gap:1px; width:100%; padding:7px 9px; border:1px solid transparent; border-radius:var(--tisa-r-xs,8px); background:transparent; text-align:start; cursor:pointer; font-size:var(--tisa-fs-tiny,11.5px); line-height:1.7; }
+.tcas-search-note { margin:4px 6px; color:var(--tcas-muted); font-family:var(--tcas-font); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
+.tcas-search-row { display:grid; gap:1px; width:100%; padding:7px 9px; border:1px solid transparent; border-radius:var(--tisa-r-xs,8px); background:transparent; text-align:start; cursor:pointer; font-family:var(--tcas-font); font-size:var(--tisa-fs-meta,12.5px); line-height:1.7; }
 .tcas-search-row:hover, .tcas-search-row.is-active { border-color:#BFE3D8; background:var(--tisa-primary-soft,#E8F0EE); }
 .tcas-search-name { min-width:0; color:var(--tisa-ink,#1F2A2E); font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .tcas-search-label { min-width:0; color:var(--tcas-muted); font-size:var(--tisa-fs-tiny,10.5px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -476,7 +485,7 @@
 .tcas-request-diag-row { display:flex; flex-wrap:wrap; gap:6px; padding:2px 0; border-top:1px dashed var(--tcas-border); }
 .tcas-request-diag-label { flex:0 0 150px; color:var(--tcas-muted); font-weight:600; }
 .tcas-request-diag-value { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; unicode-bidi:plaintext; }
-.tcas-request-diag-value[dir=ltr] { text-align:left; direction:ltr; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:var(--tisa-fs-tiny,10px); }
+.tcas-request-diag-value[dir=ltr] { text-align:left; direction:ltr; font-family:var(--tcas-mono); font-size:var(--tisa-fs-tiny,10px); }
 .tcas-request-diag-actions { margin-top:8px; }
 .tcas-request-diag-copy { min-height:28px; }
 

@@ -1284,4 +1284,29 @@ ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکر
 	dom.window.close();
 }
 
+
+// ---------- ۶) قلم ورودی جستوجوی محصول و فهرست پیشنهادها ----------
+{
+	const dom = new JSDOM(`<!doctype html><html lang="fa" dir="rtl"><body><style>${uiCss}</style>
+		<div class="tcas-wrap">
+			<label class="tcas-shop-field tcas-shop-local"><input id="tcas-smart-local" type="text" dir="auto" value="شکوفه مای گیلاس"></label>
+			<label class="tcas-shop-field tcas-shop-remote"><input id="tcas-smart-remote" type="text" dir="ltr" value="ID:44616/44665"></label>
+			<label class="tcas-shop-field"><input class="tcas-local-code" type="text" dir="ltr" value="ID:305525"></label>
+			<label class="tcas-shop-field"><input class="tcas-remote-code" type="text" dir="ltr" value="ID:44616/44665"></label>
+			<label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input" type="text" dir="auto"></span></label>
+			<div class="tcas-search-results"><p class="tcas-search-note">در حال جستجو…</p><button type="button" class="tcas-search-row">قاب گیلاس</button></div>
+		</div></body></html>`, { url: 'https://tisa.test/wp-admin/admin.php?page=tcas' });
+	const { window } = dom;
+	const fontOf = (selector) => String(window.getComputedStyle(window.document.querySelector(selector)).fontFamily || '');
+	ok('ورودی جستوجوی نام محصول قلم رابط میگیرد، نه قلم مونو', fontOf('#tcas-smart-local') === 'var(--tcas-font)' && !fontOf('#tcas-smart-local').includes('monospace'), fontOf('#tcas-smart-local'));
+	ok('ورودی مرجع همکار هم قلم رابط میگیرد', fontOf('#tcas-smart-remote') === 'var(--tcas-font)');
+	ok('ورودی تبدیل لینک نیز قلم رابط میگیرد', fontOf('#tcas-link-input') === 'var(--tcas-font)', fontOf('#tcas-link-input'));
+	ok('کدهای SKU/ID همچنان قلم مونو دارند', fontOf('.tcas-local-code') === 'var(--tcas-mono)' && fontOf('.tcas-remote-code') === 'var(--tcas-mono)', fontOf('.tcas-local-code') + ' / ' + fontOf('.tcas-remote-code'));
+	ok('یادداشت و ردیفهای فهرست پیشنهادها قلم رابط دارند', fontOf('.tcas-search-note') === 'var(--tcas-font)' && fontOf('.tcas-search-row') === 'var(--tcas-font)', fontOf('.tcas-search-row'));
+	ok('قلم رابط Vazirmatn و قلم مونو به توکنهای زبان طراحی وصلاند', uiCss.includes('--tcas-font:var(--tisa-font,"Vazirmatn"') && uiCss.includes('--tcas-mono:var(--tisa-mono,') && uiCss.includes('.tcas-shop-field input::placeholder { font-family:var(--tcas-font)'));
+	const previewCss = fs.readFileSync(path.resolve(root, '../../../design/preview/ariocase-sync-issues.html'), 'utf8');
+	ok('پیشنمایش طراحی همان قانون قلم را دارد (جلوگیری از دوباره واگرا شدن)', previewCss.includes('--tcas-font:var(--tisa-font') && previewCss.includes('.tcas-shop-field input { width:100%; min-width:0; font-family:var(--tcas-font); font-weight:400; }'));
+	window.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);
