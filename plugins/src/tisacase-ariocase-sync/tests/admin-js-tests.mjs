@@ -1254,4 +1254,34 @@ ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکر
 	dom.window.close();
 }
 
+
+// ---------- ۵.۶۲) نشان «فهرست مدل محلی» (A12,M12 ↔ Samsung A12) ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:305525', remote_code: 'ID:44616/44665', local_label: 'A12,M12', remote_label: 'Samsung A12', confidence: 'local_list', matched_by: 'local_list', score: 82, shared: ['a12'], extra: ['m12'], local_list: true },
+				{ local_code: 'ID:305526', remote_code: 'ID:44616/44666', local_label: 'A13 5G,A04s', remote_label: 'Samsung A13', confidence: 'local_list', matched_by: 'local_list', score: 82, shared: ['a13'], extra: ['a4s'], local_list: true }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('نشان «فهرست مدل محلی» روی کارت دیده میشود', entries[0].querySelector('.tcas-pair-flag').textContent.includes('فهرست مدل محلی'));
+	const listNote = entries[0].querySelector('.tcas-pair-flag-note');
+	ok('یادداشت، مدل مشترک و مدلهای دیگر همان Variation تیساکیس را میگوید', !listNote.hidden && listNote.textContent.includes('a12') && listNote.textContent.includes('m12') && listNote.textContent.includes('همین Variation تیساکیس'), listNote.textContent);
+	ok('گزارش تطبیق، پیشنهادهای فهرست مدل محلی را میشمارد', window.document.getElementById('tcas-smart-status').textContent.includes('2 پیشنهاد از فهرست مدل محلی'));
+	ok('کارت فهرست مدل محلی مرجع مشترک نمیسازد', '' === entries[0].dataset.sharedRemote);
+	dom.window.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

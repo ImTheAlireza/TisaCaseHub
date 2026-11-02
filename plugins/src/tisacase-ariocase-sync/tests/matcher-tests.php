@@ -368,5 +368,41 @@ $result = TCAS_Matcher::match(
 );
 matcher_test( 'بخش مبهم فهرست، کل برچسب را کنار میگذارد (نه فقط همان بخش)', 0 === $result['summary']['list'] && 0 === count( $result['matches'] ), json_encode( $result['summary'], JSON_UNESCAPED_UNICODE ) );
 
+
+// --- 1.30.0: گزارش واقعی — «فهرست مدل محلی» در برابر Variation تکمدلی همکار ---
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:305525', 'A12,M12', '' ), matcher_variation( 'ID:305526', 'A13 5G,A04s', '' ) ),
+	array( matcher_variation( 'ID:44616/44665', 'Samsung A12', '' ), matcher_variation( 'ID:44616/44666', 'Samsung A13', '' ) )
+);
+$case_refs = matcher_refs( $result );
+matcher_test( 'A12,M12 و A13 5G,A04s هر کدام همتای درست میگیرند', 2 === count( $case_refs ) && in_array( 'ID:305525=ID:44616/44665', $case_refs, true ) && in_array( 'ID:305526=ID:44616/44666', $case_refs, true ), implode( ',', $case_refs ) );
+matcher_test( 'دو جفت با نشان «فهرست مدل محلی» و مدل مشترک/اضافه درستاند', 2 === $result['summary']['local_list'] && 'local_list' === $result['matches'][0]['confidence'] && array( 'a12' ) === $result['matches'][0]['shared'] && in_array( 'm12', $result['matches'][0]['extra'], true ) && array( 'a13' ) === $result['matches'][1]['shared'], json_encode( $result['matches'], JSON_UNESCAPED_UNICODE ) );
+matcher_test( 'هیچ کارت «بدون همتا/مبهم» برای این چهار Variation نمیماند', 0 === count( $result['ambiguous'] ) && 0 === count( $result['unmatched'] ) );
+matcher_test( 'فهرست مدل محلی مرجع مشترک نمیسازد (هر کارت یک همتا)', empty( $result['matches'][0]['shared_remote'] ) && empty( $result['matches'][1]['shared_remote'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A12,M12', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A12s', '' ) )
+);
+matcher_test( 'A12s با A12,M12 جفت نمیشود (برابری دقیق مدل)', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A13 5G,A04s', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A13 4G', '' ) )
+);
+matcher_test( 'نسل شبکهٔ متناقض 5G/4G در فهرست مدل محلی هم مانع است', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A12,M12 / آبی', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A12 / صورتی', '' ) )
+);
+matcher_test( 'رنگ متناقض در فهرست مدل محلی هم جفت نمیسازد', 0 === count( $result['matches'] ) );
+
+$result = TCAS_Matcher::match(
+	array( matcher_variation( 'ID:1', 'A12,M12', '' ) ),
+	array( matcher_variation( 'ID:9/1', 'Samsung A12', '' ), matcher_variation( 'ID:9/2', 'Samsung M12', '' ) )
+);
+matcher_test( 'وقتی یک Variation محلی دو همتای همفهرست دارد، حدس زده نمیشود', 0 === count( $result['matches'] ) && 3 === count( $result['ambiguous'] ) + count( $result['unmatched'] ), json_encode( $result['summary'], JSON_UNESCAPED_UNICODE ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

@@ -372,5 +372,12 @@ connect_pair( 'ID:530', 'OPTIONS-BUNDLE' );
 $options_second = TCAS_Pairing::preview( pair_of( 'ID:531', 'OPTIONS-BUNDLE' ) );
 pair_test( 'فهرست مدل داخل optionsـِ Attribute همکار هم تشخیص داده میشود', 'connect' === $options_second['row']['status'] && ! empty( $options_second['row']['shared_remote'] ) );
 
+
+// --- 1.30.0: هویت مرجع «ID:والد/Variation» بدون خطای PCRE ---
+$case_identity = TCAS_Mapping::identity_from_reference( 'ID:44616/44665' );
+$plain_identity = TCAS_Mapping::identity_from_reference( 'ID:44616' );
+pair_test( 'هویت مرجع ID:والد/Variation درست خوانده میشود (بدون اخطار PCRE)', 44616 === $case_identity['parent_id'] && 44665 === $case_identity['remote_id'], json_encode( $case_identity ) );
+pair_test( 'هویت مرجع ID تکی همچنان درست است', 0 === $plain_identity['parent_id'] && 44616 === $plain_identity['remote_id'] );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

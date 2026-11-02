@@ -50,6 +50,7 @@
 		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
 		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
 		list: { text: 'پیشنهاد · فهرست مدل', cls: 'is-list', hint: 'این Variation همکار چند مدل را با هم دارد و هر مدل، Variation جداگانه‌ای در تیساکیس است؛ همین موجودی روی همهٔ آن کارت‌ها اعمال می‌شود.' },
+		local_list: { text: 'پیشنهاد · فهرست مدل محلی', cls: 'is-list', hint: 'این Variation تیساکیس چند مدل را با هم دارد؛ یکی از همان مدل‌ها در یک Variation همکار پیدا شد. مدل‌های دیگر پوشش داده نشده‌اند، پیش از اتصال تأیید کنید.' },
 		label: { text: 'بررسی · تطبیق از برچسب', cls: '', hint: 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.' },
 		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' },
 		manual: { text: 'دستی · نیاز به بررسی', cls: 'is-manual', hint: 'این جفت دستی وارد شده است؛ کد و موجودی هر دو طرف را کنترل کنید.' },
@@ -481,11 +482,12 @@
 			const ok = 'exact' === confidence;
 			// کارت «فهرست مدل» هم نیاز به تأیید دارد ولی دلیلش مشخص است؛ برچسب آن حفظ می‌شود.
 			const list = 'list' === confidence;
+			const localList = 'local_list' === confidence;
 			// تطبیق رنگ‌محور دلیلش را روی خود کارت می‌گوید تا با «نیاز به بررسی» گم نشود.
 			const color = 'color' === confidence;
 			setEntrySelectable(entry, !entry.dataset.savedDone);
 			setEntryState(entry, ok ? 'ready' : 'review', {
-				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : (color ? 'رنگ یکسان · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال')),
+				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : (localList ? 'پیشنهاد · فهرست مدل محلی · آمادهٔ اتصال' : (color ? 'رنگ یکسان · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال'))),
 				tone: ok ? 'ok' : 'warn',
 				text: 'موجودی هنگام زدن «اتصال انتخاب‌شده‌ها» خوانده می‌شود.'
 			});
@@ -1221,6 +1223,12 @@
 					+ (match.taken_by_name ? '' : '');
 				parts.note.hidden = false;
 				parts.note.classList.add('is-list');
+			} else if ('local_list' === confidence) {
+				parts.note.textContent = 'مدل مشترک: ' + (shared.join('، ') || '—')
+					+ (extra.length ? ' · مدل‌های دیگر در همین Variation تیساکیس: ' + extra.join('، ') : '')
+					+ ' · پیش از اتصال تأیید کنید.';
+				parts.note.hidden = false;
+				parts.note.classList.add('is-list');
 			} else if (match.shared_remote) {
 				parts.note.textContent = 'مدل این کارت: ' + (shared.join('، ') || '—')
 					+ (extra.length ? ' · مدل‌های دیگر در همان Variation همکار: ' + extra.join('، ') : '')
@@ -1631,6 +1639,7 @@
 		const colorCount = batch.filter((match) => match && 'color' === match.confidence).length;
 		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
 		const listCount = batch.filter((match) => match && 'list' === match.confidence).length;
+		const localListCount = batch.filter((match) => match && 'local_list' === match.confidence).length;
 		const sharedRemotes = new Set(batch.filter((match) => match && match.shared_remote).map((match) => String(match.remote_code))).size;
 		const alreadyConnected = batch.filter((match) => match && match.connected).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
@@ -1639,6 +1648,7 @@
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
 		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
 		if (listCount) smartParts.push(String(listCount) + ' کارت از ' + String(sharedRemotes) + ' Variation چندمدلی همکار');
+		if (localListCount) smartParts.push(String(localListCount) + ' پیشنهاد از فهرست مدل محلی');
 		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «نیاز به بررسی» علامت خورد.';
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
