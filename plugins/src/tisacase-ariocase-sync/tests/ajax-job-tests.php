@@ -11,12 +11,26 @@ function wp_send_json_success( $data ) { throw new TCAS_JSON_Response( true, $da
 function get_transient( $key ) { return isset( $GLOBALS['transients'][ $key ] ) ? $GLOBALS['transients'][ $key ] : false; }
 function set_transient( $key, $value, $ttl ) { $GLOBALS['transients'][ $key ] = $value; return true; }
 function get_current_user_id() { return 7; } function admin_url( $path = '' ) { return 'https://tisa.test/wp-admin/' . $path; }
-class TCAS_Core { const NONCE = 'tcas_admin_nonce'; public static function can() { return true; } public static function is_configured() { return true; } }
+class TCAS_Core {
+	const NONCE = 'tcas_admin_nonce';
+	public static function can() { return true; }
+	public static function is_configured() { return true; }
+	public static function parse_pairs( $raw ) {
+		$out = array();
+		foreach ( preg_split( '/\\r\\n|\\r|\\n/', (string) $raw ) as $line ) {
+			$parts = preg_split( '/\\s+-\\s+/u', trim( $line ) );
+			if ( 2 === count( $parts ) ) { $out[] = array( 'local_code' => $parts[0], 'remote_code' => $parts[1], 'error' => '' ); }
+		}
+		return $out;
+	}
+}
 class TCAS_Logger { public static function add( ...$args ) {} }
 class TCAS_Pairing {
 	public static $preview_calls = 0; public static $received_preview = null;
 	public static function preview( $pair ) { self::$preview_calls++; return array( 'row' => array( 'selectable' => true, 'status' => 'connect', 'local_code' => $pair['local_code'], 'remote_code' => 'RESOLVED-22' ), 'fresh' => 'fresh-' . self::$preview_calls ); }
 	public static function connect( $preview ) { self::$received_preview = $preview; return array( 'message' => 'done', 'product_id' => 91 ); }
+	public static $verify_map = array();
+	public static function connected_state( $pair ) { return ! empty( self::$verify_map[ $pair['local_code'] . ' - ' . $pair['remote_code'] ] ); }
 }
 class TCAS_Link_Resolver {
 	public static $product = null; public static $last_url = '';
@@ -140,6 +154,16 @@ $_POST['mode'] = 'unknown';
 $response = invoke_ajax( 'group_action' );
 ajax_test( 'حالت ناشناختهٔ عملیات گروهی رد می‌شود', $response && ! $response->success && 400 === $response->status );
 unset( $_POST['ids'], $_POST['mode'] );
+
+
+// --- 1.31.0: تأیید دستهای اتصال، بدون هیچ درخواست به همکار ---
+TCAS_Api::$reference = null;
+$_POST['pairs'] = "ID:50 - AR-A\nID:51 - AR-B";
+TCAS_Pairing::$verify_map = array( 'ID:50 - AR-A' => true );
+$response = invoke_ajax( 'verify_pairs' );
+ajax_test( 'تأیید اتصال، وضعیت هر جفت را جدا و فقط از نگاشت زنده برمیگرداند', $response && $response->success && 2 === count( $response->data['rows'] ) && ! empty( $response->data['rows'][0]['connected'] ) && empty( $response->data['rows'][1]['connected'] ), $response ? wp_json_encode_safe( $response->data ) : 'no response' );
+ajax_test( 'تأیید اتصال هیچ درخواستی به همکار نمیزند', null === TCAS_Api::$reference );
+unset( $_POST['pairs'] );
 
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

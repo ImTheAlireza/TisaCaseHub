@@ -919,7 +919,7 @@ function type(entry, field, value) {
 
 	// اجرای دوم: همان صفحه با همان حافظه — فقط کارت به‌روزنشده فرستاده می‌شود.
 	const dom2 = makeDom(2); const { window: w2 } = dom2;
-	const sent = [];
+	const sent = []; let verifies = 0;
 	w2.localStorage.setItem('tcas:cards:ariocase', saved);
 	w2.fetch = async (url, options) => {
 		const action = options.body.get('action');
@@ -928,6 +928,7 @@ function type(entry, field, value) {
 		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
 		if (action === 'tcas_connect_start') return reply({ token: 'k'.repeat(32), total: 1 });
 		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'done', message: 'متصل شد', edit_url: '/edit/2' }] });
+		if (action === 'tcas_verify_pairs') { verifies++; return reply({ rows: [{ index: 0, connected: true }] }); }
 		return reply({});
 	};
 	w2.eval(script);
@@ -939,6 +940,7 @@ function type(entry, field, value) {
 	await waitFor(() => !c2[1].querySelector('.tcas-row-select').disabled, 8000);
 	w2.document.getElementById('tcas-connect-start').click();
 	await waitFor(() => sent.length > 0, 12000);
+	await waitFor(() => verifies > 0 && c2[0].classList.contains('is-saved'), 8000);
 	ok('بعد از بارگذاری تازه، کارت ذخیره‌شده بدون درخواست سبز و قفل است', c2[0].classList.contains('is-saved') && c2[0].querySelector('.tcas-row-select').disabled);
 	ok('فقط کارت به‌روزنشده برای اتصال فرستاده می‌شود', sent[0] === 'TS1 - AR1', String(sent[0]));
 	await waitFor(() => c2[1].dataset.state === 'done', 12000);
@@ -1204,4 +1206,191 @@ ok('کارت همگام‌سازی خودکار در تنظیمات با چرخ�
 ok('وضعیت جارو، صف و Backoff در کارت تنظیمات نمایش داده می‌شود', sweepView.includes('id="tcas-sweep-status"') && sweepView.includes('TCAS_Sweeper::summary_text()') && sweepView.includes('در صف است') && sweepView.includes('محدودیت اعمال کرده'));
 ok('دکمهٔ همگام‌سازی الان به همان عملیات AJAX وصل است', script.includes("simpleAction(sweepNow, 'sweep_now'") && script.includes("$('tcas-sweep-now')") && uiCss.includes('.tcas-sweep-status') && uiCss.includes('.tcas-sweep-actions') && uiCss.includes('.tcas-sweep-result'));
 ok('نشان «فهرست مدل» و پرچم مرجع مشترک در اسکریپت و CSS واقعی تعریف شده‌اند', script.includes("list: { text: 'پیشنهاد · فهرست مدل'") && script.includes('entry.dataset.sharedRemote') && script.includes('shared_remote: entry.dataset.sharedRemote') && uiCss.includes('.tcas-pair-flag.is-list'));
+
+// ---------- ۵.۶۱) سرور پرچم «مرجع مشترک» را تأیید نکرد ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:407472', remote_code: 'ID:46922/46978', local_label: 'A52', remote_label: 'Samsung A52 / A52s', confidence: 'list', matched_by: 'list', score: 84, shared: ['a52'], extra: ['a52s'], shared_remote: true },
+				{ local_code: 'ID:407473', remote_code: 'ID:46922/46978', local_label: 'A54', remote_label: 'Samsung A52 / A52s', confidence: 'suggested', matched_by: 'suggested', score: 80, shared: ['a52'], extra: [] }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		if (action === 'tcas_preview_start') return reply({ token: 'e'.repeat(32), total: 2 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 2, total: 2, rows: [
+			pairRow(Object.assign(codes('ID:407472', 'ID:46922/46978'), { index: 0, shared_remote: true, status: 'connect', selectable: true })),
+			pairRow(Object.assign(codes('ID:407473', 'ID:46922/46978'), { index: 1, shared_remote: false, shared_rejected: true, status: 'error', selectable: false, message: 'مرجع از قبل متصل است؛ نشان مرجع مشترک تأیید نشد.' }))
+		] });
+		if (action === 'tcas_connect_start') return reply({ token: 'f'.repeat(32), total: 2 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 2, total: 2, rows: [] });
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('کارت تطبیقشده در ابتدا پرچم مرجع مشترک دارد', '1' === entries[0].dataset.sharedRemote);
+	const note = entries[0].querySelector('.tcas-pair-flag-note');
+	note.textContent = 'این Variation همکار چند مدل را با هم دارد؛ موجودی همان یک کد روی همهٔ کارت\u200cها یکی است.';
+	note.hidden = false;
+	// سناریوی رد: سرور همان کارت را بدون پرچم و با دلیل برمیگرداند.
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_start') return reply({ token: 'g'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [
+			pairRow(Object.assign(codes('ID:407472', 'ID:46922/46978'), { index: 0, shared_remote: false, shared_rejected: true, status: 'error', selectable: false, message: 'نشان مرجع مشترک تأیید نشد.' }))
+		] });
+		return reply({});
+	};
+	entries[0].querySelector('.tcas-row-select').checked = true;
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => '' === entries[0].dataset.sharedRemote, 8000);
+	ok('پرچم مرجع مشترک بعد از رد سرور از روی کارت پاک میشود', '' === entries[0].dataset.sharedRemote);
+	ok('یادداشت کهنهٔ «چند مدل» حذف و علت رد روی همان کارت نوشته میشود', !note.hidden && !note.textContent.includes('چند مدل') && note.textContent.includes('تأیید نشد'), note.textContent);
+	dom.window.close();
+}
+
+
+// ---------- ۵.۶۲) نشان «فهرست مدل محلی» (A12,M12 ↔ Samsung A12) ----------
+{
+	const dom = makeDom(); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_match_variations') return reply({
+			matches: [
+				{ local_code: 'ID:305525', remote_code: 'ID:44616/44665', local_label: 'A12,M12', remote_label: 'Samsung A12', confidence: 'local_list', matched_by: 'local_list', score: 82, shared: ['a12'], extra: ['m12'], local_list: true },
+				{ local_code: 'ID:305526', remote_code: 'ID:44616/44666', local_label: 'A13 5G,A04s', remote_label: 'Samsung A13', confidence: 'local_list', matched_by: 'local_list', score: 82, shared: ['a13'], extra: ['a4s'], local_list: true }
+			],
+			ambiguous: [], unmatched: [],
+			local: { name: 'L', reference: 'ID:0', count: 2 }, remote: { name: 'R', reference: 'ID:9', count: 1 }
+		});
+		return reply({});
+	};
+	window.eval(script);
+	window.document.getElementById('tcas-smart-local').value = 'ID:0';
+	window.document.getElementById('tcas-smart-remote').value = 'ID:9';
+	window.document.getElementById('tcas-smart-match').click();
+	await waitFor(() => window.document.querySelectorAll('.tcas-pair-entry').length === 2, 8000);
+	const entries = Array.from(window.document.querySelectorAll('.tcas-pair-entry'));
+	ok('نشان «فهرست مدل محلی» روی کارت دیده میشود', entries[0].querySelector('.tcas-pair-flag').textContent.includes('فهرست مدل محلی'));
+	const listNote = entries[0].querySelector('.tcas-pair-flag-note');
+	ok('یادداشت، مدل مشترک و مدلهای دیگر همان Variation تیساکیس را میگوید', !listNote.hidden && listNote.textContent.includes('a12') && listNote.textContent.includes('m12') && listNote.textContent.includes('همین Variation تیساکیس'), listNote.textContent);
+	ok('گزارش تطبیق، پیشنهادهای فهرست مدل محلی را میشمارد', window.document.getElementById('tcas-smart-status').textContent.includes('2 پیشنهاد از فهرست مدل محلی'));
+	ok('کارت فهرست مدل محلی مرجع مشترک نمیسازد', '' === entries[0].dataset.sharedRemote);
+	dom.window.close();
+}
+
+
+// ---------- ۶) قلم ورودی جستوجوی محصول و فهرست پیشنهادها ----------
+{
+	const dom = new JSDOM(`<!doctype html><html lang="fa" dir="rtl"><body><style>${uiCss}</style>
+		<div class="tcas-wrap">
+			<label class="tcas-shop-field tcas-shop-local"><input id="tcas-smart-local" type="text" dir="auto" value="شکوفه مای گیلاس"></label>
+			<label class="tcas-shop-field tcas-shop-remote"><input id="tcas-smart-remote" type="text" dir="ltr" value="ID:44616/44665"></label>
+			<label class="tcas-shop-field"><input class="tcas-local-code" type="text" dir="ltr" value="ID:305525"></label>
+			<label class="tcas-shop-field"><input class="tcas-remote-code" type="text" dir="ltr" value="ID:44616/44665"></label>
+			<label class="tcas-converter-source"><span class="tcas-converter-input-row"><input id="tcas-link-input" type="text" dir="auto"></span></label>
+			<div class="tcas-search-results"><p class="tcas-search-note">در حال جستجو…</p><button type="button" class="tcas-search-row">قاب گیلاس</button></div>
+		</div></body></html>`, { url: 'https://tisa.test/wp-admin/admin.php?page=tcas' });
+	const { window } = dom;
+	const fontOf = (selector) => String(window.getComputedStyle(window.document.querySelector(selector)).fontFamily || '');
+	ok('ورودی جستوجوی نام محصول قلم رابط میگیرد، نه قلم مونو', fontOf('#tcas-smart-local') === 'var(--tcas-font)' && !fontOf('#tcas-smart-local').includes('monospace'), fontOf('#tcas-smart-local'));
+	ok('ورودی مرجع همکار هم قلم رابط میگیرد', fontOf('#tcas-smart-remote') === 'var(--tcas-font)');
+	ok('ورودی تبدیل لینک نیز قلم رابط میگیرد', fontOf('#tcas-link-input') === 'var(--tcas-font)', fontOf('#tcas-link-input'));
+	ok('کدهای SKU/ID همچنان قلم مونو دارند', fontOf('.tcas-local-code') === 'var(--tcas-mono)' && fontOf('.tcas-remote-code') === 'var(--tcas-mono)', fontOf('.tcas-local-code') + ' / ' + fontOf('.tcas-remote-code'));
+	ok('یادداشت و ردیفهای فهرست پیشنهادها قلم رابط دارند', fontOf('.tcas-search-note') === 'var(--tcas-font)' && fontOf('.tcas-search-row') === 'var(--tcas-font)', fontOf('.tcas-search-row'));
+	ok('قلم رابط Vazirmatn و قلم مونو به توکنهای زبان طراحی وصلاند', uiCss.includes('--tcas-font:var(--tisa-font,"Vazirmatn"') && uiCss.includes('--tcas-mono:var(--tisa-mono,') && uiCss.includes('.tcas-shop-field input::placeholder { font-family:var(--tcas-font)'));
+	const previewCss = fs.readFileSync(path.resolve(root, '../../../design/preview/ariocase-sync-issues.html'), 'utf8');
+	ok('پیشنمایش طراحی همان قانون قلم را دارد (جلوگیری از دوباره واگرا شدن)', previewCss.includes('--tcas-font:var(--tisa-font') && previewCss.includes('.tcas-shop-field input { width:100%; min-width:0; font-family:var(--tcas-font); font-weight:400; }'));
+	window.close();
+}
+
+
+// ---------- ۷) «متصل» فقط وقتی سرور نگاشت زنده را تأیید کند ----------
+{
+	const dom = makeDom(1); const { window } = dom; const actions = [];
+	const cached = { row: { status: 'done', message: 'جفت متصل شد', local_code: 'TS0', remote_code: 'AR0' }, mode: 'connected', ts: Date.now() };
+	window.localStorage.setItem('tcas:cards:ariocase', JSON.stringify({ 'ts0|ar0': cached }));
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action'); actions.push(action);
+		if (action === 'tcas_verify_pairs') return reply({ rows: [{ index: 0, connected: false }] });
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))) });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS0');
+	type(card, '.tcas-remote-code', 'AR0');
+	await waitFor(() => card.dataset.state === 'review', 8000);
+	ok('کارت کش‌شدهٔ «متصل» بدون نگاشت زنده، دیگر سبز نمیماند', !card.classList.contains('is-saved') && !card.querySelector('.tcas-pair-flag').textContent.includes('متصل شد'));
+	ok('علت «اتصال تأیید نشد» روی همان کارت نوشته میشود', card.querySelector('.tcas-pair-flag').textContent.includes('اتصال تأیید نشد'), card.querySelector('.tcas-pair-flag').textContent);
+	ok('کارت باطلشده دوباره قابل انتخاب و بررسی است', '' === card.dataset.savedDone && !card.querySelector('.tcas-row-select').disabled);
+	ok('رکورد کهنه از حافظهٔ مرورگر پاک میشود', !JSON.parse(window.localStorage.getItem('tcas:cards:ariocase') || '{}')['ts0|ar0']);
+	ok('تأیید فقط یک درخواست محلی میفرستد و هیچ درخواستی به همکار نمیرود', 1 === actions.filter((item) => 'tcas_verify_pairs' === item).length && !actions.includes('tcas_preview_pair'), actions.join(','));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom; const actions = [];
+	window.localStorage.setItem('tcas:cards:ariocase', JSON.stringify({ 'ts1|ar1': { row: { status: 'done', message: 'جفت متصل شد', local_code: 'TS1', remote_code: 'AR1' }, mode: 'connected', ts: Date.now() } }));
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action'); actions.push(action);
+		if (action === 'tcas_verify_pairs') return reply({ rows: [{ index: 0, connected: true }] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS1');
+	type(card, '.tcas-remote-code', 'AR1');
+	await waitFor(() => card.classList.contains('is-saved'), 8000);
+	ok('نگاشت زنده که سرور تأیید کند، کارت سبز و قفل میماند', card.dataset.state === 'done' && card.querySelector('.tcas-row-select').disabled);
+	ok('کارت تأییدشده بدون Preview تازه به همکار سبز میشود', !actions.includes('tcas_preview_pair'), actions.join(','));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: Object.assign(pairRow(codes(options.body.get('local_code'), options.body.get('remote_code'))), { status: 'connected', selectable: false, message: 'این جفت قبلاً متصل شده است.' }) });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS2');
+	type(card, '.tcas-remote-code', 'AR2');
+	await waitFor(() => card.dataset.state === 'done', 8000);
+	ok('پاسخ connected سرور، قرمز «غیرقابل اتصال» نمیشود', card.dataset.state === 'done' && card.querySelector('.tcas-pair-flag').textContent.includes('قبلاً متصل') && !card.querySelector('.tcas-pair-flag').textContent.includes('غیرقابل اتصال'), card.querySelector('.tcas-pair-flag').textContent);
+	ok('پیام «قبلاً متصل» با رنگ خطا نشان داده نمیشود', !card.querySelector('.tcas-pair-message').classList.contains('is-error'));
+	dom.window.close();
+}
+
+{
+	const dom = makeDom(1); const { window } = dom;
+	window.fetch = async (url, options) => {
+		const action = options.body.get('action');
+		if (action === 'tcas_preview_pair') return reply({ row: pairRow(codes('TS3', 'AR3')) });
+		if (action === 'tcas_preview_start') return reply({ token: 'n'.repeat(32), total: 1 });
+		if (action === 'tcas_preview_step') return reply({ done: true, processed: 1, total: 1, rows: [pairRow(Object.assign(codes('TS3', 'AR3'), { index: 0 }))] });
+		if (action === 'tcas_connect_start') return reply({ token: 'o'.repeat(32), total: 1 });
+		if (action === 'tcas_connect_step') return reply({ done: true, processed: 1, total: 1, rows: [{ index: 0, status: 'connected', message: 'این جفت از قبل متصل است.' }] });
+		return reply({});
+	};
+	window.eval(script);
+	const card = window.document.querySelector('.tcas-pair-entry');
+	type(card, '.tcas-local-code', 'TS3');
+	type(card, '.tcas-remote-code', 'AR3');
+	await waitFor(() => card.dataset.state === 'review', 8000);
+	window.document.getElementById('tcas-connect-start').click();
+	await waitFor(() => card.dataset.state === 'done', 8000);
+	ok('اتصال دوبارهٔ جفت متصل، خطا حساب نمیشود', card.querySelector('.tcas-pair-flag').textContent.includes('قبلاً متصل') && !card.querySelector('.tcas-pair-flag').textContent.includes('خطا'), card.querySelector('.tcas-pair-flag').textContent);
+	dom.window.close();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`); if (fail) process.exit(1);

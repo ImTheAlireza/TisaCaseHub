@@ -106,14 +106,10 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 					$out['matches'][] = $match;
 					continue;
 				}
-				// ۱) همین Variation از قبل وصل است.
-				$own_code = TCAS_Mapping::remote_code( $local_id );
-				$own_same = '' !== $own_code && TCAS_Mapping::is_enabled( $local_id )
-					&& TCAS_Mapping::partner_id( $local_id ) === $partner_id
-					&& self::same_remote( $own_code, $reference, $local_id );
-				if ( $own_same ) {
+				// ۱) همین Variation از قبل وصل است (فقط نگاشت زندهٔ همین سایت).
+				if ( self::connected_state( $match, $partner_id, $local_id ) ) {
 					$match['connected']      = true;
-					$match['connected_code'] = $own_code;
+					$match['connected_code'] = TCAS_Mapping::remote_code( $local_id );
 					$out['matches'][]        = $match;
 					$out['connected']++;
 					continue;
@@ -171,59 +167,223 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				}
 				return ( ! $stored['parent_id'] || ! $fresh['parent_id'] || $stored['parent_id'] === $fresh['parent_id'] );
 			}
-			// کد ذخیره‌شده SKU است: هویت ذخیره‌شدهٔ همان محصول را مقایسه می‌کنیم.
+			// کد ذخیرهشده SKU است: هویت ذخیرهشدهٔ همان محصول را مقایسه میکنیم.
+			// والد هم وقتی هر دو معلوماند باید یکی باشد، وگرنه متای قدیمیِ یک
+			// Variation دیگر نباید «همان مرجع» جلوه کند.
 			if ( $local_id ) {
 				$identity = TCAS_Mapping::remote_identity( $local_id );
-				return $identity['remote_id'] && $identity['remote_id'] === $fresh['remote_id'];
+				if ( ! $identity['remote_id'] || $identity['remote_id'] !== $fresh['remote_id'] ) {
+					return false;
+				}
+				if ( $fresh['parent_id'] && $identity['parent_id'] && $identity['parent_id'] !== $fresh['parent_id'] ) {
+					return false;
+				}
+				return true;
 			}
 			return false;
 		}
 
-		/** برچسب خود Variation همکار چند مدل دارد؟ */
-		private static function bundled_label( $match ) {
-			if ( ! empty( $match['shared_remote'] ) ) {
-				return true;
-			}
-			if ( ! class_exists( 'TCAS_Matcher' ) ) {
+		/**
+		 * آیا این جفت **واقعاً** روی نگاشت داخلی همین سایت متصل و فعال است؟
+		 *
+		 * منبع حقیقت فقط متاهای نگاشت است؛ حافظهٔ مرورگر، Snapshot یا پاسخ
+		 * قبلی Preview هیچکدام حق ادعای «متصل شد» ندارند. هیچ درخواستی به
+		 * همکار زده نمیشود، برای همین میشود تعداد زیادی کارت را یکجا تأیید کرد.
+		 */
+		public static function connected_state( $pair, $partner_id = 'ariocase', $local_id = 0 ) {
+			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
+			$pair       = is_array( $pair ) ? $pair : array();
+			$local_code = isset( $pair['local_code'] ) ? trim( (string) $pair['local_code'] ) : '';
+			$reference  = isset( $pair['remote_code'] ) ? trim( (string) $pair['remote_code'] ) : '';
+			if ( '' === $local_code || '' === $reference || ! class_exists( 'TCAS_Mapping' ) ) {
 				return false;
 			}
-			$models = TCAS_Matcher::bundled_models( isset( $match['remote_label'] ) ? (string) $match['remote_label'] : '' );
-			return count( $models ) >= 2;
+			// لینکها باید ابتدا به شناسه تبدیل شوند؛ نگاشت با لینک ذخیره نمیشود.
+			if ( preg_match( '#^https?://#i', $reference ) ) {
+				return false;
+			}
+			$local_id = $local_id ? absint( $local_id ) : self::reference_local_id( $local_code );
+			if ( ! $local_id ) {
+				return false;
+			}
+			$current = TCAS_Mapping::remote_code( $local_id );
+			if ( '' === $current
+				|| ! TCAS_Mapping::is_enabled( $local_id )
+				|| TCAS_Mapping::partner_id( $local_id ) !== $partner_id
+				|| ! self::same_remote( $current, $reference, $local_id ) ) {
+				return false;
+			}
+			// محصول حدفشده/خراب هم «صاحب نگاشت زنده» نیست.
+			$product = function_exists( 'wc_get_product' ) ? wc_get_product( $local_id ) : null;
+			return is_object( $product ) && ! is_wp_error( $product );
 		}
 
 		/**
-		 * آیا Variation همکار خودش چند مدل را فهرست کرده («Samsung A52 / A52s») و این
-		 * محصول یکی از همان مدل‌هاست؟ ملاک اصلی «مرجع مشترک» همین است، چون پرچم مرورگر
-		 * ممکن است در اجرای بعدی یا برای کارت‌های ذخیره‌شده نرسد.
+		 * برچسب خود Variation همکار چند مدل دارد و مدل این کارت یکی از همانهاست؟
+		 * وقتی «local_label» موجود باشد، صرفاً چندمدلیبودن برچسب کافی نیست؛
+		 * مثلاً کارت «A54» نباید به بهانهٔ برچسب «A52 / A52s» آزاد حساب شود.
 		 */
-		private static function bundled_remote( $remote, $product ) {
-			if ( ! class_exists( 'TCAS_Matcher' ) || ! is_object( $product ) ) {
-				return false;
+		private static function bundled_label( $match ) {
+			$flagged = ! empty( $match['shared_remote'] );
+			if ( ! class_exists( 'TCAS_Matcher' ) ) {
+				return $flagged;
 			}
-			$models = TCAS_Matcher::bundled_models( isset( $remote['name'] ) ? (string) $remote['name'] : '' );
+			$remote_label = isset( $match['remote_label'] ) ? (string) $match['remote_label'] : '';
+			$local_label  = isset( $match['local_label'] ) ? (string) $match['local_label'] : '';
+			$models       = TCAS_Matcher::bundled_models( $remote_label );
 			if ( count( $models ) < 2 ) {
+				// کارت «فهرست مدل» را سرور ساخته؛ گاهی برچسب در نگاشت ذخیره نشده است.
+				return $flagged;
+			}
+			if ( '' !== trim( $local_label ) ) {
+				return TCAS_Matcher::label_matches_models( $local_label, $models );
+			}
+			return true;
+		}
+
+		/** برچسبهای محصول محلی: نام، SKU و مقادیر Attributeهای Variation. */
+		private static function local_labels( $product ) {
+			$labels = array();
+			if ( ! is_object( $product ) ) {
+				return $labels;
+			}
+			foreach ( array( 'get_name', 'get_sku' ) as $method ) {
+				if ( method_exists( $product, $method ) ) {
+					$labels[] = (string) $product->$method();
+				}
+			}
+			if ( method_exists( $product, 'get_attributes' ) ) {
+				foreach ( (array) $product->get_attributes() as $value ) {
+					if ( is_scalar( $value ) ) {
+						$labels[] = (string) $value;
+					}
+				}
+			}
+			return array_values( array_unique( array_filter( $labels, 'strlen' ) ) );
+		}
+
+		/**
+		 * برچسبهای Variation همکار: نام، SKU/Slug و مقادیر Attributeها. خیلی از
+		 * فروشگاهها فهرست مدلها را بهجای «name» در Attribute «مدل» میگذارند.
+		 */
+		private static function remote_labels( $remote ) {
+			$labels = array();
+			if ( ! is_array( $remote ) ) {
+				return $labels;
+			}
+			foreach ( array( 'name', 'code', 'sku', 'slug', 'label' ) as $key ) {
+				if ( ! empty( $remote[ $key ] ) && is_scalar( $remote[ $key ] ) ) {
+					$labels[] = (string) $remote[ $key ];
+				}
+			}
+			foreach ( array( 'variation_attributes', 'attributes' ) as $key ) {
+				if ( empty( $remote[ $key ] ) || ! is_array( $remote[ $key ] ) ) {
+					continue;
+				}
+				foreach ( $remote[ $key ] as $value ) {
+					if ( is_scalar( $value ) ) {
+						$labels[] = (string) $value;
+					} elseif ( is_array( $value ) && ! empty( $value['options'] ) && is_array( $value['options'] ) ) {
+						foreach ( $value['options'] as $option ) {
+							if ( is_scalar( $option ) ) {
+								$labels[] = (string) $option;
+							}
+						}
+					}
+				}
+			}
+			return array_values( array_unique( array_filter( $labels, 'strlen' ) ) );
+		}
+
+		/** مدرک سروری «مرجع مشترک»؛ هیچ پرچمی از مرورگر در آن دخیل نیست. */
+		private static function shared_evidence( $remote, $product ) {
+			if ( ! class_exists( 'TCAS_Matcher' ) ) {
+				return array( 'shared' => false );
+			}
+			return TCAS_Matcher::shared_evidence( self::remote_labels( $remote ), self::local_labels( $product ) );
+		}
+
+		/** آیا دو هویت مدل، متفاوت ولی همخانوادهاند («A52» و «A52s» بله؛ «A52» و «A54» خیر)؟ */
+		private static function models_related( $first, $second ) {
+			$first  = array_values( (array) $first );
+			$second = array_values( (array) $second );
+			if ( ! $first || ! $second || $first === $second ) {
 				return false;
 			}
-			$labels = array();
-			if ( method_exists( $product, 'get_name' ) ) {
-				$labels[] = (string) $product->get_name();
+			if ( array_intersect( $first, $second ) ) {
+				return true;
 			}
-			if ( method_exists( $product, 'get_sku' ) ) {
-				$labels[] = (string) $product->get_sku();
-			}
-			foreach ( $labels as $label ) {
-				if ( '' !== trim( $label ) && TCAS_Matcher::label_matches_models( $label, $models ) ) {
-					return true;
+			foreach ( $first as $a ) {
+				foreach ( $second as $b ) {
+					if ( preg_match( '/[0-9]/u', (string) $a )
+						&& ( 0 === strpos( (string) $b, (string) $a ) || 0 === strpos( (string) $a, (string) $b ) ) ) {
+						return true;
+					}
 				}
 			}
 			return false;
 		}
 
+		/**
+		 * مسیر پشتیبان: پرچم کلاینت بهتنهایی مجوز اشتراک نیست. اگر برچسب همکار در
+		 * پاسخ Preview نیامد (مثلاً API فقط شناسه میدهد)، پرچم فقط وقتی پذیرفته
+		 * میشود که همان مرجع از قبل روی Variation دیگری با مدلی متفاوت ولی
+		 * همخانواده وصل باشد؛ پرچم کهنه یا دستکاریشده محافظ یکتایی را دور نمیزند.
+		 */
+		private static function corroborate_shared_mapping( $remote_code, $partner_id, $local_id, $product ) {
+			if ( ! class_exists( 'TCAS_Mapping' ) || ! class_exists( 'TCAS_Matcher' ) ) {
+				return false;
+			}
+			$mine = array();
+			foreach ( self::local_labels( $product ) as $label ) {
+				$tokens = TCAS_Matcher::model_tokens( $label );
+				if ( $tokens ) {
+					$mine[] = $tokens;
+				}
+			}
+			if ( ! $mine ) {
+				return false;
+			}
+			foreach ( TCAS_Mapping::holders_of( $remote_code, $partner_id ) as $holder_id ) {
+				if ( (int) $holder_id === (int) $local_id
+					|| ! TCAS_Mapping::is_enabled( $holder_id )
+					|| TCAS_Mapping::partner_id( $holder_id ) !== $partner_id ) {
+					continue;
+				}
+				$holder = function_exists( 'wc_get_product' ) ? wc_get_product( $holder_id ) : null;
+				if ( ! is_object( $holder ) ) {
+					continue;
+				}
+				foreach ( self::local_labels( $holder ) as $label ) {
+					$tokens = TCAS_Matcher::model_tokens( $label );
+					if ( ! $tokens ) {
+						continue;
+					}
+					foreach ( $mine as $local_tokens ) {
+						if ( self::models_related( $local_tokens, $tokens ) ) {
+							return true;
+						}
+					}
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * آیا Variation همکار خودش چند مدل را فهرست کرده و این محصول یکی از آنهاست؟
+		 * حالا از نام، SKU و Attributeهای هر دو طرف مدرک میگیرد، نه فقط «name».
+		 */
+		private static function bundled_remote( $remote, $product ) {
+			$evidence = self::shared_evidence( $remote, $product );
+			return ! empty( $evidence['shared'] );
+		}
+
 		public static function preview( $pair, $partner_id = 'ariocase' ) {
 			$partner_id = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::normalize_id( $partner_id ) : 'ariocase';
 			$pair = wp_parse_args( is_array( $pair ) ? $pair : array(), array( 'local_code' => '', 'remote_code' => '', 'error' => '', 'shared_remote' => false ) );
-			// برچسب چندمدلی همکار («A52 / A52s»): یک مرجع می‌تواند روی چند Variation تیساکیس بنشیند.
-			$shared = ! empty( $pair['shared_remote'] );
+			// پرچم مرورگر فقط یک راهنماست؛ ملاک، مدرکی است که سرور از برچسب همکار میگیرد.
+			$claimed_shared = ! empty( $pair['shared_remote'] );
+			$shared         = false;
 			$pair['partner_id'] = $partner_id;
 			$pair['partner_label'] = class_exists( 'TCAS_Partners' ) ? TCAS_Partners::label( $partner_id ) : 'ArioCase';
 			if ( '' !== $pair['error'] ) {
@@ -252,7 +412,7 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			$is_url    = (bool) preg_match( '#^https?://#i', $reference );
 			// قبلاً متصل شده و همان مرجع است (هویت یکی است، حتی اگر شکل کد فرق کند):
 			// هیچ درخواستی به همکار زده نمی‌شود.
-			if ( ! $is_url && '' !== $current && self::same_remote( $current, $reference, $local_id ) && TCAS_Mapping::is_enabled( $local_id ) ) {
+			if ( ! $is_url && self::connected_state( $pair, $partner_id, $local_id ) ) {
 				return array(
 					'row'      => self::row( $pair, 'connected', 'این جفت قبلاً متصل شده است؛ برای پرهیز از درخواست تکراری دوباره خوانده نمی‌شود.', $extra ),
 					'remote'   => null,
@@ -282,13 +442,19 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 			if ( $is_url && '' !== $current && $current !== $pair['remote_code'] ) {
 				return array( 'row' => self::row( $pair, 'error', 'این محصول قبلاً به مرجع دیگری از ' . $partner_label . ' متصل است؛ ابتدا اتصال قبلی را حذف کنید.', $extra ), 'remote' => $remote, 'local_id' => $local_id );
 			}
-			// مرجع مشترک: اگر برچسب خودِ Variation همکار چند مدل را با هم فهرست کرده باشد و
-			// این محصول یکی از همان مدل‌ها باشد، چند Variation تیساکیس می‌توانند به همان
-			// مرجع وصل شوند؛ پرچم کلاینت لازم نیست (کارت‌های ذخیره‌شدهٔ قبلی هم کار می‌کنند).
-			if ( ! $shared && self::bundled_remote( $remote, $product ) ) {
-				$shared = true;
+			// مرجع مشترک: مدرک اصلی خودِ پاسخ همکار است (نام، SKU یا Attributeها)
+			// بهعلاوهٔ نام/SKU/Attributeهای Variation تیساکیس. پرچم مرورگر بهتنهایی
+			// نمیتواند محافظ یکتایی مرجع را دور بزند؛ فقط وقتی نگاشت زندهای با مدلی
+			// همخانواده همان مرجع را گرفته باشد، مسیر پشتیبان فعال میشود.
+			$shared = self::bundled_remote( $remote, $product );
+			if ( ! $shared && $claimed_shared ) {
+				$shared = self::corroborate_shared_mapping( $pair['remote_code'], $partner_id, $local_id, $product );
 			}
 			$pair['shared_remote'] = $shared;
+			$shared_rejected       = $claimed_shared && ! $shared;
+			if ( $shared_rejected ) {
+				$extra['shared_rejected'] = true;
+			}
 			// انتقال با تأیید کاربر: مرجع از Variation قبلی برداشته و به این Variation داده می‌شود.
 			$reclaim_holder = 0;
 			if ( ! $shared ) {
@@ -300,8 +466,12 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 						}
 						$holder_name      = TCAS_Mapping::holder_name( $mapped_id );
 						$extra['holder']  = array( 'id' => (int) $mapped_id, 'name' => $holder_name );
+						$holder_message = sprintf( 'مرجع %s از قبل به محصول #%d%s متصل است.', $partner_label, $mapped_id, '' !== $holder_name ? ' («' . $holder_name . '»)' : '' );
+						if ( $shared_rejected ) {
+							$holder_message .= ' نشان «مرجع مشترک» این کارت با فهرست مدلهای همکار تأیید نشد.';
+						}
 						return array(
-							'row'      => self::row( $pair, 'error', sprintf( 'مرجع %s از قبل به محصول #%d%s متصل است.', $partner_label, $mapped_id, '' !== $holder_name ? ' («' . $holder_name . '»)' : '' ), $extra ),
+							'row'      => self::row( $pair, 'error', $holder_message, $extra ),
 							'remote'   => $remote,
 							'local_id' => $local_id,
 						);
@@ -359,6 +529,15 @@ if ( ! class_exists( 'TCAS_Pairing' ) ) {
 				return new WP_Error( 'tcas_preview_missing', 'پیش‌نمایش معتبر برای این جفت در دسترس نیست.' );
 			}
 			$row = $preview['row'];
+			// اتصالی که سرور «قبلاً متصل» تشخیص داده، نباید خطا حساب شود؛ تکرار
+			// همان جفت نتیجهاش همان اتصال موجود است (Idempotent).
+			if ( 'connected' === $row['status'] ) {
+				return array(
+					'product_id'        => (int) $preview['local_id'],
+					'message'           => ! empty( $row['message'] ) ? (string) $row['message'] : 'این جفت از قبل متصل است.',
+					'already_connected' => true,
+				);
+			}
 			if ( empty( $row['selectable'] ) || 'connect' !== $row['status'] ) {
 				$message = ! empty( $row['message'] ) ? $row['message'] : 'این جفت قابل اتصال نیست.';
 				return new WP_Error( 'tcas_not_connectable', $message );

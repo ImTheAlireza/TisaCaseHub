@@ -50,6 +50,7 @@
 		family: { text: 'بررسی · خانوادهٔ مدل', cls: 'is-family', hint: 'برچسب‌های دو طرف برای یک خانوادهٔ مدل یکی هستند؛ نگارش، ترتیب یا نسل شبکه متفاوت نوشته شده است.' },
 		suggested: { text: 'پیشنهاد · خانوادهٔ مدل', cls: 'is-suggested', hint: 'یک طرف چند مدل را با هم فهرست کرده و طرف دیگر تنها یکی از همان خانواده است؛ پیش از اتصال تأیید کنید.' },
 		list: { text: 'پیشنهاد · فهرست مدل', cls: 'is-list', hint: 'این Variation همکار چند مدل را با هم دارد و هر مدل، Variation جداگانه‌ای در تیساکیس است؛ همین موجودی روی همهٔ آن کارت‌ها اعمال می‌شود.' },
+		local_list: { text: 'پیشنهاد · فهرست مدل محلی', cls: 'is-list', hint: 'این Variation تیساکیس چند مدل را با هم دارد؛ یکی از همان مدل‌ها در یک Variation همکار پیدا شد. مدل‌های دیگر پوشش داده نشده‌اند، پیش از اتصال تأیید کنید.' },
 		label: { text: 'بررسی · تطبیق از برچسب', cls: '', hint: 'این جفت با SKU یکتا تطبیق نشد؛ مرجع دو طرف را پیش از اتصال کنترل کنید.' },
 		tokens: { text: 'بررسی · تطبیق الگویی', cls: '', hint: 'واژه‌های دو برچسب با ترتیب متفاوت یکی شده‌اند؛ مرجع دو طرف را کنترل کنید.' },
 		manual: { text: 'دستی · نیاز به بررسی', cls: 'is-manual', hint: 'این جفت دستی وارد شده است؛ کد و موجودی هر دو طرف را کنترل کنید.' },
@@ -453,6 +454,76 @@
 		saveCardStore(store);
 	}
 
+	// ---- تأیید سروری کارتهای «متصل» ذخیرهشده در حافظهٔ مرورگر ----
+	// حافظهٔ مرورگر فقط یک سرنخ است؛ منبع حقیقت نگاشت داخلی سایت است. اگر
+	// نگاشت حذف/غیرفعال شده باشد، کارت نباید همچنان سبز «متصل شد» بماند.
+	let verifyPending = [];
+	let verifyTimer = 0;
+
+	function savedConnectedRow(entry) {
+		const codes = entryCodes(entry);
+		if (!codes.local || !codes.remote) return null;
+		const saved = loadCardStore()[cardId(codes)];
+		return saved && 'connected' === saved.mode && saved.row ? saved.row : null;
+	}
+
+	function queueVerify(entry) {
+		if (!entry || '1' === entry.dataset.pendingVerify) return;
+		entry.dataset.pendingVerify = '1';
+		verifyPending.push(entry);
+		window.clearTimeout(verifyTimer);
+		verifyTimer = window.setTimeout(runVerify, 40);
+	}
+
+	function showStaleConnection(entry) {
+		entry.dataset.savedDone = '';
+		entry.dataset.verifiedConnected = '';
+		forgetCard(entry);
+		setEntryState(entry, 'review', {
+			flag: 'اتصال تأیید نشد · نیاز به بررسی',
+			tone: 'warn',
+			text: 'نگاشت فعالی برای این جفت پیدا نشد؛ «بررسی همه دوباره» و سپس «اتصال انتخابشدهها» را بزنید.'
+		});
+		setEntrySelectable(entry, true);
+		entry.dataset.checkedFor = '';
+		updateConnectAvailability();
+	}
+
+	async function runVerify() {
+		const queued = verifyPending.filter((item) => item && item.isConnected && '1' === item.dataset.pendingVerify);
+		verifyPending = [];
+		if (!queued.length) return;
+		const items = [];
+		queued.forEach((entry) => {
+			const { local, remote } = entryCodes(entry);
+			entry.dataset.pendingVerify = '';
+			if (!local || !remote) { showStaleConnection(entry); return; }
+			items.push({ entry, line: local + ' - ' + remote });
+		});
+		if (!items.length) return;
+		let data = null;
+		try {
+			data = await request('verify_pairs', { pairs: items.map((item) => item.line).join('\n') });
+		} catch (error) {
+			// پاسخی از سرور نرسید: اجازهٔ ادعای «متصل» وجود ندارد.
+			items.forEach((item) => showStaleConnection(item.entry));
+			return;
+		}
+		const rows = data && Array.isArray(data.rows) ? data.rows : [];
+		items.forEach((item, index) => {
+			const entry = item.entry;
+			if (!entry.isConnected) return;
+			if (rows[index] && rows[index].connected) {
+				const saved = savedConnectedRow(entry);
+				entry.dataset.verifiedConnected = '1';
+				entry.dataset.savedDone = '1';
+				applyConnectRow(entry, Object.assign({ index: 0 }, saved || { status: 'connected', message: 'این جفت از قبل متصل است.' }));
+			} else {
+				showStaleConnection(entry);
+			}
+		});
+	}
+
 	/** فقط رکوردی که به شناسه‌های قبلی همین کارت تعلق دارد پاک می‌شود. */
 	function forgetCard(entry) {
 		const key = entry.dataset.cardKey || '';
@@ -481,11 +552,12 @@
 			const ok = 'exact' === confidence;
 			// کارت «فهرست مدل» هم نیاز به تأیید دارد ولی دلیلش مشخص است؛ برچسب آن حفظ می‌شود.
 			const list = 'list' === confidence;
+			const localList = 'local_list' === confidence;
 			// تطبیق رنگ‌محور دلیلش را روی خود کارت می‌گوید تا با «نیاز به بررسی» گم نشود.
 			const color = 'color' === confidence;
 			setEntrySelectable(entry, !entry.dataset.savedDone);
 			setEntryState(entry, ok ? 'ready' : 'review', {
-				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : (color ? 'رنگ یکسان · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال')),
+				flag: ok ? 'قطعی · آمادهٔ اتصال' : (list ? 'پیشنهاد · فهرست مدل · آمادهٔ اتصال' : (localList ? 'پیشنهاد · فهرست مدل محلی · آمادهٔ اتصال' : (color ? 'رنگ یکسان · آمادهٔ اتصال' : 'نیاز به بررسی · آمادهٔ اتصال'))),
 				tone: ok ? 'ok' : 'warn',
 				text: 'موجودی هنگام زدن «اتصال انتخاب‌شده‌ها» خوانده می‌شود.'
 			});
@@ -510,8 +582,11 @@
 			if (saved && saved.row) {
 				entry.dataset.cardKey = cardId(codes);
 				if ('connected' === saved.mode) {
+					// تا تأیید سرور «متصل» اعلام نمیشود؛ کارت موقتاً قفل و در حال تأیید است.
 					entry.dataset.savedDone = '1';
-					applyConnectRow(entry, Object.assign({ index: 0 }, saved.row));
+					setEntryState(entry, 'loading', { flag: 'در حال تأیید اتصال…', tone: 'idle', text: '' });
+					setEntrySelectable(entry, false);
+					queueVerify(entry);
 				} else {
 					applyRow(entry, saved.row);
 				}
@@ -1031,7 +1106,24 @@
 				parts.note.hidden = false;
 				parts.note.classList.add('is-list');
 			}
+		} else if (Object.prototype.hasOwnProperty.call(row, 'shared_remote')) {
+			// سرور پرچم اشتراک را تأیید نکرد: نشان و یادداشت کهنه پاک شوند تا هنگام
+			// اتصال، درخواست «مرجع مشترک» دوباره فرستاده نشود.
+			entry.dataset.sharedRemote = '';
+			if (parts.note && (parts.note.textContent || '').includes('چند مدل را با هم دارد')) {
+				parts.note.textContent = '';
+				parts.note.hidden = true;
+			}
 		}
+		if (row.shared_rejected && parts.note) {
+			const rejectNote = 'نشان «مرجع مشترک» با فهرست مدل‌های همکار تأیید نشد؛ اتصال این کارت فقط به‌صورت تکی بررسی می‌شود.';
+			const current = parts.note.textContent || '';
+			if (!current.includes('تأیید نشد')) {
+				parts.note.textContent = current ? current + ' · ' + rejectNote : rejectNote;
+			}
+			parts.note.hidden = false;
+		}
+
 		if (row.reclaim) entry.dataset.reclaim = String(row.reclaim);
 		setPairEntryTitles(entry, row.local_name, row.remote_name);
 		if (parts.stock) {
@@ -1041,17 +1133,30 @@
 			parts.stock.textContent = cells.join(' · ');
 			parts.stock.hidden = false;
 		}
-		if (row.selectable) {
-			const outcome = flagOutcome(entry, row);
-			setEntryState(entry, outcome.state, { flag: outcome.flag, tone: outcome.tone, cls: outcome.cls, hint: outcome.hint });
-			setEntrySelectable(entry, 'connected' !== row.status);
-		} else {
-			setEntryState(entry, 'error', { flag: 'غیرقابل اتصال · نیاز به بررسی', tone: 'danger', hint: 'این کارت تا رفع مشکل قابل انتخاب و اتصال نیست.' });
+		if ('connected' === row.status) {
+			// سرور نگاشت زنده را تأیید کرده؛ قرمز «غیرقابل اتصال» پیام گمراهکنندهای است.
+			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'قبلاً متصل · بدون درخواست دوباره', tone: 'ok', hint: 'این جفت از قبل روی نگاشت داخلی سایت متصل و فعال است.' });
 			setEntrySelectable(entry, false);
+		} else {
+			if ('1' === entry.dataset.savedDone && '1' !== entry.dataset.verifiedConnected) {
+				// ادعای قبلی «متصل» دیگر معتبر نیست؛ رکورد کهنه پاک شود.
+				entry.dataset.savedDone = '';
+				forgetCard(entry);
+			}
+			if (row.selectable) {
+				const outcome = flagOutcome(entry, row);
+				setEntryState(entry, outcome.state, { flag: outcome.flag, tone: outcome.tone, cls: outcome.cls, hint: outcome.hint });
+				setEntrySelectable(entry, 'connected' !== row.status);
+			} else {
+				setEntryState(entry, 'error', { flag: 'غیرقابل اتصال · نیاز به بررسی', tone: 'danger', hint: 'این کارت تا رفع مشکل قابل انتخاب و اتصال نیست.' });
+				setEntrySelectable(entry, false);
+			}
 		}
 		if (parts.message) {
 			parts.message.textContent = row.message || '';
-			parts.message.classList.toggle('is-error', !row.selectable);
+			parts.message.classList.toggle('is-error', !row.selectable && 'connected' !== row.status);
 			// مرجع در اختیار محصول دیگری است: دکمهٔ آزادسازی دقیقاً روی همان کارت.
 			const old = parts.message.parentNode ? parts.message.parentNode.querySelector('.tcas-release-holder') : null;
 			if (old) old.remove();
@@ -1118,12 +1223,15 @@
 			return;
 		}
 		// اگر همین جفت قبلاً متصل و ذخیره شده باشد، هیچ درخواستی زده نمی‌شود.
+		// رکورد «متصل» حافظهٔ مرورگر فقط سرنخ است؛ ابتدا سرور تأیید میکند.
 		const savedCard = loadCardStore()[cardId({ local, remote })];
-		if (savedCard && 'connected' === savedCard.mode) {
+		if (savedCard && 'connected' === savedCard.mode && '1' !== entry.dataset.verifiedConnected) {
 			entry.dataset.savedDone = '1';
 			entry.dataset.cardKey = cardId({ local, remote });
 			setEntryLoading(entry, false);
-			applyConnectRow(entry, Object.assign({ index: 0 }, savedCard.row));
+			setEntryState(entry, 'loading', { flag: 'در حال تأیید اتصال…', tone: 'idle', text: '' });
+			setEntrySelectable(entry, false);
+			queueVerify(entry);
 			updateConnectAvailability();
 			return;
 		}
@@ -1185,6 +1293,7 @@
 		// از قبل متصل: نه بررسی دوباره، نه درخواست تازه به همکار.
 		if (match.connected) {
 			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
 			if (parts.stock) parts.stock.hidden = true;
 			setEntryState(entry, 'done', {
 				flag: 'قبلاً متصل · بدون درخواست دوباره',
@@ -1202,6 +1311,12 @@
 					+ (match.taken_by_name ? '«' + String(match.taken_by_name) + '»' : 'Variationی دیگر')
 					+ ' (#' + String(match.taken_by) + ') است؛ با انتخاب و تأیید، مرجع از آن محصول برداشته و به این Variation منتقل می‌شود.'
 					+ (match.taken_by_name ? '' : '');
+				parts.note.hidden = false;
+				parts.note.classList.add('is-list');
+			} else if ('local_list' === confidence) {
+				parts.note.textContent = 'مدل مشترک: ' + (shared.join('، ') || '—')
+					+ (extra.length ? ' · مدل‌های دیگر در همین Variation تیساکیس: ' + extra.join('، ') : '')
+					+ ' · پیش از اتصال تأیید کنید.';
 				parts.note.hidden = false;
 				parts.note.classList.add('is-list');
 			} else if (match.shared_remote) {
@@ -1614,6 +1729,7 @@
 		const colorCount = batch.filter((match) => match && 'color' === match.confidence).length;
 		const suggestedCount = batch.filter((match) => match && 'suggested' === match.confidence).length;
 		const listCount = batch.filter((match) => match && 'list' === match.confidence).length;
+		const localListCount = batch.filter((match) => match && 'local_list' === match.confidence).length;
 		const sharedRemotes = new Set(batch.filter((match) => match && match.shared_remote).map((match) => String(match.remote_code))).size;
 		const alreadyConnected = batch.filter((match) => match && match.connected).length;
 		let message = smartCoverage() + String(batch.length) + ' جفت آماده شد (' + String(state.smartOffset) + '/' + String(state.smartMatches.length) + ').';
@@ -1622,6 +1738,7 @@
 		if (familyCount) smartParts.push(String(familyCount) + ' جفت از خانوادهٔ مدل');
 		if (suggestedCount) smartParts.push(String(suggestedCount) + ' پیشنهاد خانوادگی');
 		if (listCount) smartParts.push(String(listCount) + ' کارت از ' + String(sharedRemotes) + ' Variation چندمدلی همکار');
+		if (localListCount) smartParts.push(String(localListCount) + ' پیشنهاد از فهرست مدل محلی');
 		if (smartParts.length) message += ' ' + smartParts.join(' و ') + ' تشخیص داده شد و با نشان «نیاز به بررسی» علامت خورد.';
 		if (flagged && !smartParts.length) message += ' ' + String(flagged) + ' جفت بدون SKU یکتا و با نشان «نیاز به بررسی» علامت خورد.';
 		if (excluded) message += ' ' + String(excluded) + ' مورد مبهم/بدون تطبیق با دلیل مشخص در فهرست زیر علامت‌گذاری شد.';
@@ -1815,7 +1932,8 @@
 		setEntryLoading(entry, false);
 		if ('done' === row.status) {
 			entry.dataset.savedDone = '1';
-			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به‌روز شد', tone: 'ok', text: row.message || '' });
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'متصل شد · موجودی به\u200cروز شد', tone: 'ok', text: row.message || '' });
 			setEntrySelectable(entry, false);
 			rememberCard(entry, row, 'connected');
 			if (row.edit_url && parts.message) {
@@ -1824,6 +1942,15 @@
 				if (parts.message.textContent) parts.message.appendChild(document.createTextNode(' '));
 				parts.message.appendChild(link);
 			}
+			return true;
+		}
+		if ('connected' === row.status) {
+			// تکرار همان جفت، اتصال تازهای نساخته؛ ولی خطا هم نیست.
+			entry.dataset.savedDone = '1';
+			entry.dataset.verifiedConnected = '1';
+			setEntryState(entry, 'done', { flag: 'قبلاً متصل · بدون درخواست دوباره', tone: 'ok', text: row.message || '' });
+			setEntrySelectable(entry, false);
+			rememberCard(entry, row, 'connected');
 			return true;
 		}
 		setEntryState(entry, 'error', { flag: 'خطا · نیاز به بررسی', tone: 'danger', text: row.message || '' });

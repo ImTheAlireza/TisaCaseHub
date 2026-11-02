@@ -227,5 +227,31 @@ smart_integration_test( 'Note 14 Pro 4G با نسخهٔ (4G / 5G) جفت می‌
 smart_integration_test( 'برچسب کوتاه Note 11 4G به‌صورت پیشنهاد خانوادگی وصل می‌شود', isset( $family_pairs['Redmi Note 11 4G'] ) && 'suggested' === $family_pairs['Redmi Note 11 4G'][1] );
 smart_integration_test( 'خلاصهٔ پاسخ AJAX شمارش خانواده و پیشنهاد را برمی‌گرداند', $family_response && 2 === $family_response->data['summary']['family'] && 1 === $family_response->data['summary']['suggested'] && array() === $family_response->data['unmatched'] );
 
+
+// سناریوی چهارم: همان گزارش واقعی کاربر — فهرست مدل محلی (A12,M12 / A13 5G,A04s).
+$GLOBALS['local_ids'] = array( $local_parent_id + 501, $local_parent_id + 502 );
+$local_list_labels = array(
+	$local_parent_id + 501 => 'A12,M12',
+	$local_parent_id + 502 => 'A13 5G,A04s',
+);
+foreach ( $local_list_labels as $variation_id => $label ) {
+	$GLOBALS['integration_products'][ $variation_id ] = new TCAS_Integration_Product( $variation_id, 'variation', 'Local - ' . $label, '', array( 'Model' => $label ), array(), $local_parent_id );
+}
+$GLOBALS['integration_products'][ $local_parent_id ] = new TCAS_Integration_Product(
+	$local_parent_id, 'variable', 'Local parent (local list)', 'LOCAL-PARENT', array( array( 'name' => 'Model', 'options' => array_values( $local_list_labels ) ) ), array_keys( $local_list_labels )
+);
+TCAS_Api::$product = array(
+	'remote_id' => $remote_parent_id, 'parent_remote_id' => 0, 'code' => '', 'name' => 'Remote parent', 'type' => 'variable',
+	'variations' => array(
+		array( 'remote_id' => $remote_parent_id + 501, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Samsung A12', 'variation_attributes' => array( 'Model' => 'Samsung A12' ) ),
+		array( 'remote_id' => $remote_parent_id + 502, 'parent_remote_id' => $remote_parent_id, 'code' => '', 'name' => 'Samsung A13', 'variation_attributes' => array( 'Model' => 'Samsung A13' ) ),
+	),
+);
+$_REQUEST['nonce'] = 'valid'; $_POST['local_code'] = $local_reference; $_POST['remote_code'] = $remote_reference;
+try { TCAS_Ajax::match_variations(); $local_list_response = null; } catch ( TCAS_JSON_Response $caught ) { $local_list_response = $caught; }
+$local_list_matches = $local_list_response && $local_list_response->success ? $local_list_response->data['matches'] : array();
+smart_integration_test( 'مسیر AJAX چهار Variation بیهمتای گزارش کاربر را جفت میکند', 2 === count( $local_list_matches ) && array() === $local_list_response->data['ambiguous'] && array() === $local_list_response->data['unmatched'], json_encode( $local_list_matches, JSON_UNESCAPED_UNICODE ) );
+smart_integration_test( 'خروجی AJAX نوع «فهرست مدل محلی» و مدل مشترک را برمیگرداند', 2 === $local_list_response->data['summary']['local_list'] && 'local_list' === $local_list_matches[0]['confidence'] && array( 'a12' ) === $local_list_matches[0]['shared'] && in_array( 'm12', $local_list_matches[0]['extra'], true ), json_encode( $local_list_matches, JSON_UNESCAPED_UNICODE ) );
+
 echo "\n{$pass} passed, {$fail} failed\n";
 if ( ! defined( 'TCAS_TEST_NO_EXIT' ) ) exit( $fail ? 1 : 0 );

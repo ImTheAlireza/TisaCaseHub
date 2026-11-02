@@ -75,7 +75,7 @@ if ( ! class_exists( 'TCAS_Mapping' ) ) {
 		public static function identity_from_reference( $reference ) {
 			$reference = trim( (string) $reference );
 			$out       = array( 'remote_id' => 0, 'parent_id' => 0 );
-			if ( preg_match( '/^ID:([1-9][0-9]*)[\/\\]([1-9][0-9]*)$/i', $reference, $parts ) ) {
+			if ( preg_match( '#^ID:([1-9][0-9]*)[/\\\\]([1-9][0-9]*)$#i', $reference, $parts ) ) {
 				$out['parent_id'] = (int) $parts[1];
 				$out['remote_id'] = (int) $parts[2];
 			} elseif ( preg_match( '/^ID:([1-9][0-9]*)$/i', $reference, $parts ) ) {
