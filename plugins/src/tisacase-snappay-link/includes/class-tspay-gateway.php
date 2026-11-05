@@ -5,7 +5,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
     public function __construct() {
         $this->id                 = TSPAY_GATEWAY;
         $this->method_title       = 'پرداخت اقساطی با اسنپ‌پی';
-        $this->method_description = 'پرداخت از طریق لینک اسنپ‌پی با ثبت کارمزد و بررسی دستی سفارش.';
+        $this->method_description = 'پرداخت از طریق لینک اسنپ‌پی با ثبت مارک‌آپ و بررسی دستی سفارش.';
         $this->has_fields         = true;
         $this->supports           = array( 'products' );
         $this->init_form_fields();
@@ -100,7 +100,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             if ( WC()->cart ) { WC()->cart->empty_cart(); }
             return array( 'result' => 'success', 'redirect' => $this->get_return_url( $order ) );
         } catch ( Throwable $e ) {
-            wc_add_notice( 'ثبت کارمزد سفارش انجام نشد؛ لطفاً با پشتیبانی تماس بگیرید.', 'error' );
+            wc_add_notice( 'ثبت مارک‌آپ سفارش انجام نشد؛ لطفاً با پشتیبانی تماس بگیرید.', 'error' );
             return array( 'result' => 'failure' );
         }
     }

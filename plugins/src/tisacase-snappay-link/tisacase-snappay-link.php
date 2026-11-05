@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       TisaCase — پرداخت اقساطی با لینک اسنپ‌پی
  * Plugin URI:        https://tisacase.com
- * Description:       روش پرداخت ووکامرس با لینک تنظیم‌پذیر اسنپ‌پی، افزودن کارمزد و بررسی دستی سفارش.
- * Version:           1.3.0
+ * Description:       روش پرداخت ووکامرس با لینک تنظیم‌پذیر اسنپ‌پی، افزودن مارک‌آپ و بررسی دستی سفارش.
+ * Version:           1.3.1
  * Requires at least: 6.4
  * Requires PHP:      7.4
  * Requires Plugins:  woocommerce
@@ -11,10 +11,10 @@
  * Author:            علیرضا شعبان زاده
  * License:           GPL-2.0-or-later
  * Text Domain:       tisacase-snappay-link
- * TisaCase Hub:      key=snappay-link; title="پرداخت اقساطی با اسنپ‌پی"; icon=credit-card; group=orders; page=admin.php?page=wc-settings&tab=checkout&section=tisacase_snappay_link; parent=woocommerce; slug=wc-settings; cap=manage_woocommerce; desc="تنظیم لینک پرداخت، کارمزد و پیام‌های پرداخت اسنپ‌پی."
+ * TisaCase Hub:      key=snappay-link; title="پرداخت اقساطی با اسنپ‌پی"; icon=credit-card; group=orders; page=admin.php?page=wc-settings&tab=checkout&section=tisacase_snappay_link; parent=woocommerce; slug=wc-settings; cap=manage_woocommerce; desc="تنظیم لینک پرداخت، مارک‌آپ و پیام‌های پرداخت اسنپ‌پی."
  */
 defined( 'ABSPATH' ) || exit;
-define( 'TSPAY_VERSION', '1.3.0' );
+define( 'TSPAY_VERSION', '1.3.1' );
 define( 'TSPAY_FILE', __FILE__ );
 define( 'TSPAY_PATH', plugin_dir_path( __FILE__ ) );
 define( 'TSPAY_URL', plugin_dir_url( __FILE__ ) );
@@ -51,7 +51,7 @@ add_action( 'woocommerce_blocks_loaded', function () {
 add_filter( 'tisacase_hub_items', function ( $items ) {
     $items['snappay-link'] = array(
         'title' => 'پرداخت اقساطی با اسنپ‌پی',
-        'desc' => 'تنظیم لینک پرداخت، کارمزد و پیام‌های پرداخت اسنپ‌پی.',
+        'desc' => 'تنظیم لینک پرداخت، مارک‌آپ و پیام‌های پرداخت اسنپ‌پی.',
         'group' => 'orders', 'icon' => 'credit-card', 'dir' => 'tisacase-snappay-link', 'cap' => 'manage_woocommerce',
         'pages' => array( array( 'label' => 'تنظیمات درگاه', 'path' => 'admin.php?page=wc-settings&tab=checkout&section=tisacase_snappay_link', 'screen' => 'woocommerce_page_wc-settings', 'parent' => 'woocommerce', 'slug' => 'wc-settings' ) ),
     );
