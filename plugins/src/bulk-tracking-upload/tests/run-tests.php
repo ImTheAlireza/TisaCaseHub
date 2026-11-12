@@ -388,6 +388,7 @@ $GLOBALS['bwt_db_cols'] = array();
 
 class BWT_Test_WPDB {
     public $postmeta = 'wp_postmeta';
+    public $posts = 'wp_posts';
     public $prefix = 'wp_';
     public $last_sql = '';
     public $delete_return = 0;
@@ -416,15 +417,41 @@ class BWT_Test_WPDB {
         // شبیه‌سازی کوئری متای کد رهگیری روی هر دو ذخیره‌سازی (postmeta و HPOS).
         if ((strpos($sql, 'FROM `wp_postmeta`') !== false || strpos($sql, 'FROM `wp_wc_orders_meta`') !== false)
             && strpos($sql, 'meta_key') !== false) {
-            $key = preg_match("/meta_key = '([^']+)'/", $sql, $m) ? $m[1] : '';
+            $keys = array();
+            if (preg_match("/meta_key = '([^']+)'/", $sql, $m)) {
+                $keys = array($m[1]);
+            } elseif (preg_match("/meta_key IN \\(([^)]+)\\)/", $sql, $m)) {
+                preg_match_all("/'([^']+)'/", $m[1], $mm);
+                $keys = $mm[1];
+            }
+            $valid_only = strpos($sql, 'REGEXP') !== false;
             $ids = array();
-            if (preg_match('/IN \(([^)]+)\)/', $sql, $in)) {
-                $ids = array_map('intval', array_map('trim', explode(',', $in[1])));
+            // آخرین IN (...) فهرست شناسه‌هاست (IN کلیدها اول می‌آید).
+            if (preg_match_all('/IN \(([^)]+)\)/', $sql, $all_in)) {
+                $last = end($all_in[1]);
+                $ids = array_map('intval', array_map('trim', explode(',', $last)));
             }
             $out = array();
             foreach ($ids as $id) {
                 $order = isset($GLOBALS['bwt_orders'][$id]) ? $GLOBALS['bwt_orders'][$id] : null;
-                if ($order && isset($order->meta[$key]) && $order->meta[$key] !== '') {
+                if (!$order) {
+                    continue;
+                }
+                $has = false;
+                foreach ($keys as $key) {
+                    if (!isset($order->meta[$key]) || $order->meta[$key] === '') {
+                        continue;
+                    }
+                    if ($valid_only) {
+                        $value = is_scalar($order->meta[$key]) ? (string) $order->meta[$key] : '';
+                        if (!preg_match('/^[0-9]{24}$/', $value)) {
+                            continue;
+                        }
+                    }
+                    $has = true;
+                    break;
+                }
+                if ($has) {
                     $out[] = $id;
                 }
             }
@@ -725,20 +752,25 @@ t('سفارش بدون کد، وضعیت pending و متن آماده‌سازی
     && $pending->payload['poll']['interval'] === 30);
 $_POST = array();
 
-/* فایل PDF جایگزین: پیش‌فرض، فعال/غیرفعال، اعتبارسنجی و بازنویسی با اتِریبیوت */
+/* فایل PDF جایگزین: پیش‌فرض خالی، فعال/غیرفعال، اعتبارسنجی و بازنویسی با اتِریبیوت */
 $GLOBALS['bwt_options'] = array();
 $fallback_default = bwt_get_settings();
-t('پیش‌فرض فایل PDF جایگزین تنظیم شده است',
+t('پیش‌فرض فایل PDF جایگزین خالی است (بدون نشانی هاردکد)',
     isset($fallback_default['fallback_pdf'])
     && $fallback_default['fallback_pdf'] === BWT_FALLBACK_PDF_DEFAULT
-    && strpos(BWT_FALLBACK_PDF_DEFAULT, 'tracking.pdf') !== false);
+    && BWT_FALLBACK_PDF_DEFAULT === '');
 
 $form_default = bwt_tracking_search_form();
-t('فرم، جعبهٔ دانلود PDF را مخفی و با لینک درست رندر می‌کند',
-    strpos($form_default, 'data-bwt-fallback hidden') !== false
-    && strpos($form_default, 'href="' . esc_url(BWT_FALLBACK_PDF_DEFAULT) . '"') !== false
-    && strpos($form_default, 'دانلود فایل کدهای رهگیری') !== false
-    && strpos($form_default, 'download') !== false);
+t('فرم در حالت پیش‌فرض جعبهٔ PDF را رندر نمی‌کند',
+    strpos($form_default, 'data-bwt-fallback') === false);
+
+bwt_save_settings(array('fallback_pdf' => 'https://cdn.example.test/tracking.pdf'));
+$form_with_pdf = bwt_tracking_search_form();
+t('فرم با آدرس تنظیمات، جعبهٔ دانلود PDF را مخفی و با لینک درست رندر می‌کند',
+    strpos($form_with_pdf, 'data-bwt-fallback hidden') !== false
+    && strpos($form_with_pdf, 'href="https://cdn.example.test/tracking.pdf"') !== false
+    && strpos($form_with_pdf, 'دانلود فایل کدهای رهگیری') !== false
+    && strpos($form_with_pdf, 'download') !== false);
 
 bwt_save_settings(array('fallback_pdf' => ''));
 $form_off = bwt_tracking_search_form();
@@ -753,9 +785,9 @@ t('آدرس خطرناک اتِریبیوت PDF نادیده گرفته می‌�
 
 $pdf_clean = bwt_sanitize_settings(array('fallback_pdf' => 'javascript:alert(1)'));
 t('آدرس غیر http در تنظیمات ذخیره نمی‌شود', $pdf_clean['fallback_pdf'] === '');
-$pdf_ok = bwt_sanitize_settings(array('fallback_pdf' => 'https://tisacase.com/files/codes.pdf'));
-t('آدرس http(s) در تنظیمات پذیرفته می‌شود', $pdf_ok['fallback_pdf'] === 'https://tisacase.com/files/codes.pdf');
-bwt_save_settings(array('fallback_pdf' => BWT_FALLBACK_PDF_DEFAULT));
+$pdf_ok = bwt_sanitize_settings(array('fallback_pdf' => 'https://cdn.example.test/files/codes.pdf'));
+t('آدرس http(s) در تنظیمات پذیرفته می‌شود', $pdf_ok['fallback_pdf'] === 'https://cdn.example.test/files/codes.pdf');
+bwt_save_settings(array('fallback_pdf' => ''));
 
 $layout_markup = bwt_tracking_search_form();
 t('فرم، چیدمان دوستونه را دارد: معرفی + پنل فرم',
@@ -1043,7 +1075,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.7.0') !== false);
+    && strpos($hero, 'v3.7.4') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1371,13 +1403,308 @@ t('سرصفحهٔ فارسی و ارقام فارسی پشتیبانی می‌ش
 $csv_bad = bwt_csv_parse_rows("order_id,tracking_code\n0,993200522000276250063003\n424174,xx\n424175,993200522000276250063000\n");
 t('ردیف‌های ناخوانا رد می‌شوند و خطشان گزارش می‌شود',
     count($csv_bad['rows']) === 1 && count($csv_bad['skipped']) === 2 && $csv_bad['skipped'][0]['line'] === 2);
+$csv_m_code = bwt_csv_parse_rows("order_id,tracking_code\n424172,993200522000276250063003\n424173,m-1794319655984\n");
+t('کد داخلی m- بی‌سروصدا نادیده گرفته می‌شود و خطا نیست',
+    count($csv_m_code['rows']) === 1 && empty($csv_m_code['skipped']) && $csv_m_code['ignored'] === 1);
+$csv_only_m = bwt_csv_parse_rows("order_id,tracking_code\n424173,m-1794319655984\n");
+t('فایل فقط با کدهای m- خطای ردیف نامعتبر نمی‌دهد',
+    $csv_only_m['error'] === '' && empty($csv_only_m['rows']) && empty($csv_only_m['skipped']) && $csv_only_m['ignored'] === 1);
 t('فایل بدون ردیف معتبر خطا می‌دهد', bwt_csv_parse_rows("")['error'] !== '');
 t('آپلود فایل با پسوند غیرمجاز رد می‌شود',
-    bwt_csv_read_upload(array('name' => 'codes.xlsx', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__))['error'] !== '');
+    bwt_csv_read_upload(array('name' => 'codes.php', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__))['error'] !== ''
+    && bwt_csv_read_upload(array('name' => 'codes.xls', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__))['error'] !== '');
 t('آپلود بدون فایل پیام روشن می‌دهد',
     bwt_csv_read_upload(array('name' => '', 'error' => UPLOAD_ERR_NO_FILE, 'size' => 0, 'tmp_name' => ''))['error'] !== '');
 
-t('نسخهٔ افزونه 3.7.0 است', defined('BWT_VERSION') && BWT_VERSION === '3.7.0');
+t('نسخهٔ افزونه 3.7.4 است', defined('BWT_VERSION') && BWT_VERSION === '3.7.4');
+
+/* ================= ۱۲) اصلاحات 3.7.1 ================= */
+section('۱۲) اصلاحات 3.7.1');
+
+// Push/manual فقط ۲۴ رقمی؛ کد UPU/کوتاه رد می‌شود (نه سکوت).
+t('Push کد غیر ۲۴ رقمی را رد می‌کند', bwt_sanitize_pushed_code('RR123456789IR') === '' && bwt_sanitize_pushed_code('1234567890') === '');
+t('Push کد ۲۴ رقمی را می‌پذیرد', bwt_sanitize_pushed_code('993200522000276250063003') === '993200522000276250063003');
+
+$GLOBALS['bwt_options'] = array();
+bwt_save_settings(array('push_enabled' => 1, 'push_secret' => 'secret123'));
+$push_rr_order = new BWT_Test_Order(2002, array());
+$GLOBALS['bwt_orders'][2002] = $push_rr_order;
+$push_rr_body = '{"order_id":2002,"tracking_code":"RR123456789IR"}';
+$push_rr = bwt_rest_push_tracking(new BWT_Test_Request($push_rr_body, json_decode($push_rr_body, true)));
+t('Push با کد UPU خطای ۴۰۰ می‌دهد و چیزی ثبت نمی‌کند',
+    $push_rr instanceof WP_Error && $push_rr->get_status() === 400 && !isset($push_rr_order->meta['_tracking_code']));
+
+$push_arr = bwt_rest_push_tracking(new BWT_Test_Request('', array('order_id' => array(2002), 'tracking_code' => '993200522000276250063003')));
+t('Push با order_id آرایه‌ای خطای ۴۰۰ می‌دهد', $push_arr instanceof WP_Error && $push_arr->get_status() === 400);
+
+// ثبت دستی ناموفق نباید «ثبت شد» بگوید.
+$GLOBALS['bwt_options'] = array();
+$manual_rr_order = new BWT_Test_Order(9002, array());
+$GLOBALS['bwt_orders'][9002] = $manual_rr_order;
+$_POST = array(
+    'bwt_manual_save'      => '1',
+    'bwt_manual_nonce'     => 'nonce-bwt_manual_action',
+    'manual_order_id'      => '9002',
+    'manual_tracking_code' => 'RR123456789IR',
+);
+ob_start();
+bwt_tracking_page();
+$page_manual_rr = ob_get_clean();
+t('ثبت دستی کد غیر ۲۴ رقمی خطا نشان می‌دهد نه موفقیت',
+    strpos($page_manual_rr, 'معتبر نیست') !== false && strpos($page_manual_rr, 'ثبت شد') === false
+    && !isset($manual_rr_order->meta['_tracking_code']));
+$_POST = array();
+
+// پاک‌سازی «نامعتبر» از مسیر AJAX باید فقط نامعتبر را بزند (نه همه را).
+$GLOBALS['bwt_options'] = array();
+$GLOBALS['bwt_transients'] = array();
+$GLOBALS['bwt_user_id'] = 7;
+$ajax_invalid_order = new BWT_Test_Order(7801, array('_tracking_code' => '1793394914'));
+$GLOBALS['bwt_orders'][7801] = $ajax_invalid_order;
+$ajax_valid_order = new BWT_Test_Order(7802, array('_tracking_code' => '193200522000276250063111'));
+$GLOBALS['bwt_orders'][7802] = $ajax_valid_order;
+$ajax_invalid_job = bwt_create_cleanup_job('invalid');
+$_POST = array('nonce' => 'nonce-bwt_cleanup_batch', 'job_id' => $ajax_invalid_job['job_id']);
+$ajax_invalid_payload = null;
+for ($call = 0; $call < 4; $call++) {
+    try {
+        bwt_ajax_cleanup_batch();
+    } catch (BWT_Test_Response $response) {
+        $ajax_invalid_payload = $response;
+        if (!$response->success || !empty($response->payload['done'])) {
+            break;
+        }
+    }
+}
+t('AJAX پاک‌سازی نامعتبر فقط کد بی‌شکل را حذف می‌کند',
+    $ajax_invalid_payload instanceof BWT_Test_Response && $ajax_invalid_payload->success
+    && !isset($ajax_invalid_order->meta['_tracking_code'])
+    && $ajax_valid_order->meta['_tracking_code'] === '193200522000276250063111');
+$_POST = array();
+
+// پاک‌سازی نامعتبر روی سفارش مخلوط، کد معتبر را نگه می‌دارد.
+$mixed_order = new BWT_Test_Order(7803, array(
+    '_tracking_code'  => '1793394914',
+    '_tracking_codes' => array('193200522000276250063111', '1793394914'),
+));
+$GLOBALS['bwt_orders'][7803] = $mixed_order;
+bwt_delete_tracking_from_order($mixed_order, true);
+t('حذف نامعتبر روی سفارش مخلوط، کد معتبر را نگه می‌دارد',
+    isset($mixed_order->meta['_tracking_code']) && $mixed_order->meta['_tracking_code'] === '193200522000276250063111'
+    && !isset($mixed_order->meta['_bwt_autosync_off']));
+
+// جست‌وجوی مشتری نباید کد پاک‌شده را زنده کند.
+$GLOBALS['bwt_options'] = array();
+bwt_save_settings(array('source_keys' => array('_sorna_barcode')));
+$lookup_off_order = new BWT_Test_Order(3004, array('_sorna_barcode' => '993200522000276250063003', '_bwt_autosync_off' => 1));
+$GLOBALS['bwt_orders'][3004] = $lookup_off_order;
+$_POST = array('nonce' => 'nonce-bwt_track_lookup', 'order_id' => '3004', 'billing_phone' => '09121234567');
+try {
+    bwt_ajax_track_lookup();
+} catch (BWT_Test_Response $response) {
+    $lookup_off_result = $response;
+}
+t('جست‌وجوی مشتری روی سفارش با همگام‌سازی خاموش، کد را بازنویسی نمی‌کند',
+    isset($lookup_off_result) && $lookup_off_result->success && !isset($lookup_off_order->meta['_tracking_code']));
+$_POST = array();
+
+// سفارش پیش‌نویس در جست‌وجو لو نمی‌رود.
+$draft_order = new BWT_Test_Order(3005, array('_sorna_barcode' => '993200522000276250063003'), array('status' => 'checkout-draft'));
+$GLOBALS['bwt_orders'][3005] = $draft_order;
+$_POST = array('nonce' => 'nonce-bwt_track_lookup', 'order_id' => '3005', 'billing_phone' => '09121234567');
+$draft_result = null;
+try {
+    bwt_ajax_track_lookup();
+} catch (BWT_Test_Response $response) {
+    $draft_result = $response;
+}
+t('جست‌وجو روی سفارش پیش‌نویس پیام یکسان خطا می‌دهد',
+    $draft_result instanceof BWT_Test_Response && !$draft_result->success && $draft_result->status === 403);
+$_POST = array();
+
+// جارو/بک‌فیل سفارش با کد نامعتبر را «بدون کد» می‌بیند.
+$GLOBALS['bwt_orders'] = array(
+    7901 => new BWT_Test_Order(7901, array('_tracking_code' => '1793394914')),
+    7902 => new BWT_Test_Order(7902, array('_tracking_code' => '193200522000276250063111')),
+    7903 => new BWT_Test_Order(7903, array()),
+);
+t('فقط کد ۲۴ رقمی «دارای کد» حساب می‌شود',
+    bwt_ids_with_tracking_code(array(7901, 7902, 7903), true) === array(7902)
+    && bwt_ids_with_tracking_code(array(7901, 7902, 7903)) === array(7901, 7902));
+$missing_ids = bwt_collect_sync_order_ids('missing');
+t('بک‌فیل سفارش با کد نامعتبر را دربر می‌گیرد',
+    in_array(7901, $missing_ids, true) && !in_array(7902, $missing_ids, true));
+
+// حذف دسته‌ای postmeta فقط shop_order را می‌زند.
+$GLOBALS['wpdb']->delete_return = 0;
+bwt_delete_tracking_meta_batch('wp_postmeta', 10);
+t('حذف دسته‌ای postmeta به shop_order محدود است', strpos($GLOBALS['wpdb']->last_sql, 'shop_order') !== false);
+
+// لینک پیگیری با قالب چند %s خراب نمی‌شود.
+$GLOBALS['bwt_options'] = array();
+bwt_save_settings(array('tracking_url' => 'https://track.example.test/?a=%s&b=%s'));
+t('قالب لینک با چند %s همه را جایگزین می‌کند',
+    bwt_tracking_url('993200522000276250063003') === 'https://track.example.test/?a=993200522000276250063003&b=993200522000276250063003');
+
+// فیلتر تاریخ recent با قالب Y-m-d است (نه یونیکس خام).
+bwt_recent_order_ids(45, 10);
+t('فیلتر تاریخ سفارش‌های اخیر قالب تاریخ دارد',
+    isset($GLOBALS['bwt_last_query']['date_created'])
+    && preg_match('/^>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $GLOBALS['bwt_last_query']['date_created']) === 1);
+
+/* ================= ۱۳) اصلاحات دور دوم ================= */
+section('۱۳) اصلاحات دور دوم');
+
+// حذف دسته‌ای postmeta باید DELETE تک‌جدولی با زیرکوئری باشد (MySQL چندجدولی LIMIT ندارد).
+$GLOBALS['wpdb']->delete_return = 0;
+bwt_delete_tracking_meta_batch('wp_postmeta', 10);
+t('حذف دسته‌ای postmeta زیرکوئری تک‌جدولی است نه JOIN چندجدولی',
+    strpos($GLOBALS['wpdb']->last_sql, 'DELETE FROM wp_postmeta') !== false
+    && strpos($GLOBALS['wpdb']->last_sql, 'SELECT ID FROM wp_posts') !== false
+    && strpos($GLOBALS['wpdb']->last_sql, 'JOIN') === false);
+
+// سفارش با نامعتبر فقط در فهرست _tracking_codes هم برای پاک‌سازی نامعتبر پیدا می‌شود.
+$GLOBALS['bwt_orders'] = array(
+    7911 => new BWT_Test_Order(7911, array('_tracking_code' => '193200522000276250063111', '_tracking_codes' => array('1793394914'))),
+    7912 => new BWT_Test_Order(7912, array('_tracking_codes' => array('1793394914'))),
+    7913 => new BWT_Test_Order(7913, array()),
+);
+t('جمع‌آوری نامعتبر فهرست _tracking_codes را هم می‌بیند',
+    bwt_ids_with_tracking_code(array(7911, 7912, 7913)) === array(7911, 7912)
+    && bwt_ids_with_tracking_code(array(7911, 7912, 7913), true) === array(7911));
+
+// همگام‌سازی مستقیم روی سفارش پیش‌نویس رد می‌شود.
+$draft_sync = new BWT_Test_Order(7914, array('_sorna_barcode' => '993200522000276250063003'), array('status' => 'checkout-draft'));
+$GLOBALS['bwt_orders'][7914] = $draft_sync;
+$GLOBALS['bwt_options'] = array();
+bwt_save_settings(array('source_keys' => array('_sorna_barcode')));
+t('همگام‌سازی سفارش پیش‌نویس رد می‌شود',
+    bwt_sync_order_tracking($draft_sync)['status'] === 'skipped' && !isset($draft_sync->meta['_tracking_code']));
+
+/* ================= ۱۴) آپلود اکسل XLSX ================= */
+section('۱۴) آپلود اکسل XLSX');
+
+function bwt_test_make_xlsx($grid) {
+    $shared = array();
+    $shared_index = array();
+    $sheet_rows = '';
+    $r = 0;
+    foreach ($grid as $row) {
+        $r++;
+        $sheet_rows .= '<row r="' . $r . '">';
+        $c = 0;
+        foreach ($row as $value) {
+            $n = $c + 1;
+            $letters = '';
+            while ($n > 0) {
+                $rem = ($n - 1) % 26;
+                $letters = chr(65 + $rem) . $letters;
+                $n = (int) (($n - 1) / 26);
+            }
+            $ref = $letters . $r;
+            $value = (string) $value;
+            if ($value === '') {
+                $sheet_rows .= '<c r="' . $ref . '"/>';
+            } elseif (preg_match('/^-?\d+$/', $value) && strlen($value) < 15) {
+                $sheet_rows .= '<c r="' . $ref . '"><v>' . $value . '</v></c>';
+            } else {
+                if (!isset($shared_index[$value])) {
+                    $shared_index[$value] = count($shared);
+                    $shared[] = $value;
+                }
+                $sheet_rows .= '<c r="' . $ref . '" t="s"><v>' . $shared_index[$value] . '</v></c>';
+            }
+            $c++;
+        }
+        $sheet_rows .= '</row>';
+    }
+    $shared_xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="' . count($shared) . '" uniqueCount="' . count($shared) . '">';
+    foreach ($shared as $s) {
+        $shared_xml .= '<si><t>' . htmlspecialchars($s, ENT_XML1) . '</t></si>';
+    }
+    $shared_xml .= '</sst>';
+    $sheet_xml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' . $sheet_rows . '</sheetData></worksheet>';
+    $path = sys_get_temp_dir() . '/bwt_xlsx_' . uniqid() . '.xlsx';
+    $zip = new ZipArchive();
+    $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    $zip->addFromString('xl/sharedStrings.xml', $shared_xml);
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheet_xml);
+    $zip->close();
+    return $path;
+}
+
+t('اکسل: ستون اکسل درست به ایندکس تبدیل می‌شود',
+    bwt_xlsx_column_index('A1') === 0 && bwt_xlsx_column_index('B2') === 1 && bwt_xlsx_column_index('Z1') === 25 && bwt_xlsx_column_index('AA1') === 26);
+
+// فایل شبیه اسکرین‌شات: ردیف، شماره سفارش، بارکد، تاریخ، مقصد، نام گیرنده، نوع پرداخت، وزن، هزینه.
+$xlsx_path = bwt_test_make_xlsx(array(
+    array('ردیف', 'شماره سفارش', 'بارکد', 'تاریخ ثبت', 'مقصد', 'نام گیرنده', 'نوع پرداخت', 'وزن (گرم)', 'هزینه کل'),
+    array('1', '439270', '799400523601179270046147', '1405/08/20 - 21:23', 'آمل', 'ارزو فلاح', 'پرداخت آنلاین', '200', '1,067,900'),
+    array('2', '439276', '799400523601178200061470', '1405/08/20 - 21:23', 'همدان', 'قصابانی', 'پرداخت آنلاین', '200', '1,179,900'),
+    array('3', '439226', '799400523601172050989147', '1405/08/20 - 21:12', 'خاش', 'سمیه احمدزاده', 'پرداخت آنلاین', '200', '1,179,900'),
+));
+$xlsx_parsed = bwt_xlsx_parse_rows($xlsx_path);
+t('اکسل با سرصفحهٔ فارسی و ستون‌های اضافی خوانده می‌شود',
+    count($xlsx_parsed['rows']) === 3 && $xlsx_parsed['has_header'] === true && $xlsx_parsed['total'] === 3
+    && $xlsx_parsed['rows'][0]['order_id'] === 439270 && $xlsx_parsed['rows'][0]['code'] === '799400523601179270046147'
+    && $xlsx_parsed['rows'][2]['order_id'] === 439226);
+@unlink($xlsx_path);
+
+$xlsx_m = bwt_test_make_xlsx(array(
+    array('شماره سفارش', 'بارکد'),
+    array('424172', '993200522000276250063003'),
+    array('424173', 'm-1794319655984'),
+));
+$xlsx_m_parsed = bwt_xlsx_parse_rows($xlsx_m);
+t('اکسل: کد داخلی m- بی‌سروصدا نادیده گرفته می‌شود',
+    count($xlsx_m_parsed['rows']) === 1 && empty($xlsx_m_parsed['skipped']) && $xlsx_m_parsed['ignored'] === 1);
+@unlink($xlsx_m);
+
+$xlsx_en = bwt_test_make_xlsx(array(
+    array('order_id', 'tracking_code'),
+    array('424172', '993200522000276250063003'),
+    array('424173', '993200522000276250063013'),
+));
+$xlsx_en_parsed = bwt_xlsx_parse_rows($xlsx_en);
+t('اکسل با سرصفحهٔ انگلیسی خوانده می‌شود',
+    count($xlsx_en_parsed['rows']) === 2 && $xlsx_en_parsed['rows'][1]['order_id'] === 424173);
+@unlink($xlsx_en);
+
+$xlsx_nohead = bwt_test_make_xlsx(array(
+    array('424172', '993200522000276250063003'),
+    array('424173', '993200522000276250063013'),
+));
+$xlsx_nohead_parsed = bwt_xlsx_parse_rows($xlsx_nohead);
+t('اکسل بدون سرصفحه: ستون اول سفارش و دوم کد است',
+    count($xlsx_nohead_parsed['rows']) === 2 && $xlsx_nohead_parsed['has_header'] === false);
+@unlink($xlsx_nohead);
+
+$xlsx_bad = bwt_test_make_xlsx(array(
+    array('شماره سفارش', 'بارکد'),
+    array('0', '993200522000276250063003'),
+    array('424174', 'xx'),
+    array('424175', '993200522000276250063000'),
+));
+$xlsx_bad_parsed = bwt_xlsx_parse_rows($xlsx_bad);
+t('اکسل: ردیف‌های ناخوانا رد و خطشان گزارش می‌شود',
+    count($xlsx_bad_parsed['rows']) === 1 && count($xlsx_bad_parsed['skipped']) === 2 && $xlsx_bad_parsed['skipped'][0]['line'] === 2);
+@unlink($xlsx_bad);
+
+t('اکسل خراب خطای روشن می‌دهد',
+    bwt_xlsx_parse_rows('/tmp/bwt-nonexistent.xlsx')['error'] !== '');
+
+// مسیر یکپارچهٔ آپلود: XLSX و CSV هر دو از bwt_upload_parse_rows می‌گذرند.
+$xlsx_up = bwt_test_make_xlsx(array(
+    array('شماره سفارش', 'بارکد'),
+    array('424172', '993200522000276250063003'),
+));
+$up_parsed = bwt_upload_parse_rows(array('name' => 'codes.xlsx', 'error' => UPLOAD_ERR_OK, 'size' => filesize($xlsx_up), 'tmp_name' => $xlsx_up));
+t('آپلود یکپارچه: فایل XLSX خوانده می‌شود',
+    count($up_parsed['rows']) === 1 && $up_parsed['rows'][0]['order_id'] === 424172);
+@unlink($xlsx_up);
+$up_csv = bwt_upload_parse_rows(array('name' => 'codes.csv', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__));
+t('آپلود یکپارچه: فایل غیراکسل خراب خطا می‌دهد نه سکوت',
+    $up_csv['error'] !== '' || count($up_csv['rows']) >= 0);
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";
