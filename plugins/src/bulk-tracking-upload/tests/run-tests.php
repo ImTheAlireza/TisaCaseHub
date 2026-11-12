@@ -1075,7 +1075,7 @@ $hero = ob_get_clean();
 t('سر صفحه دو تب «همگام‌سازی» و «پاک کردن کدها» و نسخه را دارد',
     strpos($hero, 'همگام‌سازی خودکار') !== false
     && strpos($hero, 'پاک کردن کدها') !== false
-    && strpos($hero, 'v3.7.4') !== false);
+    && strpos($hero, 'v3.7.6') !== false);
 
 $GLOBALS['bwt_options'] = array();
 $GLOBALS['bwt_orders'] = array();
@@ -1095,10 +1095,15 @@ t('صفحهٔ اصلی، کارت آپلود CSV را با فیلد فایل ن�
     && strpos($page, 'name="bwt_csv_upload"') !== false
     && strpos($page, 'bwt_csv_nonce') !== false
     && strpos($page, 'data-bwt-csv-job') !== false
+    && strpos($page, 'data-bwt-csv-errors') !== false
     && strpos($page, 'آپلود فایل کد رهگیری') !== false);
 t('صفحهٔ اصلی، «منبع جدول اختصاصی» را دارد',
     strpos($page, 'name="table_source_table"') !== false
     && strpos($page, 'name="table_source_code_col"') !== false);
+t('تنظیمات پیشرفته و ابزارهای کمکی به‌صورت جمع‌شده نمایش داده می‌شوند',
+    strpos($page, '<details class="bwt-settings-details">') !== false
+    && strpos($page, '<details class="bwt-details bwt-tools-details">') !== false
+    && strpos($page, 'ابزارهای کمکی') !== false);
 t('جدول‌های مشکوک در صفحهٔ تنظیمات فهرست می‌شوند', strpos($page, 'bwt-chip--table') !== false && strpos($page, 'wp_sorna_orders') !== false);
 
 t('صفحهٔ اصلی چهار بخش شماره‌دار ۱ تا ۴ است و ابزار «پیدا کردن کلید» حذف شده',
@@ -1126,8 +1131,8 @@ t('مسیرهای کشف خودکار کلید از افزونه حذف شده�
     && !has_action('wp_ajax_bwt_scan_sources')
     && !has_action('wp_ajax_bwt_find_key'));
 t('ارقام نمایش، فارسی می‌شوند', bwt_fmt_digits('1,234') === '۱٬۲۳۴' && bwt_fmt_digits(207) === '۲۰۷');
-t('کارت‌های خلاصه ارقام فارسی و جمع‌بندی کل بازه را نشان می‌دهند',
-    strpos($page, 'bwt-kpi-note') !== false
+t('کارت‌های خلاصه، ارقام فارسی و بازهٔ ۴۵ روزه را نشان می‌دهند',
+    strpos($page, 'آخرین جاروی خودکار') !== false
     && preg_match('/bwt-kpi__value">[۰-۹٬]+</u', $page) === 1
     && preg_match('/از [۰-۹٬]+ سفارش ۴۵ روز اخیر/u', $page) === 1);
 
@@ -1403,6 +1408,12 @@ t('سرصفحهٔ فارسی و ارقام فارسی پشتیبانی می‌ش
 $csv_bad = bwt_csv_parse_rows("order_id,tracking_code\n0,993200522000276250063003\n424174,xx\n424175,993200522000276250063000\n");
 t('ردیف‌های ناخوانا رد می‌شوند و خطشان گزارش می‌شود',
     count($csv_bad['rows']) === 1 && count($csv_bad['skipped']) === 2 && $csv_bad['skipped'][0]['line'] === 2);
+t('جزئیات ردیف ردشده، شماره سفارش و کد مشکل‌دار را نگه می‌دارد',
+    $csv_bad['skipped'][0]['code'] === '993200522000276250063003'
+    && $csv_bad['skipped'][0]['order_id'] === 0
+    && $csv_bad['skipped'][1]['order_id'] === 424174
+    && $csv_bad['skipped'][1]['code'] === 'xx'
+    && $csv_bad['skipped'][1]['phase'] === 'خواندن فایل');
 $csv_m_code = bwt_csv_parse_rows("order_id,tracking_code\n424172,993200522000276250063003\n424173,m-1794319655984\n");
 t('کد داخلی m- بی‌سروصدا نادیده گرفته می‌شود و خطا نیست',
     count($csv_m_code['rows']) === 1 && empty($csv_m_code['skipped']) && $csv_m_code['ignored'] === 1);
@@ -1416,7 +1427,7 @@ t('آپلود فایل با پسوند غیرمجاز رد می‌شود',
 t('آپلود بدون فایل پیام روشن می‌دهد',
     bwt_csv_read_upload(array('name' => '', 'error' => UPLOAD_ERR_NO_FILE, 'size' => 0, 'tmp_name' => ''))['error'] !== '');
 
-t('نسخهٔ افزونه 3.7.4 است', defined('BWT_VERSION') && BWT_VERSION === '3.7.4');
+t('نسخهٔ افزونه 3.7.6 است', defined('BWT_VERSION') && BWT_VERSION === '3.7.6');
 
 /* ================= ۱۲) اصلاحات 3.7.1 ================= */
 section('۱۲) اصلاحات 3.7.1');
@@ -1705,6 +1716,41 @@ t('آپلود یکپارچه: فایل XLSX خوانده می‌شود',
 $up_csv = bwt_upload_parse_rows(array('name' => 'codes.csv', 'error' => UPLOAD_ERR_OK, 'size' => 10, 'tmp_name' => __FILE__));
 t('آپلود یکپارچه: فایل غیراکسل خراب خطا می‌دهد نه سکوت',
     $up_csv['error'] !== '' || count($up_csv['rows']) >= 0);
+
+/* ================= ۱۵) جزئیات زندهٔ خطاهای آپلود ================= */
+section('۱۵) جزئیات زندهٔ خطاهای آپلود');
+$GLOBALS['bwt_user_id'] = 7;
+$GLOBALS['bwt_transients'] = array();
+$GLOBALS['bwt_orders'] = array(
+    885001 => new BWT_Test_Order(885001),
+);
+$detail_job_created = bwt_create_csv_job(array(
+    array('order_id' => 885001, 'code' => '993200522000276250063003', 'line' => 3),
+    array('order_id' => 885002, 'code' => '993200522000276250063013', 'line' => 4),
+), array(
+    array('line' => 2, 'order_id' => 0, 'order' => 'نامشخص', 'code' => '993200522000276250063023', 'phase' => 'خواندن فایل', 'message' => 'شمارهٔ سفارش نامعتبر است.'),
+));
+$detail_job = bwt_get_csv_job($detail_job_created['job_id']);
+$first_processed = bwt_process_csv_batch($detail_job, 1);
+$first_payload = bwt_csv_job_payload($detail_job, 0, true);
+t('batch اول: جزئیات ردیف‌های ردشده همراه همان پاسخ برمی‌گردد',
+    $first_processed === 1 && $detail_job['created'] === 1 && $first_payload['offset'] === 1
+    && count($first_payload['skipped']) === 1 && empty($first_payload['errors']));
+$second_processed = bwt_process_csv_batch($detail_job, 1);
+$second_payload = bwt_csv_job_payload($detail_job, 1, false);
+t('سفارش پیدا‌نشده: خطا شامل ردیف فایل، شماره سفارش، کد و علت دقیق است',
+    $second_processed === 1 && $second_payload['invalid'] === 1 && count($second_payload['errors']) === 1
+    && $second_payload['errors'][0]['row_index'] === 1 && $second_payload['errors'][0]['line'] === 4
+    && $second_payload['errors'][0]['order_id'] === 885002
+    && $second_payload['errors'][0]['code'] === '993200522000276250063013'
+    && strpos($second_payload['errors'][0]['reason'], '#885002') !== false
+    && $second_payload['error_total'] === 1);
+$recovery_payload = bwt_csv_job_payload($detail_job, 0, true);
+t('بازیابی پاسخ ازدست‌رفته: خطاهای batch قبلی و جزئیات CSV دوباره قابل دریافت‌اند',
+    count($recovery_payload['errors']) === 1 && count($recovery_payload['skipped']) === 1
+    && $recovery_payload['errors'][0]['code'] === '993200522000276250063013');
+$after_end_payload = bwt_csv_job_payload($detail_job, 2, false);
+t('درخواست با cursor انتهایی، خطای تکراری برنمی‌گرداند', empty($after_end_payload['errors']));
 
 /* ---------- نتیجه ---------- */
 echo "\nنتیجه: {$GLOBALS['bwt_ok']} موفق، {$GLOBALS['bwt_fail']} ناموفق\n";

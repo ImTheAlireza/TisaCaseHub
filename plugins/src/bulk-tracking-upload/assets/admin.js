@@ -1,5 +1,5 @@
-/* کد رهگیری پستی — رفتار پیشخوان (v3.6)
-   چهار بخش: ذخیرهٔ کلید متای کد، همگام‌سازی دسته‌ای، آپلود CSV و پاک‌سازی دسته‌ای. */
+/* کد رهگیری پستی — رفتار پیشخوان (v3.7.6)
+   چهار بخش: ذخیرهٔ کلید متای کد، همگام‌سازی دسته‌ای، آپلود CSV/XLSX و پاک‌سازی دسته‌ای. */
 (function () {
     'use strict';
 
@@ -417,13 +417,80 @@
         var progressNode = jobNode.querySelector('[data-bwt-csv-progress]');
         var countersNode = jobNode.querySelector('[data-bwt-csv-counters]');
         var resultNode = jobNode.querySelector('[data-bwt-csv-result]');
+        var errorsNode = jobNode.querySelector('[data-bwt-csv-errors]');
         var runButton = jobNode.querySelector('[data-bwt-csv-run]');
         var resumeButton = jobNode.querySelector('[data-bwt-csv-resume]');
         var running = false;
         var jobId = jobNode.getAttribute('data-bwt-csv-job') || '';
+        var seenOffset = 0;
+        var includeSkipped = true;
+        var details = [];
+        var detailKeys = Object.create(null);
+        var detailBody = null;
+        var detailCountNode = null;
+        var renderedDetails = 0;
+
+        if (!errorsNode) {
+            errorsNode = create('div', 'bwt-csv-errors');
+            errorsNode.setAttribute('data-bwt-csv-errors', '');
+            errorsNode.setAttribute('aria-live', 'polite');
+            errorsNode.hidden = true;
+            if (resultNode && resultNode.parentNode) {
+                resultNode.parentNode.insertBefore(errorsNode, resultNode);
+            } else {
+                jobNode.appendChild(errorsNode);
+            }
+        }
 
         function setCounters(text) {
             if (countersNode) countersNode.textContent = text;
+        }
+
+        function appendDetail(row, fallbackPhase) {
+            row = row && typeof row === 'object' ? row : { reason: String(row || '') };
+            var codeValue = typeof row.code !== 'undefined' && row.code !== null ? row.code : (row.value || '');
+            var detail = {
+                line: row.line ? Number(row.line) : 0,
+                order: String(row.order || row.order_id || ''),
+                code: String(codeValue),
+                phase: String(row.phase || fallbackPhase || 'ثبت سفارش'),
+                reason: String(row.reason || row.message || 'دلیل مشخصی از سرور دریافت نشد.')
+            };
+            var identity = [row.row_index, detail.line, detail.order, detail.code, detail.phase, detail.reason].join('|');
+            if (detailKeys[identity]) return;
+            detailKeys[identity] = true;
+            details.push(detail);
+        }
+
+        function renderNewDetails() {
+            if (!errorsNode || !details.length) return;
+            errorsNode.hidden = false;
+            if (!detailBody) {
+                errorsNode.replaceChildren();
+                detailCountNode = create('p', 'bwt-hint bwt-hint--bad', 'خطاهای فایل و ثبت سفارش');
+                errorsNode.appendChild(detailCountNode);
+                detailBody = create('tbody');
+                var errorTable = table([
+                    { label: 'ردیف فایل', className: 'bwt-table__num' },
+                    { label: 'شمارهٔ سفارش', className: 'bwt-table__num' },
+                    { label: 'کد' },
+                    { label: 'مرحله' },
+                    { label: 'علت خطا' }
+                ], detailBody, 'bwt-table--compact');
+                errorTable.classList.add('bwt-csv-error-details');
+                errorsNode.appendChild(errorTable);
+            }
+            for (; renderedDetails < details.length; renderedDetails++) {
+                var item = details[renderedDetails];
+                var tr = create('tr');
+                tr.appendChild(create('td', 'bwt-table__num', item.line > 0 ? digits(item.line) : '—'));
+                tr.appendChild(create('td', 'bwt-table__num', item.order || '—'));
+                tr.appendChild(create('td', 'bwt-csv-error-code', item.code || '—'));
+                tr.appendChild(create('td', '', item.phase));
+                tr.appendChild(create('td', 'bwt-csv-error-reason', item.reason));
+                detailBody.appendChild(tr);
+            }
+            detailCountNode.textContent = digits(details.length) + ' مورد خطا؛ جزئیات هر ردیف به‌محض دریافت از سرور نمایش داده می‌شود.';
         }
 
         function update(data) {
@@ -436,46 +503,30 @@
                 + ' · بدون تغییر: ' + digits(data.unchanged)
                 + ' · ناموفق: ' + digits(data.invalid)
             );
+            (Array.isArray(data.skipped) ? data.skipped : []).forEach(function (row) {
+                appendDetail(row, 'خواندن فایل');
+            });
+            (Array.isArray(data.errors) ? data.errors : []).forEach(function (row) {
+                appendDetail(row, 'ثبت سفارش');
+            });
+            seenOffset = Math.max(seenOffset, Number(data.offset) || 0);
+            includeSkipped = false;
+            renderNewDetails();
         }
 
         function showResult(data) {
             if (!resultNode) return;
             resultNode.replaceChildren();
             var written = Number(data.created) + Number(data.updated);
-            resultNode.appendChild(notice(
-                written > 0 ? 'success' : 'warning',
-                written > 0
-                    ? 'تمام شد؛ ' + digits(written) + ' سفارش کد رهگیری گرفت (' + digits(data.created) + ' جدید، ' + digits(data.updated) + ' به‌روزشده).'
-                    : 'تمام شد؛ هیچ کدی روی سفارش‌ها نوشته نشد.'
-            ));
-
-            var skipped = Array.isArray(data.skipped) ? data.skipped : [];
-            var skippedTotal = Number(data.skipped_total) || skipped.length;
-            if (skippedTotal > 0) {
-                var body = create('tbody');
-                skipped.slice(0, 12).forEach(function (row) {
-                    var tr = create('tr');
-                    tr.appendChild(create('td', 'bwt-table__num', digits(row.line)));
-                    tr.appendChild(create('td', '', row.message || ''));
-                    tr.appendChild(create('td', '', row.value || ''));
-                    body.appendChild(tr);
-                });
-                resultNode.appendChild(create('p', 'bwt-hint', digits(skippedTotal) + ' ردیف رد شد:'));
-                resultNode.appendChild(table([
-                    { label: 'خط', className: 'bwt-table__num' },
-                    { label: 'دلیل' },
-                    { label: 'مقدار' }
-                ], body, 'bwt-table--compact'));
+            var skippedTotal = Number(data.skipped_total) || 0;
+            var invalidTotal = Number(data.invalid) || 0;
+            var summary = written > 0
+                ? 'تمام شد؛ ' + digits(written) + ' سفارش کد رهگیری گرفت (' + digits(data.created) + ' جدید، ' + digits(data.updated) + ' به‌روزشده).'
+                : 'تمام شد؛ هیچ کدی روی سفارش‌ها نوشته نشد.';
+            if (invalidTotal || skippedTotal) {
+                summary += ' ' + digits(invalidTotal + skippedTotal) + ' ردیف ناموفق یا ردشده است؛ جزئیات در جدول بالا آمده.';
             }
-
-            var errors = Array.isArray(data.errors) ? data.errors : [];
-            if (errors.length) {
-                var list = create('ul', 'bwt-hint');
-                errors.slice(0, 10).forEach(function (message) {
-                    list.appendChild(create('li', '', message));
-                });
-                resultNode.appendChild(list);
-            }
+            resultNode.appendChild(notice(written > 0 ? 'success' : 'warning', summary));
         }
 
         function showRetry(message) {
@@ -487,7 +538,12 @@
         }
 
         function runBatch() {
-            return post('bwt_csv_batch', { nonce: conf.csvNonce, job_id: jobId });
+            return post('bwt_csv_batch', {
+                nonce: conf.csvNonce,
+                job_id: jobId,
+                since_offset: seenOffset,
+                include_skipped: includeSkipped ? 1 : 0
+            });
         }
 
         async function processBatches() {
@@ -508,8 +564,7 @@
             if (runButton) runButton.disabled = true;
             if (resumeButton) resumeButton.hidden = true;
             if (resultNode) resultNode.replaceChildren();
-            if (progressNode) progressNode.value = 0;
-            setCounters('در حال ثبت کدها روی سفارش‌ها…');
+            setCounters(seenOffset > 0 ? 'در حال ادامهٔ ثبت کدها از ردیف ' + digits(seenOffset + 1) + '…' : 'در حال ثبت کدها روی سفارش‌ها…');
             try {
                 await processBatches();
             } catch (error) {

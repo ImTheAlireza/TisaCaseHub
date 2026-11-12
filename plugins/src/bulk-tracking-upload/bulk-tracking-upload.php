@@ -3,7 +3,7 @@
  * Plugin Name: Automatic Postal Tracking for WooCommerce
  * Plugin URI: https://github.com/ImTheAlireza/TisaCaseHub
  * Description: کد رهگیری پستی را بدون فایل و بدون کار دستی از سورناپست/افزونه‌های حمل‌ونقل برمی‌دارد، روی سفارش ذخیره می‌کند و به مشتری با شمارهٔ سفارش نشان می‌دهد.
- * Version: 3.7.4
+ * Version: 3.7.6
  * Author: علیرضا شعبان زاده
  * Requires PHP: 7.4
  * Requires Plugins: woocommerce
@@ -15,7 +15,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('BWT_VERSION', '3.7.4');
+define('BWT_VERSION', '3.7.6');
 define('BWT_OPTION_SETTINGS', 'bwt_settings');
 define('BWT_OPTION_LAST_SWEEP', 'bwt_last_sweep');
 define('BWT_SYNC_BATCH_SIZE', 50);
@@ -1248,6 +1248,28 @@ function bwt_is_ignored_upload_code($value) {
     return (bool) preg_match('/^m\\s*-\\s*\\d+$/i', $value);
 }
 
+/** متن امن و محدود برای جزئیات خطای آپلود؛ کدهای معمول ۲۴ رقمی کامل می‌مانند. */
+function bwt_upload_detail_text($value, $limit = 240) {
+    if (!is_scalar($value) || is_bool($value)) {
+        return '';
+    }
+    $value = trim((string) $value);
+    if (function_exists('wp_check_invalid_utf8')) {
+        $value = wp_check_invalid_utf8($value, true);
+    }
+    $limit = max(1, (int) $limit);
+    if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+        if (mb_strlen($value, 'UTF-8') <= $limit) {
+            return $value;
+        }
+        return mb_substr($value, 0, $limit, 'UTF-8') . '…';
+    }
+    if (strlen($value) <= $limit) {
+        return $value;
+    }
+    return substr($value, 0, $limit) . '…';
+}
+
 /**
  * تبدیل جدول سلول‌ها (CSV یا اکسل) به «شمارهٔ سفارش + کد».
  * خروجی: rows (معتبرها)، skipped (ردیف‌های ناخوانا)، ignored (کدهای m- نادیده‌گرفته‌شده)، total، has_header، error.
@@ -1302,15 +1324,33 @@ function bwt_rows_from_cells($grid) {
         }
         $code = bwt_clean_code($raw_code);
 
+        $detail_order = $order_id > 0 ? (string) $order_id : bwt_upload_detail_text($order_raw);
+        $detail_code = bwt_upload_detail_text($raw_code);
         if ($order_id <= 0) {
-            $result['skipped'][] = array('line' => $line_number, 'message' => 'شمارهٔ سفارش نامعتبر است.', 'value' => $order_raw);
+            $result['skipped'][] = array(
+                'line' => $line_number,
+                'order_id' => $order_id,
+                'order' => $detail_order,
+                'code' => $detail_code,
+                'phase' => 'خواندن فایل',
+                'message' => 'شمارهٔ سفارش نامعتبر است.',
+                'value' => bwt_upload_detail_text($order_raw),
+            );
             continue;
         }
         if ($code === '' || !bwt_is_tracking_like($code)) {
-            $result['skipped'][] = array('line' => $line_number, 'message' => 'کد رهگیری نامعتبر است.', 'value' => trim($raw_code));
+            $result['skipped'][] = array(
+                'line' => $line_number,
+                'order_id' => $order_id,
+                'order' => $detail_order,
+                'code' => $detail_code,
+                'phase' => 'خواندن فایل',
+                'message' => 'کد رهگیری معتبر نیست؛ باید دقیقاً ۲۴ رقم باشد و از اعتبارسنجی سایت عبور کند.',
+                'value' => $detail_code,
+            );
             continue;
         }
-        $result['rows'][] = array('order_id' => $order_id, 'code' => $code);
+        $result['rows'][] = array('order_id' => $order_id, 'code' => $code, 'line' => $line_number);
     }
 
     if (!$result['rows'] && !($result['ignored'] > 0 && !$result['skipped'])) {
@@ -1620,7 +1660,8 @@ function bwt_create_csv_job($rows, $skipped = array()) {
     if ($job_id === '') {
         return array('job_id' => '', 'error' => 'ساخت شناسهٔ کار آپلود ناموفق بود.');
     }
-    $skipped = is_array($skipped) ? array_slice(array_values($skipped), 0, 100) : array();
+    // حداکثر ۵٬۰۰۰ ردیف فایل داریم؛ جزئیات تمام ردیف‌های ردشده را برای جدول زنده نگه می‌داریم.
+    $skipped = is_array($skipped) ? array_slice(array_values($skipped), 0, BWT_CSV_MAX_ROWS) : array();
     $job = array(
         'user_id'    => (int) get_current_user_id(),
         'rows'       => $rows,
@@ -1633,6 +1674,7 @@ function bwt_create_csv_job($rows, $skipped = array()) {
         'skipped'    => $skipped,
         'skipped_total' => count($skipped),
         'errors'     => array(),
+        'error_total' => 0,
         'done'       => false,
         'created_at' => time(),
     );
@@ -1642,10 +1684,33 @@ function bwt_create_csv_job($rows, $skipped = array()) {
     return array('job_id' => $job_id, 'error' => '');
 }
 
-function bwt_csv_job_payload($job) {
+function bwt_csv_job_payload($job, $since_offset = 0, $include_skipped = false) {
     $total = isset($job['total']) ? (int) $job['total'] : 0;
     $offset = isset($job['offset']) ? (int) $job['offset'] : 0;
+    $since_offset = max(0, (int) $since_offset);
     $done = !empty($job['done']);
+    $stored_errors = isset($job['errors']) && is_array($job['errors']) ? $job['errors'] : array();
+    $errors = array();
+    foreach ($stored_errors as $error) {
+        if (is_array($error)) {
+            $row_index = isset($error['row_index']) ? (int) $error['row_index'] : -1;
+            if ($row_index >= $since_offset) {
+                $errors[] = $error;
+            }
+        } elseif ($since_offset === 0 && is_scalar($error) && trim((string) $error) !== '') {
+            // سازگاری با Jobهای قدیمی که خطا را فقط به شکل متن نگه می‌داشتند.
+            $errors[] = array(
+                'row_index' => -1,
+                'line' => 0,
+                'order_id' => 0,
+                'order' => '',
+                'code' => '',
+                'phase' => 'ثبت سفارش',
+                'reason' => bwt_upload_detail_text($error, 500),
+            );
+        }
+    }
+    $stored_skipped = isset($job['skipped']) && is_array($job['skipped']) ? $job['skipped'] : array();
     return array(
         'done'          => $done,
         'progress'      => $done ? 100 : ($total > 0 ? min(99, (int) floor(100 * $offset / $total)) : 0),
@@ -1655,38 +1720,104 @@ function bwt_csv_job_payload($job) {
         'updated'       => isset($job['updated']) ? (int) $job['updated'] : 0,
         'unchanged'     => isset($job['unchanged']) ? (int) $job['unchanged'] : 0,
         'invalid'       => isset($job['invalid']) ? (int) $job['invalid'] : 0,
-        'skipped'       => isset($job['skipped']) ? (array) $job['skipped'] : array(),
-        'skipped_total' => isset($job['skipped_total']) ? (int) $job['skipped_total'] : 0,
-        'errors'        => isset($job['errors']) ? (array) $job['errors'] : array(),
+        'skipped'       => $include_skipped ? $stored_skipped : array(),
+        'skipped_total' => isset($job['skipped_total']) ? (int) $job['skipped_total'] : count($stored_skipped),
+        'errors'        => $errors,
+        'error_total'   => isset($job['error_total']) ? (int) $job['error_total'] : count($stored_errors),
     );
 }
 
-/** ثبت یک دسته از ردیف‌های فایل روی سفارش‌ها. */
+/** افزودن جزئیات کامل یک ردیف ناموفق به Job آپلود. */
+function bwt_csv_record_error(&$job, $row_index, $row, $reason, $phase = 'ثبت سفارش') {
+    if (!isset($job['errors']) || !is_array($job['errors'])) {
+        $job['errors'] = array();
+    }
+    if (!isset($job['error_total'])) {
+        $job['error_total'] = count($job['errors']);
+    }
+    $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
+    $line = isset($row['line']) ? (int) $row['line'] : ((int) $row_index + 1);
+    $code = isset($row['code']) ? bwt_upload_detail_text($row['code']) : '';
+    $job['error_total']++;
+    if (count($job['errors']) >= BWT_CSV_MAX_ROWS) {
+        return;
+    }
+    $job['errors'][] = array(
+        'row_index' => (int) $row_index,
+        'line' => max(0, $line),
+        'order_id' => $order_id,
+        'order' => $order_id > 0 ? (string) $order_id : '',
+        'code' => $code,
+        'phase' => bwt_upload_detail_text($phase, 80),
+        'reason' => bwt_upload_detail_text($reason, 500),
+    );
+}
+
+/** ثبت یک دسته از ردیف‌های فایل روی سفارش‌ها و ثبت دلیل دقیق هر ناموفق. */
 function bwt_process_csv_batch(&$job, $batch_size = BWT_CSV_BATCH_SIZE) {
     $rows = isset($job['rows']) && is_array($job['rows']) ? $job['rows'] : array();
+    $job['offset'] = isset($job['offset']) ? max(0, (int) $job['offset']) : 0;
+    $job['invalid'] = isset($job['invalid']) ? (int) $job['invalid'] : 0;
     $batch_size = max(1, min(BWT_CSV_BATCH_SIZE, (int) $batch_size));
-    $end = min(count($rows), (int) $job['offset'] + $batch_size);
-    for ($i = (int) $job['offset']; $i < $end; $i++) {
-        $row = $rows[$i];
+    $start = (int) $job['offset'];
+    $end = min(count($rows), $start + $batch_size);
+    for ($i = $start; $i < $end; $i++) {
+        $row = is_array($rows[$i]) ? $rows[$i] : array();
         $order_id = isset($row['order_id']) ? (int) $row['order_id'] : 0;
         $code = isset($row['code']) ? (string) $row['code'] : '';
-        $order = ($order_id > 0 && function_exists('wc_get_order')) ? wc_get_order($order_id) : null;
-        if (!$order) {
+        $row['order_id'] = $order_id;
+        $row['code'] = $code;
+        if (!isset($row['line'])) {
+            $row['line'] = $i + 1;
+        }
+
+        if ($order_id <= 0) {
             $job['invalid']++;
-            if (count($job['errors']) < 50) {
-                $job['errors'][] = 'سفارش #' . $order_id . ' پیدا نشد.';
-            }
+            bwt_csv_record_error($job, $i, $row, 'شمارهٔ سفارش باید یک شناسهٔ عددی بزرگ‌تر از صفر باشد.');
             continue;
         }
-        $result = bwt_apply_tracking_codes($order, array($code), 'csv_upload', 'csv_upload');
-        $status = isset($result['status']) ? (string) $result['status'] : 'invalid';
-        if (isset($job[$status]) && is_int($job[$status])) {
-            $job[$status]++;
-        } else {
+
+        try {
+            $order = function_exists('wc_get_order') ? wc_get_order($order_id) : null;
+        } catch (Throwable $e) {
             $job['invalid']++;
+            bwt_csv_record_error($job, $i, $row, 'خطا هنگام خواندن سفارش از ووکامرس: ' . $e->getMessage());
+            continue;
         }
+        if (!$order) {
+            $job['invalid']++;
+            bwt_csv_record_error($job, $i, $row, 'سفارش #' . $order_id . ' در ووکامرس پیدا نشد؛ ممکن است حذف شده باشد یا شناسهٔ واردشده اشتباه باشد.');
+            continue;
+        }
+
+        try {
+            $result = bwt_apply_tracking_codes($order, array($code), 'csv_upload', 'csv_upload');
+        } catch (Throwable $e) {
+            $job['invalid']++;
+            bwt_csv_record_error($job, $i, $row, 'خطا هنگام ثبت کد روی سفارش #' . $order_id . ': ' . $e->getMessage());
+            continue;
+        }
+        $status = is_array($result) && isset($result['status']) ? (string) $result['status'] : 'invalid';
+        if (in_array($status, array('created', 'updated', 'unchanged'), true)) {
+            $job[$status]++;
+            continue;
+        }
+
+        $job['invalid']++;
+        if (is_array($result) && isset($result['message']) && is_scalar($result['message']) && trim((string) $result['message']) !== '') {
+            $reason = (string) $result['message'];
+        } elseif ($status === 'no_source' || $status === 'invalid') {
+            $reason = 'کد پس از پاک‌سازی/اعتبارسنجی نهایی پذیرفته نشد؛ باید دقیقاً ۲۴ رقم باشد و از فیلترهای سایت عبور کند.';
+        } elseif ($status === 'disabled') {
+            $reason = 'ثبت خودکار این سفارش غیرفعال است.';
+        } elseif ($status === 'skipped') {
+            $reason = 'سفارش در وضعیت قابل پردازش برای ثبت کد نیست.';
+        } else {
+            $reason = 'ذخیره‌سازی انجام نشد؛ وضعیت برگشتی ووکامرس: ' . ($status !== '' ? $status : 'نامشخص') . '.';
+        }
+        bwt_csv_record_error($job, $i, $row, $reason);
     }
-    $processed = max(0, $end - (int) $job['offset']);
+    $processed = max(0, $end - $start);
     $job['offset'] = $end;
     $job['done'] = $end >= count($rows);
     return $processed;
@@ -1698,11 +1829,13 @@ function bwt_ajax_csv_batch() {
     }
     check_ajax_referer('bwt_csv_batch', 'nonce');
     $job_id = isset($_POST['job_id']) ? bwt_sanitize_job_id(wp_unslash($_POST['job_id'])) : '';
+    $since_offset = isset($_POST['since_offset']) ? max(0, (int) wp_unslash($_POST['since_offset'])) : 0;
+    $include_skipped = isset($_POST['include_skipped']) && (string) wp_unslash($_POST['include_skipped']) === '1';
     $job = $job_id !== '' ? bwt_get_csv_job($job_id) : false;
     if (!$job || !is_array($job) || empty($job['user_id']) || (int) $job['user_id'] !== (int) get_current_user_id()) {
         wp_send_json_error(array('message' => 'کار آپلود پیدا نشد یا دسترسی آن منقضی شده است.'), 404);
     }
-    $payload = bwt_csv_job_payload($job);
+    $payload = bwt_csv_job_payload($job, $since_offset, $include_skipped);
     if (empty($job['done'])) {
         if (!bwt_acquire_lock('csv_job_' . $job_id, 120)) {
             wp_send_json_error(array('message' => 'یک دستهٔ دیگر در حال اجراست؛ لحظه‌ای دیگر ادامه می‌دهیم.'), 409);
@@ -1713,7 +1846,7 @@ function bwt_ajax_csv_batch() {
             set_transient(bwt_csv_job_key($job_id), $job, HOUR_IN_SECONDS);
         }
         bwt_release_lock('csv_job_' . $job_id);
-        $payload = is_array($job) ? bwt_csv_job_payload($job) : $payload;
+        $payload = is_array($job) ? bwt_csv_job_payload($job, $since_offset, $include_skipped) : $payload;
     }
     $payload['job_id'] = $job_id;
     wp_send_json_success($payload);
@@ -1883,7 +2016,7 @@ function bwt_render_hero($active) {
             </div>
             <div class="bwt-hero-text">
                 <h1 class="bwt-hero-title">کد رهگیری پستی</h1>
-                <p class="bwt-hero-sub">بدون فایل و بدون کار دستی — کدی که سورناپست صادر می‌کند، خودکار روی سفارش می‌نشیند</p>
+                <p class="bwt-hero-sub">همگام‌سازی · آپلود فایل · پیگیری سفارش</p>
             </div>
             <span class="bwt-hero-ver" dir="ltr">v<?php echo esc_html(BWT_VERSION); ?></span>
         </div>
@@ -2038,15 +2171,12 @@ function bwt_tracking_page() {
                     <span class="bwt-kpi__meta"><?php echo !empty($settings['sweep_enabled']) ? 'هر ۱۵ دقیقه فعال است' : 'خاموش است'; ?></span>
                 </div>
             </section>
-            <p class="bwt-hint bwt-kpi-note">هر دو عدد از سفارش‌های ۴۵ روز اخیر (در حال انجام، تکمیل‌شده، در انتظار بررسی و ارسال‌شده) شمرده می‌شوند؛ «دارای کد» + «بدون کد» همیشه برابر کل سفارش‌های همین بازه است.</p>
-
             <section class="bwt-card" id="bwt-source">
                 <header class="bwt-card__head">
                     <div>
                         <h2 class="bwt-card__title">۱. کلید متای کد رهگیری</h2>
-                        <p class="bwt-card__desc">نام متایی که سورناپست کد رهگیری را زیر آن روی سفارش می‌نویسد. یک بار ذخیره کنید؛ همگام‌سازی و جاروی خودکار از همین کلید می‌خوانند.</p>
+                        <p class="bwt-card__desc">کلید متای کد رهگیری سورناپست را وارد کنید.</p>
                     </div>
-                    <span class="bwt-badge-soft">گام ۱</span>
                 </header>
 
                 <div class="bwt-card__body">
@@ -2064,7 +2194,7 @@ function bwt_tracking_page() {
                             <span class="bwt-chip" data-key="<?php echo esc_attr($key); ?>" dir="ltr"><?php echo esc_html($key); ?></span>
                         <?php endforeach; ?>
                     </div>
-                    <p class="bwt-hint">هر کلیدی که اینجا اضافه کنید با اولویت خوانده می‌شود. کلیدهای رایج (<code dir="ltr">_tracking_code</code>، <code dir="ltr">_post_barcode</code>، <code dir="ltr">_wc_shipment_tracking_items</code>) و کد داخل یادداشت‌های سفارش هم بدون افزودن بررسی می‌شوند.</p>
+                    <p class="bwt-hint">کلیدهای رایج و یادداشت سفارش هم خودکار بررسی می‌شوند.</p>
                 </div>
             </section>
 
@@ -2072,13 +2202,12 @@ function bwt_tracking_page() {
                 <header class="bwt-card__head">
                     <div>
                         <h2 class="bwt-card__title">۲. همگام‌سازی سفارش‌ها</h2>
-                        <p class="bwt-card__desc">سفارش‌های قبلی را یک‌بار پر کنید؛ هر دسته ۵۰ سفارش است و اگر صفحه بسته شد، از همان‌جا ادامه می‌دهد.</p>
+                        <p class="bwt-card__desc">ثبت دسته‌ای سفارش‌های قدیمی؛ قابل ادامه در صورت قطع.</p>
                     </div>
-                    <span class="bwt-badge-soft">گام ۲</span>
                 </header>
                 <div class="bwt-card__body">
                     <div class="bwt-actions">
-                        <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-sync-mode="missing">همگام‌سازی سفارش‌های بدون کد</button>
+                        <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-sync-mode="missing">همگام‌سازی بدون کد</button>
                         <button type="button" class="bwt-btn" data-bwt-sync-mode="recent">بازبینی ۳۰۰ سفارش اخیر</button>
                     </div>
 
@@ -2089,12 +2218,10 @@ function bwt_tracking_page() {
                         <div data-bwt-sync-result></div>
                     </div>
 
-                    <p class="bwt-hint">
-                        جاروی خودکار هر ۱۵ دقیقه سفارش‌های ۴۵ روز اخیر را بررسی می‌کند.
+                    <p class="bwt-hint bwt-sync-summary">
+                        جارو: <?php echo !empty($settings['sweep_enabled']) ? 'فعال (هر ۱۵ دقیقه)' : 'خاموش'; ?>
                         <?php if (!empty($last_sweep['time'])) : ?>
-                            آخرین اجرا: <?php echo esc_html(date_i18n('j F Y - H:i', (int) $last_sweep['time'])); ?>
-                            · بررسی‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n(isset($last_sweep['scanned']) ? (int) $last_sweep['scanned'] : 0))); ?>
-                            · ثبت‌شده: <?php echo esc_html(bwt_fmt_digits(number_format_i18n((isset($last_sweep['created']) ? (int) $last_sweep['created'] : 0) + (isset($last_sweep['updated']) ? (int) $last_sweep['updated'] : 0)))); ?>
+                            · آخرین اجرا: <?php echo esc_html(date_i18n('j F - H:i', (int) $last_sweep['time'])); ?>
                         <?php endif; ?>
                     </p>
                 </div>
@@ -2104,9 +2231,8 @@ function bwt_tracking_page() {
                 <header class="bwt-card__head">
                     <div>
                         <h2 class="bwt-card__title">۳. آپلود فایل کد رهگیری</h2>
-                        <p class="bwt-card__desc">برای فایل‌هایی که از قبل دارید (CSV یا اکسل XLSX): ستون‌های «شماره سفارش» و «بارکد/کد رهگیری» خوانده می‌شوند و کدها روی همان سفارش‌ها می‌نشینند. کد هر سفارش جایگزین کد قبلی می‌شود.</p>
+                        <p class="bwt-card__desc">CSV/XLSX با ستون‌های شماره سفارش و بارکد؛ کد قبلی جایگزین می‌شود.</p>
                     </div>
-                    <span class="bwt-badge-soft">اختیاری</span>
                 </header>
                 <div class="bwt-card__body">
                     <form method="post" enctype="multipart/form-data" class="bwt-csv-form" data-bwt-csv-form>
@@ -2118,13 +2244,16 @@ function bwt_tracking_page() {
                             </span>
                             <span class="bwt-file__text">
                                 <b data-bwt-csv-name>فایل CSV یا اکسل را انتخاب کنید</b>
-                                <small>حداکثر ۲ مگابایت · تا ۵٬۰۰۰ ردیف · ستون‌های «شماره سفارش» و «بارکد» (ستون بارکد در اکسل باید متن باشد)</small>
+                                <small>CSV/XLSX · حداکثر ۲ مگابایت · تا ۵٬۰۰۰ ردیف</small>
                             </span>
                         </label>
                         <button type="submit" name="bwt_csv_upload" value="1" class="bwt-btn bwt-btn--primary">خواندن فایل</button>
                     </form>
 
-                    <p class="bwt-hint">ردیف اول می‌تواند سرصفحه باشد (مثل «شماره سفارش» و «بارکد» یا <span dir="ltr">order_id,tracking_code</span>)؛ اگر نباشد، ستون اول شمارهٔ سفارش و ستون دوم کد در نظر گرفته می‌شود. در CSV جداکنندهٔ «،» و «;» هم پشتیبانی می‌شود. ستون‌های اضافی (تاریخ، مقصد، نام گیرنده…) نادیده گرفته می‌شوند؛ شناسه‌های داخلی مثل <span dir="ltr">m-1794319655984</span> نیز بی‌سروصدا رد می‌شوند و خطا نیستند.</p>
+                    <details class="bwt-details bwt-upload-help">
+                        <summary>راهنمای فرمت فایل</summary>
+                        <p class="bwt-hint">سرصفحه‌های «شماره سفارش» و «بارکد» شناسایی می‌شوند؛ ستون‌های دیگر نادیده گرفته می‌شوند. اگر سرصفحه ندارید، ستون اول سفارش و دوم کد باشد. CSV از «،» و «;» هم پشتیبانی می‌کند. بارکد ۲۴ رقمی در اکسل باید متن باشد؛ مقدارهای داخلی مثل <span dir="ltr">m-1794319655984</span> نادیده گرفته می‌شوند.</p>
+                    </details>
 
                     <div class="bwt-csv-job" data-bwt-csv-job="<?php echo esc_attr($csv_job_id); ?>" <?php echo $csv_job_id === '' ? 'hidden' : ''; ?>>
                         <div class="bwt-progress__track"><progress class="bwt-progress__bar" data-bwt-csv-progress max="100" value="0" aria-label="پیشرفت ثبت کدها"></progress></div>
@@ -2133,36 +2262,37 @@ function bwt_tracking_page() {
                             <button type="button" class="bwt-btn bwt-btn--primary" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
                             <button type="button" class="bwt-btn bwt-btn--sm" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
                         </div>
+                        <div class="bwt-csv-errors" data-bwt-csv-errors aria-live="polite" hidden></div>
                         <div data-bwt-csv-result></div>
                     </div>
                 </div>
             </section>
 
-            <form method="post" class="bwt-card" id="bwt-settings">
+            <form method="post" class="bwt-card bwt-settings-card" id="bwt-settings">
                 <?php wp_nonce_field('bwt_settings_action', 'bwt_settings_nonce'); ?>
-                <header class="bwt-card__head">
-                    <div>
-                        <h2 class="bwt-card__title">۴. تنظیمات</h2>
-                        <p class="bwt-card__desc">پیش‌فرض‌ها برای سایت شما مناسب‌اند؛ این بخش را فقط اگر لازم شد باز کنید.</p>
-                    </div>
-                    <span class="bwt-badge-soft">پیشرفته</span>
-                </header>
-                <div class="bwt-card__body">
+                <details class="bwt-settings-details">
+                    <summary class="bwt-card__head bwt-settings-summary">
+                        <div>
+                            <h2 class="bwt-card__title">۴. تنظیمات پیشرفته</h2>
+                            <p class="bwt-card__desc">تنظیمات خودکار، لینک پیگیری و منابع جایگزین</p>
+                        </div>
+                    </summary>
+                    <div class="bwt-card__body">
                     <div class="bwt-switches">
                         <label class="bwt-switch">
                             <input type="checkbox" name="sweep_enabled" value="1" <?php checked(!empty($settings['sweep_enabled'])); ?> />
                             <span class="bwt-switch__ui" aria-hidden="true"></span>
-                            <span class="bwt-switch__text">جاروی خودکار هر ۱۵ دقیقه<small>سفارش‌های ۴۵ روز اخیر را می‌گردد.</small></span>
+                            <span class="bwt-switch__text">جاروی خودکار هر ۱۵ دقیقه</span>
                         </label>
                         <label class="bwt-switch">
                             <input type="checkbox" name="scan_notes" value="1" <?php checked(!empty($settings['scan_notes'])); ?> />
                             <span class="bwt-switch__ui" aria-hidden="true"></span>
-                            <span class="bwt-switch__text">خواندن کد از یادداشت‌های سفارش<small>اگر سورناپست فقط یادداشت بگذارد.</small></span>
+                            <span class="bwt-switch__text">خواندن کد از یادداشت‌ها</span>
                         </label>
                         <label class="bwt-switch">
                             <input type="checkbox" name="push_enabled" value="1" <?php checked(!empty($settings['push_enabled'])); ?> />
                             <span class="bwt-switch__ui" aria-hidden="true"></span>
-                            <span class="bwt-switch__text">فعال‌کردن Push API<small>دریافت کد از سرویس بیرونی با امضای HMAC.</small></span>
+                            <span class="bwt-switch__text">فعال‌کردن Push API</span>
                         </label>
                     </div>
 
@@ -2180,7 +2310,7 @@ function bwt_tracking_page() {
                         <label class="bwt-field bwt-field--wide">
                             <span class="bwt-field__label">فایل PDF کدهای رهگیری (اختیاری)</span>
                             <input type="text" name="fallback_pdf" class="bwt-input bwt-input--mono" dir="ltr" value="<?php echo esc_attr($settings['fallback_pdf']); ?>" placeholder="https://example.com/tracking.pdf" />
-                            <span class="bwt-field__help">وقتی جست‌وجوی مشتری خطا می‌دهد، همین فایل داخل فرم و زیر پیام خطا نمایش داده می‌شود. خالی بگذارید تا نمایش داده نشود.</span>
+                            <span class="bwt-field__help">در نبود کد، فایل به مشتری نمایش داده می‌شود.</span>
                         </label>
                     </div>
 
@@ -2226,15 +2356,18 @@ Header: X-BWT-Signature: hex( hmac_sha256( raw_body, secret ) )</pre>
                     <div class="bwt-actions">
                         <button type="submit" name="bwt_save_settings" class="bwt-btn bwt-btn--primary">ذخیرهٔ تنظیمات</button>
                     </div>
-                </div>
+                    </div>
+                </details>
             </form>
 
-            <div class="bwt-grid-2">
+            <details class="bwt-details bwt-tools-details">
+                <summary>ابزارهای کمکی <span>ثبت دستی · فرم پیگیری مشتری</span></summary>
+                <div class="bwt-grid-2">
                 <section class="bwt-card">
                     <header class="bwt-card__head">
                         <div>
-                            <h2 class="bwt-card__title">ثبت دستی (اضطراری)</h2>
-                            <p class="bwt-card__desc">فقط وقتی خودکار پیدا نشد.</p>
+                            <h2 class="bwt-card__title">ثبت دستی</h2>
+                            <p class="bwt-card__desc">برای موارد استثنایی.</p>
                         </div>
                     </header>
                     <div class="bwt-card__body">
@@ -2257,15 +2390,16 @@ Header: X-BWT-Signature: hex( hmac_sha256( raw_body, secret ) )</pre>
                     <header class="bwt-card__head">
                         <div>
                             <h2 class="bwt-card__title">فرم پیگیری مشتری</h2>
-                            <p class="bwt-card__desc">این شورت‌کد را در صفحهٔ «پیگیری سفارش» بگذارید.</p>
+                            <p class="bwt-card__desc">شورت‌کد صفحهٔ پیگیری.</p>
                         </div>
                     </header>
                     <div class="bwt-card__body">
                         <code class="bwt-shortcode" dir="ltr">[tracking_search_form]</code>
-                        <p class="bwt-hint">مشتری با شمارهٔ سفارش + موبایل ثبت‌شده، کد رهگیری و لینک پیگیری پست را همان‌جا می‌بیند. تا وقتی کد نیامده، متن آماده‌سازی و بررسی خودکار نمایش داده می‌شود.</p>
+                        <p class="bwt-hint">مشتری با شمارهٔ سفارش و موبایل ثبت‌شده، کد و لینک پست را می‌بیند.</p>
                     </div>
                 </section>
-            </div>
+                </div>
+            </details>
 
         </div>
     </div>

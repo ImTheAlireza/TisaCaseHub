@@ -416,8 +416,11 @@ async function trackingDom(payload) {
         <div data-bwt-csv-job="${jobId}">
             <progress data-bwt-csv-progress max="100" value="0"></progress>
             <p data-bwt-csv-counters></p>
-            <button type="button" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
-            <button type="button" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+            <div class="bwt-actions">
+                <button type="button" data-bwt-csv-run>ثبت روی سفارش‌ها</button>
+                <button type="button" data-bwt-csv-resume hidden>ادامهٔ ثبت</button>
+            </div>
+            <div data-bwt-csv-errors hidden></div>
             <div data-bwt-csv-result></div>
         </div>
     </body></html>`;
@@ -432,10 +435,15 @@ async function trackingDom(payload) {
         genericError: 'خطا',
     };
     const batches = [
-        { done: false, progress: 50, offset: 10, total: 20, created: 8, updated: 1, unchanged: 1, invalid: 0 },
         {
-            done: true, progress: 100, offset: 20, total: 20, created: 15, updated: 3, unchanged: 2, invalid: 0,
-            skipped: [{ line: 4, message: 'کد رهگیری نامعتبر است.', value: 'xx' }], skipped_total: 1, errors: [],
+            done: false, progress: 50, offset: 10, total: 20, created: 8, updated: 1, unchanged: 0, invalid: 1,
+            skipped: [], skipped_total: 1, error_total: 1,
+            errors: [{ row_index: 8, line: 10, order_id: 404, code: '993200522000276250063003', phase: 'ثبت سفارش', reason: 'سفارش #404 در ووکامرس پیدا نشد.' }],
+        },
+        {
+            done: true, progress: 100, offset: 20, total: 20, created: 15, updated: 3, unchanged: 1, invalid: 1,
+            skipped: [{ line: 4, order_id: 424174, order: '424174', code: 'xx', phase: 'خواندن فایل', message: 'کد رهگیری نامعتبر است؛ کد باید دقیقاً ۲۴ رقم باشد.' }],
+            skipped_total: 1, errors: [], error_total: 1,
         },
     ];
     const sent = [];
@@ -447,17 +455,29 @@ async function trackingDom(payload) {
     await boot(dom, adminSource);
     const doc = dom.window.document;
     doc.querySelector('[data-bwt-csv-run]').click();
+    await waitFor(() => /سفارش #404/.test(doc.querySelector('[data-bwt-csv-errors]').textContent));
+    const liveErrors = doc.querySelector('[data-bwt-csv-errors]');
+    assert.equal(doc.querySelector('.bwt-actions').nextElementSibling, liveErrors, 'جدول جزئیات درست زیر دکمه‌هاست');
+    assert.equal(liveErrors.hidden, false, 'جدول خطا همان لحظهٔ دریافت batch باز می‌شود');
+    assert.match(liveErrors.textContent, /993200522000276250063003/);
+    assert.match(liveErrors.textContent, /در ووکامرس پیدا نشد/);
     await waitFor(() => /تمام شد/.test(doc.querySelector('[data-bwt-csv-result]').textContent));
     assert.equal(sent.length, 2, 'دو دسته تا پایان آپلود فرستاده می‌شود');
     assert.equal(sent[0].get('action'), 'bwt_csv_batch');
     assert.equal(sent[0].get('job_id'), jobId);
     assert.equal(sent[0].get('nonce'), 'csv-nonce');
+    assert.equal(sent[0].get('since_offset'), '0');
+    assert.equal(sent[0].get('include_skipped'), '1');
+    assert.equal(sent[1].get('since_offset'), '10');
+    assert.equal(sent[1].get('include_skipped'), '0');
     assert.match(doc.querySelector('[data-bwt-csv-counters]').textContent, /پردازش‌شده/);
     assert.equal(doc.querySelector('[data-bwt-csv-progress]').value, 100);
     const result = doc.querySelector('[data-bwt-csv-result]');
     assert.match(result.textContent, /۱۸ سفارش کد رهگیری گرفت/, '۱۵ جدید + ۳ به‌روزشده');
-    assert.match(result.textContent, /۱ ردیف رد شد/);
-    assert.match(result.textContent, /کد رهگیری نامعتبر است/);
+    assert.match(result.textContent, /۲ ردیف ناموفق یا ردشده/);
+    assert.match(liveErrors.textContent, /کد رهگیری نامعتبر است/);
+    assert.match(liveErrors.textContent, /xx/);
+    assert.equal(liveErrors.querySelectorAll('tbody tr').length, 2, 'جزئیات خطاهای زمان پردازش و خواندن فایل در جدول‌اند');
     dom.window.close();
 }
 

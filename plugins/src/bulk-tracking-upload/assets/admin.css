@@ -1,5 +1,5 @@
 /*!
- * کد رهگیری پستی — استایل پیشخوان (v3.3)
+ * کد رهگیری پستی — استایل پیشخوان (v3.7.6)
  * ------------------------------------------------------------------
  * چون این صفحه روی اسکرین‌های ووکامرس لود می‌شود (نه داخل هاب)،
  * کامپوننت‌های پایه را خودش تعریف می‌کند و به tisacase-ui وابسته نیست؛
@@ -7,8 +7,8 @@
  *
  * قواعد چیدمان:
  *  • یک ستون با فاصلهٔ یکنواخت (bwt-stack) — هیچ گرید نامتوازنی نیست.
- *  • هر کارت: سر + بدنه، عنوان ۱۵px/۷۰۰ و توضیح ۱۲px خاکستری.
- *  • کنترل‌ها ۳۸px، گوشهٔ ۱۰px، فوکوس با رینگ برند.
+ *  • کارت‌ها و فاصله‌ها فشرده؛ عنوان ۱۴px و توضیح کوتاه و خاکستری.
+ *  • کنترل‌ها ۳۵px، گوشهٔ ۱۰px، فوکوس با رینگ برند.
  *  • جدول‌ها اسکرول افقی دارند و ستون نمونه با «…» کوتاه می‌شود.
  */
 
@@ -16,9 +16,9 @@
 .bwt-wrap.wrap {
 	box-sizing: border-box;
 	width: 100%;
-	max-width: 1120px;
-	margin: 24px auto 0;
-	padding: 0 20px 64px;
+	max-width: 1280px;
+	margin: 16px auto 0;
+	padding: 0 16px 40px;
 	color: var(--tisa-ink, #1F2A2E);
 	font-family: var(--tisa-font, inherit);
 	font-size: 13px;
@@ -39,15 +39,15 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 	padding-inline-start: 0;
 }
 
-.bwt-stack { display: flex; flex-direction: column; gap: 18px; }
+.bwt-stack { display: flex; flex-direction: column; gap: 12px; }
 
 /* ---------- هیرو ---------- */
 .bwt-hero {
 	position: relative;
 	overflow: hidden;
-	margin: 0 0 18px;
-	padding: 24px 26px 0;
-	border-radius: 18px;
+	margin: 0 0 12px;
+	padding: 16px 20px 0;
+	border-radius: 16px;
 	background: linear-gradient(120deg, #0A5F52 0%, #0E7C6B 58%, #17A088 100%);
 	color: #fff;
 	box-shadow: 0 16px 34px -22px rgba(10, 95, 82, .6);
@@ -71,15 +71,15 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 42px;
-	height: 42px;
-	border-radius: 12px;
+	width: 36px;
+	height: 36px;
+	border-radius: 10px;
 	background: rgba(255, 255, 255, .16);
 }
 .bwt-hero-mark svg { width: 21px; height: 21px; }
 .bwt-hero-text { flex: 1 1 auto; min-width: 0; }
 .bwt-wrap h1.bwt-hero-title { margin: 0; padding: 0; font-size: 19px; font-weight: 800; line-height: 1.4; color: #fff; }
-.bwt-hero-sub { margin: 3px 0 0; font-size: 12px; line-height: 1.7; opacity: .82; }
+.bwt-hero-sub { margin: 2px 0 0; font-size: 11.5px; line-height: 1.5; opacity: .82; }
 .bwt-hero-ver {
 	flex: 0 0 auto;
 	padding: 3px 9px;
@@ -88,12 +88,12 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 	font-family: var(--tisa-mono, ui-monospace, Consolas, monospace);
 	font-size: 11px;
 }
-.bwt-tabs { position: relative; display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; padding: 0 0 16px; }
+.bwt-tabs { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; padding: 0 0 11px; }
 .bwt-wrap .bwt-tabs a.bwt-tab {
 	display: inline-flex;
 	align-items: center;
-	height: 32px;
-	padding: 0 14px;
+	height: 29px;
+	padding: 0 12px;
 	border: 0;
 	border-radius: 999px;
 	background: rgba(255, 255, 255, .12);
@@ -110,8 +110,8 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 /* ---------- نوتیس ---------- */
 .bwt-wrap .tisa-notice,
 .bwt-wrap .bwt-notice {
-	margin: 0 0 14px;
-	padding: 12px 16px;
+	margin: 0 0 10px;
+	padding: 9px 13px;
 	border: 1px solid var(--tisa-border, #E3E1DA);
 	border-inline-start: 3px solid var(--tisa-primary, #0E7C6B);
 	border-radius: 10px;
@@ -125,20 +125,20 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 .bwt-wrap .tisa-notice--danger { border-inline-start-color: var(--tisa-danger, #B5453A); background: var(--tisa-danger-soft, #FBECEA); color: var(--tisa-danger-ink, #8E3128); }
 
 /* ---------- KPI ---------- */
-.bwt-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.bwt-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .bwt-kpi {
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	padding: 16px 18px;
+	gap: 3px;
+	padding: 11px 14px;
 	border: 1px solid var(--tisa-border, #E3E1DA);
 	border-radius: 14px;
 	background: #fff;
 }
 .bwt-kpi__label { font-size: 11.5px; color: var(--tisa-muted, #77828A); }
-.bwt-kpi__value { font-size: 26px; font-weight: 800; line-height: 1.2; color: var(--tisa-ink, #1F2A2E); }
+.bwt-kpi__value { font-size: 23px; font-weight: 800; line-height: 1.15; color: var(--tisa-ink, #1F2A2E); }
 .bwt-kpi__value--sm { font-size: 15px; font-weight: 700; line-height: 1.9; }
-.bwt-kpi__meta { font-size: 11px; color: var(--tisa-muted, #77828A); }
+.bwt-kpi__meta { font-size: 10.5px; color: var(--tisa-muted, #77828A); }
 .bwt-kpi--warn .bwt-kpi__value { color: var(--tisa-warning, #8A6116); }
 
 /* ---------- کارت ---------- */
@@ -146,20 +146,20 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 	margin: 0;
 	padding: 0;
 	border: 1px solid var(--tisa-border, #E3E1DA);
-	border-radius: 14px;
+	border-radius: 12px;
 	background: #fff;
 	overflow: hidden;
 }
 .bwt-card__head {
 	display: flex;
 	align-items: flex-start;
-	gap: 12px;
-	padding: 18px 20px 0;
+	gap: 10px;
+	padding: 13px 16px 0;
 }
 .bwt-card__head > div:first-child { flex: 1 1 auto; min-width: 0; }
-.bwt-card__title { font-size: 15px; line-height: 1.6; }
-.bwt-card__desc { margin: 4px 0 0; font-size: 12px; line-height: 1.8; color: var(--tisa-muted, #77828A); }
-.bwt-card__body { padding: 14px 20px 20px; }
+.bwt-card__title { font-size: 14px; line-height: 1.45; }
+.bwt-card__desc { margin: 2px 0 0; font-size: 11px; line-height: 1.55; color: var(--tisa-muted, #77828A); }
+.bwt-card__body { padding: 10px 16px 14px; }
 .bwt-badge-soft {
 	flex: 0 0 auto;
 	padding: 2px 10px;
@@ -185,9 +185,9 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	height: 38px;
+	height: 35px;
 	margin: 0;
-	padding: 0 16px;
+	padding: 0 14px;
 	border: 1px solid var(--tisa-border-strong, #C9DCD7);
 	border-radius: 10px;
 	background: #fff;
@@ -217,9 +217,9 @@ body.woocommerce_page_bwt-cleanup #wpcontent {
 .bwt-wrap .bwt-input {
 	display: block;
 	width: 100%;
-	height: 38px;
+	height: 35px;
 	margin: 0;
-	padding: 0 12px;
+	padding: 0 10px;
 	border: 1px solid var(--tisa-border, #E3E1DA);
 	border-radius: 10px;
 	background: #fff;
@@ -250,15 +250,15 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-field--inline { flex: 0 0 auto; }
 .bwt-field--inline .bwt-input { width: 150px; }
 
-.bwt-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.bwt-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
 .bwt-form-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .bwt-form-stack { display: flex; flex-direction: column; gap: 12px; }
 
 .bwt-check { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tisa-muted, #77828A); }
 
 /* سوییچ */
-.bwt-switches { display: flex; flex-direction: column; gap: 2px; margin: 0 0 6px; }
-.bwt-switch { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; margin: 0; cursor: pointer; border-top: 1px solid #F1EFE9; }
+.bwt-switches { display: flex; flex-direction: column; gap: 0; margin: 0 0 4px; }
+.bwt-switch { display: flex; align-items: center; gap: 9px; padding: 6px 0; margin: 0; cursor: pointer; border-top: 1px solid #F1EFE9; }
 .bwt-switch:first-child { border-top: 0; }
 .bwt-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .bwt-switch__ui {
@@ -290,15 +290,15 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-switch__text small { display: block; font-size: 11px; font-weight: 400; color: var(--tisa-muted, #77828A); }
 
 /* ---------- چیدمان‌های کمکی ---------- */
-.bwt-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 0; }
+.bwt-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
 .bwt-actions:first-child { margin-top: 0; }
-.bwt-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-.bwt-divider { height: 1px; margin: 16px 0; background: #F1EFE9; }
+.bwt-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.bwt-divider { height: 1px; margin: 10px 0; background: #F1EFE9; }
 .bwt-subtitle { font-size: 12.5px; font-weight: 700; color: var(--tisa-ink, #1F2A2E); margin: 0 0 8px; }
-.bwt-hint { margin: 8px 0 0; font-size: 11.5px; line-height: 1.9; color: var(--tisa-muted, #77828A); }
+.bwt-hint { margin: 6px 0 0; font-size: 10.8px; line-height: 1.65; color: var(--tisa-muted, #77828A); }
 .bwt-hint--bad { color: var(--tisa-danger-ink, #8E3128); }
 .bwt-hint--ok { color: var(--tisa-success, #1A7F37); }
-.bwt-status-line { margin: 10px 0 0; font-size: 11.5px; line-height: 1.8; color: var(--tisa-muted, #77828A); }
+.bwt-status-line { margin: 6px 0 0; font-size: 11px; line-height: 1.6; color: var(--tisa-muted, #77828A); }
 .bwt-status-line:empty { display: none; }
 
 /* ---------- چیپ ---------- */
@@ -377,10 +377,10 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-row--suggested td { background: var(--tisa-primary-soft, #E8F0EE) !important; }
 
 /* ---------- بلوک‌های تاشو و کد ---------- */
-.bwt-details { margin-top: 14px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 10px; background: #FAFAF8; }
+.bwt-details { margin-top: 10px; border: 1px solid var(--tisa-border, #E3E1DA); border-radius: 10px; background: #FAFAF8; }
 .bwt-details > summary {
-	padding: 10px 14px;
-	font-size: 12px;
+	padding: 8px 12px;
+	font-size: 11.5px;
 	font-weight: 700;
 	color: var(--tisa-ink, #1F2A2E);
 	cursor: pointer;
@@ -390,7 +390,30 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-details > summary::before { content: "＋"; display: inline-block; margin-inline-end: 8px; color: var(--tisa-primary, #0E7C6B); font-weight: 700; }
 .bwt-details[open] > summary::before { content: "－"; }
 .bwt-details[open] > summary { border-bottom: 1px solid var(--tisa-border, #E3E1DA); background: #fff; border-radius: 10px 10px 0 0; }
-.bwt-details > *:not(summary) { margin: 12px 14px; }
+.bwt-details > *:not(summary) { margin: 10px 12px; }
+
+.bwt-settings-details > summary {
+	align-items: center;
+	padding: 11px 16px;
+	cursor: pointer;
+	list-style: none;
+}
+.bwt-settings-details > summary::-webkit-details-marker { display: none; }
+.bwt-settings-details > summary::after {
+	content: "＋";
+	flex: 0 0 auto;
+	margin-inline-start: 10px;
+	color: var(--tisa-primary, #0E7C6B);
+	font-size: 16px;
+	font-weight: 700;
+}
+.bwt-settings-details[open] > summary { padding-bottom: 10px; border-bottom: 1px solid var(--tisa-border, #E3E1DA); }
+.bwt-settings-details[open] > summary::after { content: "－"; }
+.bwt-tools-details > summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.bwt-tools-details > summary span { color: var(--tisa-muted, #77828A); font-size: 10.5px; font-weight: 400; }
+.bwt-upload-help { margin-top: 7px; }
+.bwt-upload-help > summary { font-size: 10.5px; }
+.bwt-upload-help .bwt-hint { font-size: 10.5px; line-height: 1.6; }
 .bwt-code-block {
 	margin: 12px 14px;
 	padding: 12px 14px;
@@ -419,13 +442,13 @@ select.bwt-input { padding-inline-end: 30px; }
 }
 
 /* ---------- پیشرفت ---------- */
-.bwt-progress { margin-top: 14px; }
-.bwt-progress__track { height: 10px; border-radius: 999px; background: #EFEDE6; overflow: hidden; }
+.bwt-progress { margin-top: 10px; }
+.bwt-progress__track { height: 8px; border-radius: 999px; background: #EFEDE6; overflow: hidden; }
 .bwt-wrap progress.bwt-progress__bar,
 .bwt-wrap progress.bwt-progress-bar {
 	display: block;
 	width: 100%;
-	height: 10px;
+	height: 8px;
 	margin: 0;
 	border: 0;
 	border-radius: 999px;
@@ -441,8 +464,8 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-wrap progress.bwt-progress-bar::-webkit-progress-value { background: var(--tisa-primary, #0E7C6B); border-radius: 999px; }
 .bwt-wrap progress.bwt-progress__bar::-moz-progress-bar,
 .bwt-wrap progress.bwt-progress-bar::-moz-progress-bar { background: var(--tisa-primary, #0E7C6B); border-radius: 999px; }
-.bwt-progress__meta { margin: 8px 0 0; font-size: 11.5px; color: var(--tisa-muted, #77828A); }
-.bwt-progress-meta { margin: 8px 0 0; font-size: 11.5px; color: var(--tisa-muted, #77828A); }
+.bwt-progress__meta { margin: 5px 0 0; font-size: 10.8px; color: var(--tisa-muted, #77828A); }
+.bwt-progress-meta { margin: 5px 0 0; font-size: 10.8px; color: var(--tisa-muted, #77828A); }
 
 /* ---------- پاک‌سازی ---------- */
 .bwt-ids { max-width: 360px; }
@@ -486,18 +509,18 @@ select.bwt-input { padding-inline-end: 30px; }
 	display: flex;
 	flex-wrap: wrap;
 	align-items: stretch;
-	gap: 12px;
+	gap: 8px;
 }
 
 .bwt-file {
 	position: relative;
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	gap: 9px;
 	flex: 1 1 320px;
 	min-width: 0;
 	margin: 0;
-	padding: 12px 14px;
+	padding: 9px 11px;
 	border: 1px dashed var(--tisa-border-strong, #C9DCD7);
 	border-radius: 12px;
 	background: #FAFAF8;
@@ -525,9 +548,9 @@ select.bwt-input { padding-inline-end: 30px; }
 	align-items: center;
 	justify-content: center;
 	flex: 0 0 auto;
-	width: 40px;
-	height: 40px;
-	border-radius: 10px;
+	width: 32px;
+	height: 32px;
+	border-radius: 9px;
 	background: #EAF4F1;
 	color: var(--tisa-primary, #0E7C6B);
 }
@@ -535,13 +558,20 @@ select.bwt-input { padding-inline-end: 30px; }
 .bwt-file__icon svg { width: 20px; height: 20px; }
 
 .bwt-file__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.bwt-file__text b { font-size: 12.5px; color: var(--tisa-ink, #1F2A2E); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.bwt-file__text small { font-size: 11px; color: var(--tisa-muted, #77828A); line-height: 1.7; }
+.bwt-file__text b { font-size: 11.5px; color: var(--tisa-ink, #1F2A2E); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bwt-file__text small { font-size: 10.2px; color: var(--tisa-muted, #77828A); line-height: 1.45; }
 
 .bwt-csv-form > .bwt-btn { flex: 0 0 auto; align-self: center; }
 
-.bwt-csv-job { margin-top: 14px; }
+.bwt-csv-job { margin-top: 10px; }
 .bwt-csv-job[hidden] { display: none; }
+.bwt-csv-errors { margin-top: 12px; }
+.bwt-csv-errors[hidden] { display: none; }
+.bwt-csv-error-details { max-height: 340px; overflow: auto; overscroll-behavior: contain; }
+.bwt-csv-error-details thead th { position: sticky; top: 0; z-index: 1; }
+.bwt-wrap .bwt-csv-error-details table.bwt-table { min-width: 780px; }
+.bwt-csv-error-code { direction: ltr; text-align: left !important; white-space: nowrap; font-family: var(--tisa-mono, ui-monospace, Consolas, monospace); }
+.bwt-csv-error-reason { min-width: 240px; white-space: normal; }
 
 .bwt-wrap table.bwt-table--compact th,
 .bwt-wrap table.bwt-table--compact td { padding: 6px 10px; font-size: 11.5px; }
