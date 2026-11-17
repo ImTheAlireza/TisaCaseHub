@@ -23,6 +23,8 @@ $GLOBALS['wcto_transients'] = [];
 $GLOBALS['wcto_postmeta']   = [];   // post_id => [key => value]
 $GLOBALS['wcto_orders']     = [];   // order_id => WC_Order
 $GLOBALS['wcto_hooks']      = [];   // هوک‌های ثبت‌شده (فقط برای شمارش)
+$GLOBALS['wcto_filters']    = [];   // فیلترهای ثبت‌شده: hook => [callback, ...]
+$GLOBALS['wcto_http_queue'] = [];   // صف پاسخ‌های تقلبی HTTP (به‌ترتیب مصرف می‌شوند)
 
 function wcto_reset_env() {
     $GLOBALS['wcto_options']    = [];
@@ -30,6 +32,10 @@ function wcto_reset_env() {
     $GLOBALS['wcto_transients'] = [];
     $GLOBALS['wcto_postmeta']   = [];
     $GLOBALS['wcto_orders']     = [];
+    $GLOBALS['wcto_filters']    = [];
+    $GLOBALS['wcto_http_queue'] = [];
+    $GLOBALS['wcto_http']       = [];
+    unset($GLOBALS['wcto_http_fail'], $GLOBALS['wcto_http_code'], $GLOBALS['wcto_http_body'], $GLOBALS['wcto_http_error']);
 }
 
 /** رویدادهای زمان‌بندی‌شده با هوک مشخص */
@@ -98,14 +104,24 @@ function add_action($hook, $cb, $priority = 10, $args = 1) {
     $GLOBALS['wcto_hooks'][$hook][] = $cb;
     return true;
 }
-function add_filter($hook, $cb, $priority = 10, $args = 1) { return add_action($hook, $cb, $priority, $args); }
+function add_filter($hook, $cb, $priority = 10, $args = 1) {
+    $GLOBALS['wcto_filters'][$hook][] = $cb;
+    return add_action($hook, $cb, $priority, $args);
+}
 function has_action($hook, $cb = false) { return !empty($GLOBALS['wcto_hooks'][$hook]); }
 function has_filter($hook, $cb = false) { return has_action($hook, $cb); }
 function remove_action($hook, $cb, $priority = 10) { return true; }
 function remove_filter($hook, $cb, $priority = 10) { return true; }
 function do_action($hook, ...$args) { return null; }
-// فیلترها در تست دست‌نخورده برمی‌گردند تا مقدار پیش‌فرض افزونه بررسی شود
-function apply_filters($hook, $value, ...$args) { return $value; }
+// فیلترهای ثبت‌شده واقعاً اجرا می‌شوند؛ بدون callback مقدار پیش‌فرض دست‌نخورده برمی‌گردد
+function apply_filters($hook, $value, ...$args) {
+    if (!empty($GLOBALS['wcto_filters'][$hook])) {
+        foreach ($GLOBALS['wcto_filters'][$hook] as $cb) {
+            $value = call_user_func_array($cb, array_merge([$value], $args));
+        }
+    }
+    return $value;
+}
 function register_activation_hook($file, $cb) { return true; }
 function register_deactivation_hook($file, $cb) { return true; }
 function register_setting($group, $name, $args = []) { return true; }
@@ -309,8 +325,33 @@ function nocache_headers() { return null; }
 function wp_die($message = '', $title = '', $args = []) { throw new RuntimeException(is_string($message) ? $message : 'wp_die'); }
 function site_url($path = '') { return 'http://example.test' . $path; }
 function dbDelta($sql = '', $execute = true) { return []; }
+class WP_Error {
+    private $code;
+    private $message;
+    public function __construct($code = '', $message = '') {
+        $this->code = $code;
+        $this->message = $message;
+    }
+    public function get_error_code() { return $this->code; }
+    public function get_error_message() { return $this->message; }
+}
+
 function wp_remote_post($url, $args = []) {
     $GLOBALS['wcto_http'][] = ['url' => $url, 'args' => $args];
+    // صف پاسخ‌های از پیش‌تعریف‌شده (برای تست تلاش مجدد/قطعی موقت) — به‌ترتیب مصرف می‌شود
+    if (!empty($GLOBALS['wcto_http_queue'])) {
+        $r = array_shift($GLOBALS['wcto_http_queue']);
+        if (isset($r['wp_error'])) {
+            return new WP_Error(isset($r['wp_error'][0]) ? $r['wp_error'][0] : 'http_request_failed', isset($r['wp_error'][1]) ? $r['wp_error'][1] : 'cURL error 28: Operation timed out after 15000 milliseconds with 0 bytes received');
+        }
+        return ['response' => ['code' => isset($r['code']) ? (int) $r['code'] : 200], 'body' => isset($r['body']) ? $r['body'] : '{"ok":true,"result":{"message_id":' . (count($GLOBALS['wcto_http']) + 100) . '}}'];
+    }
+    if (!empty($GLOBALS['wcto_http_error'])) {
+        return new WP_Error('http_request_failed', (string) $GLOBALS['wcto_http_error']);
+    }
+    if (isset($GLOBALS['wcto_http_code'])) {
+        return ['response' => ['code' => (int) $GLOBALS['wcto_http_code']], 'body' => isset($GLOBALS['wcto_http_body']) ? $GLOBALS['wcto_http_body'] : '{"ok":false,"description":"Bad Gateway"}'];
+    }
     if (!empty($GLOBALS['wcto_http_fail'])) {
         return ['response' => ['code' => 401], 'body' => '{"ok":false,"description":"Unauthorized"}'];
     }
@@ -318,7 +359,7 @@ function wp_remote_post($url, $args = []) {
 }
 function wp_remote_retrieve_body($response) { return is_array($response) && isset($response['body']) ? $response['body'] : ''; }
 function wp_remote_retrieve_response_code($response) { return is_array($response) && isset($response['response']['code']) ? $response['response']['code'] : 0; }
-function is_wp_error($thing) { return false; }
+function is_wp_error($thing) { return $thing instanceof WP_Error; }
 
 /* ---------- دیتابیس (فقط تا جایی که لاگ لازم دارد) ---------- */
 
