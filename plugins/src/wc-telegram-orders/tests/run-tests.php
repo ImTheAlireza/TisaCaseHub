@@ -565,6 +565,127 @@ $p->maybe_schedule_daily();
 $daily_events = wcto_cron_hooks(WC_Telegram_Orders::CRON_HOOK);
 t('زمان‌بندی‌های قدیمی و تکراری به یک کرون روزانهٔ بی‌آرگومان پاک‌سازی می‌شوند', count($daily_events) === 1 && $daily_events[0]['args'] === [] && $daily_events[0]['schedule'] === 'daily', var_export($daily_events, true));
 
+/* ---------- 18) قطعی موقت تلگرام (502/تایم‌اوت) ---------- */
+
+echo "--- 18) قطعی موقت تلگرام ---\n";
+
+$no_delay = function ($d) { return [0, 0]; };
+
+// 502 دو بار، بعد موفق: تلاش مجدد درون‌فراخوانی
+$p = setup();
+add_filter('wc_telegram_retry_delays', $no_delay);
+$GLOBALS['wcto_http_queue'] = [
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 200, 'body' => '{"ok":true,"result":{"message_id":42}}'],
+];
+$res = $p->call('telegram_api', ['test:token', 'sendMessage', ['chat_id' => '-100123', 'text' => 'x']]);
+t('502 موقت دو بار تلاش مجدد و سپس موفق', !empty($res['ok']) && count($GLOBALS['wcto_http']) === 3, 'calls=' . count($GLOBALS['wcto_http']));
+t('موفقیت، مدار قطع را باز نمی‌کند', get_transient('wc_telegram_down_until') === false);
+
+// 401 دائمی: بدون تلاش مجدد
+$p = setup();
+add_filter('wc_telegram_retry_delays', $no_delay);
+$GLOBALS['wcto_http_queue'] = [['code' => 401, 'body' => '{"ok":false,"description":"Unauthorized"}']];
+$res = $p->call('telegram_api', ['test:token', 'sendMessage', ['chat_id' => '-100123', 'text' => 'x']]);
+t('401 دائمی بدون تلاش مجدد برمی‌گردد', empty($res['ok']) && empty($res['transient']) && count($GLOBALS['wcto_http']) === 1, 'calls=' . count($GLOBALS['wcto_http']));
+t('401 مدار قطع را باز نمی‌کند', get_transient('wc_telegram_down_until') === false);
+
+// تایم‌اوت شبکه (cURL 28): پس از ۳ تلاش موقت + مدار قطع
+$p = setup();
+add_filter('wc_telegram_retry_delays', $no_delay);
+$timeout_err = ['wp_error' => ['http_request_failed', 'cURL error 28: Operation timed out after 15000 milliseconds with 0 bytes received']];
+$GLOBALS['wcto_http_queue'] = [$timeout_err, $timeout_err, $timeout_err];
+$res = $p->call('telegram_api', ['test:token', 'sendMessage', ['chat_id' => '-100123', 'text' => 'x']]);
+t('تایم‌اوت شبکه پس از ۳ تلاش موقت برمی‌گردد', empty($res['ok']) && !empty($res['transient']) && count($GLOBALS['wcto_http']) === 3, 'calls=' . count($GLOBALS['wcto_http']));
+t('پس از قطعی موقت، مدار قطع باز می‌شود', (int) get_transient('wc_telegram_down_until') > time());
+$calls_before = count($GLOBALS['wcto_http']);
+$res2 = $p->call('telegram_api', ['test:token', 'sendMessage', ['chat_id' => '-100123', 'text' => 'x']]);
+t('مدار باز: درخواست تازه بدون HTTP سریع موقت برمی‌گردد', empty($res2['ok']) && !empty($res2['transient']) && !empty($res2['circuit_open']) && count($GLOBALS['wcto_http']) === $calls_before, 'calls=' . count($GLOBALS['wcto_http']));
+delete_transient('wc_telegram_down_until');
+$GLOBALS['wcto_http_queue'] = [['code' => 200, 'body' => '{"ok":true,"result":{"message_id":7}}']];
+$res3 = $p->call('telegram_api', ['test:token', 'sendMessage', ['chat_id' => '-100123', 'text' => 'x']]);
+t('پس از بسته شدن مدار، ارسال موفق است', !empty($res3['ok']));
+
+// handle_send_failure: قطعی موقت سهمیهٔ تلاش را نمی‌سوزاند
+$order = new WC_Order(1801, 'processing', ['meta' => ['_wc_telegram_attempts' => 4, '_wc_telegram_pending' => 'yes']]);
+$p = setup([], [$order]);
+$p->call('handle_send_failure', [$order, 'Bad Gateway', true]);
+t('قطعی موقت سهمیهٔ تلاش را نمی‌سوزاند (۴ می‌ماند)', (int) $order->get_meta('_wc_telegram_attempts') === 4, var_export($order->get_meta('_wc_telegram_attempts'), true));
+$ev = send_events();
+t('قطعی موقت: تلاش مجدد حدود ۵ دقیقه بعد زمان‌بندی می‌شود', count($ev) === 1 && ($ev[0]['ts'] - time()) >= 290 && ($ev[0]['ts'] - time()) <= 310, 'ts=' . (isset($ev[0]) ? $ev[0]['ts'] - time() : 'none'));
+t('قطعی موقت یادداشت سفارش را اسپم نمی‌کند', count($order->wcto_notes()) === 0, implode(' | ', $order->wcto_notes()));
+t('رویداد order_send_failed با transient ثبت می‌شود', $p->has_event('order_send_failed'));
+
+// handle_send_failure: خطای دائمی شمارنده و سقف ۵
+$order = new WC_Order(1802, 'processing', ['meta' => ['_wc_telegram_attempts' => 4]]);
+$p = setup([], [$order]);
+$p->call('handle_send_failure', [$order, 'Unauthorized', false]);
+t('خطای دائمی شمارنده را زیاد می‌کند (۵)', (int) $order->get_meta('_wc_telegram_attempts') === 5);
+t('تلاش ۵ زمان‌بندی می‌شود', count(send_events()) === 1, 'رویداد=' . count(send_events()));
+$GLOBALS['wcto_cron'] = [];
+$p->call('handle_send_failure', [$order, 'Unauthorized', false]);
+t('پس از ۵ تلاش، دیگر زمان‌بندی نمی‌شود', count(send_events()) === 0, 'رویداد=' . count(send_events()));
+t('یادداشت «دستی بزنید» ثبت می‌شود', strpos(implode("\n", $order->wcto_notes()), 'دستی') !== false, implode(' | ', $order->wcto_notes()));
+
+// handle_send_failure: تریگر تکراری شمارنده را زیاد نمی‌کند
+$order = new WC_Order(1803, 'processing', ['meta' => ['_wc_telegram_attempts' => 2]]);
+$p = setup([], [$order]);
+wp_schedule_single_event(time() + 600, 'wc_telegram_send_order', [1803]);
+$p->call('handle_send_failure', [$order, 'Bad Gateway', false]);
+t('تریگر تکراری (تلاش از قبل زمان‌بندی شده) شمارنده را زیاد نمی‌کند', (int) $order->get_meta('_wc_telegram_attempts') === 2, var_export($order->get_meta('_wc_telegram_attempts'), true));
+t('تریگر تکراری رویداد تازه نمی‌سازد', count(send_events()) === 1, 'رویداد=' . count(send_events()));
+
+// یکپارچه: سفارش در قطعی تلگرام می‌ماند و پس از برگشتن ارسال می‌شود
+$order = new WC_Order(1804, 'processing', ['meta' => ['_wc_telegram_pending' => 'yes']]);
+$p = setup([], [$order]);
+$p->passthrough = true;
+add_filter('wc_telegram_retry_delays', $no_delay);
+$GLOBALS['wcto_http_queue'] = [
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+];
+$p->process_order_send(1804);
+t('در قطعی تلگرام، سفارش ارسال نمی‌شود و پرچم انتظار می‌ماند', $order->get_meta('_wc_telegram_sent') === '' && $order->get_meta('_wc_telegram_pending') === 'yes');
+t('در قطعی موقت، سهمیهٔ تلاش مصرف نمی‌شود', $order->get_meta('_wc_telegram_attempts') === '', var_export($order->get_meta('_wc_telegram_attempts'), true));
+t('تلاش مجدد موقت زمان‌بندی شد', count(send_events()) === 1, 'رویداد=' . count(send_events()));
+delete_transient('wc_telegram_down_until');
+$GLOBALS['wcto_cron'] = [];
+$GLOBALS['wcto_http_queue'] = [['code' => 200, 'body' => '{"ok":true,"result":{"message_id":7}}']];
+$p->process_order_send(1804);
+t('پس از برگشتن تلگرام، سفارش ارسال می‌شود', $order->get_meta('_wc_telegram_sent') === 'yes');
+
+// send_to_all_chats پرچم transient را برمی‌گرداند
+$p = setup();
+$p->passthrough = true;
+add_filter('wc_telegram_retry_delays', $no_delay);
+$GLOBALS['wcto_http_queue'] = [
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+    ['code' => 502, 'body' => '{"ok":false,"description":"Bad Gateway"}'],
+];
+$res = $p->send_to_all_chats('پیام');
+t('send_to_all_chats در قطعی موقت transient=true برمی‌گرداند', empty($res['ok']) && !empty($res['transient']));
+
+// هشدار سلامت تحویل‌نشده بازهٔ توقف کامل را نمی‌سوزاند
+$p = setup(['health_threshold' => 2, 'health_cooldown' => 6], []);
+$p->passthrough = true;
+add_filter('wc_telegram_retry_delays', $no_delay);
+$GLOBALS['wcto_http_fail'] = true;
+$p->send_to_all_chats('پیام ۱');
+$p->send_to_all_chats('پیام ۲');
+t('هشدار سلامت تلاش شد', $p->has_event('health_alert'));
+$last_alert = (int) get_option('wc_telegram_health_alert');
+t('هشدار تحویل‌نشده بازهٔ توقف کامل را نمی‌سوزاند (۱۵ دقیقه بعد دوباره فرصت)', $last_alert > 0 && (time() - $last_alert) >= (6 * 3600 - 900 - 5), 'diff=' . (time() - $last_alert));
+$undelivered_logged = false;
+foreach ($p->logs as $row) {
+    if ($row['event'] === 'health_alert' && isset($row['context']['delivered']) && $row['context']['delivered'] === false) {
+        $undelivered_logged = true;
+    }
+}
+t('لاگ هشدار صادقانه تحویل‌نشدن را می‌گوید', $undelivered_logged);
+
 /* ---------- نتیجه ---------- */
 
 echo "\nنتیجه: {$pass} موفق، {$fail} ناموفق\n";

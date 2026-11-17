@@ -23,6 +23,8 @@ delete_option('wc_telegram_status_last_sent');
 delete_option('wc_telegram_fail_streak');
 delete_option('wc_telegram_health_alert');
 delete_transient('wc_telegram_test_result');
+delete_transient('wc_telegram_429_until');
+delete_transient('wc_telegram_down_until');
 
 wp_clear_scheduled_hook('wc_telegram_daily_report');
 wp_clear_scheduled_hook('wc_telegram_send_order');

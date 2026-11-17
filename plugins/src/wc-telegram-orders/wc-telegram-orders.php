@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       ارسال سفارش‌ها به تلگرام ووکامرس
  * Description:       ارسال خودکار سفارش‌های جدید ووکامرس به تلگرام با فرمت فارسی دلخواه + گزارش روزانه فروش (با سنجاق خودکار) + اعلان کمبود موجودی محصولات + سیستم لاگ رویدادها در پنل.
- * Version:           1.14.3
+ * Version:           1.15.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            علیرضا شعبان زاده
@@ -14,7 +14,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('WC_TELEGRAM_ORDERS_VERSION', '1.14.3');
+define('WC_TELEGRAM_ORDERS_VERSION', '1.15.0');
 define('WC_TELEGRAM_ORDERS_OPTION', 'wc_telegram_orders_settings');
 define('WC_TELEGRAM_ORDERS_FILE', __FILE__);
 
@@ -50,6 +50,9 @@ class WC_Telegram_Orders {
     const HEALTH_STREAK_OPTION = 'wc_telegram_fail_streak';   // شمار ارسال‌های ناموفق پشت‌سرهم (هشدار سلامت)
     const HEALTH_ALERT_OPTION  = 'wc_telegram_health_alert';  // زمان آخرین هشدار سلامت (جلوگیری از تکرار)
     const FORCE_SEND_META      = '_wc_telegram_force';        // ارسال اجباریِ یک‌بارمصرف (بدون شرط پرداخت)
+    const TELEGRAM_MAX_TRIES   = 3;        // تلاش درون‌فراخوانی برای خطاهای موقت (502/تایم‌اوت/شبکه)
+    const TELEGRAM_DOWN_COOLDOWN = 120;    // پس از قطعی موقت، تا این مدت (ثانیه) درخواست تازه نمی‌زنیم (مدار قطع)
+    const TRANSIENT_RETRY_DELAY  = 300;    // تلاش مجدد سفارش پس از قطعی موقت تلگرام (ثانیه) — بدون مصرف سهمیهٔ ۵ تلاش
 
     // صف اعلان‌های موجودی همین درخواست — در پایان درخواست یکجا ارسال می‌شود
     // (سفارش چندقلمی → یک پیام، نه چند پیام پشت‌سرهم)
@@ -720,7 +723,7 @@ class WC_Telegram_Orders {
                             <div class="wcto-unit"><input type="number" id="wc-tg-health-cd" name="<?php echo esc_attr($opt); ?>[health_cooldown]" value="<?php echo (int) (isset($s['health_cooldown']) ? $s['health_cooldown'] : 6); ?>" min="1" max="168" step="1" dir="ltr" class="tisa-input" /><span>ساعت</span></div>
                         </div>
                     </div>
-                    <p class="wcto-hint">وضعیت فعلی: <?php echo esc_html($this->to_persian_digits((string) $this->health_streak())); ?> شکست پشت‌سرهم. اگر خودِ تلگرام قطع باشد، هشدار هم تحویل نمی‌شود — در آن حالت در تب «آمار فروش» و لاگ رویدادها دیده می‌شود.</p>
+                    <p class="wcto-hint">وضعیت فعلی: <?php echo esc_html($this->to_persian_digits((string) $this->health_streak())); ?> شکست پشت‌سرهم. اگر خودِ تلگرام قطع باشد، هشدار هم تحویل نمی‌شود و ۱۵ دقیقه بعد دوباره تلاش می‌شود — در آن حالت در تب «آمار فروش» و لاگ رویدادها دیده می‌شود. سفارش‌ها در قطعی موقت گم نمی‌شوند و خودکار دوباره تلاش می‌شوند.</p>
                 </div>
             </section>
 
@@ -1629,9 +1632,11 @@ class WC_Telegram_Orders {
         }
         $attempt = (int) $attempt;
         if ($attempt < 3) {
-            $delay = 60 * $attempt;
+            // قطعی موقت تلگرام: فاصلهٔ تلاش مجدد طولانی‌تر است تا پنجرهٔ پوشش از چند دقیقه به حدود ۱۰ دقیقه برسد
+            $transient = !empty($result['transient']);
+            $delay = $transient ? self::TRANSIENT_RETRY_DELAY : 60 * $attempt;
             wp_schedule_single_event(time() + $delay, self::STATUS_HOOK, [(int) $order_id, (string) $old_status, (string) $new_status, $attempt + 1]);
-            $this->log('warning', 'order', 'status_retry', sprintf('ارسال پیام وضعیت سفارش #%s ناموفق بود (تلاش %d از ۳)؛ %d ثانیه دیگر دوباره تلاش می‌شود: %s', $order->get_order_number(), $attempt, $delay, $result['message']), ['old' => $old_status, 'new' => $new_status, 'attempt' => $attempt, 'error' => $result['message']], (int) $order_id);
+            $this->log('warning', 'order', 'status_retry', sprintf('ارسال پیام وضعیت سفارش #%s ناموفق بود (تلاش %d از ۳)؛ %d ثانیه دیگر دوباره تلاش می‌شود: %s', $order->get_order_number(), $attempt, $delay, $result['message']), ['old' => $old_status, 'new' => $new_status, 'attempt' => $attempt, 'error' => $result['message'], 'transient' => $transient], (int) $order_id);
             return;
         }
         $this->log('error', 'order', 'status_failed', sprintf('ارسال پیام تغییر وضعیت سفارش #%s پس از ۳ تلاش ناموفق ماند: %s', $order->get_order_number(), $result['message']), ['old' => $old_status, 'new' => $new_status, 'error' => $result['message']], (int) $order_id);
@@ -1980,7 +1985,7 @@ class WC_Telegram_Orders {
                 $order->save_meta_data();
                 $this->log('success', 'order', 'order_sent', sprintf('پیام سفارش #%s به تلگرام ارسال شد.', $order->get_order_number()), ['chats' => array_keys($result['sent'])], $order_id);
             } else {
-                $this->handle_send_failure($order, $result['message']);
+                $this->handle_send_failure($order, $result['message'], !empty($result['transient']));
             }
         } finally {
             $this->release_send_lock($order_id);
@@ -2029,27 +2034,42 @@ class WC_Telegram_Orders {
                 $order->save_meta_data();
                 $this->log('success', 'order', 'order_sent', sprintf('پیام کامل سفارش #%s به تلگرام ارسال شد.', $order->get_order_number()), ['chats' => array_keys($result['sent']), 'source' => 'pending_flush'], $order_id);
             } else {
-                $this->handle_send_failure($order, $result['message']);
+                $this->handle_send_failure($order, $result['message'], !empty($result['transient']));
             }
         } finally {
             $this->release_send_lock($order_id);
         }
     }
 
-    // خطای ارسال: تا ۵ بار با فاصله فزاینده (۱، ۳، ۹، ۲۷، ۸۱ دقیقه) خودکار دوباره تلاش می‌شود
-    private function handle_send_failure($order, $error) {
+    // خطای ارسال:
+    //  - خطای موقت (قطعی تلگرام/شبکه، 502/تایم‌اوت): سهمیهٔ ۵ تلاش مصرف نمی‌شود؛ هر ۵ دقیقه
+    //    دوباره تلاش می‌شود تا تلگرام برگردد — قطعی چنددقیقه‌ای دیگر سفارش را گم نمی‌کند.
+    //  - خطای دائمی (توکن/چت نامعتبر): تا ۵ بار با فاصله فزاینده (۱، ۳، ۹، ۲۷، ۸۱ دقیقه).
+    // اگر برای همین سفارش تلاش مجدد از قبل زمان‌بندی شده باشد، این شکست «تریگر تکراری» است
+    // (جاروی معوق‌ها/ذخیرهٔ سفارش/تغییر وضعیت در میانهٔ انتظار) و شمارنده زیاد نمی‌شود —
+    // قبلاً همین تریگرها سهمیهٔ ۵ تلاش را در چند دقیقه می‌سوزاندند و سفارش برای همیشه می‌ماند.
+    private function handle_send_failure($order, $error, $transient = false) {
+        $order_id = $order->get_id();
+        if (wp_next_scheduled(self::SEND_ORDER_HOOK, [$order_id])) {
+            $order->save_meta_data();
+            return; // تلاش مجدد از قبل برنامه‌ریزی شده؛ این شکست دوباره شمرده نمی‌شود
+        }
+        if ($transient) {
+            wp_schedule_single_event(time() + self::TRANSIENT_RETRY_DELAY, self::SEND_ORDER_HOOK, [$order_id]);
+            $this->log('warning', 'order', 'order_send_failed',
+                sprintf('ارسال سفارش #%s به‌علت قطعی موقت تلگرام انجام نشد؛ %d دقیقه دیگر دوباره تلاش می‌شود: %s', $order->get_order_number(), (int) (self::TRANSIENT_RETRY_DELAY / MINUTE_IN_SECONDS), $error),
+                ['transient' => true, 'error' => $error], $order_id);
+            $order->save_meta_data();
+            return;
+        }
         $attempt = (int) $order->get_meta('_wc_telegram_attempts') + 1;
         $order->update_meta_data('_wc_telegram_attempts', $attempt);
         $this->log($attempt > 5 ? 'error' : 'warning', 'order', 'order_send_failed',
             sprintf('ارسال سفارش #%s ناموفق بود (تلاش %d از ۵): %s', $order->get_order_number(), $attempt, $error),
             ['attempt' => $attempt, 'error' => $error], $order->get_id());
         if ($attempt <= 5) {
-            if (wp_next_scheduled(self::SEND_ORDER_HOOK, [$order->get_id()])) {
-                $order->save_meta_data();
-                return; // تلاش مجدد از قبل برنامه‌ریزی شده
-            }
             $delay = min(81 * 60, (int) (60 * pow(3, $attempt - 1)));
-            wp_schedule_single_event(time() + $delay, self::SEND_ORDER_HOOK, [$order->get_id()]);
+            wp_schedule_single_event(time() + $delay, self::SEND_ORDER_HOOK, [$order_id]);
             $order->add_order_note(sprintf(
                 '⚠️ ارسال به تلگرام ناموفق بود (تلاش %d از ۵): %s — به‌صورت خودکار دوباره تلاش می‌شود.',
                 $attempt,
@@ -4125,34 +4145,40 @@ class WC_Telegram_Orders {
     }
 
     // $chat_ids_raw = null → چت‌های تنظیمات سفارش‌ها؛ رشته → مقصد سفارشی (مثل چت اعلانات محصولات)
-    // خروجی: ['ok', 'message', 'sent' => [chat_id => message_id]]
+    // خروجی: ['ok', 'message', 'sent' => [chat_id => message_id], 'transient' => bool]
+    // transient یعنی خطا موقت است (قطعی تلگرام/شبکه) و تلاش مجدد خودکار سودی دارد؛
+    // خطای دائمی (توکن/چت نامعتبر) transient=false است.
     public function send_to_all_chats($message, $chat_ids_raw = null) {
         $s = $this->get_settings();
 
         if (empty($s['bot_token'])) {
-            return ['ok' => false, 'message' => 'توکن ربات وارد نشده. از بخش ووکامرس ← ارسال سفارش‌ها به تلگرام وارد کنید.', 'sent' => []];
+            return ['ok' => false, 'message' => 'توکن ربات وارد نشده. از بخش ووکامرس ← ارسال سفارش‌ها به تلگرام وارد کنید.', 'sent' => [], 'transient' => false];
         }
         $chats = $this->parse_chat_ids($chat_ids_raw === null ? $s['chat_ids'] : $chat_ids_raw);
         if (empty($chats)) {
-            return ['ok' => false, 'message' => 'شناسه چت وارد نشده. از بخش ووکامرس ← ارسال سفارش‌ها به تلگرام وارد کنید.', 'sent' => []];
+            return ['ok' => false, 'message' => 'شناسه چت وارد نشده. از بخش ووکامرس ← ارسال سفارش‌ها به تلگرام وارد کنید.', 'sent' => [], 'transient' => false];
         }
 
         $errors = [];
         $sent = [];
+        $transient = false;
         foreach ($chats as $chat_id) {
             $res = $this->send_to_telegram($s['bot_token'], $chat_id, $message);
             if (empty($res['ok'])) {
                 $errors[] = $chat_id . ': ' . $res['message'];
+                if (!empty($res['transient'])) {
+                    $transient = true;
+                }
             } elseif (!empty($res['message_id'])) {
                 $sent[(string) $chat_id] = (int) $res['message_id'];
             }
         }
         if ($errors) {
             $this->track_send_result(false, implode(' | ', $errors));
-            return ['ok' => false, 'message' => implode(' | ', $errors), 'sent' => $sent];
+            return ['ok' => false, 'message' => implode(' | ', $errors), 'sent' => $sent, 'transient' => $transient];
         }
         $this->track_send_result(true, '');
-        return ['ok' => true, 'message' => sprintf('پیام به %d مقصد ارسال شد.', count($chats)), 'sent' => $sent];
+        return ['ok' => true, 'message' => sprintf('پیام به %d مقصد ارسال شد.', count($chats)), 'sent' => $sent, 'transient' => false];
     }
 
     /* ---------------- هشدار سلامت ربات ---------------- */
@@ -4192,20 +4218,30 @@ class WC_Telegram_Orders {
         if ((time() - $last) < $cooldown) {
             return; // هنوز در بازهٔ توقف هستیم
         }
-        update_option(self::HEALTH_ALERT_OPTION, time(), false);
 
         $msg = "⚠️ <b>هشدار سلامت ربات تلگرام</b>\n"
              . '🔴 ' . $this->to_persian_digits((string) $streak) . ' ارسال پشت‌سرهم ناموفق بود.' . "\n"
              . '🕐 ' . $this->format_date(get_option('date_format') . ' ' . get_option('time_format'), time()) . "\n"
              . 'آخرین خطا: ' . htmlspecialchars(mb_substr(wp_strip_all_tags((string) $error), 0, 300), ENT_QUOTES, 'UTF-8') . "\n"
-             . 'موارد رایج: توکن عوض شده، ربات از گروه حذف شده، یا محدودیت نرخ تلگرام (429).';
+             . 'موارد رایج: قطعی موقت تلگرام/شبکه (502/تایم‌اوت)، توکن عوض شده، ربات از گروه حذف شده، یا محدودیت نرخ تلگرام (429).';
 
         $this->sending_health_alert = true;
         $res = $this->send_to_all_chats($msg);
         $this->sending_health_alert = false;
 
+        $delivered = !empty($res['ok']);
+        if ($delivered) {
+            update_option(self::HEALTH_ALERT_OPTION, time(), false);
+        } else {
+            // خودِ هشدار هم تحویل نشد (معمولاً تلگرام قطع است): بازهٔ توقف کامل نسوزد؛
+            // ۱۵ دقیقه بعد دوباره فرصت هشدار می‌رسد تا پس از برگشتن تلگرام، هشدار برسد.
+            update_option(self::HEALTH_ALERT_OPTION, time() - $cooldown + 900, false);
+        }
+
         $this->log('error', 'system', 'health_alert',
-            sprintf('هشدار سلامت ارسال شد: %d شکست پشت‌سرهم. تحویل خودِ هشدار: %s', $streak, empty($res['ok']) ? 'ناموفق' : 'موفق'),
+            $delivered
+                ? sprintf('هشدار سلامت ارسال شد: %d شکست پشت‌سرهم. تحویل خودِ هشدار: موفق', $streak)
+                : sprintf('هشدار سلامت تحویل نشد (%d شکست پشت‌سرهم)؛ تلگرام احتمالاً در دسترس نیست و هشدار ۱۵ دقیقه دیگر دوباره تلاش می‌شود.', $streak),
             ['streak' => $streak, 'threshold' => $threshold, 'delivered' => !empty($res['ok']), 'error' => mb_substr((string) $error, 0, 300)], 0);
     }
 
@@ -4223,6 +4259,7 @@ class WC_Telegram_Orders {
 
         $errors = [];
         $sent = 0;
+        $transient = false;
         $first_ids = []; // شناسه پیام تکه اول در هر چت (همان که سنجاق می‌شود — خلاصه آمار آنجاست)
         foreach ($chunks as $i => $chunk) {
             $res = $this->send_to_all_chats($chunk, $chat_ids_raw);
@@ -4233,10 +4270,13 @@ class WC_Telegram_Orders {
                 $sent++;
             } else {
                 $errors[] = $res['message'];
+                if (!empty($res['transient'])) {
+                    $transient = true;
+                }
             }
         }
         if ($errors) {
-            return ['ok' => false, 'message' => implode(' | ', $errors), 'sent' => $first_ids];
+            return ['ok' => false, 'message' => implode(' | ', $errors), 'sent' => $first_ids, 'transient' => $transient];
         }
         if (count($chunks) > 1) {
             return ['ok' => true, 'message' => sprintf('گزارش در %d پیام ارسال شد.', count($chunks)), 'sent' => $first_ids];
@@ -4381,8 +4421,18 @@ class WC_Telegram_Orders {
         return trim(preg_replace("/\n{3,}/", "\n\n", wp_strip_all_tags($html)));
     }
 
-    // فراخوانی عمومی Bot API — خروجی: ['ok', 'message', 'result' => آرایه پاسخ تلگرام]
-    private function telegram_api($bot_token, $method, $params, $_retried = false) {
+    // فراخوانی عمومی Bot API — خروجی: ['ok', 'message', 'result' => آرایه پاسخ تلگرام, 'transient' => bool]
+    // خطاهای موقت (تایم‌اوت/خطای شبکه، 408/429/5xx مثل 502 Bad Gateway هنگام قطعی تلگرام) تا
+    // TELEGRAM_MAX_TRIES بار با فاصلهٔ فزاینده دوباره تلاش می‌شوند؛ خطاهای دائمی (400/401/403...)
+    // بلافاصله برمی‌گردند. پس از شکست موقتِ نهایی، مدار قطع (circuit breaker) برای
+    // TELEGRAM_DOWN_COOLDOWN ثانیه باز می‌شود تا در میانهٔ قطعی، هر سفارش/کرون با تایم‌اوت ۱۵ ثانیه‌ای
+    // تلگرام را نکوبد و لاگ سیل نشود — درخواست‌ها در این بازه سریع و بی‌صدا «موقت» برمی‌گردند.
+    private function telegram_api($bot_token, $method, $params, $_attempt = 1) {
+        // مدار قطع: تلگرام همین الان در دسترس نیست — بدون هیچ درخواستی سریع برگرد
+        $down_until = (int) get_transient('wc_telegram_down_until');
+        if ($down_until > time()) {
+            return ['ok' => false, 'message' => 'تلگرام موقتاً در دسترس نیست (قطعی موقت؛ ارسال به‌صورت خودکار ادامه می‌یابد)', 'result' => null, 'transient' => true, 'circuit_open' => true];
+        }
         // اگر تلگرام همین الان 429 داده، قبل از تلاش تازه تا پایان retry_after صبر کن (بین همهٔ درخواست‌ها مشترک)
         $until = (int) get_transient('wc_telegram_429_until');
         if ($until > time()) {
@@ -4392,31 +4442,78 @@ class WC_Telegram_Orders {
             }
         }
         $url = 'https://api.telegram.org/bot' . trim($bot_token) . '/' . $method;
-        $response = wp_remote_post($url, [
-            'timeout' => 15,
-            'body'    => $params,
-        ]);
+        $max_tries = max(1, (int) self::TELEGRAM_MAX_TRIES);
+        $delays = apply_filters('wc_telegram_retry_delays', [2, 5]);
+        if (!is_array($delays)) {
+            $delays = [2, 5];
+        }
+        $last_error = '';
+        $last_code  = 0;
 
-        if (is_wp_error($response)) {
-            $this->log('error', 'telegram', 'api_error', 'خطای ارتباط با تلگرام (' . $method . '): ' . $response->get_error_message(), ['method' => $method, 'error' => $response->get_error_message()], 0);
-            return ['ok' => false, 'message' => $response->get_error_message(), 'result' => null];
+        for ($try = 1; $try <= $max_tries; $try++) {
+            $response = wp_remote_post($url, [
+                'timeout' => 15,
+                'body'    => $params,
+            ]);
+
+            // خطای شبکه/تایم‌اوت (cURL 28 و...) — موقت است؛ تلاش مجدد
+            if (is_wp_error($response)) {
+                $last_error = $response->get_error_message();
+                $last_code  = 0;
+                if ($try < $max_tries) {
+                    $this->telegram_retry_sleep($delays, $try);
+                    continue;
+                }
+                break;
+            }
+
+            $code = wp_remote_retrieve_response_code($response);
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+            if ($code === 200 && !empty($body['ok'])) {
+                delete_transient('wc_telegram_down_until');
+                return ['ok' => true, 'message' => 'OK', 'result' => isset($body['result']) ? $body['result'] : null, 'transient' => false];
+            }
+
+            $desc = isset($body['description']) ? $body['description'] : ('HTTP ' . $code);
+            $is_transient = ($code === 0 || $code === 408 || $code === 429 || $code >= 500);
+            if (!$is_transient) {
+                // خطای دائمی (توکن/چت/قالب): تلاش مجدد سودی ندارد
+                $this->log('error', 'telegram', 'api_error', 'تلگرام خطا داد (' . $method . '): ' . $desc, ['method' => $method, 'code' => $code, 'description' => $desc], 0);
+                return ['ok' => false, 'message' => $desc, 'result' => null, 'transient' => false];
+            }
+
+            $last_error = $desc;
+            $last_code  = $code;
+            if ($try < $max_tries) {
+                $wait = isset($delays[$try - 1]) ? (int) $delays[$try - 1] : 0;
+                if ($code === 429) {
+                    // محدودیت نرخ تلگرام: طبق retry_after صبر کن (حداقل همان فاصلهٔ تلاش مجدد)
+                    $retry_after = isset($body['parameters']['retry_after']) ? (int) $body['parameters']['retry_after'] : 3;
+                    set_transient('wc_telegram_429_until', time() + $retry_after, max(1, $retry_after));
+                    $this->log('warning', 'telegram', 'rate_limited', sprintf('محدودیت نرخ تلگرام (429) هنگام %s؛ %d ثانیه صبر و تلاش مجدد.', $method, $retry_after), ['method' => $method, 'retry_after' => $retry_after], 0);
+                    $wait = max($wait, min($retry_after, 30));
+                }
+                if ($wait > 0) {
+                    sleep($wait);
+                }
+                continue;
+            }
         }
-        $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        if ($code === 200 && !empty($body['ok'])) {
-            return ['ok' => true, 'message' => 'OK', 'result' => isset($body['result']) ? $body['result'] : null];
+
+        // تلاش‌ها تمام شد و خطا موقت بود: مدار را باز کن تا درخواست‌های بعدی نکوبند
+        if ($last_code !== 429) {
+            set_transient('wc_telegram_down_until', time() + self::TELEGRAM_DOWN_COOLDOWN, self::TELEGRAM_DOWN_COOLDOWN);
         }
-        // محدودیت نرخ تلگرام: طبق retry_after صبر و یک بار دوباره تلاش کن
-        if ($code === 429 && !$_retried) {
-            $wait = isset($body['parameters']['retry_after']) ? (int) $body['parameters']['retry_after'] : 3;
-            set_transient('wc_telegram_429_until', time() + $wait, max(1, $wait));
-            $this->log('warning', 'telegram', 'rate_limited', sprintf('محدودیت نرخ تلگرام (429) هنگام %s؛ %d ثانیه صبر و تلاش مجدد.', $method, $wait), ['method' => $method, 'retry_after' => $wait], 0);
-            sleep(max(1, min($wait, 30)));
-            return $this->telegram_api($bot_token, $method, $params, true);
+        $this->log('error', 'telegram', 'api_error', 'خطای ارتباط با تلگرام (' . $method . '): ' . $last_error, ['method' => $method, 'error' => $last_error, 'code' => $last_code, 'transient' => true], 0);
+        return ['ok' => false, 'message' => $last_error, 'result' => null, 'transient' => true];
+    }
+
+    // فاصلهٔ بین دو تلاش موقت (قابل تنظیم با فیلتر wc_telegram_retry_delays — در تست صفر می‌شود)
+    private function telegram_retry_sleep($delays, $try) {
+        $wait = isset($delays[$try - 1]) ? (int) $delays[$try - 1] : 0;
+        if ($wait > 0) {
+            sleep($wait);
         }
-        $desc = isset($body['description']) ? $body['description'] : ('HTTP ' . $code);
-        $this->log('error', 'telegram', 'api_error', 'تلگرام خطا داد (' . $method . '): ' . $desc, ['method' => $method, 'code' => $code, 'description' => $desc], 0);
-        return ['ok' => false, 'message' => $desc, 'result' => null];
     }
 
     /* ---------------- سیستم لاگ رویدادها ---------------- */
