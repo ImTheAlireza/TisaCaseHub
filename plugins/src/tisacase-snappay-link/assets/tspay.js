@@ -1,6 +1,20 @@
 (function () {
     'use strict';
 
+    // Templates put indentation/newlines inside the receipt paragraph, so CSS
+    // :empty alone does not match it. Keep actual receipt/review messages intact.
+    function removeEmptyReceipt() {
+        if (!document.querySelector('.tspay-panel')) return;
+        document.querySelectorAll('.woocommerce-thankyou-order-received').forEach(function (notice) {
+            if (!notice.textContent.trim()) notice.remove();
+        });
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', removeEmptyReceipt);
+    } else {
+        removeEmptyReceipt();
+    }
+
     document.querySelectorAll('.tspay-panel [data-tspay-copy]').forEach(function (button) {
         var panel = button.closest('.tspay-panel');
         var label = button.querySelector('[data-copy-label]');
