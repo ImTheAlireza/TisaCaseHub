@@ -15,10 +15,22 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
         $this->description = $this->get_option( 'description', 'پرداخت را در صفحه اسنپ‌پی انجام دهید. سفارش پس از بررسی فروشگاه تأیید می‌شود.' );
         $this->order_button_text = $this->get_option( 'checkout_button_text', 'ثبت سفارش و ادامه به اسنپ‌پی' );
         add_action( 'woocommerce_update_options_payment_gateways_' . $this->id, array( $this, 'process_admin_options' ) );
+        add_filter( 'woocommerce_thankyou_order_received_text', array( __CLASS__, 'order_received_text' ), 20, 2 );
         add_action( 'woocommerce_thankyou_' . $this->id, array( $this, 'thankyou_page' ) );
         add_action( 'woocommerce_order_details_after_order_table', array( $this, 'order_details' ) );
         add_action( 'admin_post_tspay_report_paid', array( __CLASS__, 'report_paid' ) );
         add_action( 'admin_post_nopriv_tspay_report_paid', array( __CLASS__, 'report_paid' ) );
+    }
+
+    /** Do not imply payment completion before the customer submits a tracking code. */
+    public static function order_received_text( $text, $order ) {
+        if ( ! $order || TSPAY_GATEWAY !== $order->get_payment_method() || $order->is_paid() ) {
+            return $text;
+        }
+        if ( $order->has_status( 'on-hold' ) && 'yes' === $order->get_meta( '_tspay_customer_reported_paid', true ) && '' !== trim( (string) $order->get_meta( '_tspay_customer_tracking_code', true ) ) ) {
+            return 'کد رهگیری شما دریافت شد و نتیجه خدمت شما اعلام می‌گردد.';
+        }
+        return '';
     }
 
     public function init_form_fields() {
@@ -48,7 +60,7 @@ class TSPAY_Gateway extends WC_Payment_Gateway {
             'checkout_button_text' => array( 'title' => 'متن دکمه ثبت سفارش', 'type' => 'text', 'default' => 'ثبت سفارش و ادامه به اسنپ‌پی' ),
             'payment_button_text' => array( 'title' => 'متن دکمه رفتن به درگاه', 'type' => 'text', 'default' => 'رفتن به صفحه پرداخت اسنپ‌پی' ),
             'legacy_hold_message' => array( 'title' => 'پیام سفارش‌های قدیمی در انتظار بررسی', 'type' => 'textarea', 'default' => 'این سفارش پیش از اصلاح گردش پرداخت ثبت شده و وضعیت پرداخت آن از سایت قابل تشخیص نیست. برای جلوگیری از پرداخت تکراری، قبل از پرداخت دوباره با فروشگاه هماهنگ کنید. اگر قبلاً پرداخت کرده‌اید، دکمهٔ اعلام پرداخت را بزنید.' ),
-            'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'ممنون! کدتان ثبت شد و پرداخت بررسی می‌شود.' ),
+            'pending_message' => array( 'title' => 'پیام انتظار بررسی', 'type' => 'textarea', 'default' => 'کد رهگیری شما دریافت شد و نتیجه خدمت شما اعلام می‌گردد.' ),
             'rejected_message' => array( 'title' => 'پیام پس از رد اعلام پرداخت', 'type' => 'textarea', 'default' => 'نتوانستیم پرداخت را تطبیق دهیم. برای راهنمایی با پشتیبانی تماس بگیرید.' ),
             'approved_message' => array( 'title' => 'پیام پس از تأیید پرداخت', 'type' => 'textarea', 'default' => 'پرداخت تأیید شد؛ ممنون از خریدتان!' ),
             'button_color' => array( 'title' => 'رنگ دکمه پرداخت', 'type' => 'text', 'default' => '#2874FC', 'description' => 'کد رنگ HEX، مانند #2874FC.' ),
